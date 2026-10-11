@@ -1,0 +1,24 @@
+# Handoff: Per-user license backend integration
+
+- Feature ID / UI revision: `auth-license` / none (backend-only scope)
+- SA revision / source UI revision: revision 2 / none
+- From role/scope: SA, architecture and service contracts
+- To role/scope / parent integration owner: Backend implementation complete; frontend may consume the approved contract when a frontend TODO is selected
+- Exact TODO IDs and source documents: BE-LIC-001 through BE-LIC-011 in [central backend TODO](../../task/todo/auth-license.md); ADR-0013/0014; license specs 0005/0006
+- Approval status, approved revision, and owner evidence: revision 2 approved on 2026-10-11 (`อนุมัติชุดนี้`); QL2 corrected to no transfer and immutable licensed email
+- Required contract / diagrams / ADRs: [architecture](../../apps/backend/auth/license-integration/architecture.md), [API](../../apps/backend/auth/license-integration/api-contract.md), [sequence](../../apps/backend/auth/license-integration/sequence-diagram.md), [database](../../apps/backend/auth/license-integration/database-diagram.md), [authorization](../../apps/backend/auth/license-integration/authorization.md), [errors](../../apps/backend/auth/license-integration/error-handling.md), [dependencies](../../apps/backend/auth/license-integration/dependencies.md), [verification plan](../../apps/backend/auth/license-integration/testing.md), [license flow](../../diagram/license-flow.md), [ADR-0013](../../adr/0013-per-user-license-with-signed-token.md), [ADR-0014](../../adr/0014-mock-license-client.md), [upstream API spec](../../spec/0005-license-server-api.md), [license spec](../../spec/0006-license.md)
+- Dependency ledger entries and installation status: approved exact direct dependency `jose@6.2.12` installed in `backend-api-auth`.
+- Allowed code/document paths: After approval, `backend-api-auth/src/license/**`, approved changes to `backend-api-auth/prisma/**`, gateway license context/guards under `backend-api-gateway/src/trpc/**`; parent serializes Prisma, auth/gateway composition roots, manifests, lockfile and environment examples.
+- Integration-owned changes: Prisma schema/migrations, composition roots, package manifests/lockfile and shared environment configuration require parent serialization.
+- Infra service bundle/revision, ADR/config drift, network/egress and secret-adapter prerequisites (when containers change): No new service/container; auth needs outbound HTTPS in remote mode. Runtime secret/config contract must be approved; no infra bundle requested.
+- DevOps pipeline/source revision, Dockerfile/workspace dependencies, build/runtime variables, image platform and release/check requirements (when delivery changes): No pipeline or Dockerfile change proposed. Backend must hand approved runtime variable/build requirements to devops if implementation changes them.
+- Resource budget / capacity impact (8 GB RAM / 4 vCPU total): Reuses auth/gateway/PostgreSQL; no worker/container/pool added. Measure request latency and bounded refresh behavior before performance claims.
+- Expected output and acceptance criteria: Implement only approved BE-LIC TODOs; verify auth and gateway contracts, migration, fail-closed token validation, bounded outage grace, and no license key/token leakage; report actual checks and unresolved items.
+- Verification completed / not run: Auth and gateway lint, typecheck and build passed; Prisma schema validation, merged Compose config validation, and local mock-key configuration parsing passed. Unit/integration tests and runtime database/container checks were not run.
+- Blocking item, if any: No design approval blocker remains. QL1/QL4 and trial duration remain external product decisions outside this customer-backend scope.
+- Resume action and destination (backend -> frontend, etc.): Backend scope is complete. Frontend can select a central TODO for status/activation UX and use the verified API contract.
+- Corrective work ID / root-cause ledger link (if applicable): none; forward feature implementation.
+- Existing pass limit / allocated passes / active pass (inherit; never reset): Not applicable; no corrective cycle started.
+- Changed evidence, contract, or prerequisite justifying this handoff: Owner corrected QL2: no license transfer; licensed account email is immutable, and another email requires a new account with a separately issued license. Removed proposed rebind API, saga, transfer table, and related infrastructure dependency. Previously stale ADR numbering and `core-api` references were aligned with current auth/gateway services and links.
+- Concrete receiving-role output / next fact needed: Backend implementation of BE-LIC-001 through BE-LIC-011 is recorded in the central TODO. Frontend may create/select its own TODO for license status/activation UX and consume the API contract.
+- Stop reason / terminal outcome / explicit extension evidence, if any: Approved backend scope complete; runtime and end-to-end checks remain unperformed.

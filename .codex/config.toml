@@ -1,0 +1,51 @@
+# Explicit project roles; keep model, effort, and permissions inherited from the session.
+[agents]
+enabled = true
+
+[agents."ui-spec"]
+description = "Analyze a design and prepare the latest frontend specification and TODO for review."
+config_file = "agents/ui-spec.toml"
+
+[agents.sa]
+description = "Design service changes, sequence/ER diagrams, ADRs, and the backend review bundle."
+config_file = "agents/sa.toml"
+
+[agents."senior-react-developer"]
+description = "Frontend implementation; route the shorthand frontend to this role."
+config_file = "agents/senior-react-developer.toml"
+
+[agents."senior-nestjs-developer"]
+description = "Backend implementation; route the shorthand backend to this role."
+config_file = "agents/senior-nestjs-developer.toml"
+
+[agents."lead-developer"]
+description = "Integration, planning, and focused technical review."
+config_file = "agents/lead-developer.toml"
+
+[agents.tester]
+description = "Focused automated checks and test maintenance."
+config_file = "agents/tester.toml"
+
+[agents."manual-tester"]
+description = "Customer-perspective UI checks and reports."
+config_file = "agents/manual-tester.toml"
+
+[agents."security-auditor"]
+description = "Scoped technical security reviews."
+config_file = "agents/security-auditor.toml"
+
+[agents."compliance-auditor"]
+description = "Scoped privacy and compliance reviews."
+config_file = "agents/compliance-auditor.toml"
+
+[agents."sec-auditor"]
+description = "Cloudflare security guidance/full audits with findings staged for user review."
+config_file = "agents/sec-auditor.toml"
+
+[agents.infra]
+description = "Secure and compatible Docker/container configuration from approved ADRs."
+config_file = "agents/infra.toml"
+
+[agents.devops]
+description = "Senior DevOps for GitHub Actions, service images and release configuration."
+config_file = "agents/devops.toml"

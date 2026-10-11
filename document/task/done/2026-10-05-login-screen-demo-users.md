@@ -12,7 +12,7 @@
 - Frontend typecheck and production build passed after implementation.
 - Auth service typecheck and build passed after adding the seed.
 - Ran the development seed successfully; both local sign-in requests returned the corresponding account.
-- Captured the login page in Chrome at the reference viewport. The manual customer report is in `user-check/2026-10-05-login-screen.md`.
+- Captured the login page in Chrome at the reference viewport. The manual customer report is in `document/testing/user-check/2026-10-05-login-screen.md`.
 
 ## Run the local seed again
 

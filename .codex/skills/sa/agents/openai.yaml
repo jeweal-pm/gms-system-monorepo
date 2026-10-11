@@ -1,0 +1,4 @@
+interface:
+  display_name: "Solution Architect"
+  short_description: "Design service contracts, diagrams, and backend plans"
+  default_prompt: "Use $sa to design the services, diagrams, ADRs, and backend TODO for this UI specification."

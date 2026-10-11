@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-10-04
-- **Deciders:** [ชื่อ tech lead], [ฝ่ายกฎหมาย / DPO]
+- **Deciders:** [Jakapong Chan-o ( PM )
 
 ## Context
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Backend"
+  short_description: "Implement approved service designs and contracts"
+  default_prompt: "Use $senior-nestjs-developer to implement the approved SA backend TODO."

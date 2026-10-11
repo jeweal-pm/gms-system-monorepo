@@ -1,8 +1,16 @@
 .git
 .env
+.env.*
+**/.env
+**/.env.*
+.codex
+.github
+agents
+document
 **/node_modules
 **/.next
 **/dist
 **/coverage
 **/src/generated/prisma
-document/task/done
+test-results
+playwright-report

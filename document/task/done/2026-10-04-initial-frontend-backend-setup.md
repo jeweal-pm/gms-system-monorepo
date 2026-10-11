@@ -55,10 +55,10 @@ Open Mailpit at `http://localhost:8025` and use the generated password from that
 - Runtime health checks — auth and gateway `/health/ready` both returned 200; login, forgot-password, and home pages returned 200.
 - Provisioned a temporary Super Admin through the gateway, received the generated credential in Mailpit, signed in through the frontend auth proxy, read the session, and loaded the protected dashboard procedure — passed.
 - Submitted forgot-password through the frontend proxy, received the reset credential in Mailpit, and signed in with it — passed. The temporary test account was deleted afterward.
-- Chrome UI flow — login redirected to Home; forgot-password showed confirmation, delivered a reset credential, and the replacement password signed in successfully. Desktop screenshots are saved under `user-check/artifacts/`.
+- Chrome UI flow — login redirected to Home; forgot-password showed confirmation, delivered a reset credential, and the replacement password signed in successfully. Desktop screenshots are saved under `document/testing/user-check/artifacts/`.
 - Mobile Home at 390×844 — loaded with no horizontal overflow. Keyboard-only behavior, sign-out, and password-change page remain untested.
 - Visual comparison found one reference mismatch: the supplied Home image says 38 shortcuts while the current menu data contains 33; the five additional labels are not present in the written docs or visible image area, so they remain to be confirmed.
-- See `user-check/2026-10-04-initial-setup.md` for the customer report and screenshots.
+- See `document/testing/user-check/2026-10-04-initial-setup.md` for the customer report and screenshots.
 
 ## Decisions and remaining production setup
 

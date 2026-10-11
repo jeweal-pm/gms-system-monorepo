@@ -11,7 +11,7 @@
 
 - Frontend typecheck and production build passed.
 - Compose configuration loaded successfully, and the development stack ran without rebuilding after its initial image build.
-- Checked the account menu, sign-out redirect, and signed-out redirect to login in Chrome. Details are in `user-check/2026-10-04-logout-menu.md`.
+- Checked the account menu, sign-out redirect, and signed-out redirect to login in Chrome. Details are in `document/testing/user-check/2026-10-04-logout-menu.md`.
 
 ## Daily use
 

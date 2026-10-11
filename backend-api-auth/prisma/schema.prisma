@@ -23,6 +23,8 @@ model User {
   sessions         Session[]
   accounts         Account[]
   loginAttempts    LoginAttempt[]
+  licenseCache     LicenseCache?
+  licenseActivationLockout LicenseActivationLockout?
 
   @@schema("auth")
 }
@@ -108,6 +110,26 @@ model ForgotPasswordAttempt {
   key       String   @id
   count     Int
   expiresAt DateTime
+
+  @@schema("auth")
+}
+
+model LicenseCache {
+  userId      String    @id @map("user_id")
+  token       String    @db.Text
+  fetchedAt   DateTime  @default(now()) @map("fetched_at")
+  lastErrorAt DateTime? @map("last_error_at")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("auth")
+}
+
+model LicenseActivationLockout {
+  userId         String    @id @map("user_id")
+  failedAttempts Int       @default(0) @map("failed_attempts")
+  lockedUntil    DateTime? @map("locked_until")
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@schema("auth")
 }

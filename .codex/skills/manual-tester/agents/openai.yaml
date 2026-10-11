@@ -1,0 +1,4 @@
+interface:
+  display_name: "Manual Tester"
+  short_description: "Check user journeys and write customer UI reports"
+  default_prompt: "Use $manual-tester to check the changed user journey and report the observed results."

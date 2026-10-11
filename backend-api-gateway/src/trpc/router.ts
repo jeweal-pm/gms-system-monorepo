@@ -1,16 +1,37 @@
 import { initTRPC, TRPCError } from "@trpc/server";
+import { z } from "zod";
 
 export type HomeItem = { label: string; slug: string };
 export type HomeGroup = { title: string; items: HomeItem[] };
 export type SessionUser = { id: string; email: string; name: string; role?: string };
-export type TrpcContext = { session: { user: SessionUser } | null };
+export type GatewayLicenseState = "VALID" | "EXPIRING" | "EXPIRED" | "REVOKED" | "REQUIRED" | "GRACE" | "UNVERIFIABLE";
+export type GatewayLicenseStatus = {
+  state: GatewayLicenseState;
+  type?: "trial" | "paid";
+  expiresAt?: string;
+  daysRemaining?: number;
+  checkedAt?: string;
+  retryAfter?: number;
+};
+export type TrpcContext = {
+  session: { user: SessionUser } | null;
+  license: GatewayLicenseStatus | null;
+  activateLicense: ((licenseKey: string) => Promise<GatewayLicenseStatus>) | null;
+};
 
 const t = initTRPC.context<TrpcContext>().create();
 const publicProcedure = t.procedure;
-const protectedProcedure = t.procedure.use(({ ctx, next }) => {
+const authenticatedProcedure = t.procedure.use(({ ctx, next }) => {
   if (!ctx.session) throw new TRPCError({ code: "UNAUTHORIZED", message: "Authentication required" });
   return next({ ctx: { ...ctx, session: ctx.session } });
 });
+const protectedProcedure = authenticatedProcedure.use(({ ctx, next }) => {
+  const state = ctx.license?.state ?? "UNVERIFIABLE";
+  if (state === "VALID" || state === "EXPIRING" || state === "GRACE") return next();
+  if (state === "UNVERIFIABLE") throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "LICENSE_UNVERIFIABLE" });
+  throw new TRPCError({ code: "FORBIDDEN", message: state === "EXPIRED" ? "LICENSE_EXPIRED" : state === "REVOKED" ? "LICENSE_REVOKED" : "LICENSE_REQUIRED" });
+});
+const licensedProcedure = protectedProcedure;
 
 export const shortcutGroups: HomeGroup[] = [
   { title: "Main Menu", items: [{ label: "Dashboard", slug: "dashboard" }, { label: "Quotation", slug: "quotation" }, { label: "Reserve", slug: "reserve" }] },
@@ -26,8 +47,21 @@ export const shortcutGroups: HomeGroup[] = [
 
 export const appRouter = t.router({
   system: t.router({ health: publicProcedure.query(() => ({ status: "ok" as const })) }),
-  dashboard: t.router({ shortcutGroups: protectedProcedure.query(() => shortcutGroups) }),
-  session: t.router({ current: protectedProcedure.query(({ ctx }) => ctx.session) }),
+  dashboard: t.router({ shortcutGroups: licensedProcedure.query(() => shortcutGroups) }),
+  session: t.router({ current: authenticatedProcedure.query(({ ctx }) => ctx.session) }),
+  license: t.router({
+    status: authenticatedProcedure.query(({ ctx }) => {
+      const status = ctx.license ?? { state: "UNVERIFIABLE" as const };
+      if (status.state === "UNVERIFIABLE") throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "LICENSE_UNVERIFIABLE" });
+      return status;
+    }),
+    activate: authenticatedProcedure
+      .input(z.object({ licenseKey: z.string().trim().min(1).max(128) }).strict())
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.activateLicense) throw new TRPCError({ code: "UNAUTHORIZED", message: "Authentication required" });
+        return ctx.activateLicense(input.licenseKey);
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

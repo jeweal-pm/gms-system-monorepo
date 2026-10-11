@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-09
-- **Deciders:** [ใส่ชื่อ]
+- **Deciders:** Jakapong Chan-o ( PM )
 
 ## Context
 

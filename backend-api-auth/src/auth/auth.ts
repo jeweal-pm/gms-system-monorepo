@@ -116,6 +116,7 @@ export const auth = betterAuth({
 
       const session = ctx.context.newSession;
       if (session) {
+        if (session.session.id) await retainOnlyNewestSession(session.user.id);
         const emailHash = hashLoginEmail(email);
         await prisma.loginLockout.upsert({
           where: { emailHash },
@@ -156,6 +157,22 @@ async function recordLoginAttempt(userId: string | null, email: string, success:
       emailHash: hashLoginEmail(email),
       success,
     },
+  });
+}
+
+async function retainOnlyNewestSession(userId: string) {
+  await prisma.$transaction(async (transaction) => {
+    await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${userId}))`;
+    await transaction.$executeRaw`
+      DELETE FROM "auth"."Session" AS session
+      WHERE session."userId" = ${userId}
+        AND session."id" <> (
+          SELECT newest."id" FROM "auth"."Session" AS newest
+          WHERE newest."userId" = ${userId}
+          ORDER BY newest."createdAt" DESC, newest."id" DESC
+          LIMIT 1
+        )
+    `;
   });
 }
 

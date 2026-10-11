@@ -12,7 +12,7 @@ Implemented ADR-0010, ADR-0011, ADR-0012, and `document/diagram/login-flow.md` a
 - Attempt history uses a keyed HMAC-SHA-256 email hash instead of raw email. Unknown and known emails follow the same failed-login count and lockout responses.
 - Added login feedback for remaining attempts, lockout, and rate limits, including a visible countdown and disabled submit button while locked.
 - Aligned user-set password policy to 4–64 characters without character-class requirements. System-generated passwords remain 12 characters.
-- Aligned email validation and field validation timing with `document/services/web-frontend/form-login-guildlines.md`.
+- Aligned email validation and field validation timing with `document/apps/frontend/template/form-login-guildlines.md`.
 - Gateway preserves HTTP methods and forwards auth cookies/origin and upstream `Set-Cookie`/`Retry-After` headers.
 - Password updates use `PUT /api/v1/me/password`. The caller's current session is retained while other sessions are revoked.
 - Forgot-password handles rate limits and upstream errors; rate-limited requests return HTTP 429.
@@ -25,7 +25,7 @@ Implemented ADR-0010, ADR-0011, ADR-0012, and `document/diagram/login-flow.md` a
 - Prisma formatting and generation passed. Migration `20261009000000_login_attempt_lockout` applied successfully and the database schema was up to date.
 - HTTP checks through the frontend proxy passed for valid login, wrong-password/unknown-account parity, three failures followed by HTTP 423 lockout, rejection while locked, successful login after expiry, and password change through the gateway while retaining the current session. The demo password was restored and test sessions were signed out.
 - After regenerating Prisma Client in Docker, the Super Admin demo login returned HTTP 200 and sign-out returned HTTP 200.
-- Login page screenshot was inspected against the supplied reference. Interactive browser checks were unavailable in this run; see [`user-check/2026-10-09-auth-docs.md`](../../../user-check/2026-10-09-auth-docs.md).
+- Login page screenshot was inspected against the supplied reference. Interactive browser checks were unavailable in this run; see [`document/testing/user-check/2026-10-09-auth-docs.md`](../../../document/testing/user-check/2026-10-09-auth-docs.md).
 - Workspace `pnpm typecheck` and `pnpm build` passed for frontend, gateway, and auth service.
 
 ## API behavior

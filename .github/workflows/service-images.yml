@@ -1,0 +1,141 @@
+name: Service images
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the validated service images to GHCR
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: f1-service-images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check requested publication is enabled
+        env:
+          REQUESTED_PUBLISH: ${{ inputs.publish }}
+          ENABLE_IMAGE_PUBLISH: ${{ vars.ENABLE_IMAGE_PUBLISH }}
+        run: |
+          if [[ "$REQUESTED_PUBLISH" == "true" && "$ENABLE_IMAGE_PUBLISH" != "true" ]]; then
+            echo "::error::Set repository variable ENABLE_IMAGE_PUBLISH=true before requesting publication."
+            exit 1
+          fi
+          if [[ "$REQUESTED_PUBLISH" == "true" ]]; then
+            case "$GITHUB_REF" in
+              refs/heads/dev|refs/heads/master) ;;
+              *) echo "::error::Publication is allowed only from dev or master."; exit 1 ;;
+            esac
+          fi
+  quality:
+    needs: preflight
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  build:
+    name: Build ${{ matrix.service }} without publishing
+    needs: quality
+    if: ${{ !inputs.publish }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        service: [frontend, backend-api-gateway, backend-api-auth]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build service image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
+        with:
+          context: .
+          file: ${{ matrix.service }}/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: f1-ci/${{ matrix.service }}:sha-${{ github.sha }}
+          cache-from: type=gha,scope=f1-${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=f1-${{ matrix.service }}
+
+  publish:
+    name: Publish ${{ matrix.service }}
+    needs: quality
+    if: ${{ inputs.publish }}
+    environment: container-publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        service: [frontend, backend-api-gateway, backend-api-auth]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Resolve validated image name
+        id: image
+        env:
+          IMAGE_NAMESPACE: ${{ vars.IMAGE_NAMESPACE || github.repository }}
+          SERVICE: ${{ matrix.service }}
+        run: |
+          namespace="${IMAGE_NAMESPACE,,}"
+          if [[ ! "$namespace" =~ ^[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*$ ]]; then
+            echo "::error::IMAGE_NAMESPACE must be a GHCR owner/project namespace."
+            exit 1
+          fi
+          printf 'tag=ghcr.io/%s/%s:sha-%s\n' "$namespace" "$SERVICE" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build and publish service image
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: "false"
+        with:
+          context: .
+          file: ${{ matrix.service }}/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.image.outputs.tag }}
+          cache-from: type=gha,scope=f1-${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=f1-${{ matrix.service }}
+          provenance: mode=min
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+      - name: Record deployable image identity
+        env:
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          printf '### Published image\n\n- Tag: `%s`\n- Digest: `%s`\n' "$IMAGE_TAG" "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"

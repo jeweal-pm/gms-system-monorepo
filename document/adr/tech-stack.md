@@ -1,6 +1,6 @@
 # Tech Stack
 
-- **Last updated:** 2026-10-04
+- **Last updated:** 2026-10-11
 - **Owner:** Project team
 - **Status:** Initial implementation aligned with accepted ADRs
 
@@ -30,6 +30,7 @@
 | Styling | Tailwind CSS 4 | ใช้ utility classes; CSS เพิ่มเฉพาะกรณี custom จริง ([ADR-0005](0005-use-tailwild-for-css-styling)) |
 | Server state | TanStack Query 5 + tRPC 11 | ไม่เรียก internal API ด้วย fetch/axios จาก feature code |
 | Form | react-hook-form + Zod 4 | validation ฝั่ง client และ server |
+| UI icons | lucide-react | ติดตั้งอยู่ใน frontend; component sheet/UI kit ใหม่ต้องผ่าน dependency ledger ด้านล่าง |
 | Authentication | Better Auth 1.7 | email/password, Argon2id, secure session cookie |
 | Database client | Prisma 7 + PostgreSQL adapter | migration เป็นแหล่ง schema change |
 | Logging | NestJS Logger / structured logs | ห้าม log password, credential หรือ API key |
@@ -46,6 +47,63 @@
 | Local dependencies | Docker Compose: PostgreSQL และ Mailpit |
 | Production | Docker Compose เป็น baseline สำหรับเริ่มระบบ; แยก environment และ secret ก่อน deploy |
 | Production capacity | Host 8 GB RAM / 4 vCPU; Compose service limits รวมตั้งต้นไม่เกิน 3 vCPU / 5.3 GB เพื่อกัน headroom ให้ OS และ Docker |
+
+## Dependency proposals and implementation status
+
+ใช้ร่วมกับ [UI delivery workflow](../workflow/ui-delivery.md) และ feature `dependencies.md`.
+ตรวจ `package.json` และ `pnpm-lock.yaml` ก่อนเลือก library; ตาราง stack ด้านบนคือ baseline
+ที่ติดตั้งอยู่ ไม่ใช่รายการเสนอใหม่. `ui-spec` และ `sa` เพิ่มรายการด้านล่างเมื่อมีดีไซน์/งานจริง
+พร้อมเหตุผล ลิงก์เอกสารทางการ ความเข้ากันได้ และต้นทุน bundle/runtime บน host 8 GB / 4 vCPU.
+
+| Package / workspace | Status | Purpose / feature / revision | Official evidence / alternatives | Bundle / host cost | ADR / review bundle | Owner approval evidence | Installed version |
+|---|---|---|---|---|---|---|---|
+| `jose@6.2.12` in `backend-api-auth` | approved | EdDSA JWT verification and development-only mock token signing; `auth-license` SA revision 2, BE-LIC-001/005 | [Official jose API docs](https://github.com/panva/jose/tree/main/docs) and [v6.2.12 release](https://github.com/panva/jose/releases/tag/v6.2.12); exact direct version avoids custom JWT code | Existing auth process; no container. CPU/latency runtime measurements remain pending. | ADR-0013/0014, [auth-license bundle](../apps/backend/auth/license-integration/architecture.md) | Owner approved SA revision 2 on 2026-10-11 (`อนุมัติชุดนี้`) | Installed as exact direct dependency `6.2.12` |
+
+ยังไม่มี library ใหม่ที่เสนอจากงานตั้งค่า workflow นี้; ตัวอย่าง Vendor sheet ไม่ใช่คำสั่งติดตั้ง.
+เมื่อมีข้อเสนอจริง ให้แทนข้อความนี้ด้วยรายการหรือสรุปที่ตรงกับ ledger.
+
+- **proposed:** วิเคราะห์แล้ว แต่ยังไม่อนุมัติและยังไม่ติดตั้ง.
+- **approved:** เจ้าของตรวจและอนุมัติ revision/package ที่ระบุแล้ว; บันทึกหลักฐานจริง.
+- **installed:** frontend/backend ติดตั้งระหว่างทำงานที่อนุมัติแล้ว และตรวจ manifest/lockfile
+  พร้อมบันทึกเวอร์ชันจริง; parent integration owner จัดการ shared files ทีละงาน.
+- **rejected:** ข้อเสนอถูกปฏิเสธหรือแทนด้วยวิธีอื่น; เก็บเหตุผลและตัวเลือกที่เลือก.
+
+Frontend ต้องอ่าน ledger และ `dependencies.md` ของ TODO ล่าสุดทุกครั้งที่เริ่มงาน.
+Core stack, service, runtime/queue/cache ใหม่ หรือการเปลี่ยนสถาปัตยกรรมต้องมี ADR และการตรวจ
+เอกสาร SA ก่อน code/migration/API wiring/dependency installation ที่เกี่ยวข้อง.
+Approval ของ UI ไม่ครอบคลุมเอกสาร SA ที่สร้างภายหลัง และ approval ไม่ใช่หลักฐานการติดตั้ง.
+การเปลี่ยน flow/API/schema/package choice ต้องอัปเดต revision และให้ตรวจส่วนที่เปลี่ยนใหม่.
+
+## Development security audit tooling
+
+`sec-auditor` uses [Cloudflare security-audit-skill](https://github.com/cloudflare/security-audit-skill)
+at commit `c1c8a8c1471069fb0e188eeaff69b8e8db6564a8`, installed project-locally under
+`.codex/skills/sec-auditor/`. It adds no application package or runtime service. Original
+Node JSON validators run in a bounded Linux container on Windows using the existing local
+development image. Findings first enter `document/task/investigation/` for owner review;
+implementation and any dependency change require a selected approved scope.
+See [integration instructions](../skills/spec/sec-auditor-integration.md).
+
+## Container infrastructure role
+
+`infra` researches official, version-specific Docker/image/service configuration when an
+ADR adds or changes containers. Its bundle is included in relevant SA approval; accepted
+scoped work can then configure shared files through the parent integration owner. It checks
+required inter-service traffic, secrets, permissions, writable volumes, isolation, backups
+and the total 8 GB RAM / 4 vCPU budget. Reviews first stage findings in investigation.
+It adds no application dependency or background watcher. See
+[infra delivery](../workflow/infra-delivery.md) and [service index](../infra/service-index.md).
+
+## CI and image delivery
+
+`devops` acts as a senior DevOps engineer. GitHub Actions use Node from `.nvmrc`, pnpm from
+packageManager and the frozen lockfile; CI runs existing lint/build/typecheck and quiet
+Compose validation. A manual image workflow builds frontend/gateway/auth using pinned
+upstream actions; GHCR publication is off by default and gated by named configuration.
+No app package/test runner or production deployment is added. Build execution belongs on
+GitHub runners rather than the 8 GB RAM / 4 vCPU production host.
+See [GitHub configuration](../devops/github-configuration.md) and
+[DevOps delivery](../workflow/devops-delivery.md).
 
 ## Cookie และ consent
 

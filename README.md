@@ -1,21 +1,56 @@
 # f1-system
 
-Project-specific AI agent configuration and coordination rules for the React frontend and NestJS backend services.
+Project-specific AI skills, subagents, and documentation for the Next.js frontend and
+NestJS gateway/auth services.
 
-## Agent set
+## Project roles
 
-The project has seven agents: `lead-developer`, `senior-react-developer`, `senior-nestjs-developer`, `tester`, `manual-tester`, `security-auditor`, and `compliance-auditor`.
+Twelve agents are configured: `ui-spec`, `sa`, `lead-developer`, `senior-react-developer`,
+`senior-nestjs-developer`, `tester`, `manual-tester`, `security-auditor`,
+`compliance-auditor`, `sec-auditor`, `infra`, and `devops`. Canonical TOML definitions are in `.codex/agents/` with
+identical mirrors in `agents/`; project roles are registered in `.codex/config.toml`.
+Prompt shorthand routing is in [AGENTS.md](AGENTS.md).
 
-Their TOML files are mirrored in `.codex/agents/` and `agents/` for the two project integrations that consume them. Keep matching filenames byte-for-byte aligned when editing; `.codex/agents/` is the canonical copy. Do not add an agent for a stack or role that this project does not use.
+| Prompt | Role / skill |
+|---|---|
+| `ui-spec <Figma URL or attached image>` | Analyze UI and prepare the feature's reviewable documents/TODO |
+| `frontend ทำตาม Todo list ล่าสุด` | Resolve the latest approved frontend TODO and implement it |
+| `sa` | Service architecture, sequence/ER diagrams, API contracts, ADRs, backend TODO |
+| `backend` | Implement the approved service design |
+| `manual-test` / `manual-tester` / `user test` | Customer-perspective UI checks |
+| `sec-auditor` / `sec-audit` | Cloudflare security guidance or explicitly requested full audits |
+| `infra` | Container security review and researched configuration for approved ADR services |
+| `devops` | Senior DevOps for GitHub Actions, image builds and release/variable contracts |
 
-See [.ai/README.md](.ai/README.md) for the worktree, scope ownership, handoff, and integration workflow. The scope map is [.ai/ownership.yaml](.ai/ownership.yaml).
+All project documents are indexed in [document/README.md](document/README.md).
+The [UI delivery workflow](document/workflow/ui-delivery.md) defines separate UI and SA
+review, proposed -> approved -> installed package status, and automatic
+frontend -> SA -> backend -> frontend continuation. The latest selected TODO is
+[document/task/frontend-latest.md](document/task/frontend-latest.md).
 
-The `manual-tester` skill lives in `.codex/skills/manual-tester/` and writes customer-perspective UI test reports under `user-check/`.
+Coordination and scope ownership are in
+[document/coordination/README.md](document/coordination/README.md) and
+[ownership.yaml](document/coordination/ownership.yaml). Customer reports/screenshots
+live under `document/testing/user-check/`; completion reports under `document/task/done/`.
 
-## Short agent aliases
+New skill/agent discovery can require a new session or app reload. Definitions inherit the
+current session's model/effort/permissions and do not modify global or plugin skills.
 
-- `frontend` → `senior-react-developer` agent and `lead-frontend-engineer` skill.
-- `backend` → `senior-nestjs-developer` agent and skill.
+Audit findings first enter [document/task/investigation/](document/task/investigation/README.md)
+for owner review. Select a ticket later with `frontend แก้ investigation INV-...` or
+`backend แก้ investigation INV-...`. Audits do not automatically change application code.
+See [Sec Auditor integration](document/skills/spec/sec-auditor-integration.md) for the
+pinned upstream source, evidence storage, and Linux validator runner on Windows.
+
+Infra delivery is documented in [infra workflow](document/workflow/infra-delivery.md).
+New/changed container ADRs trigger service-specific research through the parent; approved
+configuration preserves required communication and the total 8 GB RAM / 4 vCPU budget.
+Infra review findings enter investigation before `infra แก้ investigation INV-...`.
+
+[CI](.github/workflows/ci.yml) checks all three apps on dev/master pushes and pull requests.
+[Service images](.github/workflows/service-images.yml) is manual; publication defaults off.
+See [GitHub variables/secrets setup](document/devops/github-configuration.md) and
+[DevOps delivery](document/workflow/devops-delivery.md). No production deployment is enabled.
 
 ## Local application setup
 

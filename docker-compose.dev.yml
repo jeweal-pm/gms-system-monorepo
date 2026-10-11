@@ -18,6 +18,15 @@ services:
     command: ["sh", "-c", "pnpm --filter @gem-crm/backend-api-auth db:generate && pnpm --filter @gem-crm/backend-api-auth db:migrate && pnpm --filter @gem-crm/backend-api-auth dev"]
     environment:
       NODE_ENV: development
+      LICENSE_MODE: ${LICENSE_MODE:-mock}
+      LICENSE_API_URL: ${LICENSE_API_URL:-}
+      LICENSE_INSTANCE_ID: ${LICENSE_INSTANCE_ID:-local-dev}
+      LICENSE_INSTANCE_API_KEY: ${LICENSE_INSTANCE_API_KEY:-local-dev-only}
+      LICENSE_JWT_ISSUER: ${LICENSE_JWT_ISSUER:-f1-system-license-dev}
+      LICENSE_JWT_AUDIENCE: ${LICENSE_JWT_AUDIENCE:-f1-system-customer-backend}
+      LICENSE_PUBLIC_KEYS_JSON: ${LICENSE_PUBLIC_KEYS_JSON:-}
+      LICENSE_MOCK_KID: ${LICENSE_MOCK_KID:-}
+      LICENSE_MOCK_PRIVATE_KEY_PKCS8_BASE64: ${LICENSE_MOCK_PRIVATE_KEY_PKCS8_BASE64:-}
     volumes: *dev-volumes
 
   backend-api-gateway:

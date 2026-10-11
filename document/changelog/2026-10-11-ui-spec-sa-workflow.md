@@ -1,0 +1,4 @@
+- Created ui-spec and sa skills/subagents and updated all project roles for approved UI/SA TODO delivery and automatic service continuation.
+- Centralized project documents, handoffs, reviews, reports, and screenshots under document/; repaired moved links and obsolete stack/template paths.
+- Added frontend/backend templates, revision/approval records, latest-task selection, and a proposed/approved/installed dependency ledger for the shared 8 GB RAM / 4 vCPU host.
+- Validation: five skills, nine TOML roles/mirrors, YAML metadata, template/link checks, five preserved screenshot checksums, independent workflow review, and git diff --check. Details: [completion report](../task/done/2026-10-11-ui-spec-sa-document-workflow.md).

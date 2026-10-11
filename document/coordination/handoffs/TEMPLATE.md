@@ -1,0 +1,24 @@
+# Handoff: <feature / task>
+
+- Feature ID / UI revision:
+- SA revision / source UI revision (if applicable):
+- From role/scope:
+- To role/scope / parent integration owner:
+- Exact TODO IDs and source documents:
+- Approval status, approved revision, and owner evidence:
+- Required contract / diagrams / ADRs:
+- Dependency ledger entries and installation status:
+- Allowed code/document paths:
+- Integration-owned changes:
+- Infra service bundle/revision, ADR/config drift, network/egress and secret-adapter prerequisites (when containers change):
+- DevOps pipeline/source revision, Dockerfile/workspace dependencies, build/runtime variables, image platform and release/check requirements (when delivery changes):
+- Resource budget / capacity impact (8 GB RAM / 4 vCPU total):
+- Expected output and acceptance criteria:
+- Verification completed / not run:
+- Blocking item, if any:
+- Resume action and destination (backend -> frontend, etc.):
+- Corrective work ID / root-cause ledger link (if applicable):
+- Existing pass limit / allocated passes / active pass (inherit; never reset):
+- Changed evidence, contract, or prerequisite justifying this handoff:
+- Concrete receiving-role output / next fact needed:
+- Stop reason / terminal outcome / explicit extension evidence, if any:

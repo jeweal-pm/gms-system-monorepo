@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sec Auditor"
+  short_description: "Audit security and stage findings for review"
+  default_prompt: "Use $sec-auditor to review the requested security scope and stage findings in document/task/investigation for my review before fixes."

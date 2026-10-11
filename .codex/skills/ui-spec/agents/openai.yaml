@@ -1,0 +1,4 @@
+interface:
+  display_name: "UI Spec"
+  short_description: "Turn designs into reviewed frontend specifications"
+  default_prompt: "Use $ui-spec to analyze this design and prepare its frontend TODO for review."

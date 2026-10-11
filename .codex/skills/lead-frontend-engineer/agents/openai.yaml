@@ -1,0 +1,4 @@
+interface:
+  display_name: "Frontend"
+  short_description: "Implement approved UI TODOs and coordinate service work"
+  default_prompt: "Use $lead-frontend-engineer to implement the latest approved frontend TODO."

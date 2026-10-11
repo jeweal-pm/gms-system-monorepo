@@ -1,0 +1,4 @@
+interface:
+  display_name: "Senior DevOps Engineer"
+  short_description: "GitHub Actions and service release pipelines"
+  default_prompt: "Use $devops as a senior DevOps engineer to develop the current services' GitHub Actions and document the variables and secrets I should configure."
