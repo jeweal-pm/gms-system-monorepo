@@ -20,12 +20,12 @@ export const auth = betterAuth({
   secret: process.env.AUTH_SECRET ?? "local-build-secret-change-before-deploy-00000000",
   trustedOrigins: [...trustedOrigins],
   database: prismaAdapter(prisma, { provider: "postgresql" }),
+  disabledPaths: ["/request-password-reset", "/reset-password"],
   emailAndPassword: {
     enabled: true,
     disableSignUp: true,
     minPasswordLength: 4,
     maxPasswordLength: 64,
-    revokeSessionsOnPasswordReset: true,
     password: {
       hash: (password) => argon2.hash(password, { type: argon2.argon2id }),
       verify: ({ hash, password }) => argon2.verify(hash, password),
@@ -43,7 +43,6 @@ export const auth = betterAuth({
     max: 30,
     customRules: {
       "/sign-in/email": { window: 60, max: 5 },
-      "/request-password-reset": { window: 60, max: 5 },
     },
   },
   hooks: {
@@ -162,7 +161,7 @@ async function recordLoginAttempt(userId: string | null, email: string, success:
 
 async function retainOnlyNewestSession(userId: string) {
   await prisma.$transaction(async (transaction) => {
-    await transaction.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${userId}))`;
+    await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${userId}))`;
     await transaction.$executeRaw`
       DELETE FROM "auth"."Session" AS session
       WHERE session."userId" = ${userId}

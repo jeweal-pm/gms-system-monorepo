@@ -10,7 +10,8 @@ transport, database behavior, or packages.
   `src/trpc/router.ts`, and HTTP/CRM boundary. `src/main.ts` obtains the Better Auth session
   from auth with a bounded timeout. Frontend uses its same-origin proxy.
 - `backend-api-auth`: NestJS HTTP application, port 3101 by default, Better Auth Node handler
-  mounted at `/api/auth`, auth controllers/services and SMTP email handling.
+  mounted at `/api/auth`, and auth controllers/services. It sends no email
+  ([ADR-0015](../../adr/0015-remove-forgot-password-and-email.md)).
 - Both are HTTP today; no TCP transport, approval/notification service, Redis, or BullMQ
   dependency is configured in this checkout. Do not assume those services exist.
 - Prisma 7 and PostgreSQL adapter/pg are installed. Auth owns its Prisma schema, committed
@@ -18,7 +19,7 @@ transport, database behavior, or packages.
   `backend-api-auth/src/database/`. Never hand-edit generated Prisma output.
 - Root workspace uses pnpm 10.22.0. Database lifecycle and service module ownership follow
   [ADR-0001](../../adr/0001-record-architecture-decisions.md).
-- Existing login, generated-password, lockout, profile-password, and CRM contracts are in
+- Existing login, lockout, profile-password, and CRM provisioning (CRM-supplied password) contracts are in
   `document/spec/`, `document/diagram/login-flow.md`, and accepted auth ADRs.
 
 ## Service changes

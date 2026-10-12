@@ -10,7 +10,7 @@ No infrastructure review or container reconfiguration was performed while creati
 | Service | Source role/image | Environment coverage | ADR/source reference | Infra bundle/revision | Status | Applied config hash / checks / research date |
 |---|---|---|---|---|---|---|
 | postgres | PostgreSQL 18.6 Alpine | base + inherited dev | ADR-0001, ADR-0003; compose service postgres | none | not-reviewed | none |
-| mailpit | Mailpit v1.29 | base + inherited dev; production role needs decision | tech stack; compose service mailpit | none | not-reviewed | none |
+| mailpit | Mailpit v1.29 | removed from base + dev 2026-10-12 | [ADR-0015](../adr/0015-remove-forgot-password-and-email.md) revision 1 | none | removed | Compose service, `SMTP_*` env and auth `depends_on` removed; dev stack recreated with `--remove-orphans`, auth started without SMTP |
 | backend-api-auth | Node/NestJS HTTP, Prisma; shared dev image | base + dev override | ADR-0001, ADR-0006, ADR-0008 | none | not-reviewed | none |
 | backend-api-gateway | Node/NestJS HTTP gateway; shared dev image | base + dev override | ADR-0001, ADR-0007 | none | not-reviewed | none |
 | frontend | Node/Next.js; shared dev image | base + dev override | ADR-0004 Frontend | none | not-reviewed | none |

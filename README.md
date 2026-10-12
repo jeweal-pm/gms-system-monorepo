@@ -55,7 +55,7 @@ See [GitHub variables/secrets setup](document/devops/github-configuration.md) an
 ## Local application setup
 
 The initial runnable application lives in `frontend/`, `backend-api-gateway/`, and `backend-api-auth/`.
-It uses PostgreSQL and Mailpit from Docker Compose.
+It uses PostgreSQL from Docker Compose.
 
 ```powershell
 Copy-Item .env.example .env
@@ -71,8 +71,8 @@ The auth container regenerates Prisma Client from the mounted schema before appl
 so schema changes do not leave the persistent generated-client volume stale.
 Use `pnpm docker:dev:logs` to follow logs and `pnpm docker:dev:down` to stop the stack.
 
-Open `http://localhost:3000`; Mailpit is at `http://localhost:8025`. Create the first Super Admin through
-the documented CRM endpoint; the generated password is delivered to the Mailpit inbox. The complete
-PowerShell request and implementation notes are in [`document/task/done/2026-10-04-initial-frontend-backend-setup.md`](document/task/done/2026-10-04-initial-frontend-backend-setup.md).
+Open `http://localhost:3000`. Create the first Super Admin through the documented CRM endpoint, which
+takes the initial password in its request ([ADR-0015](document/adr/0015-remove-forgot-password-and-email.md)).
+For local demo accounts, run `pnpm --filter @gem-crm/backend-api-auth db:seed` inside the auth container.
 
-Replace the development `AUTH_SECRET`, `CRM_API_KEY`, SMTP configuration, and database credentials before deploying outside localhost.
+Replace the development `AUTH_SECRET`, `CRM_API_KEY`, and database credentials before deploying outside localhost.

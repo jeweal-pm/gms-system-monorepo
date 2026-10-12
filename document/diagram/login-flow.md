@@ -1,6 +1,6 @@
 # Login Flow Diagrams
 
-- **Last updated:** 2026-10-09
+- **Last updated:** 2026-10-12 ([ADR-0015](../adr/0015-remove-forgot-password-and-email.md): เอา forgot password และ email ออก)
 - **ต้นฉบับ:** Excalidraw (แนบลิงก์ไฟล์ต้นฉบับที่นี่)
 
 > Diagram เขียนด้วย Mermaid แสดงผลได้ใน GitHub, GitLab, VS Code (ติดตั้ง extension Markdown Preview Mermaid)
@@ -13,15 +13,13 @@
 flowchart TD
     A["/login"] --> B{"Login"}
     B -->|"login ปกติ"| C["กรอก email + password"]
-    B -->|"ลืมรหัสผ่าน"| F["Forgot password"]
+    B -->|"ลืมรหัสผ่าน"| F["ติดต่อผู้ดูแลระบบ (นอกระบบ)"]
     C --> D{"Login สำเร็จ?"}
     D -->|"ใช่"| E["Redirect ไปหน้า Home"]
     D -->|"ไม่"| H{"ผิดครบ 3 ครั้ง?"}
     H -->|"ยัง (เหลืออีก n ครั้ง)"| C
     H -->|"ครบ"| L["รอ 1 นาที<br/>(นับถอยหลัง)"]
     L --> C
-    F --> G["ระบบ generate password ใหม่<br/>ส่งไปที่ email"]
-    G --> C
     E -.->|"เมื่อต้องการ (ไม่บังคับ)"| P["Super Admin Profile page<br/>เปลี่ยน password"]
 ```
 
@@ -81,32 +79,19 @@ sequenceDiagram
     participant DB
     participant U as User
 
-    CRM->>API: POST /api/v1/users (email, name, role)
-    API->>API: generate password (secure random)
-    API->>DB: บันทึก user + password hash
-    API-->>CRM: 201 Created (ไม่มี password)
-    API-->>U: ส่ง email พร้อม password เริ่มต้น (ดู ADR-0010)
-```
-
-## 4. Forgot Password
-
-```mermaid
-sequenceDiagram
-    actor U as User
-    participant API as Our System
-    participant DB
-    participant Mail as Email Service
-
-    U->>API: POST /api/v1/auth/forgot-password (email)
-    API-->>U: 202 Accepted (ตอบเหมือนกันทุกกรณี)
-    alt email มีในระบบ
-        API->>API: generate password ใหม่
-        API->>DB: อัปเดต password hash
-        API->>Mail: ส่ง password ใหม่
-        Mail-->>U: email พร้อม password ใหม่
+    CRM->>API: POST /api/v1/users (email, name, role, password) ผ่าน HTTPS
+    alt password ไม่ผ่าน policy หรือข้อมูลไม่ครบ
+        API-->>CRM: 400 PASSWORD_POLICY_VIOLATION / VALIDATION_ERROR
+    else ผ่าน
+        API->>DB: บันทึก user + Argon2id password hash
+        API-->>CRM: 201 Created (ไม่มี password)
+        CRM-->>U: แจ้งรหัสผ่านเริ่มต้นทางช่องทางของ CRM (ดู ADR-0015)
     end
-    U->>API: POST /api/auth/sign-in/email (email, password ใหม่)
 ```
+
+## 4. Forgot Password (ยกเลิกแล้ว)
+
+เอาออกตาม [ADR-0015](../adr/0015-remove-forgot-password-and-email.md) ผู้ใช้ที่ลืมรหัสผ่านติดต่อผู้ดูแลระบบนอกระบบ
 
 ## 5. เปลี่ยน Password ที่ Profile Page
 
