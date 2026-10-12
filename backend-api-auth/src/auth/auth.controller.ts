@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, HttpCode, HttpException, HttpStatus, Ip, Post, Put, Req, Res } from "@nestjs/common";
+import { Body, Controller, Get, Headers, HttpCode, HttpException, HttpStatus, Post, Put, Req, Res } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { fromNodeHeaders } from "better-auth/node";
 import { auth } from "./auth";
@@ -70,18 +70,6 @@ export class AuthController {
       if (error instanceof LicenseDomainError && error.retryAfter) response.setHeader("retry-after", String(error.retryAfter));
       throw licenseException(error);
     }
-  }
-
-  @Post("api/v1/auth/forgot-password")
-  @HttpCode(HttpStatus.ACCEPTED)
-  async forgotPassword(@Body() body: unknown, @Ip() ip: string) {
-    try {
-      await this.authService.forgotPassword(body, ip);
-    } catch (error) {
-      if (error instanceof HttpException) throw error;
-      // Keep an accepted response for existing addresses and SMTP failures alike.
-    }
-    return { accepted: true, message: "หากอีเมลนี้มีอยู่ในระบบ เราได้ส่งรหัสผ่านใหม่ไปให้แล้ว" };
   }
 
   @Put("api/v1/me/password")

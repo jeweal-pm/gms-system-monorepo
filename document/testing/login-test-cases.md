@@ -1,6 +1,6 @@
 # Test Cases: Login & Password Management
 
-- **Last updated:** 2026-10-09
+- **Last updated:** 2026-10-12 ([ADR-0015](../adr/0015-remove-forgot-password-and-email.md))
 - **Related:** [Acceptance Criteria](../spec/0002-login-requirements.md#6-acceptance-criteria)
 
 ## Login
@@ -15,24 +15,26 @@
 | TC-06 | Login ระหว่างถูกล็อก | หลัง TC-05 กรอก password ถูกภายใน 1 นาที | 423 + เวลาที่เหลือ login ไม่สำเร็จ | ADR-0012 |
 | TC-07 | Login หลังครบเวลา | หลัง TC-05 รอครบ 1 นาที แล้วกรอก password ถูก | Login สำเร็จ | ADR-0012 |
 | TC-08 | Reset ตัวนับเมื่อสำเร็จ | ผิด 2 ครั้ง แล้ว login สำเร็จ แล้วผิดอีก 1 ครั้ง | 401 เหลืออีก 2 ครั้ง (ไม่ถูกล็อก) | ADR-0012 |
+| TC-09 | ไม่มี forgot password | เปิดหน้า `/login` | ไม่มีลิงก์หรือข้อความเรื่องลืมรหัสผ่าน | AC-01, ADR-0015 |
 
 ## สร้าง User ผ่าน CRM
 
 | ID | กรณี | ขั้นตอน | ผลที่คาดหวัง | อ้างอิง |
 |---|---|---|---|---|
-| TC-10 | สร้างสำเร็จ | CRM เรียก POST /users ด้วย email ใหม่ | 201, response ไม่มี password, login ด้วยรหัสที่ได้รับได้ | AC-02 |
+| TC-10 | สร้างสำเร็จ | CRM เรียก POST /users ด้วย email ใหม่และ password ที่ผ่าน policy | 201, response ไม่มี password, login ด้วยรหัสนั้นได้ | AC-02 |
 | TC-11 | Email ซ้ำ | เรียกด้วย email ที่มีแล้ว | 409 | AC-02 |
 | TC-12 | ไม่มี API key | เรียกโดยไม่ใส่ X-API-Key | 401 | API |
-| TC-13 | Password ที่ generate ผ่าน policy | สร้าง user 100 ครั้ง ตรวจรหัสที่ได้ | ผ่าน policy ทุกครั้ง ไม่ซ้ำกัน | BR-02 |
+| TC-13 | ไม่มี password | เรียกโดยไม่ส่ง `password` | 400 `VALIDATION_ERROR` ไม่สร้าง user | AC-02, ADR-0015 |
+| TC-14 | Password ไม่ผ่าน policy | ส่ง `password` = `abc` | 400 `PASSWORD_POLICY_VIOLATION` ไม่สร้าง user | AC-02, ADR-0015 |
+| TC-15 | ไม่มี password ใน log | หลัง TC-10 ตรวจ log ของ gateway/auth | ไม่พบรหัสผ่าน | ADR-0015 |
 
-## Forgot Password
+## Forgot Password (ยกเลิกตาม ADR-0015)
 
 | ID | กรณี | ขั้นตอน | ผลที่คาดหวัง | อ้างอิง |
 |---|---|---|---|---|
-| TC-20 | Email มีในระบบ | กรอก email ที่มี กดส่ง | ได้รับ email พร้อมรหัสใหม่ | AC-03 |
-| TC-21 | Email ไม่มีในระบบ | กรอก email ที่ไม่มี | ข้อความบนจอเหมือน TC-20 ไม่มี email ส่งออก | AC-03 |
-| TC-22 | รหัสเดิมใช้ไม่ได้ | หลัง TC-20 login ด้วยรหัสเดิม | Login ไม่สำเร็จ | AC-03 |
-| TC-23 | Login ด้วยรหัสใหม่ | หลัง TC-20 login ด้วยรหัสจาก email | Login สำเร็จ | AC-03 |
+| TC-20 | หน้า forgot password ถูกลบ | เปิด `/forgot-password` | 404 | AC-03 |
+| TC-21 | API forgot password ถูกลบ | POST `/api/v1/auth/forgot-password` ผ่าน gateway และ auth | 404 | AC-03 |
+| TC-22 | Better Auth reset ถูกปิด | POST `/api/auth/request-password-reset` และ `/api/auth/reset-password` | 404 | AC-03 |
 
 ## เปลี่ยน Password
 
@@ -43,4 +45,4 @@
 | TC-32 | ยาวเกิน | กรอก 65 ตัวอักษร | error: ไม่เกิน 64 ตัวอักษร | Policy |
 | TC-33 | ไม่บังคับประเภทตัวอักษร | กรอก `1234` | บันทึกสำเร็จ | Policy |
 | TC-35 | Confirm ไม่ตรง | password `abcd` confirm `abce` | error: รหัสผ่านยืนยันไม่ตรงกัน | BR-06 |
-| TC-36 | ไม่บังคับเปลี่ยน | Login ครั้งแรกด้วยรหัสที่ระบบ generate | เข้าหน้า Default ได้เลย ไม่มี popup | BR-04 |
+| TC-36 | ไม่บังคับเปลี่ยน | Login ครั้งแรกด้วยรหัสเริ่มต้นจาก CRM | เข้าหน้า Default ได้เลย ไม่มี popup | BR-04 |

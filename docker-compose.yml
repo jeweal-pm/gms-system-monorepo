@@ -21,18 +21,6 @@ services:
       timeout: 5s
       retries: 20
 
-  mailpit:
-    image: axllent/mailpit:v1.29
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: "0.15"
-          memory: 256M
-    ports:
-      - "1025:1025"
-      - "8025:8025"
-
   backend-api-auth:
     build:
       context: .
@@ -59,15 +47,9 @@ services:
       LICENSE_PUBLIC_KEYS_JSON: ${LICENSE_PUBLIC_KEYS_JSON:-}
       LICENSE_MOCK_KID: ${LICENSE_MOCK_KID:-}
       LICENSE_MOCK_PRIVATE_KEY_PKCS8_BASE64: ${LICENSE_MOCK_PRIVATE_KEY_PKCS8_BASE64:-}
-      SMTP_HOST: mailpit
-      SMTP_PORT: 1025
-      SMTP_SECURE: "false"
-      SMTP_FROM: GMS <no-reply@localhost>
     depends_on:
       postgres:
         condition: service_healthy
-      mailpit:
-        condition: service_started
     ports:
       - "3101:3101"
 

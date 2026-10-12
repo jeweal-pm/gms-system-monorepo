@@ -8,4 +8,4 @@
 | tRPC | Typed API boundary used by frontend application data |
 | Better Auth | Authentication library for email/password sign-in and session cookies |
 | CRM API key | Server-to-server secret used by CRM to provision a GMS user; never sent to browser code |
-| Mailpit | Local SMTP catcher and inbox UI used to inspect development email without sending real mail |
+| Mailpit | Local SMTP catcher formerly used in development; removed with all email by [ADR-0015](adr/0015-remove-forgot-password-and-email.md) |

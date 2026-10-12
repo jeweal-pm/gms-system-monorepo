@@ -2,7 +2,6 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Eye, EyeOff } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -120,9 +119,7 @@ export function LoginForm() {
       </div>
 
       <div className="mt-8 flex flex-wrap items-center justify-between gap-y-3 pt-1 text-[15px]">
-        <label className="flex items-center gap-2.5 text-[#657681]"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="size-5 rounded border border-[#cbdce2] accent-[#007570]" /> Remember this device</label>
-        <Link href="/forgot-password" className="font-medium text-[#4289f5] hover:underline">Forgot Password?</Link>
-      </div>
+        <label className="flex items-center gap-2.5 text-[#657681]"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="size-5 rounded border border-[#cbdce2] accent-[#007570]" /> Remember this device</label>      </div>
       {serverError && <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{lockoutSeconds > 0 ? `บัญชีถูกล็อกชั่วคราว กรุณารออีก ${lockoutSeconds} วินาที` : serverError}</p>}
       <button disabled={submitting || lockoutSeconds > 0} type="submit" className="mt-[19px] h-[64px] w-full rounded-xl bg-[#006d70] text-[17px] font-semibold text-white shadow-sm transition hover:bg-[#005a5d] disabled:cursor-wait disabled:opacity-65">
         {submitting ? "Logging in…" : lockoutSeconds > 0 ? `Try again in ${lockoutSeconds}s` : "Log in"}

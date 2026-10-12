@@ -106,14 +106,6 @@ model RateLimit {
   @@schema("auth")
 }
 
-model ForgotPasswordAttempt {
-  key       String   @id
-  count     Int
-  expiresAt DateTime
-
-  @@schema("auth")
-}
-
 model LicenseCache {
   userId      String    @id @map("user_id")
   token       String    @db.Text

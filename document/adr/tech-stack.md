@@ -34,7 +34,7 @@
 | Authentication | Better Auth 1.7 | email/password, Argon2id, secure session cookie |
 | Database client | Prisma 7 + PostgreSQL adapter | migration เป็นแหล่ง schema change |
 | Logging | NestJS Logger / structured logs | ห้าม log password, credential หรือ API key |
-| Email | SMTP; Mailpit สำหรับ local | production ต้องกำหนด SMTP provider |
+| Email | ไม่มี | ระบบไม่ส่ง email; เอา SMTP, Mailpit และ `nodemailer` ออกตาม [ADR-0015](0015-remove-forgot-password-and-email.md) |
 
 ## Development และ deployment
 
@@ -44,9 +44,9 @@
 | Lint / format | ESLint, Prettier |
 | Unit / integration | ยังไม่มี test runner; เพิ่ม Vitest เมื่อเริ่มทำชุดทดสอบ |
 | UI / E2E | ยังไม่มี browser automation; เพิ่ม Playwright เมื่อเริ่มทำ E2E suite |
-| Local dependencies | Docker Compose: PostgreSQL และ Mailpit |
+| Local dependencies | Docker Compose: PostgreSQL |
 | Production | Docker Compose เป็น baseline สำหรับเริ่มระบบ; แยก environment และ secret ก่อน deploy |
-| Production capacity | Host 8 GB RAM / 4 vCPU; Compose service limits รวมตั้งต้นไม่เกิน 3 vCPU / 5.3 GB เพื่อกัน headroom ให้ OS และ Docker |
+| Production capacity | Host 8 GB RAM / 4 vCPU; Compose service limits รวม 2.85 vCPU / 5.0 GiB (หลังเอา Mailpit ออกตาม ADR-0015) เพื่อกัน headroom ให้ OS และ Docker |
 
 ## Dependency proposals and implementation status
 
@@ -57,6 +57,7 @@
 
 | Package / workspace | Status | Purpose / feature / revision | Official evidence / alternatives | Bundle / host cost | ADR / review bundle | Owner approval evidence | Installed version |
 |---|---|---|---|---|---|---|---|
+| `nodemailer@^7.0.12`, `@types/nodemailer@^7.0.4` in `backend-api-auth` | removed | ระบบไม่ส่ง email แล้ว; feature `remove-forgot-password-email` SA revision 1 | n/a (removal) | ลด dependency และ SMTP egress; ไม่มี runtime เพิ่ม | [ADR-0015](0015-remove-forgot-password-and-email.md) | Owner instructed implementation of revision 1 on 2026-10-12 | Removed from manifest and lockfile 2026-10-12 |
 | `jose@6.2.12` in `backend-api-auth` | approved | EdDSA JWT verification and development-only mock token signing; `auth-license` SA revision 2, BE-LIC-001/005 | [Official jose API docs](https://github.com/panva/jose/tree/main/docs) and [v6.2.12 release](https://github.com/panva/jose/releases/tag/v6.2.12); exact direct version avoids custom JWT code | Existing auth process; no container. CPU/latency runtime measurements remain pending. | ADR-0013/0014, [auth-license bundle](../apps/backend/auth/license-integration/architecture.md) | Owner approved SA revision 2 on 2026-10-11 (`อนุมัติชุดนี้`) | Installed as exact direct dependency `6.2.12` |
 
 ยังไม่มี library ใหม่ที่เสนอจากงานตั้งค่า workflow นี้; ตัวอย่าง Vendor sheet ไม่ใช่คำสั่งติดตั้ง.
@@ -111,7 +112,8 @@ See [GitHub configuration](../devops/github-configuration.md) and
 
 ## เรื่องที่ต้องตัดสินใจก่อน production
 
-- กำหนด SMTP จริงและทดสอบการส่ง/ส่งซ้ำ/การกู้คืนเมื่อส่งไม่สำเร็จ
+- ตกลงกับทีม CRM ให้ส่ง `password` ผ่าน HTTPS และไม่ log รหัสผ่าน ([ADR-0015](0015-remove-forgot-password-and-email.md))
+- ออกแบบเครื่องมือให้ admin reset รหัสผ่าน user ที่ลืมรหัส (ADR แยก; ตอนนี้ไม่มีทางกู้รหัสในระบบ)
 - เปลี่ยน `AUTH_SECRET`, `CRM_API_KEY` และฐานข้อมูลเป็น secrets ที่จัดการภายนอก repository
 - ให้ DPO ทบทวน consent banner และ privacy notice ก่อนเพิ่ม third-party cookies หรือ analytics
 - ใช้ policy ล็อกบัญชีตาม [ADR-0012](0012-change-flow-login.md)

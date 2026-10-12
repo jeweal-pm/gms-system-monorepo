@@ -1,7 +1,7 @@
 # Password Policy
 
 - **Status:** Draft
-- **Last updated:** 2026-10-09
+- **Last updated:** 2026-10-12
 
 ## 1. Password ที่ user ตั้งเอง [จาก requirement]
 
@@ -24,14 +24,12 @@ Regex อ้างอิง:
 > Policy นี้ง่ายตาม requirement การป้องกันการเดารหัสผ่านจึงพึ่งการล็อกบัญชีชั่วคราว
 > เมื่อใส่ผิด 3 ครั้ง ([ADR-0012](../adr/0012-change-flow-login.md)) ร่วมกับ rate limit ระดับ API
 
-## 2. Password เริ่มต้นและรหัสผ่านที่ระบบ generate
+## 2. Password เริ่มต้นจาก CRM
 
-ใช้ทั้งตอนสร้าง user และตอน forgot password
+ตาม [ADR-0015](../adr/0015-remove-forgot-password-and-email.md) ระบบไม่ generate รหัสผ่านอีกต่อไป
+CRM ส่งรหัสผ่านเริ่มต้นมากับ `POST /api/v1/users` และต้องผ่านกฎข้อ 1 (4–64 ตัวอักษร)
 
-- ความยาว 12 ตัวอักษร ประกอบด้วยตัวพิมพ์ใหญ่ ตัวพิมพ์เล็ก และตัวเลข [ข้อเสนอ]
-  (เข้มกว่ากฎข้อ 1 เพราะถูกส่งผ่าน email)
-- สุ่มด้วย cryptographically secure random (เช่น `crypto.randomInt` ใน Node.js, `secrets` ใน Python) ห้ามใช้ `Math.random()`
-- ตัดตัวอักษรที่สับสนง่ายออก เช่น `0 O o 1 l I` [ข้อเสนอ]
+- แนะนำให้ CRM สุ่มรหัสด้วย cryptographically secure random และยาวกว่าขั้นต่ำ [ข้อเสนอ]
 - อายุการใช้งาน: ไม่มีวันหมดอายุ; user เปลี่ยนได้จากหน้า Profile ตามการตัดสินใจของ product
 
 ## 3. ข้อความ Error

@@ -10,7 +10,7 @@
     "lint": "pnpm -r lint",
     "db:generate": "pnpm --filter @gem-crm/backend-api-auth db:generate",
     "db:migrate": "pnpm --filter @gem-crm/backend-api-auth db:migrate",
-    "infra:up": "docker compose up -d postgres mailpit",
+    "infra:up": "docker compose up -d postgres",
     "infra:down": "docker compose down",
     "docker:dev": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d",
     "docker:dev:build": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build",

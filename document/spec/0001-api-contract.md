@@ -1,7 +1,7 @@
 # API Contract: Login & Password Management
 
 - **Status:** Draft; initial implementation contract
-- **Last updated:** 2026-10-04
+- **Last updated:** 2026-10-12 ([ADR-0015](../adr/0015-remove-forgot-password-and-email.md): CRM ส่ง password, เอา forgot password ออก)
 
 > เมื่อ API นิ่งแล้ว แนะนำให้ย้ายไปเขียนเป็น OpenAPI (`openapi.yaml`) แทนไฟล์นี้
 
@@ -16,9 +16,13 @@ Request:
 {
   "email": "somchai@example.com",
   "name": "Somchai Jaidee",
-  "role": "SUPER_ADMIN"
+  "role": "SUPER_ADMIN",
+  "password": "********"
 }
 ```
+
+`password` จำเป็นต้องส่ง และต้องผ่าน [Password Policy ข้อ 1](0003-password-policy.md) (4–64 ตัวอักษร)
+CRM ต้องเรียกผ่าน HTTPS ไม่ log รหัสผ่าน และส่งรหัสให้ user ทางช่องทางของ CRM เอง
 
 Response `201 Created`:
 ```json
@@ -29,11 +33,12 @@ Response `201 Created`:
 }
 ```
 
-> Response **ไม่ส่ง password กลับไปให้ CRM**; ระบบส่ง credential ไปยัง email ของ user ตาม [ADR-0010](../adr/0010-system-generates-password.md)
+> Response **ไม่ส่ง password กลับ** ระบบเก็บเฉพาะ Argon2id hash และไม่ส่ง email ใด ๆ ตาม [ADR-0015](../adr/0015-remove-forgot-password-and-email.md)
 
 | Status | กรณี |
 |---|---|
-| 400 | ข้อมูลไม่ครบหรือรูปแบบ email ผิด |
+| 400 `VALIDATION_ERROR` | ข้อมูลไม่ครบ (รวมถึงไม่มี `password`) หรือรูปแบบ email ผิด |
+| 400 `PASSWORD_POLICY_VIOLATION` | `password` ไม่ผ่าน policy; ส่ง `violations` กลับ |
 | 401 | API key ไม่ถูกต้อง |
 | 409 | email นี้มีในระบบแล้ว |
 
@@ -63,22 +68,11 @@ Response ถูกกำหนดโดย Better Auth และส่ง sessio
 ไม่บันทึก email ดิบในประวัติ attempt ใช้ `auth.LoginLockout` ที่ keyed ด้วย hash เดียวกัน
 เพื่อให้ lockout/attempt count ไม่เปิดเผยว่า email มีบัญชีหรือไม่
 
-## 3. Forgot Password
+## 3. Forgot Password (ยกเลิกแล้ว)
 
-`POST /api/v1/auth/forgot-password`
-
-Request:
-```json
-{ "email": "somchai@example.com" }
-```
-
-`202 Accepted` **ทุกกรณี** ไม่ว่า email จะมีในระบบหรือไม่ ผ่าน `POST /api/v1/auth/forgot-password`
-เมื่อพบผู้ใช้ ระบบสุ่ม password ใหม่ ส่งทาง SMTP แล้วจึงแทน password เดิม
-
-| Status | กรณี |
-|---|---|
-| 400 | รูปแบบ email ผิด |
-| 429 | เรียกถี่เกินไป |
+เอาออกตาม [ADR-0015](../adr/0015-remove-forgot-password-and-email.md):
+`POST /api/v1/auth/forgot-password` และ Better Auth `/api/auth/request-password-reset`, `/api/auth/reset-password`
+ตอบ `404` ผู้ใช้ที่ลืมรหัสผ่านต้องติดต่อผู้ดูแลระบบนอกระบบ
 
 ## 4. เปลี่ยน Password (Profile page)
 

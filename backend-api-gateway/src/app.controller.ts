@@ -24,11 +24,6 @@ export class AppController {
     return this.forwardToAuth("/api/v1/users", request, response);
   }
 
-  @Post("api/v1/auth/forgot-password")
-  async forgotPassword(@Req() request: Request, @Res() response: Response) {
-    return this.forwardToAuth("/api/v1/auth/forgot-password", request, response);
-  }
-
   @Put("api/v1/me/password")
   async changePassword(@Req() request: Request, @Res() response: Response) {
     return this.forwardToAuth("/api/v1/me/password", request, response);

@@ -77,7 +77,7 @@ contract. Resolve the actual target/transport/infra rollout before enabling a de
 | DEPLOY_KNOWN_HOSTS | Environment secret/config, if SSH selected | Verified host key; never disable host-key checking |
 | GHCR_PULL_TOKEN | Environment/host secret, if needed | Read-only private-image pull access; do not reuse publish permissions |
 
-Application AUTH_SECRET, CRM_API_KEY, database and SMTP credentials stay in the eventual
+Application AUTH_SECRET, CRM_API_KEY and database credentials stay in the eventual
 infra-approved runtime secret contract. Do not inject production secrets into image build
 steps. All build context excludes .env variants and project skill/audit documents.
 

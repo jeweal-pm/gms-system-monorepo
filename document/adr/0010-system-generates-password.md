@@ -1,6 +1,6 @@
 # ADR-0010: ระบบเป็นผู้สร้างรหัสผ่านเริ่มต้น ไม่ใช่ CRM
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0015](0015-remove-forgot-password-and-email.md) (2026-10-12)
 - **Date:** 2026-10-04
 - **Deciders:** Jakapong Chan-o ( PM )
 
