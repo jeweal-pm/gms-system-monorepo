@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { GmsMark } from "./gms-mark";
-import { navigationGroups, reportLibraryItems } from "./navigation";
+import { navigationGroups, navigationHref, reportLibraryItems } from "./navigation";
 
 const icons = [LayoutDashboard, FileText, Warehouse, UsersRound, Gem, TableProperties, Settings];
 const headerDateFormatter = new Intl.DateTimeFormat("en-GB", {
@@ -109,8 +109,9 @@ export function AppShell({ children, breadcrumb = "Home" }: Readonly<{ children:
                 {groupIndex > 0 && <h2 className="mb-1.5 text-[9px] font-medium uppercase tracking-wide text-[#98a4ad]">{group.title}</h2>}
                 {group.items.map((item, index) => {
                   const Icon = icons[(groupIndex + index) % icons.length];
-                  const active = pathname === `/modules/${item.slug}`;
-                  return <Link key={item.slug} href={`/modules/${item.slug}`} className={`flex h-[29px] items-center gap-2 rounded px-1.5 text-[11px] ${active ? "bg-[#eaf3ff] text-[#1677ed]" : "text-[#344451] hover:bg-slate-50"}`}><Icon size={13} strokeWidth={1.8} />{item.label}</Link>;
+                  const href = navigationHref(item);
+                  const active = pathname === href;
+                  return <Link key={item.slug} href={href} aria-current={active ? "page" : undefined} className={`flex h-[29px] items-center gap-2 rounded px-1.5 text-[11px] ${active ? "bg-[#eaf3ff] text-[#1677ed]" : "text-[#344451] hover:bg-slate-50"}`}><Icon size={13} strokeWidth={1.8} />{item.label}</Link>;
                 })}
               </div>
             {groupIndex === 7 && (

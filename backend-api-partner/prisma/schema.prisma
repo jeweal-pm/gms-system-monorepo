@@ -1,0 +1,70 @@
+// backend-api-partner owns PostgreSQL schema "partner" only (ADR-0018, SA customer rev 1).
+// Migrations live in partner._prisma_migrations (D-01). Raw CHECK constraints are added in the
+// migration SQL (database-diagram.md); Prisma does not diff CHECKs.
+
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["partner"]
+}
+
+enum AddressType {
+  INVOICE
+  SHIPPING
+
+  @@map("address_type")
+  @@schema("partner")
+}
+
+model Customer {
+  id           String            @id @default(uuid()) @db.Uuid
+  name         String            @db.VarChar(200)
+  nameKey      String            @map("name_key") @db.VarChar(200)
+  code         String?           @db.VarChar(120)
+  codeKey      String?           @unique(map: "customer_code_key_key") @map("code_key") @db.VarChar(120)
+  currencyCode String            @map("currency_code") @db.Char(3)
+  active       Boolean           @default(true)
+  firstName    String            @map("first_name") @db.VarChar(100)
+  middleName   String?           @map("middle_name") @db.VarChar(100)
+  lastName     String?           @map("last_name") @db.VarChar(100)
+  phoneE164    String?           @map("phone_e164") @db.VarChar(16)
+  phoneCountry String?           @map("phone_country") @db.Char(2)
+  email        String            @db.VarChar(254)
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamp(3)
+  /// Optimistic version; written explicitly by the service (D-05), not @updatedAt.
+  updatedAt    DateTime          @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy    String            @map("created_by") @db.VarChar(64)
+  updatedBy    String            @map("updated_by") @db.VarChar(64)
+  addresses    CustomerAddress[]
+
+  @@index([nameKey, id], map: "customer_name_key_id_idx")
+  @@index([active, nameKey, id], map: "customer_active_name_key_id_idx")
+  @@map("customer")
+  @@schema("partner")
+}
+
+model CustomerAddress {
+  id          String      @id @default(uuid()) @db.Uuid
+  customerId  String      @map("customer_id") @db.Uuid
+  type        AddressType
+  position    Int         @db.SmallInt
+  name        String      @db.VarChar(200)
+  taxId       String?     @map("tax_id") @db.VarChar(32)
+  address     String      @db.VarChar(500)
+  countryCode String      @map("country_code") @db.Char(2)
+  state       String      @db.VarChar(100)
+  city        String      @db.VarChar(100)
+  postcode    String      @db.VarChar(20)
+  isDefault   Boolean     @default(false) @map("is_default")
+  customer    Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, type, position], map: "customer_address_position_key")
+  @@unique([customerId, type], where: { isDefault: true }, map: "customer_address_one_default_key")
+  @@map("customer_address")
+  @@schema("partner")
+}

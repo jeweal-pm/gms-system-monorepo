@@ -2,7 +2,7 @@
 
 import { ChevronsUpDown } from "lucide-react";
 import type { Ref } from "react";
-import { PHONE_COUNTRIES, phoneCountry, type PhoneValue } from "../../phone";
+import { PHONE_COUNTRIES, phoneCountry, type PhoneValue } from "@/lib/phone";
 import { cx } from "./button";
 import { FieldShell, fieldBoxClass, fieldFocusWithinClass } from "./outlined-field";
 

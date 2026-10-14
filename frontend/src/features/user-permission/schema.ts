@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DEFAULT_PHONE_COUNTRY, toE164 } from "./phone";
+import { DEFAULT_PHONE_COUNTRY, toE164 } from "@/lib/phone";
 
 /**
  * Create-user form (FE-UP-005, SA revision 1 follow-ups).

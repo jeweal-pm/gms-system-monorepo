@@ -1,7 +1,7 @@
 "use client";
 
 import { CopyPlus, FileSpreadsheet, Plus, Printer, RotateCw } from "lucide-react";
-import { Button, IconButton, cx } from "./ui/button";
+import { Button, IconButton, cx } from "@/components/ui/button";
 
 type PageHeaderProps = {
   formId: string;

@@ -1,7 +1,20 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { AUTH_TIMEOUT_MS, callAuth } from "./auth-client";
+import {
+  assertSingleDefaults,
+  createCustomerInputSchema,
+  customerDeleteOutputSchema,
+  customerDetailOutputSchema,
+  customerIdInputSchema,
+  customerListInputSchema,
+  customerListOutputSchema,
+  customerMutationOutputSchema,
+  customerOptionsOutputSchema,
+  updateCustomerInputSchema,
+} from "./customer-schemas";
 import { describeError, domainError } from "./domain-error";
+import { callPartner, PARTNER_TIMEOUT_MS } from "./partner-client";
 import {
   catalogOutputSchema,
   createUserInputSchema,
@@ -14,7 +27,8 @@ import {
   type PermissionAction,
 } from "./user-admin-schemas";
 
-export type HomeItem = { label: string; slug: string };
+/** `href` overrides the default `/modules/<slug>` link when the item has a real page (customer). */
+export type HomeItem = { label: string; slug: string; href?: string };
 export type HomeGroup = { title: string; items: HomeItem[] };
 export type SessionUser = { id: string; email: string; name: string; role?: string };
 export type GatewayLicenseState = "VALID" | "EXPIRING" | "EXPIRED" | "REVOKED" | "REQUIRED" | "GRACE" | "UNVERIFIABLE";
@@ -79,7 +93,7 @@ export function permittedProcedure(menuKey: string, action: PermissionAction) {
 export const shortcutGroups: HomeGroup[] = [
   { title: "Main Menu", items: [{ label: "Dashboard", slug: "dashboard" }, { label: "Quotation", slug: "quotation" }, { label: "Reserve", slug: "reserve" }] },
   { title: "Company", items: [{ label: "Company Profile", slug: "company-profile" }, { label: "Bank", slug: "bank" }] },
-  { title: "Partner Master", items: [{ label: "Vendor", slug: "vendor" }, { label: "Customer", slug: "customer" }] },
+  { title: "Partner Master", items: [{ label: "Vendor", slug: "vendor" }, { label: "Customer", slug: "customer", href: "/setup/customer" }] },
   { title: "Stone Master", items: ["Stone Group", "Stone", "Shape", "Size", "Color", "Cutting", "Quality", "Clarity"].map((label) => ({ label, slug: label.toLowerCase().replaceAll(" ", "-") })) },
   { title: "Purchase Order", items: [{ label: "Purchase Order", slug: "purchase-order" }, { label: "Purchase (PU)", slug: "purchase" }] },
   { title: "Memo", items: ["Memo In", "Memo Return", "Memo Out", "Memo Out Return"].map((label) => ({ label, slug: label.toLowerCase().replaceAll(" ", "-") })) },
@@ -129,6 +143,46 @@ export const appRouter = t.router({
     })),
     locationOptions: superAdminProcedure.query(({ ctx }) => callAuth({
       cookie: ctx.cookie, method: "GET", path: "/internal/v1/user-admin/location-options", timeoutMs: AUTH_TIMEOUT_MS.read, responseSchema: locationOptionsOutputSchema,
+    })),
+  }),
+  /** customer SA revision 1 (ADR-0018): gateway enforces `customer:*`; partner owns the data. */
+  customer: t.router({
+    list: permittedProcedure("customer", "VIEW").input(customerListInputSchema).query(({ ctx, input }) => {
+      const query = new URLSearchParams({ limit: String(input.limit) });
+      if (input.q) query.set("q", input.q);
+      if (input.active !== undefined) query.set("active", String(input.active));
+      if (input.cursor) query.set("cursor", input.cursor);
+      return callPartner({
+        method: "GET", path: `/internal/v1/customers?${query.toString()}`, route: "GET /customers", timeoutMs: PARTNER_TIMEOUT_MS.read,
+        actorId: ctx.session.user.id, responseSchema: customerListOutputSchema,
+      });
+    }),
+    get: permittedProcedure("customer", "VIEW").input(customerIdInputSchema).query(({ ctx, input }) => callPartner({
+      method: "GET", path: `/internal/v1/customers/${encodeURIComponent(input.id)}`, route: "GET /customers/:id", timeoutMs: PARTNER_TIMEOUT_MS.read,
+      actorId: ctx.session.user.id, responseSchema: customerDetailOutputSchema,
+    })),
+    options: permittedProcedure("customer", "VIEW").query(({ ctx }) => callPartner({
+      method: "GET", path: "/internal/v1/customers/options", route: "GET /customers/options", timeoutMs: PARTNER_TIMEOUT_MS.read,
+      actorId: ctx.session.user.id, responseSchema: customerOptionsOutputSchema,
+    })),
+    create: permittedProcedure("customer", "ADD").input(createCustomerInputSchema).mutation(({ ctx, input }) => {
+      assertSingleDefaults(input);
+      return callPartner({
+        method: "POST", path: "/internal/v1/customers", route: "POST /customers", timeoutMs: PARTNER_TIMEOUT_MS.write,
+        actorId: ctx.session.user.id, responseSchema: customerMutationOutputSchema, body: input,
+      });
+    }),
+    update: permittedProcedure("customer", "EDIT").input(updateCustomerInputSchema).mutation(({ ctx, input }) => {
+      assertSingleDefaults(input);
+      const { id, ...body } = input;
+      return callPartner({
+        method: "PUT", path: `/internal/v1/customers/${encodeURIComponent(id)}`, route: "PUT /customers/:id", timeoutMs: PARTNER_TIMEOUT_MS.write,
+        actorId: ctx.session.user.id, responseSchema: customerMutationOutputSchema, body,
+      });
+    }),
+    delete: permittedProcedure("customer", "DELETE").input(customerIdInputSchema).mutation(({ ctx, input }) => callPartner({
+      method: "DELETE", path: `/internal/v1/customers/${encodeURIComponent(input.id)}`, route: "DELETE /customers/:id", timeoutMs: PARTNER_TIMEOUT_MS.write,
+      actorId: ctx.session.user.id, responseSchema: customerDeleteOutputSchema,
     })),
   }),
 });
