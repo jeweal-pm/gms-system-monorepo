@@ -1,5 +1,18 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { AUTH_TIMEOUT_MS, callAuth } from "./auth-client";
+import { describeError, domainError } from "./domain-error";
+import {
+  catalogOutputSchema,
+  createUserInputSchema,
+  deleteOutputSchema,
+  locationOptionsOutputSchema,
+  userDetailOutputSchema,
+  userIdInputSchema,
+  userListOutputSchema,
+  userMutationOutputSchema,
+  type PermissionAction,
+} from "./user-admin-schemas";
 
 export type HomeItem = { label: string; slug: string };
 export type HomeGroup = { title: string; items: HomeItem[] };
@@ -13,13 +26,25 @@ export type GatewayLicenseStatus = {
   checkedAt?: string;
   retryAfter?: number;
 };
+/** Trusted authorization block from auth session-context (ADR-0016). Missing/malformed = no grants. */
+export type SessionAuthz = { isSuperAdmin: boolean; permissions: string[] };
+export const NO_AUTHZ: SessionAuthz = { isSuperAdmin: false, permissions: [] };
 export type TrpcContext = {
   session: { user: SessionUser } | null;
   license: GatewayLicenseStatus | null;
+  authz: SessionAuthz;
+  /** Caller cookie; forwarded only to auth internal endpoints. */
+  cookie: string | null;
   activateLicense: ((licenseKey: string) => Promise<GatewayLicenseStatus>) | null;
 };
 
-const t = initTRPC.context<TrpcContext>().create();
+const t = initTRPC.context<TrpcContext>().create({
+  // Additive for existing procedures: copies the domain code and bounded field errors into `data`.
+  errorFormatter({ shape, error }) {
+    const { domainCode, fieldErrors } = describeError(error);
+    return { ...shape, data: { ...shape.data, domainCode, fieldErrors } };
+  },
+});
 const publicProcedure = t.procedure;
 const authenticatedProcedure = t.procedure.use(({ ctx, next }) => {
   if (!ctx.session) throw new TRPCError({ code: "UNAUTHORIZED", message: "Authentication required" });
@@ -32,6 +57,24 @@ const protectedProcedure = authenticatedProcedure.use(({ ctx, next }) => {
   throw new TRPCError({ code: "FORBIDDEN", message: state === "EXPIRED" ? "LICENSE_EXPIRED" : state === "REVOKED" ? "LICENSE_REVOKED" : "LICENSE_REQUIRED" });
 });
 const licensedProcedure = protectedProcedure;
+
+/** Super Admin only (role "admin"); never bypasses the license check above. */
+const superAdminProcedure = licensedProcedure.use(({ ctx, next }) => {
+  if (!ctx.authz.isSuperAdmin) throw domainError("FORBIDDEN", "SUPER_ADMIN_REQUIRED");
+  return next();
+});
+
+/**
+ * ADR-0016 rule for every menu-scoped procedure: declare `menuKey:action`. Super Admin passes;
+ * others need the exact grant. Price/cost fields additionally require `menuKey:PRICE`.
+ */
+export function permittedProcedure(menuKey: string, action: PermissionAction) {
+  const required = `${menuKey}:${action}`;
+  return licensedProcedure.use(({ ctx, next }) => {
+    if (!ctx.authz.isSuperAdmin && !ctx.authz.permissions.includes(required)) throw domainError("FORBIDDEN", "PERMISSION_DENIED");
+    return next();
+  });
+}
 
 export const shortcutGroups: HomeGroup[] = [
   { title: "Main Menu", items: [{ label: "Dashboard", slug: "dashboard" }, { label: "Quotation", slug: "quotation" }, { label: "Reserve", slug: "reserve" }] },
@@ -61,6 +104,32 @@ export const appRouter = t.router({
         if (!ctx.activateLicense) throw new TRPCError({ code: "UNAUTHORIZED", message: "Authentication required" });
         return ctx.activateLicense(input.licenseKey);
       }),
+  }),
+  permission: t.router({
+    catalog: licensedProcedure.query(({ ctx }) => callAuth({
+      cookie: ctx.cookie, method: "GET", path: "/internal/v1/permission/catalog", timeoutMs: AUTH_TIMEOUT_MS.read, responseSchema: catalogOutputSchema,
+    })),
+    mine: licensedProcedure.query(({ ctx }) => ({
+      isSuperAdmin: ctx.authz.isSuperAdmin,
+      permissions: ctx.authz.isSuperAdmin ? "ALL" as const : ctx.authz.permissions,
+    })),
+  }),
+  userAdmin: t.router({
+    list: superAdminProcedure.query(({ ctx }) => callAuth({
+      cookie: ctx.cookie, method: "GET", path: "/internal/v1/user-admin/users", timeoutMs: AUTH_TIMEOUT_MS.read, responseSchema: userListOutputSchema,
+    })),
+    get: superAdminProcedure.input(userIdInputSchema).query(({ ctx, input }) => callAuth({
+      cookie: ctx.cookie, method: "GET", path: `/internal/v1/user-admin/users/${encodeURIComponent(input.id)}`, timeoutMs: AUTH_TIMEOUT_MS.read, responseSchema: userDetailOutputSchema,
+    })),
+    create: superAdminProcedure.input(createUserInputSchema).mutation(({ ctx, input }) => callAuth({
+      cookie: ctx.cookie, method: "POST", path: "/internal/v1/user-admin/users", timeoutMs: AUTH_TIMEOUT_MS.create, responseSchema: userMutationOutputSchema, body: input,
+    })),
+    delete: superAdminProcedure.input(userIdInputSchema).mutation(({ ctx, input }) => callAuth({
+      cookie: ctx.cookie, method: "DELETE", path: `/internal/v1/user-admin/users/${encodeURIComponent(input.id)}`, timeoutMs: AUTH_TIMEOUT_MS.write, responseSchema: deleteOutputSchema,
+    })),
+    locationOptions: superAdminProcedure.query(({ ctx }) => callAuth({
+      cookie: ctx.cookie, method: "GET", path: "/internal/v1/user-admin/location-options", timeoutMs: AUTH_TIMEOUT_MS.read, responseSchema: locationOptionsOutputSchema,
+    })),
   }),
 });
 

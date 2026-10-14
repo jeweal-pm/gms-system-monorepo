@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import * as argon2 from "argon2";
 import { prisma } from "../database/prisma-client";
+import { CATALOG_LEAF_KEYS } from "../permission/catalog";
 
 const demoPassword = "password123";
 const demoUsers = [
@@ -48,9 +49,17 @@ async function seed() {
         },
       });
     }
+
+    if (demoUser.role === "user") {
+      // Development only (BE-UP-013): the demo regular user gets VIEW on every catalog leaf.
+      await prisma.userPermission.createMany({
+        data: CATALOG_LEAF_KEYS.map((menuKey) => ({ userId: user.id, menuKey, action: "VIEW" as const })),
+        skipDuplicates: true,
+      });
+    }
   }
 
-  console.info(`Seeded ${demoUsers.length} local demo accounts.`);
+  console.info(`Seeded ${demoUsers.length} local demo accounts; the demo user has VIEW on ${CATALOG_LEAF_KEYS.length} menus.`);
 }
 
 seed().catch((error: unknown) => {

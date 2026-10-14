@@ -1,13 +1,12 @@
 # Latest frontend TODO
 
-- feature-id: none
-- revision: none
-- todo: none
-- source: none
-- backend-bundles: none
-- updated-at: 2026-10-11 (Asia/Bangkok)
+- feature-id: `user-permission`
+- revision: 1
+- status: approved-ui rev 1 (2026-10-12); SA/backend pending separate approval
+- todo: [todo/user-permission.md](todo/user-permission.md)
+- source: five owner-supplied screenshots in [apps/frontend/user-permission/source/](../apps/frontend/user-permission/source/)
+- backend-bundles: none yet. SA requested via [handoff](../coordination/handoffs/user-permission-sa.md) (requires-sa).
+- updated-at: 2026-10-12T10:45+07:00
 
-No UI design has been analyzed under this workflow yet. `ui-spec` updates this pointer
-after creating the first feature bundle. Workflow setup does not approve a page design.
-Read the linked TODO for authoritative approval and progress; see
-[the delivery workflow](../workflow/ui-delivery.md).
+Revision 1 UI is approved (see TODO approval table). Data-dependent items remain requires-sa. Read the linked TODO for authoritative approval and
+progress; see [the delivery workflow](../workflow/ui-delivery.md).

@@ -4,6 +4,7 @@ import { fromNodeHeaders } from "better-auth/node";
 import { auth } from "./auth";
 import { AuthService } from "./auth.service";
 import { LicenseDomainError, LicenseService } from "../license/license.service";
+import { loadSessionAuthz } from "../permission/grants";
 
 @Controller()
 export class AuthController {
@@ -27,21 +28,25 @@ export class AuthController {
   @Get("internal/v1/session-context")
   async sessionContext(@Req() request: Request) {
     const session = await auth.api.getSession({ headers: fromNodeHeaders(request.headers) });
-    if (!session) throw licenseException(new LicenseDomainError("UNAUTHORIZED", 401));
+    // Inactive accounts are rejected as unauthenticated (defense in depth, ADR-0017 §5).
+    if (!session || session.user.active === false) throw licenseException(new LicenseDomainError("UNAUTHORIZED", 401));
     const user = {
       id: session.user.id,
       email: session.user.email,
       name: session.user.name,
       role: typeof session.user.role === "string" ? session.user.role : "user",
+      active: true,
     };
+    // Uncached grants (ADR-0016 §4): changes apply on the caller's next request.
+    const authz = await loadSessionAuthz(user.id, user.role);
     try {
       const license = await this.licenseService.resolveStatus(user.id, user.email);
-      return { session: { user }, license };
+      return { session: { user }, license, authz };
     } catch (error) {
       if (error instanceof LicenseDomainError) {
-        return { session: { user }, license: { state: error.code === "LICENSE_REQUIRED" ? "REQUIRED" : "UNVERIFIABLE", checkedAt: new Date().toISOString() } };
+        return { session: { user }, license: { state: error.code === "LICENSE_REQUIRED" ? "REQUIRED" : "UNVERIFIABLE", checkedAt: new Date().toISOString() }, authz };
       }
-      return { session: { user }, license: { state: "UNVERIFIABLE", checkedAt: new Date().toISOString() } };
+      return { session: { user }, license: { state: "UNVERIFIABLE", checkedAt: new Date().toISOString() }, authz };
     }
   }
 

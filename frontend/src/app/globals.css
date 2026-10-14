@@ -1,5 +1,49 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens sampled for user-permission UI revision 1 (FE-UP-011,
+ * document/apps/frontend/user-permission/design-system.md). They live in a
+ * `gms-` namespace so they add utilities (bg-gms-primary, rounded-gms-md, ...)
+ * without overriding Tailwind defaults that existing pages already use.
+ * Font family is unchanged until Q-UP-27 is answered.
+ */
+@theme {
+  --color-gms-primary: #006a70;
+  --color-gms-primary-strong: #0e6064;
+  --color-gms-primary-subtle: #fafcfc;
+  --color-gms-on-primary: #ffffff;
+  --color-gms-page: #f9f9f9;
+  --color-gms-surface: #ffffff;
+  --color-gms-surface-muted: #fcfcfc;
+  --color-gms-surface-sunken: #f3f3f3;
+  --color-gms-upload-tile: #ececec;
+  --color-gms-border: #ededed;
+  --color-gms-border-drawer: #e8e8e8;
+  --color-gms-border-tabs: #e3e7ec;
+  --color-gms-divider-dialog: #dee3e3;
+  --color-gms-text: #1c252e;
+  --color-gms-text-heading: #17212b;
+  --color-gms-text-secondary: #656b71;
+  --color-gms-text-placeholder: #adb1b4;
+  --color-gms-danger: #df1016;
+  --color-gms-danger-button: #e01b21;
+  --color-gms-danger-subtle: #fae6e4;
+  --color-gms-success: #22c55e;
+  --color-gms-info-dot: #3385f0;
+  --color-gms-excel: #187949;
+  --color-gms-warning-subtle: #ffe7b8;
+  --color-gms-warning-text: #9a5b00;
+  --color-gms-checkbox-readonly: #a9a9a9;
+
+  --radius-gms-sm: 4px;
+  --radius-gms-md: 8px;
+  --radius-gms-lg: 12px;
+  --radius-gms-xl: 16px;
+
+  --shadow-gms-overlay: 0 12px 32px rgb(0 0 0 / 0.08);
+  --shadow-gms-tile: 0 1px 3px rgb(0 0 0 / 0.12);
+}
+
 :root {
   --gms-teal: #006c68;
   --gms-ink: #18232b;
