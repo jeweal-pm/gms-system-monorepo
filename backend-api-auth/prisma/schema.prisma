@@ -25,6 +25,56 @@ model User {
   loginAttempts    LoginAttempt[]
   licenseCache     LicenseCache?
   licenseActivationLockout LicenseActivationLockout?
+  active           Boolean          @default(true)
+  phoneE164        String?          @map("phone_e164") @db.VarChar(16)
+  phoneCountry     String?          @map("phone_country") @db.Char(2)
+  permissions      UserPermission[]
+  locations        UserLocation[]
+  photo            UserPhoto?
+
+  @@index([role, createdAt])
+  @@schema("auth")
+}
+
+enum PermissionAction {
+  VIEW
+  ADD
+  EDIT
+  DELETE
+  CANCEL
+  PRICE
+
+  @@schema("auth")
+}
+
+model UserPermission {
+  userId    String           @map("user_id")
+  menuKey   String           @map("menu_key") @db.VarChar(64)
+  action    PermissionAction
+  createdAt DateTime         @default(now()) @map("created_at")
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, menuKey, action])
+  @@schema("auth")
+}
+
+model UserLocation {
+  userId      String @map("user_id")
+  locationKey String @map("location_key") @db.VarChar(64)
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, locationKey])
+  @@schema("auth")
+}
+
+model UserPhoto {
+  userId      String   @id @map("user_id")
+  contentType String   @map("content_type") @db.VarChar(16)
+  data        Bytes
+  sizeBytes   Int      @map("size_bytes")
+  sha256      String   @db.Char(64)
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@schema("auth")
 }

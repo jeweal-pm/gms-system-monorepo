@@ -34,6 +34,7 @@ export const auth = betterAuth({
   user: {
     additionalFields: {
       role: { type: "string", required: true, defaultValue: "user", input: false },
+      active: { type: "boolean", required: false, defaultValue: true, input: false },
     },
   },
   rateLimit: {

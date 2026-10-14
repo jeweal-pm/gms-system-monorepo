@@ -56,6 +56,12 @@ export class LicenseService {
     });
   }
 
+  /** Drops the in-memory status entry for a deleted account (user-permission BE-UP-008). */
+  evictStatus(userId: string) {
+    this.statusCache.delete(userId);
+    this.inFlight.delete(userId);
+  }
+
   async resolveStatus(userId: string, email: string): Promise<LicensePublicStatus> {
     const cached = this.statusCache.get(userId);
     if (cached && cached.expiresAt > Date.now()) return cached.status;

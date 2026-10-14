@@ -5,11 +5,12 @@ import { TRPCError } from "@trpc/server";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import type { Request, Response } from "express";
 import { AppModule } from "./app.module";
-import { appRouter, type SessionUser, type TrpcContext } from "./trpc/router";
+import { appRouter, NO_AUTHZ, type SessionAuthz, type SessionUser, type TrpcContext } from "./trpc/router";
+import { MAX_GRANTS, PERMISSION_KEY_PATTERN } from "./trpc/user-admin-schemas";
 
 async function createContext({ req }: { req: Request; res: Response }): Promise<TrpcContext> {
   const cookie = req.headers.cookie;
-  if (!cookie) return { session: null, license: null, activateLicense: null };
+  if (!cookie) return { session: null, license: null, authz: NO_AUTHZ, cookie: null, activateLicense: null };
 
   try {
     const authUrl = process.env.AUTH_SERVICE_URL ?? "http://localhost:3101";
@@ -17,22 +18,25 @@ async function createContext({ req }: { req: Request; res: Response }): Promise<
       headers: { cookie },
       signal: AbortSignal.timeout(3_500),
     });
-    if (!response.ok) return { session: null, license: null, activateLicense: null };
+    if (!response.ok) return { session: null, license: null, authz: NO_AUTHZ, cookie: null, activateLicense: null };
     const data: unknown = await response.json();
-    if (typeof data !== "object" || data === null || !("session" in data) || !("license" in data)) return { session: null, license: null, activateLicense: null };
+    if (typeof data !== "object" || data === null || !("session" in data) || !("license" in data)) return { session: null, license: null, authz: NO_AUTHZ, cookie: null, activateLicense: null };
     const contextData = data as { session?: unknown; license?: unknown };
-    if (contextData.session === null) return { session: null, license: null, activateLicense: null };
-    if (typeof contextData.session !== "object" || contextData.session === null || !("user" in contextData.session)) return { session: null, license: null, activateLicense: null };
+    if (contextData.session === null) return { session: null, license: null, authz: NO_AUTHZ, cookie: null, activateLicense: null };
+    if (typeof contextData.session !== "object" || contextData.session === null || !("user" in contextData.session)) return { session: null, license: null, authz: NO_AUTHZ, cookie: null, activateLicense: null };
     const user = (contextData.session as { user?: unknown }).user;
-    if (typeof user !== "object" || user === null) return { session: null, license: null, activateLicense: null };
+    if (typeof user !== "object" || user === null) return { session: null, license: null, authz: NO_AUTHZ, cookie: null, activateLicense: null };
     const userRecord = user as Record<string, unknown>;
-    if (typeof userRecord.id !== "string" || typeof userRecord.email !== "string" || typeof userRecord.name !== "string") return { session: null, license: null, activateLicense: null };
+    if (typeof userRecord.id !== "string" || typeof userRecord.email !== "string" || typeof userRecord.name !== "string") return { session: null, license: null, authz: NO_AUTHZ, cookie: null, activateLicense: null };
     const sessionUser: SessionUser = { id: userRecord.id, email: userRecord.email, name: userRecord.name, role: typeof userRecord.role === "string" ? userRecord.role : undefined };
     const license = parseLicenseStatus(contextData.license);
-    if (!license) return { session: { user: sessionUser }, license: { state: "UNVERIFIABLE" }, activateLicense: null };
+    const authz = parseAuthz((data as { authz?: unknown }).authz);
+    if (!license) return { session: { user: sessionUser }, license: { state: "UNVERIFIABLE" }, authz, cookie, activateLicense: null };
     return {
       session: { user: sessionUser },
       license,
+      authz,
+      cookie,
       activateLicense: async (licenseKey: string) => {
         const activation = await fetch(`${authUrl}/internal/v1/license/activate`, {
           method: "POST",
@@ -60,8 +64,17 @@ async function createContext({ req }: { req: Request; res: Response }): Promise<
       },
     };
   } catch {
-    return { session: null, license: null, activateLicense: null };
+    return { session: null, license: null, authz: NO_AUTHZ, cookie: null, activateLicense: null };
   }
+}
+
+/** Fail closed (ADR-0016 §4): a missing or malformed block means no Super Admin and no grants. */
+function parseAuthz(value: unknown): SessionAuthz {
+  if (typeof value !== "object" || value === null) return NO_AUTHZ;
+  const record = value as { isSuperAdmin?: unknown; permissions?: unknown };
+  if (typeof record.isSuperAdmin !== "boolean" || !Array.isArray(record.permissions) || record.permissions.length > MAX_GRANTS) return NO_AUTHZ;
+  if (!record.permissions.every((key): key is string => typeof key === "string" && PERMISSION_KEY_PATTERN.test(key))) return NO_AUTHZ;
+  return { isSuperAdmin: record.isSuperAdmin, permissions: [...new Set(record.permissions)] };
 }
 
 function parseLicenseStatus(value: unknown): TrpcContext["license"] {

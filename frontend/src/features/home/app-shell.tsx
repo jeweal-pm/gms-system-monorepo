@@ -18,14 +18,21 @@ const headerDateFormatter = new Intl.DateTimeFormat("en-GB", {
 export function AppShell({ children, breadcrumb = "Home" }: Readonly<{ children: React.ReactNode; breadcrumb?: string }>) {
   const router = useRouter();
   const pathname = usePathname();
-  const { data: session, isPending } = authClient.useSession();
+  const { data: session, isPending, refetch } = authClient.useSession();
+  const [isSessionChecked, setIsSessionChecked] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [headerDate, setHeaderDate] = useState("");
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
+  // The shared session store can still hold a signed-out result from before login,
+  // so redirect only after a fresh session check for this mount.
   useEffect(() => {
-    if (!isPending && !session) router.replace("/login");
-  }, [isPending, router, session]);
+    void refetch().finally(() => setIsSessionChecked(true));
+  }, [refetch]);
+
+  useEffect(() => {
+    if (isSessionChecked && !isPending && !session) router.replace("/login");
+  }, [isPending, isSessionChecked, router, session]);
 
   useEffect(() => {
     const updateHeaderDate = () => setHeaderDate(headerDateFormatter.format(new Date()));
@@ -60,7 +67,7 @@ export function AppShell({ children, breadcrumb = "Home" }: Readonly<{ children:
     router.refresh();
   }
 
-  if (isPending) {
+  if (isPending || (!session && !isSessionChecked)) {
     return (
       <div className="flex min-h-screen bg-white" aria-busy="true" aria-label="Loading application">
         <aside className="hidden w-[187px] shrink-0 border-r border-[#e0e6e9] px-5 pt-5 md:block">
