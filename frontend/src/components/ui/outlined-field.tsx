@@ -3,7 +3,11 @@
 import type { InputHTMLAttributes, ReactNode, Ref } from "react";
 import { cx } from "./button";
 
-export function fieldBoxClass({ invalid, readOnly }: { invalid?: boolean; readOnly?: boolean }) {
+export function fieldBoxClass({ invalid, readOnly, disabled }: { invalid?: boolean; readOnly?: boolean; disabled?: boolean }) {
+  if (disabled) {
+    // Disabled (customer C-07, e.g. State/City before a Country): grey fill, grey text, no hover border.
+    return "h-[52px] w-full cursor-not-allowed rounded-gms-md border border-gms-border bg-gms-field-disabled text-base text-gms-checkbox-readonly transition-colors";
+  }
   return cx(
     "h-[52px] w-full rounded-gms-md border text-base text-gms-text transition-colors",
     invalid ? "border-gms-danger bg-gms-danger-subtle" : "border-gms-border bg-gms-surface",
@@ -65,7 +69,7 @@ type TextFieldProps = Omit<InputHTMLAttributes<HTMLInputElement>, "id"> & {
 };
 
 /** C-09 / C-10 OutlinedTextField (also used for the password field). */
-export function TextField({ id, label, error, required, readOnly, className, ref, ...props }: TextFieldProps) {
+export function TextField({ id, label, error, required, readOnly, disabled, className, ref, ...props }: TextFieldProps) {
   return (
     <FieldShell id={id} label={label} required={required} error={error} className={className}>
       <input
@@ -75,7 +79,13 @@ export function TextField({ id, label, error, required, readOnly, className, ref
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? `${id}-error` : undefined}
         readOnly={readOnly}
-        className={cx(fieldBoxClass({ invalid: Boolean(error), readOnly }), "px-4 placeholder:text-gms-text-placeholder", fieldFocusClass)}
+        disabled={disabled}
+        className={cx(
+          fieldBoxClass({ invalid: Boolean(error) && !disabled, readOnly, disabled }),
+          "px-4",
+          disabled ? "placeholder:text-gms-checkbox-readonly" : "placeholder:text-gms-text-placeholder",
+          fieldFocusClass,
+        )}
         {...props}
       />
     </FieldShell>

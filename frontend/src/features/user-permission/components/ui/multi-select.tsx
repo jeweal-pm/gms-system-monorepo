@@ -3,8 +3,8 @@
 import { Check, ChevronDown, X } from "lucide-react";
 import { useId, useState, type KeyboardEvent, type Ref } from "react";
 import type { LocationOption } from "../../api";
-import { cx } from "./button";
-import { FieldShell, fieldBoxClass } from "./outlined-field";
+import { cx } from "@/components/ui/button";
+import { FieldShell, fieldBoxClass } from "@/components/ui/outlined-field";
 
 type MultiSelectProps = {
   id: string;

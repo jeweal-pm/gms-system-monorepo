@@ -2,9 +2,9 @@
 
 import { skipToken } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
+import { retryTransient } from "@/lib/trpc-error";
 import { trpc } from "@/providers/app-providers";
 import {
-  retryTransient,
   toLocationOptions,
   toPermissionCatalog,
   toUserDetail,

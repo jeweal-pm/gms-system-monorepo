@@ -36,6 +36,7 @@ integration_owned:
   - backend-api-*/src/app.module.ts
   - backend-api-*/src/main.ts
   - backend-api-auth/prisma/**
+  - backend-api-partner/prisma/**
 
 scopes:
   devops-docs:

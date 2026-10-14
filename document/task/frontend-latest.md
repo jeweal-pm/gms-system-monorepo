@@ -1,12 +1,11 @@
 # Latest frontend TODO
 
-- feature-id: `user-permission`
+- feature-id: `customer`
 - revision: 1
-- status: approved-ui rev 1 (2026-10-12); SA/backend pending separate approval
-- todo: [todo/user-permission.md](todo/user-permission.md)
-- source: five owner-supplied screenshots in [apps/frontend/user-permission/source/](../apps/frontend/user-permission/source/)
-- backend-bundles: none yet. SA requested via [handoff](../coordination/handoffs/user-permission-sa.md) (requires-sa).
-- updated-at: 2026-10-12T10:45+07:00
+- status: approved 2026-10-14 (UI rev 1, SA rev 1, infra backend-api-partner/1; ADR-0018 rev 1 Accepted)
+- todo: [todo/customer.md](todo/customer.md)
+- source: three owner-supplied screenshots in [apps/frontend/customer/source/](../apps/frontend/customer/source/)
+- backend-bundles: SA revision 1, pending-review: [apps/backend/partner/customer/](../apps/backend/partner/customer/); infra [backend-api-partner/1](../infra/services/backend-api-partner/1/security.md), pending-review
+- updated-at: 2026-10-14T11:30+07:00
 
-Revision 1 UI is approved (see TODO approval table). Data-dependent items remain requires-sa. Read the linked TODO for authoritative approval and
-progress; see [the delivery workflow](../workflow/ui-delivery.md).
+Revision 1 is approved (see TODO approval fields). Data wiring (FE-CUS-014/015) waits for backend delivery of `customer.*`. The previous pointer was `user-permission` revision 1 (UI approved 2026-10-12); its TODO remains in [todo/user-permission.md](todo/user-permission.md). Read the linked TODO for authoritative status; see [the delivery workflow](../workflow/ui-delivery.md).

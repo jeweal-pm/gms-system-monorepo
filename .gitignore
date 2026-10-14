@@ -13,3 +13,5 @@ test-results/
 *.tsbuildinfo
 document/testing/user-check/chrome-*/
 /document/task/investigation/sec-auditor/run-*/
+# pnpm store must never live in the repo (BE-CUS-011 dev-install incident 2026-10-14)
+.pnpm-store/

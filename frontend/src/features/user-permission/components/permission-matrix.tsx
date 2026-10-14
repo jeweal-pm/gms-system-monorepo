@@ -4,8 +4,8 @@ import { ChevronDown } from "lucide-react";
 import { Fragment, useState } from "react";
 import { PERMISSION_ACTIONS, type PermissionAction, type PermissionMenu } from "../api";
 import { aggregateState, applicableKeys, toggleKeys, type PermissionValues } from "../permission-utils";
-import { cx, focusRing } from "./ui/button";
-import { ReadOnlyCheck, TriStateCheckbox } from "./ui/checkbox";
+import { cx, focusRing } from "@/components/ui/button";
+import { ReadOnlyCheck, TriStateCheckbox } from "@/components/ui/checkbox";
 
 /** Header text as shown in the source ("Price" is mixed case; Q-UP-26). */
 const actionHeader: Record<PermissionAction, string> = {

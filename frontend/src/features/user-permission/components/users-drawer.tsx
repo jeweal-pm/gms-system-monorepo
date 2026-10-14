@@ -3,8 +3,8 @@
 import { Plus, Search, ShieldCheck, X } from "lucide-react";
 import { useMemo, useState, type Ref } from "react";
 import type { UserList, UserSummary } from "../api";
-import { Button, cx, focusRing } from "./ui/button";
-import { CountBadge } from "./ui/card";
+import { Button, cx, focusRing } from "@/components/ui/button";
+import { CountBadge } from "@/components/ui/card";
 
 export const USERS_DRAWER_ID = "users-drawer";
 

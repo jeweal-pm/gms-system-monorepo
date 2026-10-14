@@ -17,6 +17,11 @@ configuration under Variables; actual credentials under Secrets, never committed
 
 These are the active pipeline inputs. No placeholder token/password is embedded and no
 PAT, SSH key, production database URL, auth secret or SMTP credential is needed for CI.
+Exception, by design (2026-10-14, BE-CUS-012): the CI Compose-validation step sets
+`PARTNER_SERVICE_TOKEN=ci-compose-config-validation-only-not-a-secret` in that step's env,
+because docker-compose.yml fails fast (`:?`) without it. It is a fixed non-secret literal
+used only for `docker compose config --quiet`; nothing starts with it, it is not a GitHub
+Secret and must never be reused as a runtime token. No repository setting is needed.
 Custom target/registry changes must update this ledger and workflow rather than silently
 accept a new credential path.
 
@@ -54,7 +59,7 @@ enabling the publication variable. Future branch-policy changes update both code
    and leave publish=false to build without registry login/push. Reusable CI must pass first.
 4. To publish, configure ENABLE_IMAGE_PUBLISH and environment/package access first, then
    explicitly select publish=true. A requested publish with the flag absent fails preflight.
-5. Record all three service results and each published digest from job summaries. Partial
+5. Record all four service results (frontend, gateway, auth, partner) and each published digest from job summaries. Partial
    matrix success is not a releasable service set. Deployments should consume recorded
    digests; source-SHA tags are traceable labels, not immutable storage guarantees.
 
@@ -78,7 +83,12 @@ contract. Resolve the actual target/transport/infra rollout before enabling a de
 | GHCR_PULL_TOKEN | Environment/host secret, if needed | Read-only private-image pull access; do not reuse publish permissions |
 
 Application AUTH_SECRET, CRM_API_KEY and database credentials stay in the eventual
-infra-approved runtime secret contract. Do not inject production secrets into image build
+infra-approved runtime secret contract. The same applies to backend-api-partner
+(infra bundle backend-api-partner/1): `PARTNER_DATABASE_URL` (must include
+`?schema=partner`), `PARTNER_SERVICE_TOKEN` (>= 32 chars, identical in gateway and partner;
+production rejects the .env.example value) and gateway `PARTNER_SERVICE_URL`
+(http://backend-api-partner:3201). They are runtime-only, never Docker build args, and
+current workflows do not read them. Do not inject production secrets into image build
 steps. All build context excludes .env variants and project skill/audit documents.
 
 ## Verified action pins

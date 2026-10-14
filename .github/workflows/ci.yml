@@ -45,6 +45,10 @@ jobs:
       - name: Typecheck after generated types exist
         run: pnpm typecheck
       - name: Validate base and development Compose syntax
+        # Compose requires PARTNER_SERVICE_TOKEN (`:?`). This fixed, non-secret literal only
+        # satisfies interpolation for `config`; nothing is started or deployed with it.
+        env:
+          PARTNER_SERVICE_TOKEN: ci-compose-config-validation-only-not-a-secret
         run: |
           docker compose -f docker-compose.yml config --quiet
           docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet

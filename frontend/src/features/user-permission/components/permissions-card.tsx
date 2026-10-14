@@ -3,8 +3,8 @@
 import { useMemo } from "react";
 import type { PermissionCatalog } from "../api";
 import { countEnabled, type PermissionValues } from "../permission-utils";
-import { Button } from "./ui/button";
-import { Card, CountBadge } from "./ui/card";
+import { Button } from "@/components/ui/button";
+import { Card, CountBadge } from "@/components/ui/card";
 import { PermissionMatrix } from "./permission-matrix";
 
 type PermissionsCardProps = {

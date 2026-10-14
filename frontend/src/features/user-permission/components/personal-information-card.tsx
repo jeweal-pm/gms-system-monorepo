@@ -4,12 +4,12 @@ import { ImagePlus } from "lucide-react";
 import { Controller, type UseFormReturn } from "react-hook-form";
 import type { LocationOption, UserDetail } from "../api";
 import type { UserFormValues } from "../schema";
-import { cx, focusRing } from "./ui/button";
-import { Card } from "./ui/card";
+import { cx, focusRing } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { MultiSelect } from "./ui/multi-select";
-import { TextField } from "./ui/outlined-field";
-import { PhoneField } from "./ui/phone-field";
-import { Switch } from "./ui/switch";
+import { TextField } from "@/components/ui/outlined-field";
+import { PhoneField } from "@/components/ui/phone-field";
+import { Switch } from "@/components/ui/switch";
 
 type LocationsState = { options: readonly LocationOption[]; status: "loading" | "error" | "ready" };
 

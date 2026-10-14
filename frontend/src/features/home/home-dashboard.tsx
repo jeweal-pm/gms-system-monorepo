@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { AppShell } from "./app-shell";
-import { navigationGroups } from "./navigation";
+import { navigationGroups, navigationHref } from "./navigation";
 import { trpc } from "@/providers/app-providers";
 
 export function HomeDashboard() {
@@ -21,7 +21,7 @@ export function HomeDashboard() {
             <article key={group.title} className="min-h-[148px] rounded-[9px] border border-[#d5dfe4] px-4 py-4 shadow-[0_1px_2px_rgba(20,40,50,0.02)]">
               <h2 className="mb-3 text-[14px] font-semibold text-[#1d272d]">{group.title}</h2>
               <ul className="space-y-0.5">
-                {group.items.map((item) => <li key={item.slug}><Link href={`/modules/${item.slug}`} className="block rounded px-0 py-1.5 text-[12px] text-[#556874] transition hover:text-[#006c68] hover:underline">{item.label}</Link></li>)}
+                {group.items.map((item) => <li key={item.slug}><Link href={navigationHref(item)} className="block rounded px-0 py-1.5 text-[12px] text-[#556874] transition hover:text-[#006c68] hover:underline">{item.label}</Link></li>)}
               </ul>
             </article>
           ))}
