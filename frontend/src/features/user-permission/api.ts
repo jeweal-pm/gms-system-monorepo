@@ -1,6 +1,7 @@
-import { isTRPCClientError, type inferRouterClient } from "@trpc/client";
+import type { inferRouterClient } from "@trpc/client";
 import type { AppRouter } from "@gem-crm/backend-api-gateway/src/trpc/router";
-import { fromContractPhone, toContractPhone, type PhoneValue } from "./phone";
+import { fromContractPhone, toContractPhone, type PhoneValue } from "@/lib/phone";
+import { isCallerLicenseCode, readDomainError } from "@/lib/trpc-error";
 
 /**
  * user-permission data boundary (FE-UP-012, first slice).
@@ -112,38 +113,7 @@ export function toCreateUserInput(values: {
   };
 }
 
-// ---- errors ----
-
-export type ServerFieldError = { path: string; code: string };
-export type DomainErrorInfo = { domainCode: string | null; fieldErrors: ServerFieldError[]; httpStatus: number | null };
-
-const DOMAIN_CODE_PATTERN = /^[A-Z][A-Z_]{1,63}$/;
-
-/**
- * Reads `data.domainCode` / `data.fieldErrors` from the gateway errorFormatter (falls back to the
- * message code). A 401 has no domain code ("Authentication required"), so it is reported as "UNAUTHORIZED".
- */
-export function readDomainError(error: unknown): DomainErrorInfo {
-  if (!isTRPCClientError<AppRouter>(error)) return { domainCode: null, fieldErrors: [], httpStatus: null };
-  const data = error.data;
-  const domainCode =
-    data?.domainCode ??
-    (DOMAIN_CODE_PATTERN.test(error.message) ? error.message : null) ??
-    (data?.code === "UNAUTHORIZED" ? "UNAUTHORIZED" : null);
-  return { domainCode, fieldErrors: data?.fieldErrors ?? [], httpStatus: data?.httpStatus ?? null };
-}
-
-export function isCallerLicenseCode(code: string | null): boolean {
-  return code !== null && /^LICENSE_/.test(code);
-}
-
-/** Reads: retry up to twice only for transient failures (no 4xx retries). Mutations are never retried. */
-export function retryTransient(failureCount: number, error: unknown): boolean {
-  const { httpStatus, domainCode } = readDomainError(error);
-  if (domainCode === "UNAUTHORIZED" || isCallerLicenseCode(domainCode)) return false;
-  if (httpStatus !== null && httpStatus < 500) return false;
-  return failureCount < 2;
-}
+// ---- errors (readDomainError / isCallerLicenseCode / retryTransient live in @/lib/trpc-error) ----
 
 export type FormField = "username" | "password" | "name" | "phone" | "locationIds";
 export type CreateErrorOutcome = {

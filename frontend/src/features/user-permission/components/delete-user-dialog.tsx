@@ -4,8 +4,8 @@ import { useState } from "react";
 import { trpc } from "@/providers/app-providers";
 import { mapDeleteError, type UserSummary } from "../api";
 import { useDeleteUser } from "../hooks";
-import { ConfirmDialog } from "./ui/confirm-dialog";
-import { useToast } from "./ui/toast";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 
 type DeleteUserDialogProps = {
   user: UserSummary | null;

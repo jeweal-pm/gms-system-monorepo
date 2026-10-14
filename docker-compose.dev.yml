@@ -10,6 +10,8 @@ x-dev-volumes: &dev-volumes
   - dev-auth-node-modules:/app/backend-api-auth/node_modules
   - dev-frontend-next:/app/frontend/.next
   - dev-auth-prisma:/app/backend-api-auth/src/generated/prisma
+  - dev-partner-node-modules:/app/backend-api-partner/node_modules
+  - dev-partner-prisma:/app/backend-api-partner/src/generated/prisma
 
 services:
   backend-api-auth:
@@ -45,6 +47,20 @@ services:
       NODE_ENV: development
     volumes: *dev-volumes
 
+  # Dev exception (infra bundle backend-api-partner/1): root dev image, bind mount + watch,
+  # writable root. Networks stay internal (no egress, no published port).
+  backend-api-partner:
+    image: f1-system-dev:local
+    build: *dev-build
+    command: ["sh", "-c", "pnpm --filter @gem-crm/backend-api-partner db:generate && pnpm --filter @gem-crm/backend-api-partner db:migrate && exec pnpm --filter @gem-crm/backend-api-partner dev"]
+    environment:
+      NODE_ENV: development
+      NODE_OPTIONS: ""
+    read_only: false
+    cap_drop: !reset []
+    tmpfs: !reset []
+    volumes: *dev-volumes
+
 volumes:
   dev-root-node-modules:
   dev-frontend-node-modules:
@@ -52,3 +68,5 @@ volumes:
   dev-auth-node-modules:
   dev-frontend-next:
   dev-auth-prisma:
+  dev-partner-node-modules:
+  dev-partner-prisma:

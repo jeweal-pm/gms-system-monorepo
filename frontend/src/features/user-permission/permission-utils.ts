@@ -1,6 +1,7 @@
+import type { CheckState } from "@/components/ui/checkbox";
 import type { PermissionAction, PermissionMenu } from "./api";
 
-export type CheckState = "checked" | "unchecked" | "indeterminate";
+export type { CheckState };
 export type PermissionValues = Record<string, boolean>;
 
 export const permissionKey = (menuId: string, action: PermissionAction) => `${menuId}:${action}`;

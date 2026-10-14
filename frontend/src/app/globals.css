@@ -34,6 +34,11 @@
   --color-gms-warning-subtle: #ffe7b8;
   --color-gms-warning-text: #9a5b00;
   --color-gms-checkbox-readonly: #a9a9a9;
+  /* customer UI revision 1 (FE-CUS-016). Default badge colors are the owner's decision (Q-CUS-06, 2026-10-14). */
+  --color-gms-success-subtle: #c1efd2;
+  --color-gms-success-text: #22c55e;
+  --color-gms-status-active: #1c744a;
+  --color-gms-field-disabled: #f8f8f8;
 
   --radius-gms-sm: 4px;
   --radius-gms-md: 8px;
