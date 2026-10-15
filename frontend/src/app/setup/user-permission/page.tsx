@@ -1,11 +1,13 @@
 "use client";
 
-import { AppShell } from "@/features/home/app-shell";
+import { AppShell, type Breadcrumb } from "@/features/home/app-shell";
 import { UserPermissionPage } from "@/features/user-permission/user-permission-page";
+
+const breadcrumbs: Breadcrumb[] = [{ label: "Home", href: "/" }, { label: "Setup" }, { label: "User and permission" }];
 
 export default function SetupUserPermissionPage() {
   return (
-    <AppShell breadcrumb="Home › Setup › User and permission">
+    <AppShell breadcrumbs={breadcrumbs}>
       <UserPermissionPage />
     </AppShell>
   );

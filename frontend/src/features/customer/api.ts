@@ -1,27 +1,14 @@
 import { fromContractPhone, toContractPhone } from "@/lib/phone";
 import { isCallerLicenseCode, readDomainError, type DomainErrorInfo } from "@/lib/trpc-error";
-import type { CustomerDetail, CustomerFieldsInput, CustomerOptionsOutput } from "./contract";
+import type { CustomerDetail, CustomerFieldsInput } from "./contract";
 import { ADDRESS_MAX, type AddressFormValue, type CustomerFormValues } from "./schema";
 
 /**
  * customer data boundary: contract <-> form mappers and error mapping (FE-CUS-014/015).
  * Contract: gateway `customer.*` (SA revision 1, delivered 2026-10-14); types in contract.ts.
  * Raw server messages are never shown (error-handling.md).
+ * Option-list mapping is shared: `toSelectOptions` in features/partner/options.ts (vendor FE-VEN-001).
  */
-
-export type SelectOptions = { currencies: { value: string; label: string }[]; countries: { value: string; label: string }[] };
-
-/** Options for the native selects: currencies "{code} — {name}" sorted by code, countries by name. */
-export function toSelectOptions(output: CustomerOptionsOutput): SelectOptions {
-  return {
-    currencies: [...output.currencies]
-      .sort((a, b) => a.code.localeCompare(b.code))
-      .map(({ code, name }) => ({ value: code, label: `${code} — ${name}` })),
-    countries: [...output.countries]
-      .sort((a, b) => a.name.localeCompare(b.name, "en"))
-      .map(({ code, name }) => ({ value: code, label: name })),
-  };
-}
 
 function addressToForm(address: CustomerDetail["shippingAddresses"][number] & { taxId?: string | null }): AddressFormValue {
   return {

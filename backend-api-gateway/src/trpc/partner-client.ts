@@ -20,6 +20,11 @@ type PartnerCall<T> = {
   timeoutMs: number;
   actorId: string;
   responseSchema: z.ZodType<T>;
+  /**
+   * Domain code used when partner answers 404 without a recognizable code (e.g. an older partner
+   * image without the route): `CUSTOMER_NOT_FOUND` for customer calls, `VENDOR_NOT_FOUND` for vendor.
+   */
+  notFoundCode: string;
   body?: unknown;
 };
 
@@ -60,7 +65,7 @@ function unavailable(route: string, startedAt: number, outcome: string, level: "
  * (ADR-0018 §1, D-04). Upstream `message` text is never forwarded; partner 401/403 become
  * PARTNER_UNAVAILABLE so a token misconfiguration never logs users out (error-handling.md).
  */
-export async function callPartner<T>({ method, path, route, timeoutMs, actorId, responseSchema, body }: PartnerCall<T>): Promise<T> {
+export async function callPartner<T>({ method, path, route, timeoutMs, actorId, responseSchema, notFoundCode, body }: PartnerCall<T>): Promise<T> {
   const baseUrl = process.env.PARTNER_SERVICE_URL ?? "http://localhost:3201";
   const token = process.env.PARTNER_SERVICE_TOKEN ?? "";
   const startedAt = Date.now();
@@ -113,7 +118,7 @@ export async function callPartner<T>({ method, path, route, timeoutMs, actorId, 
       ? (payload as { error?: { code?: unknown; fieldErrors?: unknown } }).error
       : undefined;
     const upstream = isDomainCode(error?.code) ? error.code : null;
-    const fallback = trpcCode === "BAD_REQUEST" ? "VALIDATION_ERROR" : trpcCode === "NOT_FOUND" ? "CUSTOMER_NOT_FOUND" : "CONFLICT";
+    const fallback = trpcCode === "BAD_REQUEST" ? "VALIDATION_ERROR" : trpcCode === "NOT_FOUND" ? notFoundCode : "CONFLICT";
     const fieldErrors = trpcCode === "NOT_FOUND" ? null : sanitizeFieldErrors(error?.fieldErrors);
     throw domainError(trpcCode, upstream ?? fallback, fieldErrors);
   }

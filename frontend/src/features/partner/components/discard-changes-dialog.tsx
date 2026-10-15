@@ -1,18 +1,20 @@
 "use client";
 
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { lowerSingular, type PartnerEntity } from "../entity";
 
 type DiscardChangesDialogProps = {
+  entity: PartnerEntity;
   open: boolean;
-  /** Name typed or loaded; falls back to "this customer". */
+  /** Name typed or loaded; falls back to "this {entity}". */
   name: string;
   onKeep: () => void;
   onDiscard: () => void;
 };
 
-/** C-17 (FE-CUS-010): "Discard unsaved changes?" Focus starts on "Keep editing"; Esc keeps editing. */
-export function DiscardChangesDialog({ open, name, onKeep, onDiscard }: DiscardChangesDialogProps) {
-  const subject = name.trim() || "this customer";
+/** Partner C-12 (customer FE-CUS-010, vendor FE-VEN-009): "Discard unsaved changes?" Focus starts on "Keep editing"; Esc keeps editing. */
+export function DiscardChangesDialog({ entity, open, name, onKeep, onDiscard }: DiscardChangesDialogProps) {
+  const subject = name.trim() || `this ${lowerSingular(entity)}`;
   return (
     <ConfirmDialog
       open={open}

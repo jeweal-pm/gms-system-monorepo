@@ -15,6 +15,7 @@ import {
 } from "./customer-schemas";
 import { describeError, domainError } from "./domain-error";
 import { callPartner, PARTNER_TIMEOUT_MS } from "./partner-client";
+import { listQueryString } from "./partner-schemas";
 import {
   catalogOutputSchema,
   createUserInputSchema,
@@ -26,8 +27,20 @@ import {
   userMutationOutputSchema,
   type PermissionAction,
 } from "./user-admin-schemas";
+import {
+  assertVendorDefaults,
+  createVendorInputSchema,
+  updateVendorInputSchema,
+  vendorDeleteOutputSchema,
+  vendorDetailOutputSchema,
+  vendorIdInputSchema,
+  vendorListInputSchema,
+  vendorListOutputSchema,
+  vendorMutationOutputSchema,
+  vendorOptionsOutputSchema,
+} from "./vendor-schemas";
 
-/** `href` overrides the default `/modules/<slug>` link when the item has a real page (customer). */
+/** `href` overrides the default `/modules/<slug>` link when the item has a real page (customer, vendor). */
 export type HomeItem = { label: string; slug: string; href?: string };
 export type HomeGroup = { title: string; items: HomeItem[] };
 export type SessionUser = { id: string; email: string; name: string; role?: string };
@@ -93,7 +106,7 @@ export function permittedProcedure(menuKey: string, action: PermissionAction) {
 export const shortcutGroups: HomeGroup[] = [
   { title: "Main Menu", items: [{ label: "Dashboard", slug: "dashboard" }, { label: "Quotation", slug: "quotation" }, { label: "Reserve", slug: "reserve" }] },
   { title: "Company", items: [{ label: "Company Profile", slug: "company-profile" }, { label: "Bank", slug: "bank" }] },
-  { title: "Partner Master", items: [{ label: "Vendor", slug: "vendor" }, { label: "Customer", slug: "customer", href: "/setup/customer" }] },
+  { title: "Partner Master", items: [{ label: "Vendor", slug: "vendor", href: "/setup/vendor" }, { label: "Customer", slug: "customer", href: "/setup/customer" }] },
   { title: "Stone Master", items: ["Stone Group", "Stone", "Shape", "Size", "Color", "Cutting", "Quality", "Clarity"].map((label) => ({ label, slug: label.toLowerCase().replaceAll(" ", "-") })) },
   { title: "Purchase Order", items: [{ label: "Purchase Order", slug: "purchase-order" }, { label: "Purchase (PU)", slug: "purchase" }] },
   { title: "Memo", items: ["Memo In", "Memo Return", "Memo Out", "Memo Out Return"].map((label) => ({ label, slug: label.toLowerCase().replaceAll(" ", "-") })) },
@@ -147,29 +160,23 @@ export const appRouter = t.router({
   }),
   /** customer SA revision 1 (ADR-0018): gateway enforces `customer:*`; partner owns the data. */
   customer: t.router({
-    list: permittedProcedure("customer", "VIEW").input(customerListInputSchema).query(({ ctx, input }) => {
-      const query = new URLSearchParams({ limit: String(input.limit) });
-      if (input.q) query.set("q", input.q);
-      if (input.active !== undefined) query.set("active", String(input.active));
-      if (input.cursor) query.set("cursor", input.cursor);
-      return callPartner({
-        method: "GET", path: `/internal/v1/customers?${query.toString()}`, route: "GET /customers", timeoutMs: PARTNER_TIMEOUT_MS.read,
-        actorId: ctx.session.user.id, responseSchema: customerListOutputSchema,
-      });
-    }),
+    list: permittedProcedure("customer", "VIEW").input(customerListInputSchema).query(({ ctx, input }) => callPartner({
+      method: "GET", path: `/internal/v1/customers?${listQueryString(input)}`, route: "GET /customers", timeoutMs: PARTNER_TIMEOUT_MS.read,
+      actorId: ctx.session.user.id, responseSchema: customerListOutputSchema, notFoundCode: "CUSTOMER_NOT_FOUND",
+    })),
     get: permittedProcedure("customer", "VIEW").input(customerIdInputSchema).query(({ ctx, input }) => callPartner({
       method: "GET", path: `/internal/v1/customers/${encodeURIComponent(input.id)}`, route: "GET /customers/:id", timeoutMs: PARTNER_TIMEOUT_MS.read,
-      actorId: ctx.session.user.id, responseSchema: customerDetailOutputSchema,
+      actorId: ctx.session.user.id, responseSchema: customerDetailOutputSchema, notFoundCode: "CUSTOMER_NOT_FOUND",
     })),
     options: permittedProcedure("customer", "VIEW").query(({ ctx }) => callPartner({
       method: "GET", path: "/internal/v1/customers/options", route: "GET /customers/options", timeoutMs: PARTNER_TIMEOUT_MS.read,
-      actorId: ctx.session.user.id, responseSchema: customerOptionsOutputSchema,
+      actorId: ctx.session.user.id, responseSchema: customerOptionsOutputSchema, notFoundCode: "CUSTOMER_NOT_FOUND",
     })),
     create: permittedProcedure("customer", "ADD").input(createCustomerInputSchema).mutation(({ ctx, input }) => {
       assertSingleDefaults(input);
       return callPartner({
         method: "POST", path: "/internal/v1/customers", route: "POST /customers", timeoutMs: PARTNER_TIMEOUT_MS.write,
-        actorId: ctx.session.user.id, responseSchema: customerMutationOutputSchema, body: input,
+        actorId: ctx.session.user.id, responseSchema: customerMutationOutputSchema, notFoundCode: "CUSTOMER_NOT_FOUND", body: input,
       });
     }),
     update: permittedProcedure("customer", "EDIT").input(updateCustomerInputSchema).mutation(({ ctx, input }) => {
@@ -177,12 +184,46 @@ export const appRouter = t.router({
       const { id, ...body } = input;
       return callPartner({
         method: "PUT", path: `/internal/v1/customers/${encodeURIComponent(id)}`, route: "PUT /customers/:id", timeoutMs: PARTNER_TIMEOUT_MS.write,
-        actorId: ctx.session.user.id, responseSchema: customerMutationOutputSchema, body,
+        actorId: ctx.session.user.id, responseSchema: customerMutationOutputSchema, notFoundCode: "CUSTOMER_NOT_FOUND", body,
       });
     }),
     delete: permittedProcedure("customer", "DELETE").input(customerIdInputSchema).mutation(({ ctx, input }) => callPartner({
       method: "DELETE", path: `/internal/v1/customers/${encodeURIComponent(input.id)}`, route: "DELETE /customers/:id", timeoutMs: PARTNER_TIMEOUT_MS.write,
-      actorId: ctx.session.user.id, responseSchema: customerDeleteOutputSchema,
+      actorId: ctx.session.user.id, responseSchema: customerDeleteOutputSchema, notFoundCode: "CUSTOMER_NOT_FOUND",
+    })),
+  }),
+  /** vendor SA revision 1 (ADR-0019): gateway enforces `vendor:*`; partner owns the data. */
+  vendor: t.router({
+    list: permittedProcedure("vendor", "VIEW").input(vendorListInputSchema).query(({ ctx, input }) => callPartner({
+      method: "GET", path: `/internal/v1/vendors?${listQueryString(input)}`, route: "GET /vendors", timeoutMs: PARTNER_TIMEOUT_MS.read,
+      actorId: ctx.session.user.id, responseSchema: vendorListOutputSchema, notFoundCode: "VENDOR_NOT_FOUND",
+    })),
+    get: permittedProcedure("vendor", "VIEW").input(vendorIdInputSchema).query(({ ctx, input }) => callPartner({
+      method: "GET", path: `/internal/v1/vendors/${encodeURIComponent(input.id)}`, route: "GET /vendors/:id", timeoutMs: PARTNER_TIMEOUT_MS.read,
+      actorId: ctx.session.user.id, responseSchema: vendorDetailOutputSchema, notFoundCode: "VENDOR_NOT_FOUND",
+    })),
+    options: permittedProcedure("vendor", "VIEW").query(({ ctx }) => callPartner({
+      method: "GET", path: "/internal/v1/vendors/options", route: "GET /vendors/options", timeoutMs: PARTNER_TIMEOUT_MS.read,
+      actorId: ctx.session.user.id, responseSchema: vendorOptionsOutputSchema, notFoundCode: "VENDOR_NOT_FOUND",
+    })),
+    create: permittedProcedure("vendor", "ADD").input(createVendorInputSchema).mutation(({ ctx, input }) => {
+      assertVendorDefaults(input);
+      return callPartner({
+        method: "POST", path: "/internal/v1/vendors", route: "POST /vendors", timeoutMs: PARTNER_TIMEOUT_MS.write,
+        actorId: ctx.session.user.id, responseSchema: vendorMutationOutputSchema, notFoundCode: "VENDOR_NOT_FOUND", body: input,
+      });
+    }),
+    update: permittedProcedure("vendor", "EDIT").input(updateVendorInputSchema).mutation(({ ctx, input }) => {
+      assertVendorDefaults(input);
+      const { id, ...body } = input;
+      return callPartner({
+        method: "PUT", path: `/internal/v1/vendors/${encodeURIComponent(id)}`, route: "PUT /vendors/:id", timeoutMs: PARTNER_TIMEOUT_MS.write,
+        actorId: ctx.session.user.id, responseSchema: vendorMutationOutputSchema, notFoundCode: "VENDOR_NOT_FOUND", body,
+      });
+    }),
+    delete: permittedProcedure("vendor", "DELETE").input(vendorIdInputSchema).mutation(({ ctx, input }) => callPartner({
+      method: "DELETE", path: `/internal/v1/vendors/${encodeURIComponent(input.id)}`, route: "DELETE /vendors/:id", timeoutMs: PARTNER_TIMEOUT_MS.write,
+      actorId: ctx.session.user.id, responseSchema: vendorDeleteOutputSchema, notFoundCode: "VENDOR_NOT_FOUND",
     })),
   }),
 });

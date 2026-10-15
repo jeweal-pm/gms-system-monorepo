@@ -1,25 +1,37 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ChevronLeft, ChevronRight, ShieldAlert, Users } from "lucide-react";
-import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useForm, useWatch, type FieldErrors, type Path } from "react-hook-form";
-import { Button, cx, focusRing } from "@/components/ui/button";
 import { ToastProvider, useToast } from "@/components/ui/toast";
+import type { PartnerAccess } from "@/features/partner/access";
+import { invoiceAddressType, shippingAddressType } from "@/features/partner/address-types";
+import { AddressListCard, type AddressListHandle } from "@/features/partner/components/address-list-card";
+import { DiscardChangesDialog } from "@/features/partner/components/discard-changes-dialog";
+import { partnerDrawerId } from "@/features/partner/components/partner-drawer";
+import { PartnerInformationCard } from "@/features/partner/components/partner-information-card";
+import { PartnerPageHeader, type PartnerMode } from "@/features/partner/components/partner-page-header";
+import {
+  DetailLoadError,
+  DrawerToggle,
+  EmptySelection,
+  FormErrorBanner,
+  FormSkeleton,
+  PartnerAccessGuard,
+  printDateFormatter,
+  useDrawerPreference,
+} from "@/features/partner/components/partner-page-parts";
+import { PartnerPrintView } from "@/features/partner/components/partner-print-view";
+import type { PartnerEntity } from "@/features/partner/entity";
+import { useUnsavedChangesPrompt } from "@/features/partner/hooks";
+import type { OptionsState } from "@/features/partner/options";
+import { addressIndexesWithErrors, errorTreeFromEntries, firstErrorField } from "@/features/partner/schema";
 import { SetupTabs } from "@/features/setup/setup-tabs";
-import { isCallerLicenseCode, readDomainError } from "@/lib/trpc-error";
-import { customerAccess, type CustomerAccess } from "./access";
 import { isPermissionDenied, loadErrorMessage, mapSaveError, type MappedFieldError, readCustomerError, toCustomerFields, toDuplicateValues, toFormValues } from "./api";
-import { AddressListCard, type AddressListHandle } from "./components/address-list-card";
-import { CustomerInformationCard, type OptionsState } from "./components/customer-information-card";
-import { CustomerPageHeader, type CustomerMode } from "./components/customer-page-header";
-import { CustomerPrintView } from "./components/customer-print-view";
-import { CUSTOMERS_DRAWER_ID, CustomersDrawer } from "./components/customers-drawer";
-import type { CustomerDetail } from "./contract";
+import { CustomersDrawer } from "./components/customers-drawer";
 import { DeleteCustomerDialog } from "./components/delete-customer-dialog";
-import { DiscardChangesDialog } from "./components/discard-changes-dialog";
+import type { CustomerDetail } from "./contract";
 import {
   useCreateCustomer,
   useCustomerCache,
@@ -28,128 +40,41 @@ import {
   useCustomerLoader,
   useCustomerOptions,
   useCustomerTotal,
-  usePermissionMine,
   useUpdateCustomer,
 } from "./hooks";
-import { addressIndexesWithErrors, customerFormSchema, emptyCustomerForm, firstErrorField, type CustomerFormValues } from "./schema";
+import { CUSTOMER_ADDRESS_ARRAYS, customerFormSchema, emptyCustomerForm, type CustomerFormValues } from "./schema";
 
 const FORM_ID = "customer-form";
 const DRAWER_STORAGE_KEY = "gms.customer.drawerOpen";
-/** Below this width the drawer overlays the content (Q-CUS-05), so it starts closed. */
-const PUSH_LAYOUT_QUERY = "(min-width: 1280px)";
-const printDateFormatter = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Bangkok", dateStyle: "medium", timeStyle: "short" });
+/** Permission menu key `customer` (FE-CUS-004); wording for the shared Partner Master components. */
+const CUSTOMER: PartnerEntity = { key: "customer", singular: "Customer", plural: "Customers" };
+const DRAWER_ID = partnerDrawerId(CUSTOMER);
 
 /**
  * Setup › Customer (`customer` UI revision 1, ADR-0018). `permission.mine` gates the page:
  * no `customer.*` request is made without `customer:VIEW` (FE-CUS-004).
  * Data: gateway `customer.*` through the typed tRPC client (hooks.ts).
+ * UI parts are the shared Partner Master components (vendor FE-VEN-001).
  */
 export function CustomerPage() {
   return (
     <ToastProvider>
-      <AccessGuard />
+      <PartnerAccessGuard entity={CUSTOMER}>{(access) => <CustomerWorkspace access={access} />}</PartnerAccessGuard>
     </ToastProvider>
   );
 }
 
-function PageFrame({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex h-full min-h-0 flex-col bg-gms-page">
-      <SetupTabs />
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">{children}</div>
-    </div>
-  );
-}
-
-function AccessGuard() {
-  const mine = usePermissionMine();
-
-  if (mine.isPending) {
-    return (
-      <PageFrame>
-        <div aria-busy="true" aria-label="Checking access" className="space-y-4">
-          <div className="h-8 w-80 max-w-full animate-pulse rounded-gms-sm bg-gms-surface-sunken" />
-          <div className="h-[220px] animate-pulse rounded-gms-lg bg-gms-surface-sunken" />
-        </div>
-      </PageFrame>
-    );
-  }
-
-  if (mine.isError) {
-    const { domainCode } = readDomainError(mine.error);
-    const message = isCallerLicenseCode(domainCode)
-      ? "Your license doesn't allow using this page right now."
-      : domainCode === "UNAUTHORIZED"
-        ? "Your session has ended. Sign in again."
-        : "Couldn't check your access to this page.";
-    return (
-      <PageFrame>
-        <div role="alert" className="flex flex-col items-start gap-3 rounded-gms-lg border border-gms-border bg-gms-surface p-6">
-          <p className="text-sm text-gms-text">{message}</p>
-          <Button onClick={() => void mine.refetch()}>Retry</Button>
-        </div>
-      </PageFrame>
-    );
-  }
-
-  const access = customerAccess(mine.data);
-  if (!access.view) {
-    return (
-      <PageFrame>
-        <section aria-labelledby="customer-access-denied-title" className="flex flex-col items-start gap-3 rounded-gms-lg border border-gms-border bg-gms-surface p-8">
-          <ShieldAlert size={28} className="text-gms-text-secondary" aria-hidden />
-          <h1 id="customer-access-denied-title" className="text-xl font-medium text-gms-text-heading">
-            You don&apos;t have access to Customer
-          </h1>
-          <p className="text-sm text-gms-text-secondary">Ask an administrator for the Customer view permission.</p>
-          <Link href="/" className={cx("mt-2 rounded-gms-md border border-gms-border px-4 py-2 text-sm font-medium text-gms-text hover:bg-gms-surface-sunken", focusRing)}>
-            Back to Home
-          </Link>
-        </section>
-      </PageFrame>
-    );
-  }
-
-  return <CustomerWorkspace access={access} />;
-}
-
-function readStoredDrawerOpen(): boolean | null {
-  try {
-    const stored = window.localStorage.getItem(DRAWER_STORAGE_KEY);
-    return stored === null ? null : stored === "true";
-  } catch {
-    return null;
-  }
-}
-
-/** Read once per render on the client; the server snapshot is "open" (deterministic hydration). */
-function readPreferredDrawerOpen(): boolean {
-  return readStoredDrawerOpen() ?? window.matchMedia(PUSH_LAYOUT_QUERY).matches;
-}
-
-const subscribeNever = () => () => {};
-
-function storeDrawerOpen(open: boolean) {
-  try {
-    window.localStorage.setItem(DRAWER_STORAGE_KEY, String(open));
-  } catch {
-    // Convenience only (private mode or blocked storage).
-  }
-}
-
 type FocusRequest = { name: Path<CustomerFormValues>; seq: number } | null;
 
-function CustomerWorkspace({ access }: { access: CustomerAccess }) {
+function CustomerWorkspace({ access }: { access: PartnerAccess }) {
   const toast = useToast();
   const cache = useCustomerCache();
   /** `null` = the new-customer draft (with ADD) or nothing selected (without ADD). */
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** ID whose saved data is currently in the form; differs from `selectedId` while it loads. */
   const [loadedId, setLoadedId] = useState<string | null>(null);
-  /** Drawer: the user's choice in this visit, else the remembered state, else open only where it pushes the content. */
-  const [drawerChoice, setDrawerChoice] = useState<boolean | null>(null);
-  const preferredDrawerOpen = useSyncExternalStore(subscribeNever, readPreferredDrawerOpen, () => true);
-  const drawerOpen = drawerChoice ?? preferredDrawerOpen;
+  const drawer = useDrawerPreference(DRAWER_STORAGE_KEY);
+  const drawerOpen = drawer.open;
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [pendingDiscard, setPendingDiscard] = useState<(() => void) | null>(null);
   const [formError, setFormError] = useState<{ message: string; stale?: boolean } | null>(null);
@@ -186,7 +111,7 @@ function CustomerWorkspace({ access }: { access: CustomerAccess }) {
   const { isDirty } = form.formState;
   const [watchedName, watchedCode] = useWatch({ control: form.control, name: ["name", "code"] });
 
-  const mode: CustomerMode = selectedId === null ? (access.add ? "draft" : "none") : access.edit ? "edit" : "view";
+  const mode: PartnerMode = selectedId === null ? (access.add ? "draft" : "none") : access.edit ? "edit" : "view";
   const loaded = selectedId !== null && loadedId === selectedId && detail.data?.id === selectedId;
   const submitting = create.isPending || update.isPending || refreshingBeforeRetry;
   const requestFocus = useCallback((name: Path<CustomerFormValues>) => setFocusRequest((current) => ({ name, seq: (current?.seq ?? 0) + 1 })), []);
@@ -196,14 +121,7 @@ function CustomerWorkspace({ access }: { access: CustomerAccess }) {
   }, [focusRequest, form]);
 
   // Unsaved changes: native prompt on close/reload (FE-CUS-010).
-  useEffect(() => {
-    if (!isDirty) return;
-    const handler = (event: BeforeUnloadEvent) => {
-      event.preventDefault();
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [isDirty]);
+  useUnsavedChangesPrompt(isDirty);
 
   // Permission removed mid-session: re-check so the guard and buttons update (FE-CUS-004).
   const lostAccess = isPermissionDenied(detail.error) || isPermissionDenied(options.error);
@@ -272,23 +190,18 @@ function CustomerWorkspace({ access }: { access: CustomerAccess }) {
     });
   }
 
+  function expandAndFocus(tree: Record<string, unknown>) {
+    invoiceRef.current?.expand(addressIndexesWithErrors(tree, "invoiceAddresses"));
+    shippingRef.current?.expand(addressIndexesWithErrors(tree, "shippingAddresses"));
+    const first = firstErrorField(tree, CUSTOMER_ADDRESS_ARRAYS);
+    if (first) requestFocus(first as Path<CustomerFormValues>);
+  }
+
   /** Server field errors: set them, expand items that contain them, focus the first in visual order. */
   function showServerFieldErrors(entries: readonly MappedFieldError[]) {
     if (entries.length === 0) return;
-    const tree: Record<string, unknown> = {};
-    for (const { name, message } of entries) {
-      form.setError(name as Path<CustomerFormValues>, { type: "server", message });
-      const parts = name.split(".");
-      let node = tree;
-      parts.forEach((part, index) => {
-        if (index === parts.length - 1) node[part] = { message };
-        else node = (node[part] ??= {}) as Record<string, unknown>;
-      });
-    }
-    invoiceRef.current?.expand(addressIndexesWithErrors(tree, "invoiceAddresses"));
-    shippingRef.current?.expand(addressIndexesWithErrors(tree, "shippingAddresses"));
-    const first = firstErrorField(tree);
-    if (first) requestFocus(first as Path<CustomerFormValues>);
+    for (const { name, message } of entries) form.setError(name as Path<CustomerFormValues>, { type: "server", message });
+    expandAndFocus(errorTreeFromEntries(entries));
   }
 
   function loadIntoForm(id: string) {
@@ -347,13 +260,7 @@ function CustomerWorkspace({ access }: { access: CustomerAccess }) {
     window.print();
   }
 
-  const onInvalid = (errors: FieldErrors<CustomerFormValues>) => {
-    const tree = errors as Record<string, unknown>;
-    invoiceRef.current?.expand(addressIndexesWithErrors(tree, "invoiceAddresses"));
-    shippingRef.current?.expand(addressIndexesWithErrors(tree, "shippingAddresses"));
-    const first = firstErrorField(tree);
-    if (first) requestFocus(first as Path<CustomerFormValues>);
-  };
+  const onInvalid = (errors: FieldErrors<CustomerFormValues>) => expandAndFocus(errors as Record<string, unknown>);
 
   const onValid = async (values: CustomerFormValues) => {
     if (submittingRef.current) return; // double submit
@@ -401,20 +308,14 @@ function CustomerWorkspace({ access }: { access: CustomerAccess }) {
     }
   };
 
-  function toggleDrawer() {
-    setDrawerChoice(!drawerOpen);
-    storeDrawerOpen(!drawerOpen);
-  }
-
   function closeDrawer() {
-    setDrawerChoice(false);
-    storeDrawerOpen(false);
+    drawer.setOpen(false);
     // The toggle may be hidden while the full-width sheet is open (<640 px); focus it after it reappears.
     window.requestAnimationFrame(() => toggleRef.current?.focus());
   }
 
   const gone = selectedId !== null && goneId === selectedId;
-  const headerMode: CustomerMode = gone && mode === "edit" ? "view" : mode;
+  const headerMode: PartnerMode = gone && mode === "edit" ? "view" : mode;
   const readOnly = mode === "view" || gone;
   const showForm = mode === "draft" || ((mode === "edit" || mode === "view") && loaded);
 
@@ -423,7 +324,8 @@ function CustomerWorkspace({ access }: { access: CustomerAccess }) {
       <SetupTabs />
       <div className="relative flex min-h-0 flex-1">
         <div className="min-w-0 flex-1 overflow-y-auto p-4 sm:pb-6 sm:pl-6 sm:pr-10 sm:pt-6">
-          <CustomerPageHeader
+          <PartnerPageHeader
+            entity={CUSTOMER}
             formId={FORM_ID}
             mode={headerMode}
             total={total}
@@ -441,29 +343,13 @@ function CustomerWorkspace({ access }: { access: CustomerAccess }) {
             }}
           />
 
-          {mode === "none" && (
-            <section aria-label="No customer selected" className="flex flex-col items-start gap-3 rounded-gms-lg border border-gms-border bg-gms-surface p-8">
-              <Users size={28} className="text-gms-text-secondary" aria-hidden />
-              <p className="text-base text-gms-text">Select a customer from the list.</p>
-            </section>
-          )}
+          {mode === "none" && <EmptySelection entity={CUSTOMER} />}
 
           {selectedId !== null && !loaded && detail.isError && (
-            <div role="alert" className="flex flex-col items-start gap-3 rounded-gms-lg border border-gms-border bg-gms-surface p-6">
-              <p className="text-sm text-gms-text">{loadErrorMessage(detail.error, "this customer")}</p>
-              {!detailNotFound && <Button onClick={() => loadIntoForm(selectedId)}>Retry</Button>}
-            </div>
+            <DetailLoadError message={loadErrorMessage(detail.error, "this customer")} onRetry={detailNotFound ? undefined : () => loadIntoForm(selectedId)} />
           )}
 
-          {selectedId !== null && !loaded && !detail.isError && (
-            <div aria-busy="true" aria-label="Loading customer" className="space-y-4">
-              <div className="h-[260px] animate-pulse rounded-gms-lg bg-gms-surface-sunken" />
-              <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-                <div className="h-[420px] animate-pulse rounded-gms-lg bg-gms-surface-sunken" />
-                <div className="h-[420px] animate-pulse rounded-gms-lg bg-gms-surface-sunken" />
-              </div>
-            </div>
-          )}
+          {selectedId !== null && !loaded && !detail.isError && <FormSkeleton entity={CUSTOMER} addressCards={2} />}
 
           {showForm && (
             <form
@@ -473,45 +359,41 @@ function CustomerWorkspace({ access }: { access: CustomerAccess }) {
               aria-label={mode === "draft" ? "Create customer" : mode === "edit" ? "Edit customer" : "Customer details"}
               className="space-y-4 print:hidden"
             >
-              {formError && (
-                <div role="alert" className="flex flex-wrap items-center gap-3 rounded-gms-md border border-gms-danger bg-gms-danger-subtle px-4 py-3">
-                  <p className="min-w-0 flex-1 text-sm text-gms-danger">{formError.message}</p>
-                  {formError.stale && (
-                    <Button onClick={reloadLatest} disabled={detail.isFetching}>
-                      Reload
-                    </Button>
-                  )}
-                </div>
-              )}
-              <CustomerInformationCard form={form} readOnly={readOnly} options={optionsState} />
+              {formError && <FormErrorBanner message={formError.message} onReload={formError.stale ? reloadLatest : undefined} reloading={detail.isFetching} />}
+              <PartnerInformationCard form={form} title="Customer Information" idPrefix={CUSTOMER.key} readOnly={readOnly} options={optionsState} />
               {/* Side by side when the content is at least ~1000 px wide, otherwise stacked (Q-CUS-05). */}
               <div className="@container">
                 <div className="grid grid-cols-1 items-start gap-4 @min-[1000px]:grid-cols-2 @min-[1000px]:gap-6">
-                  <AddressListCard ref={invoiceRef} form={form} type="invoice" readOnly={readOnly} options={optionsState} />
-                  <AddressListCard ref={shippingRef} form={form} type="shipping" readOnly={readOnly} options={optionsState} />
+                  <AddressListCard
+                    ref={invoiceRef}
+                    form={form}
+                    type={invoiceAddressType}
+                    idPrefix={CUSTOMER.key}
+                    layout="split"
+                    defaultRule="exactlyOne"
+                    readOnly={readOnly}
+                    options={optionsState}
+                  />
+                  <AddressListCard
+                    ref={shippingRef}
+                    form={form}
+                    type={shippingAddressType}
+                    idPrefix={CUSTOMER.key}
+                    layout="split"
+                    defaultRule="exactlyOne"
+                    readOnly={readOnly}
+                    options={optionsState}
+                  />
                 </div>
               </div>
             </form>
           )}
         </div>
 
-        <button
-          ref={toggleRef}
-          type="button"
-          aria-expanded={drawerOpen}
-          aria-controls={CUSTOMERS_DRAWER_ID}
-          aria-label={drawerOpen ? "Hide customers panel" : "Show customers panel"}
-          onClick={toggleDrawer}
-          className={cx(
-            "absolute top-4 z-40 flex h-10 w-6 items-center justify-center rounded-l-gms-sm bg-gms-primary-strong text-gms-on-primary print:hidden",
-            drawerOpen ? "max-sm:hidden sm:right-80" : "right-0",
-            focusRing,
-          )}
-        >
-          {drawerOpen ? <ChevronRight size={16} aria-hidden /> : <ChevronLeft size={16} aria-hidden />}
-        </button>
+        <DrawerToggle ref={toggleRef} entity={CUSTOMER} open={drawerOpen} drawerId={DRAWER_ID} onToggle={() => drawer.setOpen(!drawerOpen)} />
 
         <CustomersDrawer
+          entity={CUSTOMER}
           open={drawerOpen}
           total={total}
           draft={access.add ? { name: mode === "draft" ? watchedName : "", code: mode === "draft" ? watchedCode : "" } : null}
@@ -530,6 +412,7 @@ function CustomerWorkspace({ access }: { access: CustomerAccess }) {
       </div>
 
       <DeleteCustomerDialog
+        entity={CUSTOMER}
         customer={deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onDeleted={(id) => {
@@ -537,6 +420,7 @@ function CustomerWorkspace({ access }: { access: CustomerAccess }) {
         }}
       />
       <DiscardChangesDialog
+        entity={CUSTOMER}
         open={pendingDiscard !== null}
         name={watchedName}
         onKeep={() => setPendingDiscard(null)}
@@ -546,7 +430,19 @@ function CustomerWorkspace({ access }: { access: CustomerAccess }) {
           action?.();
         }}
       />
-      {loaded && detail.data && <CustomerPrintView customer={detail.data} currencyLabel={labels.currency} countryLabel={labels.country} printedAt={printedAt} />}
+      {loaded && detail.data && (
+        <PartnerPrintView
+          entity={CUSTOMER}
+          partner={detail.data}
+          addressSections={[
+            { title: invoiceAddressType.title, nameLabel: invoiceAddressType.nameLabel, withTaxId: true, addresses: detail.data.invoiceAddresses },
+            { title: shippingAddressType.title, nameLabel: shippingAddressType.nameLabel, withTaxId: false, addresses: detail.data.shippingAddresses },
+          ]}
+          currencyLabel={labels.currency}
+          countryLabel={labels.country}
+          printedAt={printedAt}
+        />
+      )}
     </div>
   );
 }

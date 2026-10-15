@@ -5,9 +5,10 @@
  * document/apps/frontend/user-permission/design-system.md). They live in a
  * `gms-` namespace so they add utilities (bg-gms-primary, rounded-gms-md, ...)
  * without overriding Tailwind defaults that existing pages already use.
- * Font family is unchanged until Q-UP-27 is answered.
+ * Font: IBM Plex Sans Thai for the whole site (owner, 2026-10-14; answers Q-UP-27).
  */
 @theme {
+  --font-sans: var(--font-ibm-plex-sans-thai), "IBM Plex Sans Thai", Arial, Helvetica, sans-serif;
   --color-gms-primary: #006a70;
   --color-gms-primary-strong: #0e6064;
   --color-gms-primary-subtle: #fafcfc;
@@ -40,6 +41,14 @@
   --color-gms-status-active: #1c744a;
   --color-gms-field-disabled: #f8f8f8;
 
+  /* App shell (FE-UP-017; sampled from source 06-sidebar / 07-topbar / 08-shell). */
+  --color-gms-nav-active: #f5f5f6;
+  --color-gms-text-subtle: #95a0a9;
+  --color-gms-text-muted: #637381;
+  --color-gms-border-header: #e3e7ec;
+  --spacing-gms-sidebar: 236px;
+  --spacing-gms-topbar: 48px;
+
   --radius-gms-sm: 4px;
   --radius-gms-md: 8px;
   --radius-gms-lg: 12px;
@@ -59,8 +68,16 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: #fff; color: var(--gms-ink); font-family: Arial, Helvetica, sans-serif; }
-button, input { font: inherit; }
+body { margin: 0; background: #fff; color: var(--gms-ink); font-family: var(--font-sans); }
+button, input, select, textarea { font: inherit; }
 @layer base {
   a { color: inherit; text-decoration: none; }
+}
+
+/* Hide the scrollbar but keep the element scrollable (wheel, touch, keyboard). */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }

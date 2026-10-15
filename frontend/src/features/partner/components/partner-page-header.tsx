@@ -3,14 +3,16 @@
 import { CopyPlus, FileSpreadsheet, Plus, Printer, RotateCw, Save, Trash2 } from "lucide-react";
 import type { Ref } from "react";
 import { Button, IconButton, cx } from "@/components/ui/button";
+import { lowerSingular, type PartnerEntity } from "../entity";
 
-export type CustomerMode = "draft" | "edit" | "view" | "none";
+export type PartnerMode = "draft" | "edit" | "view" | "none";
 
-type CustomerPageHeaderProps = {
+type PartnerPageHeaderProps = {
+  entity: PartnerEntity;
   formId: string;
-  mode: CustomerMode;
+  mode: PartnerMode;
   total: number | undefined;
-  /** A saved customer is open and loaded (Print / Duplicate). */
+  /** A saved record is open and loaded (Print / Duplicate). */
   savedLoaded: boolean;
   canAdd: boolean;
   canDelete: boolean;
@@ -24,19 +26,19 @@ type CustomerPageHeaderProps = {
   deleteButtonRef?: Ref<HTMLButtonElement>;
 };
 
-const titles: Record<CustomerMode, string> = {
-  draft: "Add Customer",
-  edit: "Edit Customer", // Q-CUS-03 default
-  view: "Customer", // VIEW only (Q-CUS-03 default)
-  none: "Customer",
-};
+function title(entity: PartnerEntity, mode: PartnerMode): string {
+  if (mode === "draft") return `Add ${entity.singular}`;
+  if (mode === "edit") return `Edit ${entity.singular}`; // Q-CUS-03 default
+  return entity.singular; // VIEW only / nothing selected
+}
 
 /**
- * C-03 / C-04 (FE-CUS-005): title per mode, "Customer list {total}" and the toolbar
- * (ui-spec "Header toolbar"). Buttons the user may not use are hidden; Excel is the
- * only `aria-disabled` button. Delete sits between Refresh and the primary button (Q-CUS-02).
+ * Partner C-03 (customer FE-CUS-005, vendor FE-VEN-004): title per mode, "{Entity} list {total}"
+ * and the toolbar. Buttons the user may not use are hidden; Excel is the only `aria-disabled`
+ * button. Delete sits between Refresh and the primary button (Q-CUS-02).
  */
-export function CustomerPageHeader({
+export function PartnerPageHeader({
+  entity,
   formId,
   mode,
   total,
@@ -51,16 +53,17 @@ export function CustomerPageHeader({
   onRefresh,
   onDelete,
   deleteButtonRef,
-}: CustomerPageHeaderProps) {
+}: PartnerPageHeaderProps) {
   const saved = mode === "edit" || mode === "view";
+  const noun = lowerSingular(entity);
   return (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 print:hidden">
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-3">
-        <h1 className="text-2xl font-medium leading-8 text-gms-text-heading">{titles[mode]}</h1>
-        <span className="text-sm text-gms-text-secondary">{total === undefined ? "Customer list" : `Customer list ${total}`}</span>
+        <h1 className="text-2xl font-medium leading-8 text-gms-text-heading">{title(entity, mode)}</h1>
+        <span className="text-sm text-gms-text-secondary">{total === undefined ? `${entity.singular} list` : `${entity.singular} list ${total}`}</span>
       </div>
       <div className="flex flex-wrap items-center gap-1">
-        <IconButton label="Print saved customer" onClick={onPrint} disabled={!savedLoaded}>
+        <IconButton label={`Print saved ${noun}`} onClick={onPrint} disabled={!savedLoaded}>
           <Printer size={18} aria-hidden />
         </IconButton>
         <IconButton label="Export to Excel" unavailableReason="Excel export isn't available yet">
@@ -68,7 +71,7 @@ export function CustomerPageHeader({
         </IconButton>
         <span className="w-3" aria-hidden />
         {canAdd && (
-          <IconButton label="Duplicate customer" onClick={onDuplicate} disabled={!savedLoaded || submitting || deleting}>
+          <IconButton label={`Duplicate ${noun}`} onClick={onDuplicate} disabled={!savedLoaded || submitting || deleting}>
             <CopyPlus size={18} aria-hidden />
           </IconButton>
         )}
@@ -90,7 +93,7 @@ export function CustomerPageHeader({
             icon={<Plus size={18} aria-hidden />}
             className="ml-3 min-w-[170px]"
           >
-            Create Customer
+            {`Create ${entity.singular}`}
           </Button>
         )}
         {mode === "edit" && (

@@ -27,7 +27,7 @@ const FORM_ID = "user-permission-form";
  * Super Admin only (owner answer Q-UP-20): `permission.mine` gates the page and
  * no `userAdmin.*` request is made for anyone else (FE-UP-014).
  */
-export function UserPermissionPage() {
+export function  UserPermissionPage() {
   return (
     <ToastProvider>
       <AccessGuard />

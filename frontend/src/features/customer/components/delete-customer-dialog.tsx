@@ -1,12 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
+import { DeletePartnerDialog } from "@/features/partner/components/delete-partner-dialog";
+import type { PartnerEntity } from "@/features/partner/entity";
 import { mapDeleteError } from "../api";
 import { useCustomerCache, useDeleteCustomer } from "../hooks";
 
 type DeleteCustomerDialogProps = {
+  entity: PartnerEntity;
   customer: { id: string; name: string } | null;
   onClose: () => void;
   /** Called after the customer is deleted, or found to be already gone. */
@@ -14,11 +16,11 @@ type DeleteCustomerDialogProps = {
 };
 
 /**
- * C-17 (FE-CUS-012): permanent-delete confirmation. Focus starts on "Keep customer" and
- * returns to the Delete button; Esc is ignored while deleting (ConfirmDialog). Failures stay
- * in the dialog; CUSTOMER_NOT_FOUND closes it with an info toast (error-handling.md).
+ * C-17 (FE-CUS-012): runs `customer.delete` behind the shared Partner delete dialog
+ * (vendor FE-VEN-001). Failures stay in the dialog; CUSTOMER_NOT_FOUND closes it with an
+ * info toast (error-handling.md).
  */
-export function DeleteCustomerDialog({ customer, onClose, onDeleted }: DeleteCustomerDialogProps) {
+export function DeleteCustomerDialog({ entity, customer, onClose, onDeleted }: DeleteCustomerDialogProps) {
   const toast = useToast();
   const cache = useCustomerCache();
   const deletion = useDeleteCustomer();
@@ -59,18 +61,5 @@ export function DeleteCustomerDialog({ customer, onClose, onDeleted }: DeleteCus
     );
   }
 
-  return (
-    <ConfirmDialog
-      open={customer !== null}
-      title={`Delete ${customer?.name ?? "customer"}?`}
-      body="The customer and all of its addresses will be permanently deleted. Documents that already use this customer keep their own copy of its name. This can't be undone."
-      cancelLabel="Keep customer"
-      confirmLabel="Delete"
-      pendingLabel="Deleting..."
-      pending={deletion.isPending}
-      error={error}
-      onCancel={close}
-      onConfirm={confirm}
-    />
-  );
+  return <DeletePartnerDialog entity={entity} target={customer} pending={deletion.isPending} error={error} onCancel={close} onConfirm={confirm} />;
 }

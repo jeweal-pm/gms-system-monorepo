@@ -37,7 +37,7 @@ SA approval or a handoff). Nothing may start before the owner approves revision 
 | [ ] | FE-UP-014 | implemented; runtime verification pending service restart | frontend | Page access guard / access-denied state | `frontend/src/features/user-permission/**` | SA rev 1 approved; `permission.mine`; Q-UP-20 answered (Super Admin) | Unauthorized users see the denied state; no data request is made | TC-UP-21 |
 | [ ] | FE-UP-015 | blocked | frontend | Unsaved-changes confirmation | `frontend/src/features/user-permission/**` | Q-UP-19 | Dirty form prompts before switching user/refresh/navigation | manual |
 | [ ] | FE-UP-016 | blocked | frontend | Responsive behavior (proposal in ui-spec) | `frontend/src/features/user-permission/**`, `frontend/src/features/setup/**` | Q-UP-23 | No page-level horizontal scroll; the matrix scroller has a sticky MENU column | TC-UP-22 |
-| [ ] | FE-UP-017 | blocked | frontend (frontend-home scope) | Align the global AppShell with the source sidebar/header (only if approved) | `frontend/src/features/home/**` (separate scope handoff) | Q-UP-21 | Home and other pages still work; matches S1 shell | visual + build |
+| [ ] | FE-UP-017 | implemented (visual check pending) | frontend (frontend-home scope) | Align the global AppShell with the source sidebar/header: reusable Sidebar + Topbar + content slot, breadcrumbs as data, nav `href` model, avatar menu, fullscreen, bell placeholder, mobile drawer | `frontend/src/features/home/**`, `frontend/src/app/**` pages using the shell, `frontend/src/app/globals.css` (sole writer this run) | Q-UP-21 answered by owner 2026-10-14 (approval below); sources 06–08 | Home and other pages still work; matches 06-sidebar/07-topbar/08-shell; session guard unchanged; `aria-current`, labeled nav, visible focus | typecheck + lint pass (2026-10-14); browser visual compare **not run** (see progress note) |
 | [ ] | FE-UP-018 | pending | frontend → manual-tester | Verification: typecheck, lint, build, browser checks at 1920×1080 and the proposed widths; manual-tester journey | none (checks only) | All implemented items | Actual commands/results recorded; unexecuted cases marked not run | testing.md |
 
 Backend/SA requirements (owned by SA; backend TODO items are to be added here by SA after its review):
@@ -83,6 +83,8 @@ Frontend follow-ups from SA rev 1 (apply after SA approval, with FE-UP-012): Use
 | 1 | 2026-10-12 | User: "ui-spec ขอ spec จาก 5 ภาพที่ส่งไป" | Draft spec/TODO prepared; **pending owner review**. Not approved for implementation; SA/backend not approved. |
 | 1 | 2026-10-12 | 2026-10-12 owner: "ตอบคำถาม หน้า user permission จะเป็นหนึ่งใน feature หลักเฉยๆที่สามารถ ให้ super admin นั้นสามารถ มา set permission ของ user ได้ว่า user สามารถ VIEW ADD EDIT DELETE  CANCEL Price frontend backend ทำ หน้า user permission ให้หน่อย" | **UI revision 1 approved for implementation.** Frontend builds against a labeled fixture adapter; data items stay blocked on separate SA approval. |
 | SA 1 | 2026-10-12 | 2026-10-12 owner: "frontend backend หน้า user permission ให้สามารถ add user และ delete user ได้" | **SA revision 1 approved as recommended; ADR-0016/0017 Accepted.** First slice = add + delete user end to end. |
+| FE-UP-017 | 2026-10-14 | 2026-10-14 owner: "frontned ช่วยทำ Nav bar ทั้งตัว ข้างๆและข้างบนเป็น component เอาไว้ใช้กับทุกหน้าหน่อย" (frontend: make the whole nav bar, side and top, as a component for every page), with three new source images (06-sidebar, 07-topbar, 08-shell) and owner-pasted CSS (sidebar 236 px / 100vh / gap 15 / padding 16 14 / #FCFCFC / border-right 1px #EDEDED; topbar 48 px / #FFFFFF / border-bottom 1px #E3E7EC) | **FE-UP-017 approved** (answers Q-UP-21: restyle the global shell). Also approves the frontend-home scope edits it needs. No contract, schema, ADR or package change. |
+| FE-UP-017 | 2026-10-14 | 2026-10-14 owner: "frontend อยากให้ตัว top navbar อยากให้เป็นประมาณนี้" with the slide "[FE] Implement Top Navbar" (topbar + open avatar menu: email, Super Admin, Settings, User and permission, Sign out) | **Avatar-menu amendment to FE-UP-017 approved.** Reuses the implemented `permission.mine` contract; no contract, schema, ADR or package change. |
 
 To approve, the owner states approval of `user-permission` UI revision 1 (and ideally answers the blocking
 questions). Answers that change flow, source, API, schema or package choice create revision 2 and mark the
@@ -237,6 +239,45 @@ affected item IDs.
   sees a session. Recommend the frontend send `active: true` only, or hide the switch, until BE-UP-011 ships.
 - Parent follow-ups: add `USER_SEAT_LIMIT` to Compose/`.env.example` (BE-UP-013, optional because the code default is 3);
   tech-stack ledger row "none (backend)" can be marked implemented with no new package.
+
+### Frontend progress: FE-UP-017 global AppShell (2026-10-14)
+
+- Approval: owner instruction 2026-10-14 (see the approval table). Claimed scope for this run: `frontend/src/features/home/**`,
+  shell-using pages in `frontend/src/app/**` (`page.tsx` via `home-dashboard`, `modules/[slug]`, `setup/user-permission`,
+  `settings/profile`), `frontend/src/app/globals.css` (sole writer this run). No package, manifest, provider or contract change.
+- Sources copied to [source/](../../apps/frontend/user-permission/source/) (SHA-256):
+  - `06-sidebar.png` 472×2160 (236×1080 CSS at DPR 2): `93c0257857978705d1885af47e0b3cd5dc6af31a3bcc2d1d65ddfad051f81efc`
+  - `07-topbar.png` 3368×96 (1684×48): `529d43e01ee2a13b8d96b706e1f638c4cb5bd86cce1d42890bd891bb9eb158f4`
+  - `08-shell.png` 3840×2160 (1920×1080): `f43e8aa7e781521d95ca311ba21655f33ec6ac7f81f14a3575dfc9d3df3b380a`
+- Implemented: `AppShell({ children, breadcrumbs?: { label, href? }[] })` = unchanged session guard + `Sidebar` + `Topbar` +
+  `<main>` slot; `Sidebar`, `Breadcrumbs`, `Topbar` (clock, fullscreen, bell placeholder, `AccountMenu`), mobile drawer below `md`.
+  The nav model now carries `href` and optional `activePrefix`; Setup links to `/setup/user-permission` and is active for
+  `/setup/**`. This also closes the FE-UP-001 sidebar-entry handoff.
+- Measured from pixels (device px ÷ 2): item 36 tall, 40 px pitch, radius ~7 (token 8), icon 18 / stroke 1.5, label 15 px;
+  group label 13 px `#95A0A9`; active bg `#F5F5F6`; text `#1C252E`; divider 1 px `#EDEDED` 7 px under Purchase Order;
+  logo 131.5×36; topbar padding 24, breadcrumbs 13 px (`#656B71` / current `#1C252E`), chevron 12, status dot 6 px `#22C55E`,
+  date 13 px `#637381`, icon buttons 32 (icon 20), bell dot 5 px `#3385F0`, avatar 30 px `#1C252E` with white 12 px initials.
+- Removed from the sidebar (routes and Home shortcuts kept): Company Profile, Bank, Purchase (PU), Memo In, Memo Return,
+  Memo Out, Memo Out Return, Load, Inventory Primary/Consignment/Movement, Memo Outstanding, Receivable, Payable, and the
+  Setup group items (Main Location, Sub Location, Currency, Certificate Type, Labour Type; still reachable from SetupTabs).
+  Header: the inline Settings link moved into the avatar menu ("Profile settings"); the help (?) icon was removed.
+- Verification (2026-10-14, inside the running `frontend` dev container): `pnpm --filter frontend typecheck` exit 0;
+  `pnpm --filter frontend lint` exit 0 (0 errors, 2 pre-existing warnings in `features/auth/login-form.tsx`).
+  `curl` of `/`, `/setup/user-permission`, `/modules/stone`, `/modules/report-primary`, `/settings/profile` → 200, but the
+  dev server still served the **old** shell markup (`w-[187px]` skeleton) and CSS without the new tokens, even after
+  touching the files inside the container: the Windows bind-mount change was not picked up. Containers were not restarted.
+- Not run / gaps: browser visual compare with 06–08 at 1920×1080 and mobile, keyboard walk-through of the avatar menu and
+  drawer, fullscreen in a real browser, `next build`, manual-tester (FE-UP-018). Font stays Arial (Q-UP-27 open); the
+  source looks like IBM Plex Sans, so text widths differ. The bell's blue dot is decorative (no notification contract).
+
+- Avatar-menu amendment (2026-10-14, owner slide "[FE] Implement Top Navbar"): `account-menu.tsx` now matches the open
+  menu in the slide: header = email (14 px semibold) + role (12 px `#637381`), divider, **Settings** (`/settings/profile`),
+  **User and permission** (`/setup/user-permission`, shown only when `permission.mine` says Super Admin), divider, red
+  **Sign out**; no icons, 224 px wide, top 41 px under the avatar (sits on the topbar border). Role = "Super Admin" or "User"
+  from `permission.mine` (same query key as the page, staleTime 30 s, no retry); blank while loading or on error. The rest of the
+  topbar (breadcrumbs, status dot + clock, fullscreen, bell) was already as in the slide and is unchanged. Verification inside
+  `f1-system-frontend-1`: `pnpm --filter frontend typecheck` exit 0; `pnpm --filter frontend lint` 0 errors (2 pre-existing
+  warnings in `login-form.tsx`). Browser check of the open menu **not run**.
 
 ## Corrective work
 
