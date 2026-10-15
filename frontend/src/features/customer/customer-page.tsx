@@ -323,7 +323,7 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
     <div className="flex h-full min-h-0 flex-col bg-gms-page">
       <SetupTabs />
       <div className="relative flex min-h-0 flex-1">
-        <div className="min-w-0 flex-1 overflow-y-auto p-4 sm:pb-6 sm:pl-6 sm:pr-10 sm:pt-6">
+        <div className="relative min-w-0 flex-1 overflow-y-auto p-4 sm:pb-6 sm:pl-6 sm:pr-10 sm:pt-6">
           <PartnerPageHeader
             entity={CUSTOMER}
             formId={FORM_ID}
