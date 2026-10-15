@@ -1,6 +1,6 @@
 # Sequence diagram: auth + gateway / user-permission
 
-- Source UI revision / SA revision: 1 / 1 (pending-review)
+- Source UI revision / SA revision: 2 / 2 (**implemented**; [ADR-0020](../../../../adr/0020-username-login-and-permission-matrix-v2.md) revision 1 Accepted 2026-10-15, owner "frontend backend อนุมัติ ADR-0020"). Revision 1 content below is kept where unchanged; revision 2 notes override it.
 - Main user flow: [user-permission-flow.md](../../../../diagram/user-permission-flow.md)
 - Related API operations / TODO IDs: [API contract](api-contract.md); BE-UP-001…014; FE-UP-007, 009, 012, 013, 014
 - Participants: Browser (Next.js page) → Next proxy (`/api/trpc`, `/api/v1`) → Gateway (NestJS + tRPC) → Auth (NestJS, Better Auth) → PostgreSQL schema `auth`; License server (remote) or MockLicenseClient (dev)
@@ -52,16 +52,16 @@ sequenceDiagram
     participant A as Auth
     participant L as License server / mock
     participant DB as PostgreSQL auth
-    B->>G: userAdmin.create {email, password, name, phone, locationKeys, active, permissions, photo?}
+    B->>G: userAdmin.create {username, password, name, phone, locationKeys, active, permissions}
     G->>G: superAdminProcedure + zod (body ≤ 1 MiB)
     G->>A: POST /internal/v1/user-admin/users (cookie, 6 s)
     A->>A: requireSuperAdmin · validate · catalog/location/photo magic-byte checks
-    A->>DB: find user by normalized email
+    A->>DB: find user by normalized username
     alt exists
-        A-->>G: 409 EMAIL_ALREADY_EXISTS
+        A-->>G: 409 USERNAME_TAKEN
         G-->>B: CONFLICT (field error on Username)
     end
-    A->>L: lookup(email) (≤ 3 s total, 1 retry on transient)
+    A->>L: lookup(username sent in the existing `email` field) (≤ 3 s total, 1 retry on transient)
     alt none / inactive / expired
         A-->>G: 422 USER_LICENSE_NOT_ELIGIBLE
     else outage / malformed
@@ -74,8 +74,8 @@ sequenceDiagram
             A->>DB: ROLLBACK
             A-->>G: 409 USER_LIMIT_REACHED
         else under limit
-            A->>DB: INSERT User(role='user', active, phone) + Account(credential) + UserPermission[] + UserLocation[] + UserPhoto?
-            A->>DB: COMMIT (P2002 → 409 EMAIL_ALREADY_EXISTS)
+            A->>DB: INSERT User(role='user', username, email='<id>@users.invalid', active, phone) + Account(credential) + UserPermission[] + UserLocation[]
+            A->>DB: COMMIT (P2002 → 409 USERNAME_TAKEN)
             A->>DB: upsert LicenseCache(token) if active token
             alt cache write fails
                 A->>DB: DELETE User (compensation, same as CRM)
@@ -97,21 +97,27 @@ sequenceDiagram
     participant G as Gateway tRPC
     participant A as Auth
     participant DB as PostgreSQL auth
-    B->>G: userAdmin.update {id, expectedUpdatedAt, ...changed}
+    B->>G: userAdmin.update {id, expectedUpdatedAt?, username? (echo only), ...changed}
     G->>A: PATCH /internal/v1/user-admin/users/:id (cookie, 5 s)
-    A->>A: requireSuperAdmin · strict schema (no email)
+    A->>A: requireSuperAdmin · strict schema · validate permission/location sets
+    A->>DB: SELECT role (pre-check)
+    alt Super Admin target and (permissions or password or active=false)
+        A-->>G: 403 SUPER_ADMIN_LOCKED (no Argon2 cost)
+    end
     opt password present
         A->>A: Argon2id hash (outside transaction)
     end
     A->>DB: BEGIN
-    A->>DB: SELECT role, updatedAt FROM User WHERE id FOR UPDATE
+    A->>DB: SELECT role, username, updatedAt FROM User WHERE id FOR UPDATE
     alt not found
         A-->>G: 404 USER_NOT_FOUND
-    else role='admin'
-        A-->>G: 403 SUPER_ADMIN_READ_ONLY
-    else updatedAt != expected
+    else username sent and differs
+        A-->>G: 400 USERNAME_IMMUTABLE
+    else expectedUpdatedAt sent and differs
         A-->>G: 409 USER_CHANGED
-    else ok
+    else role='admin' and (permissions or password or active=false)
+        A-->>G: 403 SUPER_ADMIN_LOCKED
+    else ok (Super Admin: name, phone, locationKeys only)
         A->>DB: UPDATE User (name, phone, active, updatedAt=now)
         opt permissions given
             A->>DB: DELETE + INSERT UserPermission set
@@ -119,9 +125,7 @@ sequenceDiagram
         opt locationKeys given
             A->>DB: DELETE + INSERT UserLocation set
         end
-        opt photo given (null removes)
-            A->>DB: UPSERT / DELETE UserPhoto
-        end
+        Note over A: photo still deferred (strict schema rejects it)
         opt password given
             A->>DB: UPDATE Account.password · reset LoginLockout + failed_login_count
         end
@@ -149,7 +153,7 @@ sequenceDiagram
     alt missing
         A-->>G: 404 USER_NOT_FOUND
     else admin or self
-        A-->>G: 403 SUPER_ADMIN_READ_ONLY
+        A-->>G: 403 SUPER_ADMIN_LOCKED
     else regular user
         A->>DB: DELETE User (cascade Session, Account, LicenseCache, LicenseActivationLockout, UserPermission, UserLocation, UserPhoto · LoginAttempt.user_id → NULL)
         A->>DB: COMMIT
@@ -168,18 +172,18 @@ sequenceDiagram
     participant B as Browser
     participant G as Gateway tRPC
     participant A as Auth
-    B->>G: dashboard.shortcutGroups (or future vendor.list etc.)
+    B->>G: dashboard.shortcutGroups (or customer.*, vendor.*)
     G->>A: session-context (as in 1)
     A-->>G: {license, authz}
     G->>G: licensedProcedure, then permittedProcedure(menuKey, action)
     alt Super Admin or grant present
         G-->>B: data (PRICE fields only with menuKey:PRICE)
     else missing grant
-        G-->>B: FORBIDDEN PERMISSION_DENIED (shortcuts: item filtered out)
+        G-->>B: FORBIDDEN PERMISSION_DENIED (shortcuts: no dashboard:VIEW → []; item without slug:VIEW filtered out)
     end
 ```
 
-## 6. Inactive user signs in
+## 6. Sign-in with username (ADR-0020) and inactive users
 
 ```mermaid
 sequenceDiagram
@@ -188,13 +192,19 @@ sequenceDiagram
     participant P as Next proxy /api/auth
     participant A as Auth (Better Auth)
     participant DB as PostgreSQL auth
-    B->>P: POST /api/auth/sign-in/email
-    P->>A: forward
-    A->>DB: lockout check, verify password (existing)
-    alt wrong password
-        A-->>B: 401 / 423 (existing ADR-0012 behavior)
+    B->>P: POST /api/auth/sign-in/username {username, password, rememberMe?}
+    P->>A: forward (rate limit 5/min/IP on this path; /sign-in/email → 404)
+    A->>A: normalize username (trim + lowercase)
+    A->>DB: lockout check by HMAC(username) (ADR-0012)
+    alt locked
+        A-->>B: 423 {code:"ACCOUNT_LOCKED", retryAfterSeconds}
+    end
+    A->>DB: find user by username, verify Argon2id password
+    alt wrong password, unknown or impossible username (Better Auth 401/422)
+        A->>DB: increment LoginLockout bucket
+        A-->>B: 401 {code:"INVALID_USERNAME_OR_PASSWORD", attemptsRemaining} or 423 on the 3rd failure
     else correct and active=false
-        A->>DB: DELETE new Session
+        A->>DB: DELETE new Session (cookie expired)
         A-->>B: 403 {code:"ACCOUNT_INACTIVE"}
     else correct and active
         A-->>B: existing success (single-session cleanup)

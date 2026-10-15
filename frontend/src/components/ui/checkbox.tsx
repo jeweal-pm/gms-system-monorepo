@@ -57,6 +57,36 @@ export function ReadOnlyCheck({ label, state }: { label: string; state: CheckSta
   );
 }
 
+/**
+ * Disabled matrix cell that keeps the box (user-permission rev2 view mode and
+ * the locked Super Admin matrix): faint box, grey check. A native disabled
+ * checkbox, so its checked/mixed state is still announced.
+ */
+export function DisabledCheckbox({ label, state, describedBy }: { label: string; state: CheckState; describedBy?: string }) {
+  const ref = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = state === "indeterminate";
+  }, [state]);
+
+  return (
+    <span className="relative inline-flex h-[22px] w-[22px] items-center justify-center">
+      <input
+        ref={ref}
+        type="checkbox"
+        aria-label={label}
+        aria-describedby={describedBy}
+        checked={state === "checked"}
+        disabled
+        readOnly
+        className="h-[22px] w-[22px] cursor-not-allowed appearance-none rounded-gms-sm border border-gms-border bg-gms-field-disabled"
+      />
+      {state === "checked" && <Check size={15} strokeWidth={2.5} className="pointer-events-none absolute text-gms-checkbox-readonly" aria-hidden />}
+      {state === "indeterminate" && <Minus size={15} strokeWidth={2.5} className="pointer-events-none absolute text-gms-checkbox-readonly" aria-hidden />}
+    </span>
+  );
+}
+
 type LabeledCheckboxProps = {
   id: string;
   label: string;

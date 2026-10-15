@@ -32,6 +32,8 @@ export class AuthController {
     if (!session || session.user.active === false) throw licenseException(new LicenseDomainError("UNAUTHORIZED", 401));
     const user = {
       id: session.user.id,
+      username: session.user.username ?? "",
+      // Internal `<id>@users.invalid` (ADR-0020); kept for compatibility, never shown.
       email: session.user.email,
       name: session.user.name,
       role: typeof session.user.role === "string" ? session.user.role : "user",
@@ -40,7 +42,7 @@ export class AuthController {
     // Uncached grants (ADR-0016 §4): changes apply on the caller's next request.
     const authz = await loadSessionAuthz(user.id, user.role);
     try {
-      const license = await this.licenseService.resolveStatus(user.id, user.email);
+      const license = await this.licenseService.resolveStatus(user.id, user.username);
       return { session: { user }, license, authz };
     } catch (error) {
       if (error instanceof LicenseDomainError) {
@@ -55,7 +57,7 @@ export class AuthController {
     const session = await auth.api.getSession({ headers: fromNodeHeaders(request.headers) });
     if (!session) throw licenseException(new LicenseDomainError("UNAUTHORIZED", 401));
     try {
-      return await this.licenseService.resolveStatus(session.user.id, session.user.email);
+      return await this.licenseService.resolveStatus(session.user.id, licenseSubject(session.user));
     } catch (error) {
       throw licenseException(error);
     }
@@ -70,7 +72,7 @@ export class AuthController {
       ? (body as { licenseKey?: unknown }).licenseKey
       : undefined;
     try {
-      return await this.licenseService.activate(session.user.id, session.user.email, licenseKey);
+      return await this.licenseService.activate(session.user.id, licenseSubject(session.user), licenseKey);
     } catch (error) {
       if (error instanceof LicenseDomainError && error.retryAfter) response.setHeader("retry-after", String(error.retryAfter));
       throw licenseException(error);
@@ -96,6 +98,11 @@ export class AuthController {
     }
     await auth.api.revokeOtherSessions({ headers });
   }
+}
+
+/** ADR-0020 §2: the license identity is the immutable username. */
+export function licenseSubject(user: { username?: string | null }) {
+  return user.username ?? "";
 }
 
 function licenseException(error: unknown): HttpException {

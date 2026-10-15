@@ -10,10 +10,11 @@ import {
   toUserDetail,
   toUserList,
   type CreateUserInput,
+  type UpdateUserInput,
 } from "./api";
 
 /**
- * TanStack Query hooks over the typed tRPC client (FE-UP-012 / FE-UP-014).
+ * TanStack Query hooks over the typed tRPC client (UI revision 2).
  * Keys are the tRPC keys for each procedure; bounds follow data-fetching.md.
  * Mutations are never retried (QueryClient default for mutations is 0).
  */
@@ -40,30 +41,32 @@ export function useLocationOptions() {
 }
 
 /**
- * Create is deliberately not a `useMutation`: mutation state keeps its
- * variables (which include the password) in the MutationCache. The vanilla
- * client call keeps the input only for the duration of the request.
+ * Create and update are deliberately not `useMutation`: mutation state keeps
+ * its variables (which can include a password) in the MutationCache. The
+ * vanilla client call keeps the input only for the duration of the request.
+ * Resolves `null` without a request while a save is already in flight.
  */
-export function useCreateUser() {
+export function useSaveUser() {
   const utils = trpc.useUtils();
   const [isPending, setIsPending] = useState(false);
   const inFlight = useRef(false);
-  /** Resolves `null` without a request when a create is already in flight (double submit). */
-  const create = useCallback(
-    async (input: CreateUserInput) => {
-      if (inFlight.current) return null;
-      inFlight.current = true;
-      setIsPending(true);
-      try {
-        return await utils.client.userAdmin.create.mutate(input);
-      } finally {
-        inFlight.current = false;
-        setIsPending(false);
-      }
-    },
-    [utils],
-  );
-  return { create, isPending };
+
+  const run = useCallback(async <T,>(call: () => Promise<T>): Promise<T | null> => {
+    if (inFlight.current) return null;
+    inFlight.current = true;
+    setIsPending(true);
+    try {
+      return await call();
+    } finally {
+      inFlight.current = false;
+      setIsPending(false);
+    }
+  }, []);
+
+  const create = useCallback((input: CreateUserInput) => run(() => utils.client.userAdmin.create.mutate(input)), [run, utils]);
+  const update = useCallback((input: UpdateUserInput) => run(() => utils.client.userAdmin.update.mutate(input)), [run, utils]);
+
+  return { create, update, isPending };
 }
 
 /** Delete variables are only the user ID; `gcTime: 0` drops the finished mutation. */

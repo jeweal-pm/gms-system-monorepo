@@ -10,6 +10,10 @@ const EXPIRING_DAYS = 14;
 const STATUS_CACHE_TTL_MS = 15_000;
 const STATUS_CACHE_MAX_ENTRIES = 4_096;
 
+/*
+ * ADR-0020 §2: every `email` parameter below is the license subject, which is now the user's
+ * immutable username. The license server still receives it in its existing `email` field.
+ */
 export class LicenseDomainError extends Error {
   constructor(readonly code: string, readonly httpStatus: number, readonly retryAfter?: number) {
     super("License operation could not be completed");
@@ -46,9 +50,9 @@ export class LicenseService {
 
   async cacheProvisionedToken(userId: string, token?: string) {
     if (!token) return;
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
     if (!user) throw new LicenseDomainError("LICENSE_UNVERIFIABLE", 503);
-    await this.verifyToken(token, normalizeEmail(user.email), false);
+    await this.verifyToken(token, normalizeEmail(user.username), false);
     await prisma.licenseCache.upsert({
       where: { userId },
       update: { token, fetchedAt: new Date(), lastErrorAt: null },

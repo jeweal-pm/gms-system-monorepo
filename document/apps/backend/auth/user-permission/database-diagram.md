@@ -1,8 +1,49 @@
 # Database diagram: auth / user-permission
 
-- Source UI revision / SA revision: 1 / 1 (pending-review; **proposal**, no migration written)
+- Source UI revision / SA revision: 2 / 2 (implemented 2026-10-15, [ADR-0020](../../../../adr/0020-username-login-and-permission-matrix-v2.md)). Revision 1 migration `20261012120000_user_permission` applied 2026-10-12.
 - Owning service / schema: `backend-api-auth` / PostgreSQL `auth`
-- Actual Prisma schema / migration paths: `backend-api-auth/prisma/schema.prisma`; new migration `backend-api-auth/prisma/migrations/2026101x000000_user_permission/` (name chosen by backend; integration-owned, parent serializes)
+- Actual Prisma schema / migration paths: `backend-api-auth/prisma/schema.prisma`; migrations `backend-api-auth/prisma/migrations/20261012120000_user_permission/` (rev 1) and `backend-api-auth/prisma/migrations/20261015120000_username_permission_v2/` (rev 2)
+
+## Revision 2 (ADR-0020)
+
+```mermaid
+erDiagram
+    User {
+        string id PK
+        string username UK "NEW varchar(64), CHECK ^[a-z0-9._@+-]{3,64}$, immutable, license subject"
+        string email UK "CHANGED: internal <id>@users.invalid, never shown"
+        string name
+        string role "admin = Super Admin, user"
+        boolean active
+    }
+    UserPermission {
+        string user_id PK,FK
+        string menu_key PK "catalog v2 leaf key"
+        enum action PK "+ APPROVE, PRINT, EXCEL"
+    }
+    User ||--o{ UserPermission : "grants (cascade)"
+```
+
+Migration `20261015120000_username_permission_v2` (hand-written, one file):
+
+1. `ALTER TYPE "auth"."PermissionAction" ADD VALUE` `APPROVE` (before `PRICE`), `PRINT`, `EXCEL` → enum order
+   `VIEW, ADD, EDIT, DELETE, CANCEL, APPROVE, PRICE, PRINT, EXCEL`.
+2. `ADD COLUMN "username" VARCHAR(64)`, backfill `lower(btrim(email))`, `SET NOT NULL`, unique index
+   `User_username_key`, CHECK `User_username_check` (fails loudly if an existing email is not a valid username).
+3. `UPDATE "auth"."User" SET "email" = "id" || '@users.invalid'`.
+4. `DELETE FROM "auth"."UserPermission"` (owner decision: wipe every grant; Super Admin keeps implicit ALL).
+
+Prisma: `username String @unique @db.VarChar(64)`; Better Auth plugin option `displayUsername: false`, so no
+`displayUsername` column. `LoginLockout.email_hash` / `LoginAttempt.email_hash` keep their names and now hold
+HMAC(normalized username); for migrated users the value is identical (username = old email). Bound: ≤ 64 leaves ×
+9 = 576 grant rows per user. Dev seed: usernames `superadmin@demo.com`, `user@demo.com`; the demo user gets
+`dashboard:VIEW` only.
+
+Rollback: revert auth + gateway + frontend together. `username` and the new enum values are additive and
+can stay. Wiped grants do not come back. The old emails can be restored with
+`UPDATE "auth"."User" SET "email" = "username"` before running old images.
+
+## Revision 1 (historical)
 
 Existing entities (unchanged): `Session`, `Account`, `LicenseCache`, `LicenseActivationLockout`,
 `LoginAttempt`, `LoginLockout`, `Verification`, `RateLimit`. Proposed changes are marked **NEW**.
