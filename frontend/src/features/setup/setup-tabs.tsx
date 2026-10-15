@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Coins, Contact, FileBadge, Hammer, MapPin, MapPinned, Settings, UserCog, type LucideIcon } from "lucide-react";
+import { Bell, Coins, Contact, FileBadge, FileUser, Hammer, MapPin, MapPinned, Settings, UserCog, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -16,6 +16,8 @@ type SetupTab = {
 const setupTabs: SetupTab[] = [
   { label: "General", href: null, icon: Settings, iconClass: "bg-indigo-600" },
   { label: "User and permission", href: "/setup/user-permission", icon: UserCog, iconClass: "bg-green-600" },
+  // vendor FE-VEN-002: placed right before "Customer", same order as the sidebar Partner Master group (Q-VEN-05).
+  { label: "Vendor", href: "/setup/vendor", icon: FileUser, iconClass: "bg-sky-600" },
   // customer FE-CUS-002: placed right after "User and permission" (Q-CUS-04 default).
   { label: "Customer", href: "/setup/customer", icon: Contact, iconClass: "bg-sky-600" },
   { label: "Notifications", href: null, icon: Bell, iconClass: "bg-teal-700" },

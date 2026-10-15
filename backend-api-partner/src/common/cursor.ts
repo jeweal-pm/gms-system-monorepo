@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { validationException } from "../common/errors";
+import { validationException } from "./errors";
 
 /** Opaque keyset cursor (api-contract.md "Cursor"): base64url JSON `{n: name_key, i: id, v: 1}`. */
 export type ListCursor = { nameKey: string; id: string };

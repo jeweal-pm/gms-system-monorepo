@@ -2,42 +2,67 @@
 
 import { Plus } from "lucide-react";
 import { useImperativeHandle, useRef, useState, type Ref } from "react";
-import { useFieldArray, useFormState, type UseFormReturn } from "react-hook-form";
+import { useFieldArray, useFormState, type FieldValues, type UseFormReturn } from "react-hook-form";
 import { cx, focusRing } from "@/components/ui/button";
 import { Card, CountBadge } from "@/components/ui/card";
-import { ADDRESS_MAX, addressArrayName, addressIndexesWithErrors, emptyAddress, type AddressType, type CustomerFormValues } from "../schema";
-import { AddressItem } from "./address-item";
-import type { OptionsState } from "./customer-information-card";
+import type { AddressTypeConfig } from "../address-types";
+import type { OptionsState } from "../options";
+import {
+  ADDRESS_MAX,
+  addressIndexesWithErrors,
+  emptyAddress,
+  type AddressArrayName,
+  type AddressFormValue,
+  type DefaultRule,
+  type PartnerAddressValues,
+} from "../schema";
+import { AddressItem, type AddressLayout } from "./address-item";
 
 export type AddressListHandle = {
-  /** Expands the given item indexes (submit with errors, FE-CUS-008). */
+  /** Expands the given item indexes (submit with errors). */
   expand: (indexes: readonly number[]) => void;
 };
 
-type AddressListCardProps = {
-  form: UseFormReturn<CustomerFormValues>;
-  type: AddressType;
+/** Internal view of the form: only the configured address array is touched. */
+type AddressForm = Record<AddressArrayName, AddressFormValue[]>;
+
+type AddressListCardProps<TForm extends FieldValues & PartnerAddressValues> = {
+  form: UseFormReturn<TForm>;
+  type: AddressTypeConfig;
+  /** DOM id prefix, e.g. "customer". */
+  idPrefix: string;
+  layout: AddressLayout;
+  defaultRule: DefaultRule;
   readOnly: boolean;
   options: OptionsState;
   ref?: Ref<AddressListHandle>;
 };
 
-const titles: Record<AddressType, string> = { invoice: "Invoice Address", shipping: "Shipping Address" };
-
 /**
- * C-10 / C-13 (FE-CUS-007): Invoice or Shipping address list. 1–10 items; item #1 cannot be
- * removed; exactly one default per type (P-01, enforced here in the change handlers).
+ * Partner C-09 (customer FE-CUS-007, vendor FE-VEN-006): one address type's list. 1–10 items;
+ * item #1 cannot be removed. Default handling follows `defaultRule`:
+ * - `exactlyOne` (customer P-01): ticking moves the default, it can't be unticked, removing it makes #1 the default.
+ * - `atMostOne` (vendor Q-VEN-03): ticking moves the default, unticking leaves none, removing it leaves none.
  */
-export function AddressListCard({ form, type, readOnly, options, ref }: AddressListCardProps) {
-  const arrayName = addressArrayName[type];
-  const { control, getValues, setValue } = form;
+export function AddressListCard<TForm extends FieldValues & PartnerAddressValues>({
+  form,
+  type,
+  idPrefix,
+  layout,
+  defaultRule,
+  readOnly,
+  options,
+  ref,
+}: AddressListCardProps<TForm>) {
+  const { control, getValues, setValue } = form as unknown as UseFormReturn<AddressForm>;
+  const arrayName = type.arrayName;
   const { fields, append, remove } = useFieldArray({ control, name: arrayName, keyName: "fieldKey" });
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const headerRefs = useRef(new Map<string, HTMLButtonElement>());
   const { errors } = useFormState({ control, name: arrayName });
   const errorIndexes = addressIndexesWithErrors(errors as Record<string, unknown>, arrayName);
   const atLimit = fields.length >= ADDRESS_MAX;
-  const limitHelpId = `customer-${type}-limit`;
+  const limitHelpId = `${idPrefix}-${type.key}-limit`;
 
   useImperativeHandle(
     ref,
@@ -60,7 +85,12 @@ export function AddressListCard({ form, type, readOnly, options, ref }: AddressL
     });
   }
 
-  function setDefault(index: number) {
+  function changeDefault(index: number, checked: boolean) {
+    if (!checked) {
+      // `exactlyOne`: the checkbox is locked, so this only happens for `atMostOne`.
+      if (defaultRule === "atMostOne") setValue(`${arrayName}.${index}.isDefault`, false, { shouldDirty: true });
+      return;
+    }
     getValues(arrayName).forEach((item, itemIndex) => {
       const value = itemIndex === index;
       if (item.isDefault !== value) setValue(`${arrayName}.${itemIndex}.isDefault`, value, { shouldDirty: true });
@@ -69,8 +99,8 @@ export function AddressListCard({ form, type, readOnly, options, ref }: AddressL
 
   function removeAt(index: number) {
     if (index === 0) return;
-    // Removing the default makes #1 the default (P-01). Set it before removing so the array action is not stacked.
-    if (getValues(`${arrayName}.${index}.isDefault`)) setValue(`${arrayName}.0.isDefault`, true, { shouldDirty: true });
+    // `exactlyOne`: removing the default makes #1 the default (P-01). Set it before removing so the array action is not stacked.
+    if (defaultRule === "exactlyOne" && getValues(`${arrayName}.${index}.isDefault`)) setValue(`${arrayName}.0.isDefault`, true, { shouldDirty: true });
     const previousKey = fields[index - 1]?.fieldKey;
     remove(index);
     if (previousKey) headerRefs.current.get(previousKey)?.focus();
@@ -84,8 +114,8 @@ export function AddressListCard({ form, type, readOnly, options, ref }: AddressL
 
   return (
     <Card
-      title={titles[type]}
-      titleId={`customer-${type}-title`}
+      title={type.title}
+      titleId={`${idPrefix}-${type.key}-title`}
       titleClassName="text-lg font-medium text-gms-text"
       headerClassName="min-h-[55px] px-4"
       bodyClassName="@container p-4"
@@ -98,6 +128,9 @@ export function AddressListCard({ form, type, readOnly, options, ref }: AddressL
             key={field.fieldKey}
             form={form}
             type={type}
+            idPrefix={idPrefix}
+            layout={layout}
+            defaultRule={defaultRule}
             index={index}
             expanded={!collapsed.has(field.fieldKey)}
             hasErrors={errorIndexes.includes(index)}
@@ -105,7 +138,7 @@ export function AddressListCard({ form, type, readOnly, options, ref }: AddressL
             options={options}
             onToggle={() => toggle(field.fieldKey)}
             onRemove={index > 0 && !readOnly ? () => removeAt(index) : undefined}
-            onSetDefault={() => setDefault(index)}
+            onDefaultChange={(checked) => changeDefault(index, checked)}
             headerButtonRef={(element) => {
               if (element) headerRefs.current.set(field.fieldKey, element);
               else headerRefs.current.delete(field.fieldKey);
@@ -125,11 +158,11 @@ export function AddressListCard({ form, type, readOnly, options, ref }: AddressL
               )}
             >
               <Plus size={18} aria-hidden />
-              {type === "invoice" ? "Add another invoice address" : "Add another shipping address"}
+              {`Add another ${type.key} address`}
             </button>
             {atLimit && (
               <p id={limitHelpId} className="mt-1.5 text-xs text-gms-text-secondary">
-                {`Up to ${ADDRESS_MAX} ${type} addresses`}
+                {`Up to ${ADDRESS_MAX} ${type.key} addresses`}
               </p>
             )}
           </div>

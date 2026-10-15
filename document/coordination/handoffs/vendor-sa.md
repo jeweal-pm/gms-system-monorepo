@@ -1,0 +1,24 @@
+# Handoff: vendor → SA
+
+- Feature ID / UI revision: `vendor` / 2 (approved 2026-10-15)
+- SA revision / source UI revision (if applicable): SA none yet / source UI revision 2
+- From role/scope: ui-spec (document scope)
+- To role/scope / parent integration owner: sa; parent serializes shared documents (ADR index, tech-stack ledger, task pointers)
+- Exact TODO IDs and source documents: FE-VEN-002 (dashboard `href`), FE-VEN-007, 008, 010, 011 in [todo/vendor.md](../../task/todo/vendor.md); needs SA-VEN-01…08 in [data-fetching.md](../../apps/frontend/vendor/data-fetching.md#requirements-for-the-sa-bundle); UI [ui-spec.md](../../apps/frontend/vendor/ui-spec.md), [form-guidelines.md](../../apps/frontend/vendor/form-guidelines.md), [vendor-flow.md](../../diagram/vendor-flow.md); pattern [ADR-0018](../../adr/0018-customer-master-partner-service.md) and [partner/customer](../../apps/backend/partner/customer/)
+- Approval status, approved revision, and owner evidence: **UI revision 2 approved** 2026-10-15, owner: "frontend and backend ช่วยทำ ui และ api หน้า Vendor ให้ตรงตาม ref หน่อย" with answers Q-VEN-01 Customer labels, Q-VEN-02 Phone optional, Q-VEN-03 default invoice address optional (0 or 1 default; new items unchecked). The owner wants the API built, but the SA bundle needs its own approval before backend code, migration or dependency work.
+- Required contract / diagrams / ADRs: decision record for Vendor (proposed ADR-0019 or ADR-0018 revision); data model `Vendor` + `VendorAddress` (invoice only) in schema `partner`; `vendor.*` contract via `permittedProcedure("vendor", …)`; error codes; sequence and database diagrams; backend TODO items BE-VEN-* in the central TODO; refine `vendor-flow.md`. Owner answers needed for the rules: **Q-VEN-02** (Phone required?) and **Q-VEN-03** (default address behavior) in [open-questions.md](../../apps/frontend/vendor/open-questions.md).
+- Dependency ledger entries and installation status: none proposed by the UI.
+- Allowed code/document paths: `document/apps/backend/partner/vendor/**`, `document/adr/**` (new ADR; parent serializes the index/ledger), `document/diagram/vendor-flow.md`, BE-VEN section of `document/task/todo/vendor.md`. No code.
+- Integration-owned changes: none from SA; later backend touches `backend-api-partner/prisma/**` (parent-serialized) and `backend-api-gateway/src/trpc/**`.
+- Infra service bundle/revision, ADR/config drift, network/egress and secret-adapter prerequisites (when containers change): none expected; Vendor reuses `backend-api-partner` (infra bundle backend-api-partner/1). SA confirms (SA-VEN-07).
+- DevOps pipeline/source revision, Dockerfile/workspace dependencies, build/runtime variables, image platform and release/check requirements (when delivery changes): none expected.
+- Resource budget / capacity impact (8 GB RAM / 4 vCPU total): expected none beyond more rows in `partner`; same 50-row paging, 5-connection pool and 256 KB body limit. SA confirms.
+- Expected output and acceptance criteria: an SA bundle the owner can approve separately, answering SA-VEN-01…08.
+- Verification completed / not run: none (documents only).
+- Blocking item, if any: none for SA drafting; owner approval of the SA bundle blocks backend.
+- Resume action and destination (backend -> frontend, etc.): after SA approval → backend (BE-VEN-*) → frontend FE-VEN-010/011.
+- Corrective work ID / root-cause ledger link (if applicable): none.
+- Existing pass limit / allocated passes / active pass (inherit; never reset): n/a.
+- Changed evidence, contract, or prerequisite justifying this handoff: new feature; no Vendor contract exists.
+- Concrete receiving-role output / next fact needed: `document/apps/backend/partner/vendor/` bundle + decision record.
+- Stop reason / terminal outcome / explicit extension evidence, if any: n/a.

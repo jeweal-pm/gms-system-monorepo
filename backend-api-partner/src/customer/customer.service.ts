@@ -1,32 +1,14 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { validationException, type FieldError } from "../common/errors";
+import { validationException } from "../common/errors";
+import { membershipErrors as sharedMembershipErrors } from "../common/partner-schemas";
+import { addressDetail, listPage, scalarData, scalarDetail, SCALAR_FIELDS, WRITE_TX } from "../common/persistence";
+import { OPTIONS_RESPONSE } from "../common/reference-data";
 import { prisma } from "../database/prisma-client";
-import { AddressType, Prisma } from "../generated/prisma/client";
-import { decodeCursor, encodeCursor } from "./cursor";
+import { AddressType } from "../generated/prisma/client";
 import { customerNotFound, customerStale, mapPersistenceError } from "./customer.errors";
-import { LIST_LIMIT_MAX, type CustomerInput, type ListQuery, type UpdateCustomerInput } from "./customer.schemas";
-import { COUNTRY_CODES, CURRENCY_CODES, OPTIONS_RESPONSE } from "./reference-data";
+import type { CustomerInput, ListQuery, UpdateCustomerInput } from "./customer.schemas";
 
-/** Write transactions stay below the gateway's 5 s mutation timeout (architecture.md §10). */
-const WRITE_TX = { timeout: 4_000, maxWait: 2_000 } as const;
-/** List read transaction stays below the gateway's 3 s read timeout. */
-const READ_TX = { timeout: 2_500, maxWait: 2_000, isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead } as const;
-
-type Tx = Prisma.TransactionClient;
 type AddressInput = CustomerInput["invoiceAddresses"][number] | CustomerInput["shippingAddresses"][number];
-type ListRow = { id: string; name: string; nameKey: string; code: string | null; active: boolean; updatedAt: Date | string };
-
-const SCALAR_FIELDS = ["name", "code", "currencyCode", "active", "firstName", "middleName", "lastName", "phoneE164", "phoneCountry", "email"] as const;
-
-function toIso(value: Date | string): string {
-  if (value instanceof Date) return value.toISOString();
-  const normalized = /[zZ]|[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value.replace(" ", "T")}Z`;
-  return new Date(normalized).toISOString();
-}
-
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
-}
 
 /** Server-derived type/position; first entry becomes default when none is marked (architecture.md §7). */
 function addressRows(type: AddressType, addresses: AddressInput[]) {
@@ -50,40 +32,8 @@ function allAddressRows(input: CustomerInput) {
 }
 
 /** D-09: membership in the runtime lists, or equal to a value already stored on this customer. */
-function membershipErrors(input: CustomerInput, stored?: { currencyCode: string; countryCodes: Set<string> }): FieldError[] {
-  const errors: FieldError[] = [];
-  if (!CURRENCY_CODES.has(input.currencyCode) && input.currencyCode !== stored?.currencyCode) errors.push({ path: "currencyCode", code: "unknown" });
-  const check = (list: AddressInput[], field: string) => list.forEach((address, index) => {
-    if (!COUNTRY_CODES.has(address.countryCode) && !stored?.countryCodes.has(address.countryCode)) errors.push({ path: `${field}.${index}.countryCode`, code: "unknown" });
-  });
-  check(input.invoiceAddresses, "invoiceAddresses");
-  check(input.shippingAddresses, "shippingAddresses");
-  return errors;
-}
-
-/** Keys and email are lowered by PostgreSQL itself so the CHECK constraints always hold (D-02). */
-async function normalizedKeys(tx: Tx, input: CustomerInput) {
-  const [row] = await tx.$queryRaw<{ nameKey: string; codeKey: string | null; email: string }[]>`
-    SELECT lower(${input.name}::text) AS "nameKey", lower(${input.code}::text) AS "codeKey", lower(${input.email}::text) AS "email"`;
-  return row;
-}
-
-async function scalarData(tx: Tx, input: CustomerInput) {
-  const keys = await normalizedKeys(tx, input);
-  return {
-    name: input.name,
-    nameKey: keys.nameKey,
-    code: input.code,
-    codeKey: keys.codeKey,
-    currencyCode: input.currencyCode,
-    active: input.active,
-    firstName: input.firstName,
-    middleName: input.middleName,
-    lastName: input.lastName,
-    phoneE164: input.phone?.e164 ?? null,
-    phoneCountry: input.phone?.country ?? null,
-    email: keys.email,
-  };
+function membershipErrors(input: CustomerInput, stored?: { currencyCode: string; countryCodes: Set<string> }) {
+  return sharedMembershipErrors(input.currencyCode, [["invoiceAddresses", input.invoiceAddresses], ["shippingAddresses", input.shippingAddresses]], stored);
 }
 
 function customerInput(input: UpdateCustomerInput): CustomerInput {
@@ -99,39 +49,8 @@ export class CustomerService {
     return OPTIONS_RESPONSE;
   }
 
-  async list(query: ListQuery) {
-    const limit = query.limit ?? LIST_LIMIT_MAX;
-    const cursor = query.cursor ? decodeCursor(query.cursor) : null;
-    const filters: Prisma.Sql[] = [];
-    if (query.q) {
-      const pattern = `%${escapeLike(query.q)}%`;
-      filters.push(Prisma.sql`("name" ILIKE ${pattern} OR "code" ILIKE ${pattern})`);
-    }
-    if (query.active) filters.push(Prisma.sql`"active" = ${query.active === "true"}`);
-    const where = (parts: Prisma.Sql[]) => (parts.length > 0 ? Prisma.sql`WHERE ${Prisma.join(parts, " AND ")}` : Prisma.empty);
-    const pageFilters = cursor ? [...filters, Prisma.sql`("name_key", "id") > (${cursor.nameKey}::text, ${cursor.id}::uuid)`] : filters;
-
-    try {
-      const { rows, total } = await prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`SET TRANSACTION READ ONLY`;
-        const rows = await tx.$queryRaw<ListRow[]>`
-          SELECT "id"::text AS "id", "name", "name_key" AS "nameKey", "code", "active", "updated_at" AS "updatedAt"
-          FROM "partner"."customer" ${where(pageFilters)}
-          ORDER BY "name_key" ASC, "id" ASC
-          LIMIT ${limit + 1}`;
-        const [count] = await tx.$queryRaw<{ total: number }[]>`SELECT count(*)::int AS "total" FROM "partner"."customer" ${where(filters)}`;
-        return { rows, total: count.total };
-      }, READ_TX);
-      const page = rows.slice(0, limit);
-      const last = page[page.length - 1];
-      return {
-        items: page.map((row) => ({ id: row.id, name: row.name, code: row.code, active: row.active, updatedAt: toIso(row.updatedAt) })),
-        nextCursor: rows.length > limit && last ? encodeCursor({ nameKey: last.nameKey, id: last.id }) : null,
-        total,
-      };
-    } catch (error) {
-      throw mapPersistenceError(error, "list");
-    }
+  list(query: ListQuery) {
+    return listPage("customer", query, mapPersistenceError);
   }
 
   async get(id: string) {
@@ -145,31 +64,10 @@ export class CustomerService {
       throw mapPersistenceError(error, "get");
     }
     if (!customer) throw customerNotFound();
-    const toAddress = (address: (typeof customer.addresses)[number]) => ({
-      id: address.id,
-      position: address.position,
-      name: address.name,
-      address: address.address,
-      countryCode: address.countryCode,
-      state: address.state,
-      city: address.city,
-      postcode: address.postcode,
-      isDefault: address.isDefault,
-    });
     return {
-      id: customer.id,
-      name: customer.name,
-      code: customer.code,
-      active: customer.active,
-      updatedAt: customer.updatedAt.toISOString(),
-      currencyCode: customer.currencyCode,
-      firstName: customer.firstName,
-      middleName: customer.middleName,
-      lastName: customer.lastName,
-      phone: customer.phoneE164 && customer.phoneCountry ? { country: customer.phoneCountry, e164: customer.phoneE164 } : null,
-      email: customer.email,
-      invoiceAddresses: customer.addresses.filter((a) => a.type === AddressType.INVOICE).map((a) => ({ ...toAddress(a), taxId: a.taxId })),
-      shippingAddresses: customer.addresses.filter((a) => a.type === AddressType.SHIPPING).map(toAddress),
+      ...scalarDetail(customer),
+      invoiceAddresses: customer.addresses.filter((a) => a.type === AddressType.INVOICE).map((a) => ({ ...addressDetail(a), taxId: a.taxId })),
+      shippingAddresses: customer.addresses.filter((a) => a.type === AddressType.SHIPPING).map(addressDetail),
       createdAt: customer.createdAt.toISOString(),
     };
   }

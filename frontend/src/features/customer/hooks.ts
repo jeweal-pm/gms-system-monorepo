@@ -2,22 +2,18 @@
 
 import { skipToken, useIsFetching } from "@tanstack/react-query";
 import { getQueryKey } from "@trpc/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
+import { toSelectOptions } from "@/features/partner/options";
 import { retryTransient } from "@/lib/trpc-error";
 import { trpc } from "@/providers/app-providers";
-import { toSelectOptions } from "./api";
 import { CUSTOMER_PAGE_SIZE } from "./contract";
 
 /**
  * Customer data hooks over the typed tRPC client (`customer.*`, FE-CUS-014; data-fetching.md).
  * Bounds: 50 rows per page, one page request in flight, no polling, options fetched once per
  * session, reads retried at most twice for transient failures, mutations never retried.
+ * `permission.mine` and the debounced search hook are shared in features/partner/hooks.ts.
  */
-
-/** Existing approved contract; shares the tRPC cache entry with other pages (staleTime as user-permission). */
-export function usePermissionMine() {
-  return trpc.permission.mine.useQuery(undefined, { retry: retryTransient, staleTime: 30_000 });
-}
 
 /** Static per deployment: cached for the session. */
 export function useCustomerOptions() {
@@ -87,16 +83,4 @@ export function useCustomerLoader() {
 /** True while any customer list page is being fetched (Refresh spinner). */
 export function useCustomerListsFetching(): boolean {
   return useIsFetching({ queryKey: getQueryKey(trpc.customer.list) }) > 0;
-}
-
-/** Trimmed, debounced search text (300 ms); unchanged trimmed text does not change the key. */
-export function useDebouncedSearch(raw: string, delayMs = 300): string {
-  const trimmed = raw.trim();
-  const [debounced, setDebounced] = useState(trimmed);
-  const apply = useCallback(() => setDebounced(trimmed), [trimmed]);
-  useEffect(() => {
-    const timer = window.setTimeout(apply, delayMs);
-    return () => window.clearTimeout(timer);
-  }, [apply, delayMs]);
-  return debounced;
 }

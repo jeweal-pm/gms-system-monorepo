@@ -1,19 +1,10 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Req } from "@nestjs/common";
 import type { Request } from "express";
-import { parseOrThrow, partnerException, validationException } from "../common/errors";
+import { parseOrThrow } from "../common/errors";
+import { parseId, requireJson } from "../common/request";
 import { requireActor } from "../internal-auth/actor";
-import { createCustomerBodySchema, customerIdSchema, listQuerySchema, updateCustomerBodySchema } from "./customer.schemas";
+import { createCustomerBodySchema, listQuerySchema, updateCustomerBodySchema } from "./customer.schemas";
 import { CustomerService } from "./customer.service";
-
-function parseId(id: string): string {
-  const parsed = customerIdSchema.safeParse(id);
-  if (!parsed.success) throw validationException([{ path: "id", code: "invalid_format" }]);
-  return parsed.data;
-}
-
-function requireJson(request: Request) {
-  if (!request.is("application/json")) throw partnerException("UNSUPPORTED_MEDIA_TYPE", HttpStatus.UNSUPPORTED_MEDIA_TYPE);
-}
 
 /**
  * Internal REST for the gateway only (api-contract.md "Internal REST contract"). The global

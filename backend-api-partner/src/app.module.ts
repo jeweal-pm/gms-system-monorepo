@@ -7,6 +7,8 @@ import { CustomerService } from "./customer/customer.service";
 import { PrismaLifecycleService } from "./database/prisma-lifecycle.service";
 import { HealthController } from "./health/health.controller";
 import { ServiceTokenGuard } from "./internal-auth/service-token.guard";
+import { VendorController } from "./vendor/vendor.controller";
+import { VendorService } from "./vendor/vendor.service";
 
 type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
 
@@ -15,7 +17,7 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
     LoggerModule.forRoot({
       pinoHttp: {
         // Request logs carry only id, method and path: no headers (service token), no query
-        // string (search text) and never bodies (customer personal data).
+        // string (search text) and never bodies (customer/vendor personal data).
         serializers: {
           req: (req: SerializedRequest) => ({ id: req.id, method: req.method, path: typeof req.url === "string" ? req.url.split("?")[0] : undefined }),
         },
@@ -26,10 +28,11 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
       },
     }),
   ],
-  controllers: [HealthController, CustomerController],
+  controllers: [HealthController, CustomerController, VendorController],
   providers: [
     PrismaLifecycleService,
     CustomerService,
+    VendorService,
     { provide: APP_GUARD, useClass: ServiceTokenGuard },
     { provide: APP_FILTER, useClass: EnvelopeExceptionFilter },
   ],

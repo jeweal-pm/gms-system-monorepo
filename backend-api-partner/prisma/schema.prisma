@@ -68,3 +68,53 @@ model CustomerAddress {
   @@map("customer_address")
   @@schema("partner")
 }
+
+// vendor SA revision 1 / ADR-0019: invoice addresses only (no `type` column), no relation to customer.
+model Vendor {
+  id           String          @id @default(uuid()) @db.Uuid
+  name         String          @db.VarChar(200)
+  nameKey      String          @map("name_key") @db.VarChar(200)
+  code         String?         @db.VarChar(120)
+  codeKey      String?         @unique(map: "vendor_code_key_key") @map("code_key") @db.VarChar(120)
+  currencyCode String          @map("currency_code") @db.Char(3)
+  active       Boolean         @default(true)
+  firstName    String          @map("first_name") @db.VarChar(100)
+  middleName   String?         @map("middle_name") @db.VarChar(100)
+  lastName     String?         @map("last_name") @db.VarChar(100)
+  phoneE164    String?         @map("phone_e164") @db.VarChar(16)
+  phoneCountry String?         @map("phone_country") @db.Char(2)
+  email        String          @db.VarChar(254)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamp(3)
+  /// Optimistic version; written explicitly by the service (customer D-05), not @updatedAt.
+  updatedAt    DateTime        @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy    String          @map("created_by") @db.VarChar(64)
+  updatedBy    String          @map("updated_by") @db.VarChar(64)
+  addresses    VendorAddress[]
+
+  @@index([nameKey, id], map: "vendor_name_key_id_idx")
+  @@index([active, nameKey, id], map: "vendor_active_name_key_id_idx")
+  @@map("vendor")
+  @@schema("partner")
+}
+
+/// Invoice addresses only (ADR-0019 §3); no `type` column.
+model VendorAddress {
+  id          String  @id @default(uuid()) @db.Uuid
+  vendorId    String  @map("vendor_id") @db.Uuid
+  position    Int     @db.SmallInt
+  name        String  @db.VarChar(200)
+  taxId       String? @map("tax_id") @db.VarChar(32)
+  address     String  @db.VarChar(500)
+  countryCode String  @map("country_code") @db.Char(2)
+  state       String  @db.VarChar(100)
+  city        String  @db.VarChar(100)
+  postcode    String  @db.VarChar(20)
+  isDefault   Boolean @default(false) @map("is_default")
+  vendor      Vendor  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorId, position], map: "vendor_address_position_key")
+  /// Zero or one default per vendor (D-V03); a partial UNIQUE index allows zero rows.
+  @@unique([vendorId], where: { isDefault: true }, map: "vendor_address_one_default_key")
+  @@map("vendor_address")
+  @@schema("partner")
+}
