@@ -2,6 +2,8 @@ import { Module } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { LoggerModule } from "nestjs-pino";
 import { EnvelopeExceptionFilter } from "./common/exception.filter";
+import { CompanyProfileController } from "./company-profile/company-profile.controller";
+import { CompanyProfileService } from "./company-profile/company-profile.service";
 import { CustomerController } from "./customer/customer.controller";
 import { CustomerService } from "./customer/customer.service";
 import { PrismaLifecycleService } from "./database/prisma-lifecycle.service";
@@ -28,11 +30,12 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
       },
     }),
   ],
-  controllers: [HealthController, CustomerController, VendorController],
+  controllers: [HealthController, CustomerController, VendorController, CompanyProfileController],
   providers: [
     PrismaLifecycleService,
     CustomerService,
     VendorService,
+    CompanyProfileService,
     { provide: APP_GUARD, useClass: ServiceTokenGuard },
     { provide: APP_FILTER, useClass: EnvelopeExceptionFilter },
   ],

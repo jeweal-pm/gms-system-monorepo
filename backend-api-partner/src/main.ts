@@ -1,10 +1,12 @@
 import "reflect-metadata";
-import express, { type ErrorRequestHandler } from "express";
+import express, { type ErrorRequestHandler, type RequestHandler } from "express";
 import { NestFactory } from "@nestjs/core";
 import { Logger } from "nestjs-pino";
 import { AppModule } from "./app.module";
+import { LOGO_MAX_BYTES, LOGO_TYPES } from "./company-profile/company-profile.schemas";
 import { errorBody } from "./common/errors";
 import { loadDatabaseUrl, loadServiceTokenDigest } from "./config";
+import { serviceTokenMatches } from "./internal-auth/service-token.guard";
 
 /** Maps body-parser failures to the partner envelope (413 over 256 KB, 400 malformed JSON). */
 const bodyErrorHandler: ErrorRequestHandler = (error: unknown, _request, response, next) => {
@@ -24,15 +26,29 @@ const bodyErrorHandler: ErrorRequestHandler = (error: unknown, _request, respons
   next(error);
 };
 
+/** Company logo route only (company-profile SA-CP-04): checks the token before buffering up to 10 MB. */
+const LOGO_ROUTE = "/internal/v1/company-profile/logo";
+
+function logoTokenCheck(expected: Buffer): RequestHandler {
+  return (request, response, next) => {
+    if (request.method === "PUT" && !serviceTokenMatches(request.headers.authorization, expected)) {
+      response.status(401).json(errorBody("UNAUTHORIZED"));
+      return;
+    }
+    next();
+  };
+}
+
 async function bootstrap() {
   // Fail fast before opening the port (ADR-0018 §1, infra D3).
-  loadServiceTokenDigest();
+  const tokenDigest = loadServiceTokenDigest();
   loadDatabaseUrl();
   const app = await NestFactory.create(AppModule, { bodyParser: false, bufferLogs: true });
   app.useLogger(app.get(Logger));
   app.enableShutdownHooks();
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.disable("x-powered-by");
+  expressApp.use(LOGO_ROUTE, logoTokenCheck(tokenDigest), express.raw({ type: [...LOGO_TYPES], limit: LOGO_MAX_BYTES }));
   expressApp.use(express.json({ limit: "256kb" }));
   expressApp.use(bodyErrorHandler);
   await app.listen(Number(process.env.PORT ?? 3201), "0.0.0.0");
