@@ -15,9 +15,9 @@ const placeholder = (slug: Parameters<typeof setupPlaceholderLink>[0], icon: Luc
   color,
 });
 
-/** Setup landing tiles in reading order (S3). Company Profile and Notifications are placeholders (Q-NAV-05). */
+/** Setup landing tiles in reading order (S3). Company Profile has its page (company-profile FE-CP-001); Notifications is a placeholder (Q-NAV-05). */
 export const setupLandingTiles: (SetupLinkDestination | SetupMasterCodeEntry)[] = [
-  placeholder("company-profile", Settings, "indigo"),
+  { kind: "link", id: "company-profile", label: "Company Profile", href: "/setup/company-profile", icon: Settings, color: "indigo" },
   { kind: "link", id: "user-permission", label: "User and Permission", href: "/setup/user-permission", icon: UserLock, color: "green" },
   placeholder("notifications", Bell, "primary"),
   { kind: "master-code", id: "master-code", label: "Master Code", icon: CodeXml, color: "neutral" },

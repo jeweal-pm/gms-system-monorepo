@@ -2,6 +2,13 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { AUTH_TIMEOUT_MS, callAuth } from "./auth-client";
 import {
+  companyProfileGetOutputSchema,
+  companyProfileMutationOutputSchema,
+  companyProfileOptionsOutputSchema,
+  removeLogoInputSchema,
+  saveCompanyProfileInputSchema,
+} from "./company-profile-schemas";
+import {
   assertSingleDefaults,
   createCustomerInputSchema,
   customerDeleteOutputSchema,
@@ -312,6 +319,25 @@ export const appRouter = t.router({
     delete: permittedProcedure("vendor", "DELETE").input(vendorIdInputSchema).mutation(({ ctx, input }) => callPartner({
       method: "DELETE", path: `/internal/v1/vendors/${encodeURIComponent(input.id)}`, route: "DELETE /vendors/:id", timeoutMs: PARTNER_TIMEOUT_MS.write,
       actorId: ctx.session.user.id, responseSchema: vendorDeleteOutputSchema, notFoundCode: "VENDOR_NOT_FOUND",
+    })),
+  }),
+  /** company-profile SA revision 2 (ADR-0021): gateway enforces `company-profile:*`; partner owns the data. Logo bytes use REST. */
+  companyProfile: t.router({
+    get: permittedProcedure("company-profile", "VIEW").query(({ ctx }) => callPartner({
+      method: "GET", path: "/internal/v1/company-profile", route: "GET /company-profile", timeoutMs: PARTNER_TIMEOUT_MS.read,
+      actorId: ctx.session.user.id, responseSchema: companyProfileGetOutputSchema, notFoundCode: "COMPANY_PROFILE_NOT_FOUND",
+    })),
+    options: permittedProcedure("company-profile", "VIEW").query(({ ctx }) => callPartner({
+      method: "GET", path: "/internal/v1/company-profile/options", route: "GET /company-profile/options", timeoutMs: PARTNER_TIMEOUT_MS.read,
+      actorId: ctx.session.user.id, responseSchema: companyProfileOptionsOutputSchema, notFoundCode: "COMPANY_PROFILE_NOT_FOUND",
+    })),
+    save: permittedProcedure("company-profile", "EDIT").input(saveCompanyProfileInputSchema).mutation(({ ctx, input }) => callPartner({
+      method: "PUT", path: "/internal/v1/company-profile", route: "PUT /company-profile", timeoutMs: PARTNER_TIMEOUT_MS.write,
+      actorId: ctx.session.user.id, responseSchema: companyProfileMutationOutputSchema, notFoundCode: "COMPANY_PROFILE_NOT_FOUND", body: input,
+    })),
+    removeLogo: permittedProcedure("company-profile", "EDIT").input(removeLogoInputSchema).mutation(({ ctx, input }) => callPartner({
+      method: "DELETE", path: `/internal/v1/company-profile/logo?expectedVersion=${input.expectedVersion}`, route: "DELETE /company-profile/logo", timeoutMs: PARTNER_TIMEOUT_MS.write,
+      actorId: ctx.session.user.id, responseSchema: companyProfileMutationOutputSchema, notFoundCode: "COMPANY_PROFILE_NOT_FOUND",
     })),
   }),
 });

@@ -13,6 +13,9 @@ COPY . .
 RUN pnpm --filter @gem-crm/backend-api-partner db:generate
 RUN pnpm --filter @gem-crm/backend-api-partner build
 WORKDIR /app/backend-api-partner
+# Infra bundle backend-api-partner/2: company logo folder, owned by the runtime user so the named
+# volume mounted here is created writable for uid 1000 (everything else stays root-owned, read-only).
+RUN mkdir -p storage/company-profile && chown -R 1000:1000 storage
 ENV NODE_ENV=production CHECKPOINT_DISABLE=1 PRISMA_HIDE_UPDATE_MESSAGE=1
 # uid/gid 1000 = "node" user of the official image; runtime needs read access only.
 USER 1000:1000
