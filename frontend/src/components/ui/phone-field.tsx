@@ -4,7 +4,7 @@ import { ChevronsUpDown } from "lucide-react";
 import type { Ref } from "react";
 import { PHONE_COUNTRIES, phoneCountry, type PhoneValue } from "@/lib/phone";
 import { cx } from "./button";
-import { FieldShell, fieldBoxClass, fieldFocusWithinClass } from "./outlined-field";
+import { FieldShell, fieldBoxClass, fieldFocusWithinClass, readOnlyControlClass } from "./outlined-field";
 
 /**
  * Provisional country list from `phone.ts` (Q-UP-09; DEP-UP-01/02 are proposed,
@@ -48,7 +48,7 @@ type PhoneFieldProps = {
 export function PhoneField({ id, label, value, onChange, onBlur, error, required, readOnly, inputRef }: PhoneFieldProps) {
   const country = phoneCountry(value.country);
   return (
-    <FieldShell id={id} label={label} required={required} error={error}>
+    <FieldShell id={id} label={label} required={required} error={error} readOnly={readOnly}>
       <div
         className={cx(fieldBoxClass({ invalid: Boolean(error), readOnly }), "flex items-center", !readOnly && fieldFocusWithinClass)}
         onBlur={(event) => {
@@ -83,11 +83,12 @@ export function PhoneField({ id, label, value, onChange, onBlur, error, required
           maxLength={20}
           value={value.number}
           readOnly={readOnly}
+          disabled={readOnly}
           aria-required={required || undefined}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? `${id}-error` : undefined}
           onChange={(event) => onChange({ ...value, number: event.target.value.replace(/[^\d ]/g, "") })}
-          className="h-full min-w-0 flex-1 bg-transparent pr-4 outline-none placeholder:text-gms-text-placeholder"
+          className={cx("h-full min-w-0 flex-1 bg-transparent pr-4 outline-none placeholder:text-gms-text-placeholder", readOnly && readOnlyControlClass)}
         />
       </div>
     </FieldShell>

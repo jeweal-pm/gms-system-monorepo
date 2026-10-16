@@ -80,7 +80,7 @@ export function MultiSelect({ id, label, options, value, onChange, onBlur, error
   }
 
   return (
-    <FieldShell id={id} label={label} required={required} error={error} labelAsText>
+    <FieldShell id={id} label={label} required={required} error={error} labelAsText readOnly={readOnly}>
       <div
         className={cx(
           fieldBoxClass({ invalid: Boolean(error), readOnly }),
@@ -119,7 +119,9 @@ export function MultiSelect({ id, label, options, value, onChange, onBlur, error
           ref={comboboxRef}
           id={id}
           role="combobox"
-          tabIndex={0}
+          // Read-only (view mode) is not focusable, like the disabled text fields (owner 2026-10-16).
+          tabIndex={readOnly ? -1 : 0}
+          aria-disabled={readOnly || undefined}
           aria-labelledby={`${id}-label`}
           aria-haspopup="listbox"
           aria-expanded={open}

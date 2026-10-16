@@ -49,7 +49,7 @@ export function SelectField({
   const loading = status === "loading";
   const describedBy = [error ? `${id}-error` : null, status === "error" ? `${id}-load-error` : null].filter(Boolean).join(" ") || undefined;
   return (
-    <FieldShell id={id} label={label} required={required} error={error} className={className}>
+    <FieldShell id={id} label={label} required={required} error={error} readOnly={readOnly} disabled={disabled} className={className}>
       <div className="relative">
         <select
           ref={ref}
