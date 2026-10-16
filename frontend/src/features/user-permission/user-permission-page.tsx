@@ -5,9 +5,7 @@ import { ChevronLeft, ChevronRight, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm, useWatch, type Resolver } from "react-hook-form";
-import { SetupTabs } from "@/features/setup/setup-tabs";
 import { authClient } from "@/lib/auth-client";
-
 import { trpc } from "@/providers/app-providers";
 import { isCallerLicenseCode, readDomainError } from "@/lib/trpc-error";
 import { loadErrorMessage, mapSaveError, toCreateUserInput, toUpdateUserInput, type PermissionCatalog, type UserDetail, type UserSummary } from "./api";
