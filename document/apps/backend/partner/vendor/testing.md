@@ -137,3 +137,27 @@ Each file covers customer **and** vendor.
 | cleanup | **pass** | `BT21%` rows: customer 0, vendor 0; totals back to 1 / 1 |
 | `nest build` / image build | not run | dev watch compiles the same sources; no Dockerfile/manifest change |
 | security review (sec-auditor + security-auditor) | **pending** | routed by the parent; required before the frontend handoff is final |
+
+## Automated tests (Vitest) — 2026-10-16
+
+Same run, owner instructions, runner, mocked boundaries and source revision (HEAD `c583bac` + uncommitted test tree, hash `d1c27cbeb7ddc5a0`) as [customer "Automated tests (Vitest)"](../customer/testing.md#automated-tests-vitest--2026-10-16). No `src/` file changed; Vitest 5.0.3 already installed. The ADR-0021 `node:test` files of [Revision 2](#revision-2--adr-0021-automated-tests-2026-10-16) were ported (same IDs) and deleted; DB/session cases are opt-in (`PARTNER_LIVE_TESTS=1`, refused under `NODE_ENV=production`; INV-20261016-001).
+
+| Target (vendor) | Unit case IDs | File |
+|---|---|---|
+| partner `createVendorBodySchema`/`updateVendorBodySchema`: required fields, trim + max length, email, phone, currency/country format, 1..10 invoice addresses, strict keys, no `shippingAddresses` (→ `(root)` `unrecognized_keys`), `expectedUpdatedAt` format, id not in body | UT-VEN-P01…P07, P10, P11 | `backend-api-partner/test/vendor/vendor.schemas.test.ts` |
+| default-address rule D-V03: zero or one accepted, two → `{invoiceAddresses, multiple_defaults}`; service stores zero as zero and one exactly where sent | UT-VEN-P08, P09, P22, P23 | schemas + `vendor.service.test.ts` |
+| `VendorService.options` (same object as customer) / `create` (lower() keys, actor, positions, `WRITE_TX`, membership, `VENDOR_CODE_TAKEN`, P2028 → 503) | UT-VEN-P20, P21, P24…P26 | `backend-api-partner/test/vendor/vendor.service.test.ts` |
+| `VendorService.get` (shape/order, no shipping key, 404) | UT-VEN-P27, P28 | same |
+| `VendorService.list` (vendor table, `limit+1` + cursor, `ILIKE` name OR code, active, invalid cursor, outage) | UT-VEN-P29…P31 | same |
+| `VendorService.update` (full replacement with new address IDs, stale → `VENDOR_STALE` with no change, 404, legacy stored country, rename onto taken code + rollback) | UT-VEN-P32…P36 | same |
+| `VendorService.delete` (ok then 404; P2025 → 404; P1002 → 503) | UT-VEN-P37, P38 | same |
+| `VendorService.nextCode` (V042, pattern `^[Vv][0-9]+$`, 18-digit bound, outage) | UT-VEN-P39, P40 | same |
+| `vendor.errors` + mapper: P2002 on `code_key` → `VENDOR_CODE_TAKEN`; P2002 on position/one-default index → 500; P2025 → 404; P1001/connection terminated → 503; passthrough | UT-VEN-P50…P55 | `backend-api-partner/test/vendor/vendor.errors.test.ts` |
+| `VendorController`: route table, `options`/`next-code` before `:id`, actor header, JSON 415, UUID path, query arrays rejected | UT-VEN-P60…P65 | `backend-api-partner/test/vendor/vendor.controller.test.ts` |
+| shared partner blocks and ADR-0021 ported units | UT-PS-P01…P14, UT-PC-01…04 | `backend-api-partner/test/partner-shared/*.test.ts` |
+| gateway `vendor-schemas` (inputs, strict/no shipping, required, `assertVendorDefaults`, update meta, outputs stripped/bounded) | UT-VEN-G01…G10 | `backend-api-gateway/test/vendor/vendor-schemas.test.ts` |
+| gateway `partner-schemas` (cursor + direction, `listQueryString`) | UT-PS-G01…G08 | `backend-api-gateway/test/partner-shared/partner-schemas.test.ts` |
+| gateway router `vendor.*`: VIEW/ADD/EDIT/DELETE per procedure, Super Admin, denied without partner call, session/license; request paths/body; `multiple_defaults` before partner, zero defaults forwarded; partner errors → domain codes; network/timeout → PARTNER_UNAVAILABLE (3 s / 5 s); output stripping/malformed; shared `^[CV]` nextCode contract | UT-VEN-G20…G34 | `backend-api-gateway/test/vendor/vendor.router.test.ts` |
+| ADR-0021 ported gateway cases and opt-in live cases | UT-GW-PC-01…04, IT-GW-PC-01…04; IT-PC-01…08, IT-GW-PC-LIVE-01…04 (opt-in) | `backend-api-gateway/test/partner-shared/partner-code.test.ts`, `*/test/partner-shared/partner-code.live.test.ts` |
+
+Results: partner `pnpm test` **276 passed, 15 skipped**; gateway **215 passed, 7 skipped**; typecheck and lint exit 0 in both; opt-in live run once in the dev containers 15/15 + 7/7, `BT21%` rows 0 afterwards. Bugs found: none. Gaps: as listed for customer (SQL semantics and indexes only via the opt-in live file; real HTTP guard/filter only in the live run; no mutation run because `src/` could not be edited). Infra follow-up of INV-20261016-001 (`.dockerignore`) remains open.

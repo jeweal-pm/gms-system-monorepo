@@ -161,3 +161,55 @@ now goes to the previous card's default checkbox instead of the removed accordio
 | TC-CUS-43 | FE-CUS-R3-003 | Create mode, 3 invoice items | Tick #3; click the ticked #3; remove #3 | Only #3 ticked; clicking it again keeps it ticked (`aria-disabled`, hint shown); removing #3 makes #1 default; new customer starts with #1 ticked in both types | not run |
 | TC-CUS-44 | FE-CUS-R3-004 | Create mode / view mode | Inspect trash on #1 and #2; switch to view mode | #1 trash disabled with tooltip; #2 removable; in view mode every checkbox and trash is disabled | not run |
 | TC-CUS-45 | FE-CUS-R3-002 | Empty required field in invoice #2 | Save | Focus goes to the first invalid field in visual order; the card frame is red | not run |
+
+## Automated tests (Vitest), 2026-10-16
+
+Owner instructions (2026-10-16): "frontend backend ทำ unit test case ส่วนของ vendor customer ให้หน่อยเหมือน companyprofile"
+and "ทำunit test ให้อยู่ใน folder test สิเหมือนใน companyprofile". Same runner and config as
+[company profile](../company-profile/testing.md#unit-tests-vitest-503-folder-test--2026-10-16): Vitest 5.0.3,
+`frontend/vitest.config.mts` (node environment, `@/` → `src/`, 2 fork workers). Test-only change: **no file under
+`frontend/src/` was edited**, no dependency was added. Source revision: HEAD `c583bac` on
+`feat/16-10-26-fix-design-add-runingnumber` + the untracked test folders below (not committed).
+Shared Partner Master code (`features/partner/**`) is tested once in `test/partner/` and covers vendor too.
+
+### Test ID → file
+
+| File | Case IDs | Covers (source) |
+|---|---|---|
+| `frontend/test/partner/helpers.ts` | — (fixtures) | real `TRPCClientError` in the gateway envelope; issue-by-path helper; valid address/info fixtures |
+| `frontend/test/partner/schema.test.ts` | UT-ADR21-01a…h, UT-PTN-S01…S21 | `partner/schema.ts`: Code Name required/trim/1–120 ("Code Name is required"); required info fields; text limits; email (required, format, 254); phone optional, country check, 15 digits; `requiredText`/`optionalText`; `addressSchema` (State/City only after Country, limits, blank = empty); `addressListSchema` `exactlyOne` / `atMostOne` default rules and 1–10 items; `emptyAddress`, `emptyPartnerInfo`; `errorTreeFromEntries`, `firstErrorField` (Code Name first, arrays in order), `addressIndexesWithErrors` |
+| `frontend/test/partner/errors.test.ts` | UT-ADR21-04f/g, UT-PTN-E01…E08 | `partner/errors.ts` `mapPartnerFieldError`: code `required`/`invalid_type`/`duplicate`/`too_big`; info fields; phone paths; non-form paths → null; item index 0…9; Tax ID only on arrays that have it; arrays the entity lacks |
+| `frontend/test/partner/code-suggestion.test.ts` | UT-ADR21-02a…g | `partner/code-suggestion.ts` `shouldPrefillCode`, `replacedTakenCodeMessage` |
+| `frontend/test/partner/page-logic.test.ts` | UT-ADR21-03a…k, UT-R3-01a/b, UT-PTN-P01…P07 | `partner-page-header.tsx` `partnerTitle`, `partnerHeaderButtons` (ADR-0021 §3 per mode, busy, gone); `partner-drawer.tsx` `draftRowTitle` ("New customer" / "New vendor"), `partnerDrawerId`; `entity.ts`; `access.ts` `can`, `partnerAccess`; `options.ts` `toSelectOptions`; `address-types.ts` |
+| `frontend/test/customer/schema.test.ts` | UT-CUS-S01…S09 | `customer/schema.ts`: complete form; draft defaults (both types default); empty-draft errors incl. Code Name; exactly one default per type; 1–10 per type; label "Name"; `CUSTOMER_ADDRESS_ARRAYS` |
+| `frontend/test/customer/api.test.ts` | UT-ADR21-04a/c/e/h, UT-CUS-A01…A24, IT-CUS-C01/C02 | `customer/api.ts`: `toFormValues` (position order, nulls, phone), `toDuplicateValues`, `toCustomerFields` (trim, null, lower-case email, E.164, no shipping Tax ID, order); `mapServerFieldError`; `mapSaveError` (`CUSTOMER_CODE_TAKEN` → `refetchNextCode`, `VALIDATION_ERROR` `required`/`unknown`/`multiple_defaults`/unmapped, stale, not found, permission, 401, `LICENSE_*`, unavailable vs uncertain create, raw message never shown); `mapDeleteError`; `loadErrorMessage`; `readCustomerError`, `isPermissionDenied`. **IT-CUS-C01/C02**: form schema → mapper → the gateway's real strict `createCustomerInputSchema` (`backend-api-gateway/src/trpc/customer-schemas.ts`) accepts the result |
+
+### Executed (inside `f1-system-frontend-1`)
+
+| Command | Result |
+|---|---|
+| `docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T frontend sh -c "cd /app/frontend && pnpm test"` | **195 passed, 10 files** (155 new: partner 80, customer 39, vendor 36; company profile 40 unchanged) |
+| same container, `pnpm typecheck` | exit 0 |
+| same container, `pnpm lint` | exit 0; 0 errors; the 2 existing warnings in `features/auth/login-form.tsx:46` |
+| `git status --porcelain` | no change under `frontend/src/`; new `frontend/test/{partner,customer,vendor}/` only |
+
+No test failed, so no product defect was found. A mutation check (temporarily breaking `src` to prove the tests
+fail) was **not** run because this task forbids editing `frontend/src/`.
+
+### Coverage gaps (not covered by this suite)
+
+These need a DOM test library (e.g. Testing Library + jsdom), which is not installed and not approved; or the logic
+would have to be extracted from components, which this task forbids.
+
+| Gap | Where | Mapped cases still open |
+|---|---|---|
+| Default-address changes (`changeDefault`, `removeAt`, focus after remove) | `partner/components/address-list-card.tsx` (not exported) | UT-R3-03a…f, IT-R3-03 |
+| Address item rules: trash enabled only for index ≥ 1 and not read-only; checkbox `aria-disabled` when read-only or locked `exactlyOne` default; "#N" label | `partner/components/address-item.tsx` (inside the component) | UT-R3-02a…e, IT-R3-02 |
+| Draft row markup never mirrors typed Code Name/Name (only `draftRowTitle` is tested) | `partner/components/partner-drawer.tsx` `PartnerDrawer` | IT-R3-01 |
+| First-error focus wiring after Save | `customer/customer-page.tsx` `focusFirstError` (only `firstErrorField` is tested) | IT-R3-04 |
+| Hooks: `useSuggestedCodePrefill`, `useDebouncedSearch`, `useUnsavedChangesPrompt`, `usePermissionMine`, `useDrawerPreference`, `useCustomer*` queries/mutations/cache | `partner/hooks.ts`, `partner/components/partner-page-parts.tsx`, `customer/hooks.ts` | IT-ADR21-01/02 (checked live on 2026-10-16, not in a suite) |
+| Page modes, Cancel/Edit/Save flow, header rendering, permissions hiding buttons, dialogs, print view | `customer/customer-page.tsx`, `partner/components/*.tsx`, `customer/components/*.tsx` | TC-CUS-33…45 (browser), FE-CUS-025, FE-CUS-R3-007 |
+| tRPC adapter against a controlled server (list paging, `nextCode`) | `customer/hooks.ts` | IT-ADR21-05 |
+
+**Automated-testing status:** the unit part of FE-CUS-023 and UT-R3-01a/b of FE-CUS-R3-005 now run and pass. The
+component and hook cases above remain uncovered, so both TODO rows stay unresolved (see the TODO records).

@@ -102,3 +102,33 @@ blank → 400 `VALIDATION_ERROR code:"required"`, `list q=V001` finds it, cleanu
 | TC-VEN-28 | FE-VEN-016 | Create | Clear Code Name, blur | "Code Name is required" | not run |
 | TC-VEN-29 | FE-VEN-016 | Two tabs, same suggestion | Save A then B | B shows the taken error and the next suggestion; typed values never replaced | not run |
 | TC-VEN-30 | FE-VEN-017 | Drawer | Compare with rev3-02 | Bold Code Name / Name; green dot; Inactive badge | not run |
+
+## Automated tests (Vitest), 2026-10-16
+
+Same run, runner and owner instructions as [customer automated tests](../customer/testing.md#automated-tests-vitest-2026-10-16)
+(Vitest 5.0.3, `frontend/vitest.config.mts`, node environment). Test-only change: **no file under `frontend/src/` was
+edited**, no dependency added. Shared Partner Master code is tested in `frontend/test/partner/` (schema with the
+`atMostOne` rule, `errors.ts` with the vendor scope, `code-suggestion.ts`, header/drawer logic incl. UT-R3-01b
+"New vendor"); see the customer table for those files and IDs.
+
+### Test ID → file (vendor-specific)
+
+| File | Case IDs | Covers (source) |
+|---|---|---|
+| `frontend/test/vendor/schema.test.ts` | UT-VEN-S01…S09 | `vendor/schema.ts`: complete form; draft (one unticked invoice item, no shipping); empty-draft errors incl. Code Name, "Name/Company Name", no Phone/State/City/default error; Code Name trim/1–120; zero or one default valid, two rejected (Q-VEN-03); 1–10 items; Phone optional but checked (Q-VEN-02); `VENDOR_ADDRESS_ARRAYS` |
+| `frontend/test/vendor/api.test.ts` | UT-ADR21-04b/d, UT-VEN-A01…A22, IT-VEN-C01…C03 | `vendor/api.ts`: `toFormValues` (position order, nulls, phone, no shipping), `toDuplicateValues`, `toVendorFields` (exact strict keys, trim, null, lower-case email, E.164, `isDefault` as ticked); `mapServerFieldError` (vendor scope); `mapSaveError` (`VENDOR_CODE_TAKEN` → `refetchNextCode`, `required`, item paths + `unknown`, `multiple_defaults` invoice banner, shipping/root → generic, stale, not found, permission, 401, `LICENSE_*`, unavailable vs uncertain create, older `NOT_FOUND` → generic, raw message never shown); `mapDeleteError`; `loadErrorMessage`; `isVendorNotFound`, `isPermissionDenied`, `readVendorError`. **IT-VEN-C01…C03**: form schema → mapper → the gateway's real strict `createVendorInputSchema` accepts the result and rejects a `shippingAddresses` key |
+
+### Executed
+
+`pnpm test` in `f1-system-frontend-1`: **195 passed, 10 files** (vendor files 36 of them; partner files 80, shared).
+`pnpm typecheck` exit 0; `pnpm lint` exit 0 (2 existing warnings in `features/auth/login-form.tsx`). No test failed;
+no product defect found. Mutation check not run (editing `frontend/src/` was forbidden).
+
+### Coverage gaps
+
+Same as [customer coverage gaps](../customer/testing.md#coverage-gaps-not-covered-by-this-suite), for the vendor
+side: `address-list-card.tsx` default changes under `atMostOne` (UT-R3-03c/e), `address-item.tsx` trash/checkbox
+rules (UT-R3-02a/b/d/e), `PartnerDrawer` draft row markup (IT-R3-01), `vendor-page.tsx` modes, prefill and
+`focusFirstError` wiring (IT-R3-04, TC-VEN-23…34), `vendor/hooks.ts` and `partner/hooks.ts` (IT-ADR21-01/02/05).
+They need a DOM test library (not installed, not approved) or extraction from `src` (forbidden in this task).
+FE-VEN-018 and FE-VEN-R4-005 stay unresolved for these gaps.

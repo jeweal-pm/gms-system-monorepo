@@ -186,6 +186,8 @@ per-pass evidence, and share the counts with backend. New revisions, reviewers o
 
 Record (2026-10-16, frontend): same run and evidence as [customer FE-CUS-019…025](customer.md#revision-adr-0021-frontend) (typecheck/lint exit 0; logic 34/34; live tRPC 15/15 incl. vendor `nextCode` V001 → V002, `VENDOR_CODE_TAKEN`, blank code `required`; `/setup/vendor` 200 signed in). Browser, automated suite and security reviews not run; this revision stays unresolved until FE-VEN-018/019 pass.
 
+Record (2026-10-16, frontend, Vitest — FE-VEN-018 update): owner instructions "frontend backend ทำ unit test case ส่วนของ vendor customer ให้หน่อยเหมือน companyprofile" and "ทำunit test ให้อยู่ใน folder test สิเหมือนใน companyprofile". The runner now exists (Vitest 5.0.3), so FE-VEN-018 is **no longer blocked by a missing runner**. Unit tests added under `frontend/test/{partner,vendor}/` (no `frontend/src/` file edited, no dependency added): shared UT-ADR21-01a…h, 02a…g, 03a…k, 04f/g and UT-PTN-*; vendor UT-ADR21-04b/d, UT-VEN-S01…S09, UT-VEN-A01…A22 and contract checks IT-VEN-C01…C03 (mapper output accepted by the gateway's strict `createVendorInputSchema`, `shippingAddresses` rejected). `pnpm test`: 195 passed (10 files); typecheck exit 0; lint exit 0 (2 existing warnings). No defect found. Still open: hook/adapter integration and component behavior (need a DOM test library, not installed or approved). **FE-VEN-018 stays unresolved** (unit part passing). Map and gaps: [testing](../../apps/frontend/vendor/testing.md#automated-tests-vitest-2026-10-16).
+
 ## Revision (ADR-0021) backend
 
 - governing decision: [ADR-0021](../../adr/0021-partner-code-running-number-and-record-modes.md) — Accepted 2026-10-16; source UI revision 3, SA revision 2
@@ -226,3 +228,18 @@ Corrective ledger (ADR-0021 backend): pass limit 3; passes allocated 0. No defec
 | [ ] | FE-VEN-R4-006 | security part done — sec-auditor + security-auditor 2026-10-16: **clear, no findings**, both on the same bytes — HEAD `974134c` + 7 files, sha256 of raw concatenation `36a4629f1eeb630d` (the `15b0711a0e4dfed3` recorded earlier was not reproducible; parent re-pinned); browser checks TC-VEN-31…34 + manual-tester pending | parent → `sec-auditor` + `security-auditor`; frontend → manual-tester | Focused security reviews on hash `15b0711a0e4dfed3` (shared with FE-CUS-R3-006); browser checks TC-VEN-31…34 | none | FE-VEN-R4-001…004 | Both reviews and browser results recorded | security-review.md; testing.md |
 
 Record (2026-10-16, frontend): same run and evidence as [customer FE-CUS-R3-001…007](customer.md#revision-customer-rev-3--vendor-rev-4-frontend) (typecheck/lint exit 0; `/setup/vendor` 200 not signed in; "New vendor" logic check pass). This revision stays unresolved until FE-VEN-R4-005/006 pass.
+
+Record (2026-10-16, frontend, Vitest — FE-VEN-R4-005 update): same run as the FE-VEN-018 record above (195 passed, typecheck/lint exit 0, no `frontend/src/` edit). UT-R3-01b ("New vendor") runs in `frontend/test/partner/page-logic.test.ts` and passes; the `atMostOne` default rule is covered at schema level (UT-PTN-S15, UT-VEN-S05/S06). Not coverable without a DOM test library or extraction from components: UT-R3-02a/b/d/e (`address-item.tsx`), UT-R3-03c/e (default changes inside `address-list-card.tsx`, not exported), IT-R3-01…04. **FE-VEN-R4-005 stays unresolved**. Gaps: [testing](../../apps/frontend/vendor/testing.md#coverage-gaps).
+
+## Revision (backend Vitest unit tests, customer + vendor) — 2026-10-16
+
+- approval-evidence and source revision: same as [customer](./customer.md#revision-backend-vitest-unit-tests-customer--vendor--2026-10-16) (HEAD `c583bac` + uncommitted test tree, hash `d1c27cbeb7ddc5a0`; test-only, no `src/` change).
+- evidence: [testing "Automated tests (Vitest)"](../../apps/backend/partner/vendor/testing.md#automated-tests-vitest--2026-10-16)
+
+| Done | ID | Status | Owner | Task | Allowed files | Acceptance | Verification |
+|---|---|---|---|---|---|---|---|
+| [x] | BE-VEN-023 | done 2026-10-16 | backend | Partner Vitest unit tests for vendor (schemas incl. zero-or-one default / `multiple_defaults`, service with Prisma mocked, error mapping incl. P2002 `code_key` → `VENDOR_CODE_TAKEN`, controller route order) | `backend-api-partner/test/{vendor,partner-shared}/**` | all pass; no `src/` change | UT-VEN-P01…P65; partner `pnpm test` 276 passed / 15 skipped; typecheck + lint exit 0 |
+| [x] | BE-VEN-024 | done 2026-10-16 | backend | Gateway Vitest unit tests for `vendor-schemas` and router `vendor.*` (permission per action, partner error mapping, timeout → PARTNER_UNAVAILABLE) | `backend-api-gateway/test/{vendor,partner-shared}/**` | all pass | UT-VEN-G01…G34; gateway `pnpm test` 215 passed / 7 skipped; typecheck + lint exit 0 |
+| [x] | BE-VEN-025 | done 2026-10-16 — shared with BE-CUS-025 | backend | ADR-0021 `.mjs` port + opt-in live guard (INV-20261016-001, test part) | `backend-api-{partner,gateway}/test/**` | default run never touches DB/session | see BE-CUS-025 |
+| [ ] | BE-VEN-026 | open — shared with BE-CUS-026 | parent → infra/devops | `.dockerignore` exclusion of `**/test` (INV-20261016-001, infra part) | root `.dockerignore` | images contain no `test/` | pending owner selection |
+| [ ] | BE-VEN-027 | pending — shared with BE-CUS-027 | parent → `sec-auditor` + `security-auditor` | Focused review of the test-only diff | none | both results on the same revision | security-review.md |
