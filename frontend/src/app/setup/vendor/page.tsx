@@ -3,7 +3,7 @@
 import { AppShell, type Breadcrumb } from "@/features/home/app-shell";
 import { VendorPage } from "@/features/vendor/vendor-page";
 
-const breadcrumbs: Breadcrumb[] = [{ label: "Home", href: "/" }, { label: "Setup" }, { label: "Vendor" }];
+const breadcrumbs: Breadcrumb[] = [{ label: "Home", href: "/" }, { label: "Setup", href: "/setup" }, { label: "Vendor" }];
 
 export default function SetupVendorPage() {
   return (

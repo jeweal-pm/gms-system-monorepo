@@ -1,45 +1,100 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useId, useRef, useState } from "react";
 import { GmsMark } from "./gms-mark";
-import { isNavItemActive, sidebarFooterItems, sidebarSections, type NavItem } from "./navigation";
+import { activeDisclosureIds, isNavItemActive, sidebarSections, sidebarToggleIcon, type NavLink } from "./navigation";
+import { SidebarDisclosure, sidebarFocusRing, sidebarRow } from "./sidebar-disclosure";
+import { RailActionButton, type SidebarFocusRequest, type TakeSidebarFocusRequest } from "./sidebar-rail";
 
-const focusRing = "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gms-primary";
-
-function SidebarLink({ item, pathname, onNavigate }: Readonly<{ item: NavItem; pathname: string; onNavigate?: () => void }>) {
+function SidebarLink({ item, pathname, onNavigate }: Readonly<{ item: NavLink; pathname: string; onNavigate?: () => void }>) {
   const active = isNavItemActive(item, pathname);
   const Icon = item.icon;
   return (
-    <Link
-      href={item.href}
-      aria-current={active ? "page" : undefined}
-      onNavigate={onNavigate}
-      className={`flex h-9 items-center gap-2 rounded-gms-md px-2.5 text-[15px] leading-5 text-gms-text transition-colors hover:bg-gms-nav-active ${focusRing} ${
-        active ? "bg-gms-nav-active font-semibold" : ""
-      }`}
-    >
-      <Icon aria-hidden size={18} strokeWidth={1.5} className="shrink-0" />
+    <Link href={item.href} aria-current={active ? "page" : undefined} onNavigate={onNavigate} className={`${sidebarRow} ${active ? "bg-gms-nav-active font-semibold" : ""}`}>
+      {Icon && <Icon aria-hidden size={18} strokeWidth={1.5} className="shrink-0" />}
       <span className="truncate">{item.label}</span>
     </Link>
   );
 }
 
 /**
- * C-01 sidebar (FE-UP-017, source 06-sidebar.png): 236 px wide, #FCFCFC, 1 px #EDEDED right
- * border, padding 16/14, 15 px gap between logo, menu and the pinned Setup item.
+ * Disclosure parents opened in this browser tab. In-memory only (not persisted, ui-spec); it lets
+ * opening stay additive across client navigations, which remount the shell. It is mutated only in a
+ * client effect, so it is empty on the server and at hydration and the first render stays deterministic.
  */
-export function Sidebar({ pathname, onNavigate, className = "" }: Readonly<{ pathname: string; onNavigate?: () => void; className?: string }>) {
+const rememberedOpenIds = new Set<string>();
+
+type CollapseControl = { controlsId: string; onCollapse: () => void; takeFocusRequest: TakeSidebarFocusRequest };
+
+/**
+ * Expanded sidebar (C-01 / N-03; S3, S2): 236 px, #FCFCFC, 1 px #EDEDED right border, padding 16/14,
+ * sections with grey group labels, disclosure parents, and, at ≥ md only, the ⇆ "Collapse sidebar"
+ * toggle pinned at the bottom (Q-NAV-07). The mobile drawer renders it without `collapse`.
+ */
+export function Sidebar({
+  pathname,
+  onNavigate,
+  collapse,
+  className = "",
+}: Readonly<{ pathname: string; onNavigate?: () => void; collapse?: CollapseControl; className?: string }>) {
+  const idPrefix = useId();
+  const listRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [openIds, setOpenIds] = useState(() => new Set([...rememberedOpenIds, ...activeDisclosureIds(pathname)]));
+  const [openedForPath, setOpenedForPath] = useState(pathname);
+
+  // Same shell, new route (e.g. /modules/a → /modules/b): open the active child's parent, additively.
+  if (openedForPath !== pathname) {
+    setOpenedForPath(pathname);
+    const missing = activeDisclosureIds(pathname).filter((id) => !openIds.has(id));
+    if (missing.length > 0) setOpenIds(new Set([...openIds, ...missing]));
+  }
+
+  useEffect(() => {
+    rememberedOpenIds.clear();
+    for (const id of openIds) rememberedOpenIds.add(id);
+  }, [openIds]);
+
+  // On mount and navigation: keep the active item visible (e.g. Barcode Printing or a Report child).
+  // Right after a layout switch, the switch's focus request wins instead: focus the collapse toggle, or
+  // scroll a section's label into view and focus its first item (Q-NAV-02). The request is taken once
+  // and remembered for this pathname, so a repeated effect run cannot undo the section scroll.
+  const takeFocusRequest = collapse?.takeFocusRequest;
+  const focusRequestRef = useRef<{ pathname: string; request: SidebarFocusRequest | null } | null>(null);
+  useEffect(() => {
+    focusRequestRef.current ??= { pathname, request: takeFocusRequest?.() ?? null };
+    const request = focusRequestRef.current.pathname === pathname ? focusRequestRef.current.request : null;
+    if (request?.target === "section") {
+      const section = listRef.current?.querySelector<HTMLElement>(`[data-nav-section="${request.sectionId}"]`);
+      section?.scrollIntoView({ block: "start" });
+      section?.querySelector<HTMLElement>("a[href], button")?.focus({ preventScroll: true });
+      return;
+    }
+    listRef.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ block: "nearest" });
+    if (request?.target === "toggle") rootRef.current?.querySelector<HTMLElement>("[data-sidebar-toggle]")?.focus();
+  }, [pathname, takeFocusRequest]);
+
+  function toggle(id: string) {
+    setOpenIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   return (
-    <div className={`flex h-full w-gms-sidebar shrink-0 flex-col gap-[15px] border-r border-gms-border bg-gms-surface-muted px-[14px] py-4 ${className}`}>
-      <Link href="/" onNavigate={onNavigate} aria-label="GMS home" className={`flex h-[52px] shrink-0 items-start self-start rounded-gms-sm pt-0.5 ${focusRing}`}>
+    <div ref={rootRef} className={`flex h-full w-gms-sidebar shrink-0 flex-col gap-[15px] border-r border-gms-border bg-gms-surface-muted px-[14px] py-4 ${className}`}>
+      <Link href="/" onNavigate={onNavigate} aria-label="GMS home" className={`flex h-[52px] shrink-0 items-start self-start rounded-gms-sm pt-0.5 ${sidebarFocusRing}`}>
         <GmsMark />
       </Link>
-      <nav aria-label="Main menu" className="flex min-h-0 flex-1 flex-col gap-[15px]">
-        <div className="scrollbar-none flex min-h-0 flex-1 flex-col gap-[15px] overflow-y-auto">
+      <nav aria-label="Main menu" className="flex min-h-0 flex-1 flex-col">
+        <div ref={listRef} className="scrollbar-none flex min-h-0 flex-1 flex-col gap-[15px] overflow-y-auto">
           {sidebarSections.map((section) => {
-            const headingId = section.title ? `sidebar-${section.id}` : undefined;
+            const headingId = section.title ? `${idPrefix}-section-${section.id}` : undefined;
             return (
-              <div key={section.id} className={section.divider ? "-mt-2 border-t border-gms-border pt-[13px]" : undefined}>
+              <div key={section.id} data-nav-section={section.id}>
                 {section.title && (
                   <h2 id={headingId} className="mb-1 text-[13px] font-normal leading-[17px] text-gms-text-subtle">
                     {section.title}
@@ -47,8 +102,19 @@ export function Sidebar({ pathname, onNavigate, className = "" }: Readonly<{ pat
                 )}
                 <ul aria-labelledby={headingId} className="flex flex-col gap-1">
                   {section.items.map((item) => (
-                    <li key={item.href}>
-                      <SidebarLink item={item} pathname={pathname} onNavigate={onNavigate} />
+                    <li key={item.id}>
+                      {item.kind === "link" ? (
+                        <SidebarLink item={item} pathname={pathname} onNavigate={onNavigate} />
+                      ) : (
+                        <SidebarDisclosure
+                          item={item}
+                          listId={`${idPrefix}-sub-${item.id}`}
+                          open={openIds.has(item.id)}
+                          onToggle={() => toggle(item.id)}
+                          pathname={pathname}
+                          onNavigate={onNavigate}
+                        />
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -56,14 +122,12 @@ export function Sidebar({ pathname, onNavigate, className = "" }: Readonly<{ pat
             );
           })}
         </div>
-        <ul className="flex shrink-0 flex-col gap-1">
-          {sidebarFooterItems.map((item) => (
-            <li key={item.href}>
-              <SidebarLink item={item} pathname={pathname} onNavigate={onNavigate} />
-            </li>
-          ))}
-        </ul>
       </nav>
+      {collapse && (
+        <div className="shrink-0">
+          <RailActionButton label="Collapse sidebar" icon={sidebarToggleIcon} ariaControls={collapse.controlsId} isSidebarToggle onClick={collapse.onCollapse} />
+        </div>
+      )}
     </div>
   );
 }

@@ -42,20 +42,32 @@
   --color-gms-field-disabled: #f8f8f8;
 
   /* App shell (FE-UP-017; sampled from source 06-sidebar / 07-topbar / 08-shell). */
-  --color-gms-nav-active: #f5f5f6;
+  /* app-navigation FE-NAV-009 changed nav-active from #f5f5f6 to #f3f3f3 (Q-NAV-12). */
+  --color-gms-nav-active: #f3f3f3;
   --color-gms-text-subtle: #95a0a9;
   --color-gms-text-muted: #637381;
   --color-gms-border-header: #e3e7ec;
   --spacing-gms-sidebar: 236px;
   --spacing-gms-topbar: 48px;
 
+  /* app-navigation UI revision 1 (FE-NAV-009; document/apps/frontend/app-navigation/design-system.md). */
+  --color-gms-rail-button: #f7f7f7;
+  --color-gms-tooltip: #000000;
+  --color-gms-tile-indigo: #5040db;
+  --color-gms-tile-green: #14a460;
+  --color-gms-tile-neutral: #737780;
+  --color-gms-scrim: rgb(52 62 62 / 0.4);
+  --spacing-gms-rail: 56px;
+
   --radius-gms-sm: 4px;
   --radius-gms-md: 8px;
   --radius-gms-lg: 12px;
   --radius-gms-xl: 16px;
+  --radius-gms-2xl: 30px;
 
   --shadow-gms-overlay: 0 12px 32px rgb(0 0 0 / 0.08);
   --shadow-gms-tile: 0 1px 3px rgb(0 0 0 / 0.12);
+  --shadow-gms-setup-tile: 0 2px 10px rgb(0 0 0 / 0.1);
 }
 
 :root {

@@ -1,13 +1,18 @@
 # Latest frontend TODO
 
-- feature-id: `user-permission`
-- revision: 2
-- status: approved 2026-10-15 ("frontend backend อนุมัติ ADR-0020"); implemented, pending browser/manual test
-- todo: [todo/user-permission.md](todo/user-permission.md) (FE-UP2-001…010)
-- source: owner-supplied screenshots `rev2-01..04` in [apps/frontend/user-permission/source/](../apps/frontend/user-permission/source/)
-- backend-bundles: SA rev 2 [auth/user-permission](../apps/backend/auth/user-permission/) + [ADR-0020](../adr/0020-username-login-and-permission-matrix-v2.md); backend BE-UP2-001…011 done
-- updated-at: 2026-10-15T18:00+07:00
+- feature-id: `app-navigation`
+- revision: 3
+- status: approved 2026-10-15 (UI revision 3: owner changes of approved rev 1); frontend implemented, browser verification pending
+- todo: [todo/app-navigation.md](todo/app-navigation.md)
+- source: four unique owner-supplied images in [apps/frontend/app-navigation/source/](../apps/frontend/app-navigation/source/) (collapsed rail, component sheet, Setup landing with expanded sidebar, Master Code modal)
+- backend-bundles: none required for revision 1. Deferred, not-dispatched SA topics (badges, menu permissions): [handoff](../coordination/handoffs/app-navigation-sa.md)
+- dependencies: none new ([dependencies.md](../apps/frontend/app-navigation/dependencies.md))
+- updated-at: 2026-10-15T15:45+07:00
 
-Open owner questions Q-UP2-01…06 are in [open-questions.md](../apps/frontend/user-permission/open-questions.md). The previous pointer was
-`vendor` revision 2 (approved 2026-10-15, in progress); its TODO remains in [todo/vendor.md](todo/vendor.md).
+UI revision 1 was approved by the owner on 2026-10-15 ("อนุมัติ app-navigation revision 1", all Q-NAV defaults);
+FE-NAV-001…011 may proceed. No SA bundle is required for revision 1.
+
+The previous pointer was `vendor` revision 2 (UI approved 2026-10-15; in progress, SA rev 1 + ADR-0019 approved,
+backend in progress); its TODO remains unchanged in [todo/vendor.md](todo/vendor.md) and can still be selected
+explicitly. Before that: `customer` revision 1 ([todo/customer.md](todo/customer.md)).
 Read the linked TODO for authoritative status; see [the delivery workflow](../workflow/ui-delivery.md).

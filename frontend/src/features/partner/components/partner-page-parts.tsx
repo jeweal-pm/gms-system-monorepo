@@ -4,7 +4,6 @@ import { ChevronLeft, ChevronRight, ShieldAlert, Users } from "lucide-react";
 import Link from "next/link";
 import { useState, useSyncExternalStore, type ReactNode, type Ref } from "react";
 import { Button, cx, focusRing } from "@/components/ui/button";
-import { SetupTabs } from "@/features/setup/setup-tabs";
 import { isCallerLicenseCode, readDomainError } from "@/lib/trpc-error";
 import { partnerAccess, type PartnerAccess } from "../access";
 import { lowerPlural, lowerSingular, type PartnerEntity } from "../entity";
@@ -23,8 +22,7 @@ export const printDateFormatter = new Intl.DateTimeFormat("en-GB", { timeZone: "
 export function PartnerPageFrame({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-gms-page">
-      <SetupTabs />
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">{children}</div>
+      <div className="relative min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">{children}</div>
     </div>
   );
 }
