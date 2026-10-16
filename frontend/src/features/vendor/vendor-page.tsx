@@ -27,7 +27,6 @@ import type { PartnerEntity } from "@/features/partner/entity";
 import { useUnsavedChangesPrompt } from "@/features/partner/hooks";
 import type { OptionsState } from "@/features/partner/options";
 import { addressIndexesWithErrors, errorTreeFromEntries, firstErrorField } from "@/features/partner/schema";
-import { SetupTabs } from "@/features/setup/setup-tabs";
 import { isPermissionDenied, isVendorNotFound, loadErrorMessage, mapSaveError, type MappedFieldError, toDuplicateValues, toFormValues, toVendorFields } from "./api";
 import { DeleteVendorDialog } from "./components/delete-vendor-dialog";
 import { VendorsDrawer } from "./components/vendors-drawer";
@@ -308,7 +307,6 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-gms-page">
-      <SetupTabs />
       <div className="relative flex min-h-0 flex-1">
         <div className="relative min-w-0 flex-1 overflow-y-auto p-4 sm:pb-6 sm:pl-6 sm:pr-10 sm:pt-6">
           <PartnerPageHeader

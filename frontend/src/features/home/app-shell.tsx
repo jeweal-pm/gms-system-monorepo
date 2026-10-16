@@ -2,15 +2,19 @@
 
 import { X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth-client";
-import type { Breadcrumb } from "./navigation";
+import { contextNavFor, type Breadcrumb } from "./navigation";
 import { Sidebar } from "./sidebar";
+import { SidebarContextPanel } from "./sidebar-context-panel";
+import { SidebarRail, type SidebarFocusRequest } from "./sidebar-rail";
 import { Topbar, topbarIconButton } from "./topbar";
+import { useSidebarCollapsed } from "./use-sidebar-collapsed";
 
 export type { Breadcrumb } from "./navigation";
 
 const defaultBreadcrumbs: Breadcrumb[] = [{ label: "Home" }];
+const sidebarContainerId = "app-sidebar";
 
 /**
  * Authenticated application shell (C-01, FE-UP-017): Sidebar + Topbar + content slot.
@@ -25,6 +29,21 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
   const [isSessionChecked, setIsSessionChecked] = useState(false);
   const [isNavigationOpen, setIsNavigationOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  // FE-NAV-003: expanded sidebar or collapsed rail at ≥ md (server/hydration render: expanded).
+  const [isSidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed();
+  const [animateSidebarWidth, setAnimateSidebarWidth] = useState(false);
+  // Revision 2: context routes (Setup › Partner master) show the rail + context panel. Expanding there
+  // opens the full sidebar for this page only; the stored preference is not changed. Each page renders
+  // its own AppShell, so this resets on navigation.
+  const contextNav = contextNavFor(pathname);
+  const [isContextExpanded, setIsContextExpanded] = useState(false);
+  const showRail = contextNav ? !isContextExpanded : isSidebarCollapsed;
+  const focusRequestRef = useRef<SidebarFocusRequest | null>(null);
+  const takeFocusRequest = useCallback(() => {
+    const request = focusRequestRef.current;
+    focusRequestRef.current = null;
+    return request;
+  }, []);
 
   // The shared session store can still hold a signed-out result from before login,
   // so redirect only after a fresh session check for this mount.
@@ -40,6 +59,13 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
     await authClient.signOut();
     router.replace("/login");
     router.refresh();
+  }
+
+  function switchSidebar(collapsed: boolean, request: SidebarFocusRequest) {
+    focusRequestRef.current = request;
+    setAnimateSidebarWidth(true);
+    if (contextNav) setIsContextExpanded(!collapsed);
+    else setSidebarCollapsed(collapsed);
   }
 
   function closeNavigation(returnFocus: boolean) {
@@ -59,8 +85,27 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
       >
         Skip to content
       </a>
-      <aside className="hidden h-screen md:block">
-        <Sidebar pathname={pathname} />
+      {/* Only one of sidebar / rail is rendered, so landmarks and focus order stay single. The width
+          animates 150 ms after a user toggle only (not on the hydration switch), none with reduced motion. */}
+      <aside
+        id={sidebarContainerId}
+        className={`hidden h-screen shrink-0 overflow-hidden md:block ${
+          showRail ? (contextNav ? "w-[calc(var(--spacing-gms-rail)+var(--spacing-gms-sidebar))]" : "w-gms-rail") : "w-gms-sidebar"
+        } ${
+          animateSidebarWidth ? "transition-[width] duration-150 ease-out motion-reduce:transition-none" : ""
+        }`}
+      >
+        {showRail ? (
+          <div className="flex h-full">
+            <SidebarRail pathname={pathname} controlsId={sidebarContainerId} takeFocusRequest={takeFocusRequest} onExpand={(request) => switchSidebar(false, request)} />
+            {contextNav && <SidebarContextPanel nav={contextNav} pathname={pathname} />}
+          </div>
+        ) : (
+          <Sidebar
+            pathname={pathname}
+            collapse={{ controlsId: sidebarContainerId, takeFocusRequest, onCollapse: () => switchSidebar(true, { target: "toggle" }) }}
+          />
+        )}
       </aside>
 
       {isNavigationOpen && <MobileNavigation pathname={pathname} onClose={closeNavigation} />}
@@ -82,7 +127,10 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
   );
 }
 
-/** Below `md` the sidebar opens as a modal drawer from the topbar menu button. */
+/**
+ * Below `md` the sidebar opens as a modal drawer from the topbar menu button (FE-NAV-004): always the
+ * expanded sidebar, no collapse toggle or rail; the focus trap skips links inside closed disclosures.
+ */
 function MobileNavigation({ pathname, onClose }: Readonly<{ pathname: string; onClose: (returnFocus: boolean) => void }>) {
   const panelRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -98,7 +146,7 @@ function MobileNavigation({ pathname, onClose }: Readonly<{ pathname: string; on
       return;
     }
     if (event.key !== "Tab") return;
-    const focusables = Array.from(panelRef.current?.querySelectorAll<HTMLElement>("a[href], button:not([disabled])") ?? []);
+    const focusables = Array.from(panelRef.current?.querySelectorAll<HTMLElement>("a[href], button:not([disabled])") ?? []).filter((element) => !element.closest("[hidden]"));
     if (focusables.length === 0) return;
     const first = focusables[0];
     const last = focusables[focusables.length - 1];
