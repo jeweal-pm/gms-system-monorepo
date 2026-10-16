@@ -9,12 +9,17 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@hookform/resolvers": "^5.9.1",
     "@gem-crm/backend-api-gateway": "workspace:*",
+    "@hookform/resolvers": "^5.9.1",
     "@tanstack/react-query": "^5.104.1",
+    "@tiptap/extensions": "3.31.4",
+    "@tiptap/pm": "3.31.4",
+    "@tiptap/react": "3.31.4",
+    "@tiptap/starter-kit": "3.31.4",
     "@trpc/client": "^11.19.0",
     "@trpc/react-query": "^11.19.0",
     "better-auth": "^1.7.7",
+    "libphonenumber-js": "1.13.14",
     "lucide-react": "^1.52.0",
     "next": "16.3.8",
     "react": "19.3.0",

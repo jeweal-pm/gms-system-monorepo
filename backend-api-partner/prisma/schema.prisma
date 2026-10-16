@@ -118,3 +118,39 @@ model VendorAddress {
   @@map("vendor_address")
   @@schema("partner")
 }
+
+/// Company Profile (company-profile SA revision 2, ADR-0021): exactly one row, id = 1 (CHECK in the
+/// migration). The logo bytes are a file (`storage/company-profile/logo`); only metadata lives here.
+model CompanyProfile {
+  id                       Int       @id @default(1) @db.SmallInt
+  name                     String    @db.VarChar(200)
+  taxId                    String    @default("") @map("tax_id") @db.VarChar(50)
+  contactName              String    @map("contact_name") @db.VarChar(200)
+  phoneCountry             String    @map("phone_country") @db.Char(2)
+  phoneE164                String    @map("phone_e164") @db.VarChar(16)
+  email                    String    @db.VarChar(254)
+  website                  String    @default("") @db.VarChar(300)
+  address                  String    @db.VarChar(300)
+  address2                 String    @default("") @db.VarChar(300)
+  countryCode              String    @map("country_code") @db.Char(2)
+  state                    String    @db.VarChar(100)
+  city                     String    @db.VarChar(100)
+  postcode                 String    @db.VarChar(20)
+  currencyCode             String    @map("currency_code") @db.Char(3)
+  /// Tiptap/ProseMirror JSON validated by `rich-text.ts`; null = empty.
+  bankDetails              Json?     @map("bank_details")
+  showBankDetailsOnInvoice Boolean   @default(false) @map("show_bank_details_on_invoice")
+  terms                    Json?
+  showTermsOnInvoice       Boolean   @default(false) @map("show_terms_on_invoice")
+  logoContentType          String?   @map("logo_content_type") @db.VarChar(16)
+  logoSizeBytes            Int?      @map("logo_size_bytes")
+  logoSha256               String?   @map("logo_sha256") @db.Char(64)
+  logoUpdatedAt            DateTime? @map("logo_updated_at") @db.Timestamp(3)
+  /// Optimistic version (SA-CP-08): +1 on every save and logo change.
+  version                  Int       @default(1)
+  updatedBy                String    @map("updated_by") @db.VarChar(64)
+  updatedAt                DateTime  @default(now()) @map("updated_at") @db.Timestamp(3)
+
+  @@map("company_profile")
+  @@schema("partner")
+}

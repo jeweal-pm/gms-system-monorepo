@@ -45,7 +45,7 @@ export function navigationHref(item: NavigationItem): string {
 
 export const navigationGroups: NavigationGroup[] = [
   { title: "Main Menu", items: [{ label: "Dashboard", slug: "dashboard" }, { label: "Quotation", slug: "quotation" }, { label: "Reserve", slug: "reserve" }] },
-  { title: "Company", items: [{ label: "Company Profile", slug: "company-profile" }, { label: "Bank", slug: "bank" }] },
+  { title: "Company", items: [{ label: "Company Profile", slug: "company-profile", href: "/setup/company-profile" }, { label: "Bank", slug: "bank" }] },
   // vendor FE-VEN-002: Vendor has a real page (Home shortcut fallback); `/modules/vendor` still renders.
   { title: "Partner Master", items: [{ label: "Vendor", slug: "vendor", href: "/setup/vendor" }, { label: "Customer", slug: "customer", href: "/setup/customer" }] },
   { title: "Stone Master", items: ["Stone Group", "Stone", "Shape", "Size", "Color", "Cutting", "Quality", "Clarity"].map((label) => ({ label, slug: label.toLowerCase().replaceAll(" ", "-") })) },
@@ -88,7 +88,6 @@ export type RailModule = { id: string; label: string; icon: LucideIcon } & ({ ki
  * `masterCode` adds "Master Code" to the breadcrumb chain (the modal itself has no route).
  */
 export const setupOwnedPlaceholders = [
-  { slug: "company-profile", label: "Company Profile", masterCode: false },
   { slug: "notifications", label: "Notifications", masterCode: false },
   { slug: "currency", label: "Currency", masterCode: true },
   { slug: "stone-master", label: "Stone Master", masterCode: true },

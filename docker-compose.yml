@@ -114,6 +114,10 @@ services:
       PRISMA_HIDE_UPDATE_MESSAGE: "1"
       PARTNER_DATABASE_URL: ${PARTNER_CONTAINER_DATABASE_URL:-postgresql://f1_user:f1_dev_password@postgres:5432/f1_system?schema=partner}
       PARTNER_SERVICE_TOKEN: ${PARTNER_SERVICE_TOKEN:?PARTNER_SERVICE_TOKEN must be set (see .env.example)}
+    # Infra bundle backend-api-partner/2 (company-profile SA rev 2): the only writable path is the
+    # company logo folder; the root filesystem stays read-only.
+    volumes:
+      - partner-storage:/app/backend-api-partner/storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -156,6 +160,7 @@ services:
 
 volumes:
   postgres-data:
+  partner-storage:
 
 networks:
   partner-api:

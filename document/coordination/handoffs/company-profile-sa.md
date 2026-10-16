@@ -1,0 +1,25 @@
+# Handoff: company-profile → SA
+
+- Feature ID / UI revision: `company-profile` / 2 (**approved** 2026-10-16); SA revision 2 **approved** (owner 2026-10-16 ≈12:00 +07:00: "บันทึกลงใน folder ใน backend เลยเมื่ออัพรูปใหม่ไปจะไปทับรูปเก่า  logic นี้ แค่ module company profile เท่านั้น  อนุมัติ company-profile SA revision 1") → [decisions](../../apps/backend/partner/company-profile/decisions.md); backend and frontend integration delivered 2026-10-16 (see the TODO and SA testing results)
+- SA revision / source UI revision: none yet / 1
+- From role/scope: ui-spec (run inline by the parent, 2026-10-16)
+- To role/scope / parent integration owner: `sa`; parent serializes shared files
+- Exact TODO IDs and source documents: FE-CP-005, 006, 007 (storage format), 009, 010 in [todo/company-profile.md](../../task/todo/company-profile.md); [ui-spec](../../apps/frontend/company-profile/ui-spec.md), [data-fetching](../../apps/frontend/company-profile/data-fetching.md), [error-handling](../../apps/frontend/company-profile/error-handling.md), [form-guidelines](../../apps/frontend/company-profile/form-guidelines.md), [open questions](../../apps/frontend/company-profile/open-questions.md)
+- Approval status, approved revision, and owner evidence: UI revision 2 approved, owner, 2026-10-16 ≈11:00 +07:00: "Phone ให้ลง lib ที่นายแนะนำเลยเอาที่เขาใช้กันทั่วไป 10 MB โลโก้พื้นเทาคือโหมดอ่านอย่างเดียว ส่วนพื้นขาวที่มีปุ่มถังขยะคือโหมดแก้ไข ปุ่ม Print และ Excel ปิดไว้ก่อน / อนุมัติ company-profile revision 1"
+- Required contract / diagrams / ADRs:
+  - Which service owns the company profile (auth, partner or other) and why; an ADR if a new service or storage is introduced.
+  - A schema for one record per installation (Q-CP-11): general fields, address, `currencyCode`, `bankDetails` and `terms` (format chosen with DEP-CP-01 / Q-CP-05: sanitised HTML or Markdown), two invoice-preview booleans, logo (precedent: `UserPhoto` Bytes + sha256 in PostgreSQL), `version`, `updatedBy`, `updatedAt`.
+  - tRPC procedures get/upsert, and how the logo is uploaded and served via the same-origin proxy; option lists (reuse the partner currency/country lists or not).
+  - Server validation: field limits (Q-CP-09), logo signature and size (Q-CP-04: **10 MB**, owner) including the gateway and Next proxy body limits, rich-text sanitising allow-list, optimistic concurrency, permission action keys for the `company-profile` catalog leaf (Q-CP-10), error codes.
+  - Sequence diagram (load, save with logo, conflict), DB diagram, backend TODO items.
+- Dependency ledger entries and installation status: DEP-CP-01 Tiptap 3.31.4 and DEP-CP-02 libphonenumber-js 1.13.14 (frontend, installed). Any backend sanitiser package must be proposed by SA.
+- Allowed code/document paths: SA documents only (`document/apps/backend/<service>/company-profile/`, ADRs, backend items in the central TODO). No code.
+- Integration-owned changes: none until approval.
+- Infra service bundle: only if SA proposes storage outside PostgreSQL (e.g. a file volume or object store). Then route to infra per [infra delivery](../../workflow/infra-delivery.md).
+- DevOps: none expected.
+- Resource budget / capacity impact: one row plus a ≤ 10 MB logo; negligible DB growth. Serve the logo with cache headers to avoid repeated reads.
+- Expected output and acceptance criteria: a reviewable SA bundle (pending-review) that covers every bullet above, linked from the TODO.
+- Verification completed / not run: none (documents only).
+- Blocking item: none.
+- Resume action and destination: SA → owner review → backend → frontend FE-CP-009/010.
+- Corrective work: none.
