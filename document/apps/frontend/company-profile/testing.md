@@ -53,3 +53,20 @@ No frontend test runner is configured yet ([architecture](../architecture.md)). 
 | Lint | `pnpm --filter frontend lint` | pass: 0 errors; 2 existing warnings in `features/auth/login-form.tsx` (not touched) |
 | Build | `pnpm --filter frontend build` | **not completed**: Turbopack could not start its PostCSS child process in the agent's Windows environment (`0xc0000142`, at `globals.css`, unchanged by this work), twice. Needs a run on the developer machine |
 | Browser / manual-tester | not run | No test session credentials; the dev container also needs `pnpm docker:dev:install` for the new packages |
+
+## Unit tests (Vitest 5.0.3, folder `test/`) — 2026-10-16
+
+Owner request: "frontend backend ทำ unit test case ส่วนของ company-profile ให้ฉันด้วย" + choice "โค้ด test ในโฟลเดอร์ test/" (2026-10-16). Config `frontend/vitest.config.mts` (node environment, `@/` → `src/`, 2 fork workers); script `pnpm --filter frontend test`.
+
+| File | Cases | Covers |
+|---|---|---|
+| `test/company-profile/schema.test.ts` | UT-CP-F01…F14 | required fields, blank text, phone per country (libphonenumber-js), email, website, rich-text limits, text limits, `richTextLength`, `normalizeWebsite`, `logoFileError` |
+| `test/company-profile/api.test.ts` | UT-CP-F20…F31 | profile ↔ form mapping (national phone ↔ E.164), round trip, server field paths and messages, `logoUrl`, `uploadLogo` (raw PUT, error code, non-JSON error, network), logo error messages |
+
+| Command | Result |
+|---|---|
+| `pnpm --filter frontend test` | **40 passed** (2 files) |
+| typecheck / lint | pass / pass (2 existing warnings in `login-form.tsx`) |
+| Mutation check | logo size limit doubled → UT-CP-F14 failed as intended; source restored |
+
+Not covered: component tests of the page, logo tile and editor (need a DOM test library such as Testing Library + jsdom, not installed: not requested), browser checks TC-CP-01…20.
