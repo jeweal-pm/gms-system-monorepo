@@ -136,6 +136,11 @@ export class MockLicenseClient implements LicenseClient {
     this.privateKey = createPrivateKey({ key: Buffer.from(config.mockPrivateKeyPkcs8Base64, "base64"), format: "der", type: "pkcs8" });
   }
 
+  /**
+   * `email` is the license subject (the username, ADR-0020 §2). The scenario is the whole
+   * username (`license-expired`) or, for legacy subjects, the part before `@`
+   * (`license-expired@example.com`).
+   */
   async lookup(email: string): Promise<LicenseLookup> {
     const scenario = email.split("@")[0]?.toLowerCase() ?? "";
     if (scenario === "license-outage") throw new LicenseClientError("UPSTREAM_UNAVAILABLE", 503, true);

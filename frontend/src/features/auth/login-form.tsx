@@ -10,8 +10,8 @@ import { credentialsSchema, type CredentialsValues } from "./schemas";
 
 const demoAccounts = process.env.NODE_ENV === "development"
   ? [
-      { label: "Super Admin", email: "superadmin@demo.com", password: "password123", highlighted: true },
-      { label: "User", email: "user@demo.com", password: "password123", highlighted: false },
+      { label: "Super Admin", username: "superadmin@demo.com", password: "password123", highlighted: true },
+      { label: "User", username: "user@demo.com", password: "password123", highlighted: false },
     ]
   : [];
 
@@ -27,13 +27,13 @@ export function LoginForm() {
     mode: "onBlur",
     reValidateMode: "onChange",
     shouldFocusError: true,
-    defaultValues: demoAccounts.length > 0 ? { email: demoAccounts[0]!.email, password: demoAccounts[0]!.password } : undefined,
+    defaultValues: demoAccounts.length > 0 ? { username: demoAccounts[0]!.username, password: demoAccounts[0]!.password } : undefined,
   });
 
   useEffect(() => {
     const demoAccount = demoAccounts[0];
     if (!demoAccount) return;
-    setValue("email", demoAccount.email);
+    setValue("username", demoAccount.username);
     setValue("password", demoAccount.password);
   }, [setValue]);
 
@@ -49,10 +49,12 @@ export function LoginForm() {
     setServerError("");
     setSubmitting(true);
     try {
-      const result = await authClient.signIn.email({ email: values.email, password: values.password, rememberMe });
+      // ADR-0020: username sign-in; the value is already trimmed by the schema and lowercased by the server.
+      const result = await authClient.signIn.username({ username: values.username, password: values.password, rememberMe });
       if (result.error) {
         const error = result.error as unknown as {
           status?: number;
+          code?: string;
           attemptsRemaining?: number;
           retryAfterSeconds?: number;
           error?: {
@@ -62,16 +64,18 @@ export function LoginForm() {
         };
         const retryAfterSeconds = error.retryAfterSeconds ?? error.error?.retryAfterSeconds;
         const attemptsRemaining = error.attemptsRemaining ?? error.error?.attemptsRemaining;
-        if (error.status === 423 || retryAfterSeconds) {
+        if (error.code === "ACCOUNT_INACTIVE") {
+          setServerError("บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ");
+        } else if (error.status === 423 || retryAfterSeconds) {
           const seconds = Math.max(1, retryAfterSeconds ?? 60);
           setLockoutSeconds(seconds);
           setServerError(`ใส่รหัสผ่านผิด 3 ครั้ง กรุณารอ ${seconds} วินาที`);
         } else if (error.status === 429) {
           setServerError("มีการลองเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่");
         } else if (attemptsRemaining !== undefined) {
-          setServerError(`อีเมลหรือรหัสผ่านไม่ถูกต้อง (เหลืออีก ${attemptsRemaining} ครั้ง)`);
+          setServerError(`ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (เหลืออีก ${attemptsRemaining} ครั้ง)`);
         } else {
-          setServerError("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
+          setServerError("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
         }
         return;
       }
@@ -88,23 +92,23 @@ export function LoginForm() {
     <form onSubmit={onSubmit} className="w-full min-w-0 space-y-6" noValidate>
       {demoAccounts.map((account) => (
         <button
-          key={account.email}
+          key={account.username}
           type="button"
           onClick={() => {
-            setValue("email", account.email, { shouldValidate: true });
+            setValue("username", account.username, { shouldValidate: true });
             setValue("password", account.password, { shouldValidate: true });
           }}
           className={`flex min-h-[84px] w-full min-w-0 items-start gap-4 rounded-xl px-5 py-4 text-left text-[16px] leading-6 text-[#31515d] transition hover:ring-2 hover:ring-[#54bfd7]/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#45b7d0] ${account.highlighted ? "bg-[#d9f2fa]" : "bg-[#f5f5f7]"}`}
         >
           <span aria-hidden="true" className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 border-[#55bed6] text-[12px] font-bold text-[#55bed6]">i</span>
-          <span className="min-w-0 break-words"><span>Use Email : <strong>{account.email}</strong></span><br /><span>Password : <strong>{account.password}</strong></span></span>
+          <span className="min-w-0 break-words"><span>Use Username : <strong>{account.username}</strong></span><br /><span>Password : <strong>{account.password}</strong></span></span>
         </button>
       ))}
 
       <div className="relative mt-[27px] space-y-1">
-        <label className="absolute left-5 top-2 text-[13px] leading-4 text-[#89949a]" htmlFor="email">Email</label>
-        <input id="email" autoComplete="username" type="email" {...register("email")} defaultValue={demoAccounts[0]?.email ?? ""} className="h-[64px] w-full rounded-xl border border-transparent bg-[#eeeeef] px-5 pt-[17px] text-[16px] text-[#283942] outline-none transition focus:border-[#00817b] focus:ring-2 focus:ring-[#00817b]/15" />
-        {errors.email && <p className="px-1 text-xs text-red-600">{errors.email.message}</p>}
+        <label className="absolute left-5 top-2 text-[13px] leading-4 text-[#89949a]" htmlFor="username">Username</label>
+        <input id="username" autoComplete="username" type="text" autoCapitalize="none" autoCorrect="off" spellCheck={false} aria-invalid={errors.username ? true : undefined} {...register("username")} defaultValue={demoAccounts[0]?.username ?? ""} className="h-[64px] w-full rounded-xl border border-transparent bg-[#eeeeef] px-5 pt-[17px] text-[16px] text-[#283942] outline-none transition focus:border-[#00817b] focus:ring-2 focus:ring-[#00817b]/15" />
+        {errors.username && <p className="px-1 text-xs text-red-600">{errors.username.message}</p>}
       </div>
 
       <div className="space-y-1">

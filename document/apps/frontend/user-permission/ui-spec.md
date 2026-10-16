@@ -1,8 +1,8 @@
 # UI specification: user-permission
 
-- Feature ID / revision: `user-permission` / 1
-- Status: pending-review
-- Source: five owner-supplied screenshots (not Figma), copied to [source/](source/)
+- Feature ID / revision: `user-permission` / 2 (revision 1 content below is kept as history; the [Revision 2](#revision-2-adr-0020) section supersedes it where they differ)
+- Status: approved — revision 2 via [ADR-0020](../../../adr/0020-username-login-and-permission-matrix-v2.md) revision 1, owner 2026-10-15: "frontend backend อนุมัติ ADR-0020" (instruction to implement)
+- Source: revision 1: five owner-supplied screenshots; revision 2: four owner-supplied screenshots `rev2-01..04` (2026-10-15). All in [source/](source/); none are Figma
 - Viewport / source dimensions: screenshots 1–3 and 5 are 3840×2160 device px. Screenshot 4 is a 1368×436 crop of the dialog. **Assumption:** device-pixel ratio 2, so the viewport is 1920×1080 CSS px. All CSS values below are device px ÷ 2 and are estimates.
 - Inspection evidence: each image viewed with the image reader and pixel colors and edges sampled on the originals with System.Drawing (2026-10-12). No Figma file or design tokens were supplied.
 - Requirements / main flow: [user-permission-flow.md](../../../diagram/user-permission-flow.md); [open questions and conflicts](open-questions.md)
@@ -182,10 +182,50 @@ Form timing and attributes: [form-guidelines.md](form-guidelines.md). Errors: [e
 - Package decisions: [dependencies.md](dependencies.md) (DEP-UP-01 `libphonenumber-js`, DEP-UP-02 `country-flag-icons`, both **proposed** and conditional on Q-UP-09). The ledger rows are in [tech-stack.md](../../../adr/tech-stack.md). No dialog, toast, table, checkbox or select library is proposed; these are built with native elements and the installed stack.
 - SA handoff: [user-permission-sa.md](../../../coordination/handoffs/user-permission-sa.md)
 - Flow: [user-permission-flow.md](../../../diagram/user-permission-flow.md)
-- TODO IDs: FE-UP-001 … FE-UP-018 in the [central TODO](../../../task/todo/user-permission.md)
+- TODO IDs: FE-UP-001 … FE-UP-018 (revision 1) and FE-UP2-001 … FE-UP2-010 (revision 2) in the [central TODO](../../../task/todo/user-permission.md)
+
+## Revision 2 (ADR-0020)
+
+Binding sources (inspected with the image reader 2026-10-15; 3840×2160 device px, DPR 2 assumed, except rev2-01 which is a 2506×4672 crop of the full matrix):
+
+| # | File | SHA-256 (prefix) | State shown |
+|---|---|---|---|
+| R2-1 | [rev2-01-permission-matrix-full.png](source/rev2-01-permission-matrix-full.png) | `08b3376837ebb913` | Full permission tree: Dashboard (VIEW, APPROVE, PRICE, PRINT, EXCEL; "—" for ADD/EDIT/DELETE/CANCEL), sections SETUP / PRE-SALE / Memo / PURCHASE / INVENTORY / SALE / ACCOUNT / REPORT, groups with "N sub-menus" and a chevron |
+| R2-2 | [rev2-02-add-user-edit-mode.png](source/rev2-02-add-user-edit-mode.png) | `e43255b669b72d4c` | New user in edit mode: Create User / Edit / Delete faded, Cancel / Save enabled; drawer "Users 3", draft "New user" |
+| R2-3 | [rev2-03-super-admin-locked.png](source/rev2-03-super-admin-locked.png) | `d5f253f6f48080c7` | Super Admin in view mode: Create User / Edit enabled, Cancel / Save / Delete faded; lock banner; every cell checked and locked |
+| R2-4 | [rev2-04-delete-dialog.png](source/rev2-04-delete-dialog.png) | `82f92e44e218f68d` | Dialog "Delete User 001?" / "The account and its permissions will be removed. This can't be undone." / Keep user, Delete |
+
+### What changes from revision 1
+
+| Area | Revision 2 behavior | Source |
+|---|---|---|
+| Header | Title "Add User and Permission" in every mode (R2-2/R2-3), subtitle "User List {number of saved users}". Icon row: Print, Excel, Duplicate, Refresh. Action row below, right-aligned: **Create User, Cancel, Save, Edit, Delete** | R2-2, R2-3, ADR-0020 §4 |
+| Modes | `create` (new draft or Duplicate): Cancel/Save enabled, Create User/Edit/Delete faded. `view` (saved user selected): read-only form, Create User/Edit/Delete enabled, Cancel/Save faded. `edit` (after Edit): Cancel/Save enabled, Create User/Edit/Delete faded. Cancel in edit restores the saved values; Cancel in create returns to the previously opened user, otherwise clears the draft. Save creates (create) or updates (edit), then returns to view | ADR-0020 §4 |
+| Print / Excel | Print prints the open saved user in view mode (browser print; drawer, header and toggle hidden; proposal Q-UP2-02). Excel is `aria-disabled` with the tooltip "Excel export isn't available yet" (export is a separate ADR) | ADR-0020 §4 |
+| Duplicate | Copies Name, Phone, Location and permissions into a new draft; Username and Password are cleared; Active on | ADR-0020 §4 |
+| Personal Information | Photo tile, **Username\*** (placeholder "Used to sign in"; 3–64 of `a-z 0-9 . _ - @ +` after trim + lowercase, shown as typed; editable only on create, read-only afterwards), **Password** (no asterisk as in R2-2; required on create, optional on edit — blank keeps the current password; placeholder "Must be at least 4 characters"), **Name\***, **Phone No.** (optional, no asterisk), **Location\***, **Active** switch (now editable; sent on create/update) | R2-2, ADR-0020 §1, §4 |
+| Permissions card | Title, "Search menu..." field, "All Permissions" filter, blue "Expand All" / "Collapse All" links, right-aligned "**x** of {applicableCount} permissions on" (v2: 347; the design's "176 of 176" is sample data) | R2-2, ADR-0020 §3 |
+| Matrix | Columns MENU + VIEW, ADD, EDIT, DELETE, CANCEL, APPROVE, PRICE, PRINT, EXCEL (all upper case). Rows: Select All; top-level leaf Dashboard; section headings in teal (label shown as delivered: SETUP… upper case, "Memo" title case); leaf rows bold on `surface-muted`; group rows bold with chevron and "N sub-menus"; sub-menu rows indented, regular weight, secondary text on white. Non-applicable cells show "—" (screen-reader text "not applicable"). Section, group and Select All cells are UI aggregates (checked / indeterminate / unchecked) over the visible leaves and are never sent as grants | R2-1, R2-2, ADR-0020 §3 |
+| Super Admin | Every cell checked and locked (disabled boxes with grey checks, PRINT/EXCEL included — owner decision: the unchecked PRINT/EXCEL in R2-3 is a design slip); banner with lock icon "Super Admin always has every permission and can't be turned off. Personal information can still be edited." Edit allows Name, Phone No., Location; Username, Password ("Change it on the Profile page", ADR-0011) and Active stay locked; Delete faded | R2-3, ADR-0020 §3, §4 |
+| Self | The signed-in account cannot be deactivated or deleted | ADR-0020 §4 |
+| Delete dialog | Title "Delete {username}?", body "The account and its permissions will be removed. This can't be undone.", buttons "Keep user" (secondary) / "Delete" (danger) | R2-4, ADR-0020 §4 |
+| Drawer | "Users {seat limit}" badge (R2-2/R2-3 show 3, equal to the helper text's limit; Q-UP2-03), search "Search name or username...", helper "x of 3 users added. Super Admin is not counted.", rows name + username, the "New user / Draft" item only while creating (absent in R2-3); its second line shows the typed username or "Not saved yet" (the design's copied e-mail is sample data) | R2-2, R2-3 |
+| Photo | Tile layout unchanged; upload still unavailable (toast "Photo upload isn't available yet") until photo storage is designed (FE-UP-013, BE-UP-009) | R2-2, ADR-0020 §4 |
+| Login | Field label "Username" (was Email), plain text input, trimmed and required, no e-mail format check; sign-in through Better Auth `signIn.username`; demo accounts `superadmin@demo.com` / `user@demo.com` stay as usernames; `ACCOUNT_INACTIVE` shows "บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ" | ADR-0020 §1 |
+
+### Search and filter (proposal, not specified by the design)
+
+- "Search menu..." matches labels case-insensitively. A matching section or group keeps its whole subtree; a matching leaf keeps its ancestors. Matching groups are shown expanded while searching; Expand All / Collapse All are disabled while searching.
+- "All Permissions" filter options: **All Permissions**, **Turned on** (menus with at least one permission on), **Turned off** (menus with none on). See Q-UP2-01.
+- The counter always counts the whole catalog, not the filtered rows.
+
+### Components reused / added
+
+Shared primitives in `frontend/src/components/ui/**`: `Button`, `IconButton` (`unavailableReason` tooltip), `Card`, `CountBadge`, `TextField`, `PhoneField`, `Switch`, `TriStateCheckbox`, `ConfirmDialog`, `Toast`. Added (additive): `DisabledCheckbox` — a native disabled checkbox that keeps the box and shows a grey check or dash, used for view mode and the locked Super Admin matrix. No new package.
 
 ## Revision history
 
 | Revision | Date | Change |
 |---|---|---|
 | 1 | 2026-10-12 | Initial analysis of five screenshots. Status pending-review. |
+| 2 | 2026-10-15 | ADR-0020: username login, permission catalog v2 (9 actions, 39 menus, 347 cells), view/edit modes with Create User / Cancel / Save / Edit / Delete, locked Super Admin with editable personal information, delete dialog copy, drawer rows show username. Sources rev2-01..04. Approved with ADR-0020 revision 1 (2026-10-15). TODO IDs FE-UP2-001…010. |

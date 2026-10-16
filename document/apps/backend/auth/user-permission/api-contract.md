@@ -1,75 +1,80 @@
 # API contract: auth + gateway / user-permission
 
-- Source UI revision / SA revision: 1 / 1 (**pending-review; proposed, not implemented**)
-- Existing shared contracts reused unchanged: CRM `POST /api/v1/users` ([spec 0001](../../../../spec/0001-api-contract.md), ADR-0015), `session.current`, `license.status`, `license.activate` ([license API](../license-integration/api-contract.md))
-- Consuming frontend TODO IDs: FE-UP-003, 004, 005, 006, 007, 008, 009, 012, 013, 014 ([central TODO](../../../../task/todo/user-permission.md))
-- Diagrams/errors: [sequence](sequence-diagram.md), [errors](error-handling.md), [authorization](authorization.md)
+- Source UI revision / SA revision: **2 / 2** (implemented 2026-10-15; [ADR-0020](../../../../adr/0020-username-login-and-permission-matrix-v2.md) revision 1 Accepted 2026-10-15, owner "frontend backend อนุมัติ ADR-0020", which is also the implement instruction). Revision 1 (2026-10-12) is superseded where this file differs.
+- Existing shared contracts reused: `session.current` (adds `username`), `license.status`, `license.activate` ([license API](../license-integration/api-contract.md)). Changed: CRM `POST /api/v1/users` ([spec 0001](../../../../spec/0001-api-contract.md)), Better Auth sign-in ([spec 0002](../../../../spec/0002-login-requirements.md))
+- Consuming frontend TODO IDs: FE-UP-003…014 and the rev-2 items in the [central TODO](../../../../task/todo/user-permission.md)
+- Diagrams/errors: [sequence](sequence-diagram.md), [errors](error-handling.md), [authorization](authorization.md), [database](database-diagram.md)
 
-The browser calls only the same-origin `/api/trpc` and `/api/v1` proxies. Timestamps are RFC 3339
-UTC strings. IDs are opaque strings (UUID today). Passwords are write-only. Photo bytes travel
-only in the base64 `photo` input and the REST download. tRPC errors carry the domain code as
-`message` and in `data.domainCode`; validation errors add `data.fieldErrors`
-(see [errors](error-handling.md)).
+The browser calls only the same-origin `/api/trpc` and `/api/v1` proxies (and `/api/auth` for sign-in).
+Timestamps are RFC 3339 UTC strings. IDs are opaque strings (UUID today). Passwords are write-only.
+tRPC errors carry the domain code as `message` and in `data.domainCode`; validation errors add
+`data.fieldErrors` (see [errors](error-handling.md)). Read `data.domainCode`, never `message`.
 
-## Shared types
+## Shared types (SA revision 2)
 
 ```ts
-type PermissionAction = "VIEW" | "ADD" | "EDIT" | "DELETE" | "CANCEL" | "PRICE";
-type PermissionKey = `${string}:${PermissionAction}`; // menuKey ":" action, e.g. "vendor:EDIT"
+type PermissionAction = "VIEW" | "ADD" | "EDIT" | "DELETE" | "CANCEL" | "APPROVE" | "PRICE" | "PRINT" | "EXCEL";
+type PermissionKey = `${string}:${PermissionAction}`; // leaf menuKey ":" action, e.g. "vendor:EDIT"
 
 type CatalogNode = {
-  key: string;                    // menuKey for leaves, groupKey for groups; /^[a-z0-9-]{1,64}$/
-  label: string;                  // English UI label
-  actions?: PermissionAction[];   // leaves only: applicable actions (order as columns)
-  children?: CatalogNode[];       // groups only; one level deep
+  key: string;                          // /^[a-z0-9-]{1,64}$/; leaf keys are unique; container keys are unique among containers
+  label: string;                        // English UI label (as in the design)
+  kind: "section" | "group" | "leaf";   // section = SETUP…REPORT heading; group = "Master Code"-style parent row
+  actions?: PermissionAction[];         // leaves only, in column order; Dashboard = VIEW, APPROVE, PRICE, PRINT, EXCEL
+  children?: CatalogNode[];             // sections: leaves and groups; groups: leaves (max depth 3)
 };
+// NOTE: section "purchase" and leaf "purchase" share a key; key React rows by `${kind}:${key}` or by path.
 
-type Phone = { country: string /* ISO-3166 alpha-2, e.g. "TH" */; e164: string /* ^\+[1-9]\d{6,14}$ */ };
+type Username = string; // trimmed + lowercased; 3..64 of /^[a-z0-9._@+-]+$/; unique; immutable
+
+type Phone = { country: string /* ISO-3166 alpha-2 */; e164: string /* ^\+[1-9]\d{6,14}$ */ };
 
 type UserListItem = {
-  id: string; name: string; email: string;
+  id: string; name: string; username: Username;
   isSuperAdmin: boolean; active: boolean; hasPhoto: boolean; updatedAt: string;
 };
 
 type UserDetail = UserListItem & {
   phone: Phone | null;
   locationKeys: string[];               // 0..20 (CRM/admin accounts may have 0)
-  permissions: PermissionKey[] | "ALL"; // "ALL" for Super Admin (read-only)
-  photoVersion: string | null;          // sha256 prefix; cache-busting query value for the photo URL
-  readOnly: boolean;                    // true for Super Admin rows
+  permissions: PermissionKey[] | "ALL"; // "ALL" for Super Admin = all 9 actions on every leaf
+  photoVersion: string | null;          // always null until photo ships
+  readOnly: boolean;                    // rev 2 meaning: true for Super Admin = permissions/active/password/delete locked; personal info editable
 };
-
-type PhotoInput = { contentType: "image/jpeg" | "image/png"; dataBase64: string /* ≤ 699,052 chars → ≤ 512 KiB */ };
 ```
 
-## Operations
+No `email` appears in any user-admin input or output. The internal `User.email` value
+`<id>@users.invalid` is never returned by user-admin, never editable and never shown
+(`session.current.user.email` still carries it for compatibility; do not display it).
+
+## Operations (SA revision 2)
 
 | Operation | Caller | Input / validation | Output | Permission | Errors | Compatibility |
 |---|---|---|---|---|---|---|
-| `permission.catalog` query | Browser via gateway | none | `{version: 1, nodes: CatalogNode[], applicableCount: number}` | licensed session | license codes, `USER_SERVICE_UNAVAILABLE` | new |
-| `permission.mine` query | Browser via gateway | none | `{isSuperAdmin: boolean, permissions: PermissionKey[] \| "ALL"}` from the trusted context, with no extra auth call | licensed session | license codes | new; for nav filtering and FE-UP-014 |
-| `userAdmin.list` query | Browser via gateway | none | `{items: UserListItem[], usage: {used: number, limit: number}}`. Order: Super Admins first, then `createdAt` asc. Hard cap 600 rows. | Super Admin | `SUPER_ADMIN_REQUIRED`, license codes, 503 | new |
-| `userAdmin.get` query | Browser via gateway | `{id: string(1..64)}` | `UserDetail` | Super Admin | `USER_NOT_FOUND`, `SUPER_ADMIN_REQUIRED` | new |
-| `userAdmin.create` mutation | Browser via gateway | `{email: z.email().max(254)` (trimmed, lowercased)`, password: passwordSchema(4..64, not trimmed), name: trim 1..120, phone: Phone \| null, locationKeys: string[1..20]` (unique, from options)`, active: boolean, permissions: PermissionKey[0..384]` (unique, in catalog)`, photo?: PhotoInput}` strict | `{id: string, updatedAt: string}`; never echoes the password | Super Admin | `VALIDATION_ERROR`, `PASSWORD_POLICY_VIOLATION`, `EMAIL_ALREADY_EXISTS`, `USER_LIMIT_REACHED`, `USER_LICENSE_NOT_ELIGIBLE`, `USER_LICENSE_UNVERIFIABLE`, `PERMISSION_UNKNOWN`, `LOCATION_UNKNOWN`, `PHOTO_INVALID` | new; always creates `role="user"` |
-| `userAdmin.update` mutation | Browser via gateway | `{id, expectedUpdatedAt: string, name?, password?, phone?: Phone \| null, locationKeys?, active?, permissions?, photo?: PhotoInput \| null}` strict. Omitted = unchanged. `photo: null` removes it. Sets replace whole sets. **No `email` field.** | `{id, updatedAt}` | Super Admin; target must be `role="user"` | `USER_NOT_FOUND`, `SUPER_ADMIN_READ_ONLY`, `USER_CHANGED`, and the validation codes above | new; password → revoke target sessions; `active:false` → revoke sessions |
-| `userAdmin.delete` mutation | Browser via gateway | `{id}` | `{ok: true}` | Super Admin; target `role="user"` and ≠ caller | `USER_NOT_FOUND`, `SUPER_ADMIN_READ_ONLY` | new; idempotent outcome (a second call → `USER_NOT_FOUND`) |
-| `userAdmin.locationOptions` query | Browser via gateway | none | `{items: {key: string, label: string}[]}` (≤ 50; v1 = `[{key:"primary",label:"Primary"}]`) | Super Admin | 503 | new; replaced when a Location master exists |
-| `GET /api/v1/user-admin/users/:id/photo` | Browser `<img>` via `/api/v1` proxy | path id; optional `?v=<photoVersion>` | `200` image bytes with the stored `Content-Type`, `X-Content-Type-Options: nosniff`, `Content-Disposition: inline`, `Cache-Control: private, max-age=86400` when `v` matches, otherwise `no-cache`; `ETag` | Super Admin | 401, 403, 404 `PHOTO_NOT_FOUND` | new REST (binary is unsuitable for tRPC JSON) |
-| `GET /api/v1/user-admin/export.csv` | Browser download via `/api/v1` proxy | none | `200 text/csv; charset=utf-8` with BOM, `Content-Disposition: attachment; filename="users-YYYYMMDD.csv"`. Columns: Email, Name, Role, Active, Phone, Locations, Permissions (`menu:ACTION` joined by `;`, or `ALL`), Created at. Cells starting with `= + - @ \t \r` are prefixed with `'`. | Super Admin | 401, 403, 503 | new REST; not xlsx (no package) |
-| `dashboard.shortcutGroups` query | existing | none | **Changed:** non–Super Admins receive only items whose menu has `VIEW`; groups left empty are omitted | licensed | unchanged | behavior change (filtering only; shape unchanged) |
-| Better Auth `POST /api/auth/sign-in/email` | existing login | unchanged | **Added outcome:** `403 {code:"ACCOUNT_INACTIVE", message:"บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ"}` when the password is correct and the user is inactive; no session is kept | public | — | additive; frontend login must map it |
-| CRM `POST /api/v1/users` | CRM | **unchanged** | unchanged | CRM API key | unchanged | refactored onto shared provisioning; new users get `active=true` and no grants (Super Admin has implicit ALL) |
+| Better Auth `POST /api/auth/sign-in/username` | login page | `{username: string, password: string, rememberMe?: boolean}`; username normalized (trim + lowercase) before lookup | `200 {redirect, token, user:{id, name, username, email(internal), role, active, …}}` + session cookie | public; rate limit 5/min/IP | `401 {code:"INVALID_USERNAME_OR_PASSWORD", message, attemptsRemaining}` (also for an impossible username format), `423 {code:"ACCOUNT_LOCKED", message, retryAfterSeconds}`, `403 {code:"ACCOUNT_INACTIVE", message}`, `429` rate limit | **new**; replaces `/sign-in/email`, which now answers `404`. Also disabled: `/update-user`, `/change-email`, `/is-username-available` |
+| `permission.catalog` query | Browser via gateway | none | `{version: 2, actions: PermissionAction[9] (column order), nodes: CatalogNode[], applicableCount: 347}` | licensed session | license codes, `USER_SERVICE_UNAVAILABLE` | **changed** (v2 shape: `kind`, nested groups, `actions`) |
+| `permission.mine` query | Browser via gateway | none | `{isSuperAdmin: boolean, permissions: PermissionKey[] \| "ALL"}` | licensed session | license codes | unchanged shape; v2 keys |
+| `userAdmin.list` query | Browser via gateway | none | `{items: UserListItem[], usage: {used, limit}}`; Super Admins first, then `createdAt` asc; cap 600 | Super Admin | `SUPER_ADMIN_REQUIRED`, license codes, 503 | `email` → `username` |
+| `userAdmin.get` query | Browser via gateway | `{id: string(1..64)}` | `UserDetail` | Super Admin | `USER_NOT_FOUND`, `SUPER_ADMIN_REQUIRED` | `email` → `username` |
+| `userAdmin.create` mutation | Browser via gateway | strict `{username: Username, password: 4..64 (not trimmed), name: trim 1..120, phone: Phone \| null, locationKeys: string[1..20] (unique, from options), active: boolean, permissions: PermissionKey[0..576] (unique, grantable leaf cells only)}` | `{id, updatedAt}` | Super Admin | `VALIDATION_ERROR` (username → `fieldErrors[{path:"username"}]`), `PASSWORD_POLICY_VIOLATION`, `USERNAME_TAKEN` 409 `[{path:"username",code:"duplicate"}]`, `USER_LIMIT_REACHED`, `USER_LICENSE_NOT_ELIGIBLE`, `USER_LICENSE_UNVERIFIABLE`, `PERMISSION_UNKNOWN`, `LOCATION_UNKNOWN` | `email` → `username`; `EMAIL_ALREADY_EXISTS` → `USERNAME_TAKEN`; always `role="user"` |
+| `userAdmin.update` mutation | Browser via gateway | strict `{id, expectedUpdatedAt?: ISO datetime, username?: Username (echo only), password?: 4..64 \| "" ("" = unchanged), name?, phone?: Phone \| null, locationKeys?: string[1..20], active?: boolean, permissions?: PermissionKey[0..576]}`. Omitted = unchanged; sets replace whole sets. | `{id, updatedAt}` | Super Admin | `USER_NOT_FOUND` 404, `USERNAME_IMMUTABLE` 400 `[{path:"username",code:"immutable"}]`, `USER_CHANGED` 409 (only when `expectedUpdatedAt` is sent), `SUPER_ADMIN_LOCKED` 403, validation codes above | **new** (first delivered in rev 2). Regular user: every field; password → revoke target sessions + clear lockout; `active:false` → revoke sessions. **Super Admin target (incl. self): only `name`, `phone`, `locationKeys`** (`active: true` and the unchanged `username` are tolerated); `permissions` (any value), non-empty `password` or `active:false` → `SUPER_ADMIN_LOCKED` |
+| `userAdmin.delete` mutation | Browser via gateway | `{id}` | `{ok: true}` | Super Admin; target `role="user"` and ≠ caller | `USER_NOT_FOUND`, `SUPER_ADMIN_LOCKED` 403 | code renamed from `SUPER_ADMIN_READ_ONLY` |
+| `userAdmin.locationOptions` query | Browser via gateway | none | `{items: {key, label}[]}` (≤ 50; `[{key:"primary",label:"Primary"}]`) | Super Admin | 503 | unchanged |
+| `dashboard.shortcutGroups` query | Home | none | `HomeGroup[]` = `{title, items:{label, slug, href?}[]}[]`; groups/items follow catalog v2 leaf keys (`slug` = menuKey). Super Admin: all. Others: `[]` without `dashboard:VIEW`; otherwise items with `<slug>:VIEW`, empty groups omitted | licensed | unchanged | **changed content** (v2 slugs; Vendor/Customer keep `href` `/setup/vendor`, `/setup/customer`) |
+| `session.current` query | AppShell | none | `{user:{id, username, email (internal), name, role?}}` | authenticated | unchanged | additive `username` |
+| CRM `POST /api/v1/users` | CRM (`x-api-key`) | strict `{username?: Username, email?: Username (deprecated alias), name, role:"SUPER_ADMIN", password}`; one of username/email required; both present with different normalized values → 400 | `201 {userId, username, email (= username, deprecated echo), createdAt}` | CRM API key | 400 `VALIDATION_ERROR` / `PASSWORD_POLICY_VIOLATION`, 409 `{error:"USERNAME_TAKEN"}` (or `{error:"EMAIL_ALREADY_EXISTS"}` when only the deprecated `email` was sent), 422 `LICENSE_REQUIRED`, 503 | **changed** (ADR-0020 §1) |
+| Photo / CSV export REST | — | — | — | — | — | **still deferred** (not in rev 2 delivery) |
 
 ### Internal auth endpoints (gateway only; cookie forwarded; auth re-validates session + Super Admin)
 
 | Method / path | Purpose |
 |---|---|
-| `GET /internal/v1/session-context` | **Extended** response: `{session:{user:{id,email,name,role,active}}, license:{...}, authz:{isSuperAdmin:boolean, permissions:string[]}}`. 401 when there is no session **or the user is inactive**. |
+| `GET /internal/v1/session-context` | **Extended** response: `{session:{user:{id,username,email,name,role,active}}, license:{...}, authz:{isSuperAdmin:boolean, permissions:string[]}}` (rev 2 adds `username`; `email` is internal; license resolved by username). 401 when there is no session **or the user is inactive**. |
 | `GET /internal/v1/permission/catalog` | catalog (static) |
 | `GET /internal/v1/user-admin/users` · `POST …/users` | list · create |
 | `GET/PATCH/DELETE /internal/v1/user-admin/users/:id` | get · update · delete |
-| `GET /internal/v1/user-admin/users/:id/photo` | photo bytes |
-| `GET /internal/v1/user-admin/location-options` · `GET /internal/v1/user-admin/export.csv` | options · CSV |
+| `GET /internal/v1/user-admin/users/:id/photo` | photo bytes (deferred, not implemented) |
+| `GET /internal/v1/user-admin/location-options` · `GET /internal/v1/user-admin/export.csv` | options · CSV (CSV deferred, not implemented) |
 
 Auth errors use the existing envelope `{error:{code, message, fieldErrors?}}`. Gateway maps the
 `code` to the tRPC code in [error-handling.md](error-handling.md) and never forwards upstream
@@ -78,51 +83,64 @@ Auth errors use the existing envelope `{error:{code, message, fieldErrors?}}`. G
 ## Example (no real personal data)
 
 ```ts
-// userAdmin.create input
-{ email: "user.one@example.com", password: "••••", name: "User One",
+// userAdmin.create input (rev 2)
+{ username: "user1", password: "••••", name: "User One",
   phone: { country: "TH", e164: "+66812345678" }, locationKeys: ["primary"], active: true,
-  permissions: ["quotation:VIEW", "quotation:ADD", "vendor:VIEW"],
-  photo: { contentType: "image/jpeg", dataBase64: "/9j/4AAQ…" } }
+  permissions: ["dashboard:VIEW", "quotation:VIEW", "quotation:PRINT", "vendor:VIEW"] }
+// userAdmin.update on a Super Admin (personal info only)
+{ id: "b614…", name: "Super Admin", phone: null, locationKeys: ["primary"] }
 // → { id: "3f6c…", updatedAt: "2026-10-12T03:15:00.000Z" }
 ```
 
-## Permission catalog v1 (proposal)
+## Permission catalog v2 (implemented; ADR-0020 §3)
 
-Code constant in auth `src/permission/catalog.ts`, `version: 1`. Menu keys reuse the existing
-navigation slugs. Pending owner confirmation (Q-UP-13): until then **every leaf has all six
-actions**, giving 34 leaves × 6 = **204** applicable cells (the source shows 53, which does not
-match). "Home", "Dashboard" and "Setup › User and permission" are not in the catalog:
-Home and Dashboard are visible to every licensed user, and User and permission is Super Admin only.
+Code constant `backend-api-auth/src/permission/catalog.ts`, `version: 2`. Actions (column order):
+`VIEW, ADD, EDIT, DELETE, CANCEL, APPROVE, PRICE, PRINT, EXCEL`. Every leaf except Dashboard has all 9.
+39 leaves → 5 + 38 × 9 = **347** applicable cells. Sections and groups are never stored as grants
+(`setup:VIEW`, `master-code:VIEW` → `PERMISSION_UNKNOWN`).
 
-| Group (UI row) | Leaves (`menuKey`) |
+| Top-level node (`kind`) | Children (`key` "label"; groups in bold) |
 |---|---|
-| — (top level) | Quotation (`quotation`), Reserve (`reserve`), Sale (`sale`) |
-| Company (`company`) | Company Profile (`company-profile`), Bank (`bank`) |
-| Partner Master (`partner-master`) | Vendor (`vendor`), Customer (`customer`) |
-| Stone Master (`stone-master`) | Stone Group, Stone, Shape, Size, Color, Cutting, Quality, Clarity, Stone Code (`stone-group` … `stone-code`) |
-| Purchase Order (`purchase-order-group`) | Purchase Order (`purchase-order`), Purchase (PU) (`purchase`) |
-| Memo (`memo`) | Memo In, Memo Return, Memo Out, Memo Out Return |
-| Inventory (`inventory`) | Load, Primary, Consignment, Movement, Memo Outstanding |
-| Finance (`finance`) | Receivable, Payable |
-| Setup (`setup`) | Main Location, Sub Location, Currency, Certificate Type, Labour Type |
+| `dashboard` "Dashboard" (leaf: VIEW, APPROVE, PRICE, PRINT, EXCEL) | — |
+| `setup` "SETUP" (section) | `company-profile` "Company Profile", `user-and-permission` "User and Permission", `notifications` "Notifications", **`master-code` "Master Code"**: `vendor` "Vendor", `customer` "Customer", `stone-master` "Stone Master", `location-master` "Location Master", `certificate-type` "Certificate Type", `labor-name` "Labor Name", `sale-person` "Sale Person" |
+| `pre-sale` "PRE-SALE" (section) | `quotation` "Quotation", `reserve` "Reserve" |
+| `memo` "Memo" (section) | `memo-receive` "Memo Receive", `memo-return` "Memo Return", `memo-out` "Memo Out", `memo-out-return` "Memo Out-Return", **`memo-outstanding` "Memo Outstanding"**: `memo-outstanding-vendor` "From Vendor", `memo-outstanding-customer` "From Customer" |
+| `purchase` "PURCHASE" (section) | `purchase-order` "Purchase Order (PO)", `purchase` "Purchase", `purchase-outstanding` "Purchase Outstanding" |
+| `inventory` "INVENTORY" (section) | `load-to-stock` "Load to Stock", `merge-split` "Merge/Split", `stock-transfer-location` "Stock Transfer Location", `stock-adjustment` "Stock Adjustment", `barcode` "Barcode" |
+| `sale-section` "SALE" (section) | `sale` "Sale" |
+| `account` "ACCOUNT" (section) | `payable` "Payable", `receivable` "Receivable", **`account-outstanding` "Account Outstanding"**: `outstanding-payable` "Outstanding Payable", `outstanding-receivable` "Outstanding Receivable" |
+| `report` "REPORT" (section) | **`stock-movement` "Stock Movement"**: `stock-movement-primary` "Primary Stock", `stock-movement-consignment` "Consignment Stock"; **`closing-stock` "Closing Stock"**: `closing-stock-primary`, `closing-stock-consignment` (same labels); **`sale-report` "Sale Report"**: `sale-report-costing` "Compare with costing", `sale-report-shareholder` "Shareholder Report", `sale-report-commission` "Commission Report" |
 
-Bounds: ≤ 64 leaves, 6 actions, so ≤ 384 grant rows per user. Removing a leaf or action in a
-later catalog version ignores stored grants for it and deletes them on the user's next save;
-no migration is needed. Action meaning: VIEW opens the menu and lists/reads; ADD creates; EDIT
-modifies; DELETE removes; CANCEL cancels/voids a document without deleting it; PRICE sees and
-edits price/cost fields. The UI may auto-check related cells, but the server stores exactly
-what is sent and checks each action independently.
+Bounds: ≤ 64 leaves × 9 actions = **576** grant rows per user (gateway input cap and session-context
+parse cap). The migration deleted every v1 grant (owner decision). Gateway procedures keep
+`customer:*` and `vendor:*`; no other gateway procedure uses a menu key. "User and Permission"
+grants are stored but user management stays Super Admin only (ADR-0017). The server stores exactly
+what is sent; the UI's "Select All"/group rows are client helpers.
 
 ## Concurrency, idempotency, pagination
 
-- Create: the seat check and insert run under one advisory transaction lock; duplicate email →
-  409. Not idempotent; the client blocks double submit.
-- Update: optimistic `expectedUpdatedAt` → `USER_CHANGED` 409; the UI reloads `get(id)`.
+- Create: the seat check and insert run under one advisory transaction lock; duplicate username →
+  409 `USERNAME_TAKEN`. Not idempotent; the client blocks double submit.
+- Update: optional optimistic `expectedUpdatedAt` (send the `updatedAt` from `get`) → `USER_CHANGED` 409; the UI reloads `get(id)`. Update runs in one transaction (4 s) with a row lock.
 - List: no pagination. The bound is the seat limit (≤ 500) plus admins, with a server cap of
   600 and `truncated` never expected. Search is client-side.
 - The catalog changes only on deploy; the client may cache it for the session.
 
-## Implementation notes (first slice, backend 2026-10-12)
+## Implementation notes (SA revision 2, backend 2026-10-15)
+
+Delivered: everything in the rev-2 operations table except photo and CSV export. Migration
+`backend-api-auth/prisma/migrations/20261015120000_username_permission_v2/`. Verified at runtime on
+the dev stack (57/57 scripted checks; see [testing](testing.md#results--sa-revision-2-backend-2026-10-15)).
+
+- Deviation from the shared contract: **Super Admin `photo` is not accepted** (photo storage is still
+  deferred, BE-UP-009/012); `photo` on create or update fails strict validation with `VALIDATION_ERROR`
+  `[{path:"(root)",code:"unrecognized_keys"}]`. The Photo tile must stay a placeholder.
+- `expectedUpdatedAt` is optional (rev 1 had it required) so a client that omits it still saves.
+- `password: ""` on update is treated as "unchanged".
+- Gateway update timeout 5 s, no retry.
+- `ACCOUNT_INACTIVE` (BE-UP-011) is implemented on `/sign-in/username`.
+
+## Implementation notes (first slice, backend 2026-10-12; historical)
 
 Implemented: `permission.catalog`, `permission.mine`, `userAdmin.list`, `userAdmin.get`,
 `userAdmin.create`, `userAdmin.delete`, `userAdmin.locationOptions`, the extended session-context

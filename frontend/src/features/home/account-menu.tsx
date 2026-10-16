@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { trpc } from "@/providers/app-providers";
 
-export type AccountMenuUser = { name: string; email: string };
+/** `username` is the identity (ADR-0020); the session `email` is internal and never shown. */
+export type AccountMenuUser = { name: string; username: string };
 
 /** "Super Admin" -> "SA"; a single word gives its first two letters. */
 export function userInitials(name: string) {
@@ -21,7 +22,7 @@ const linkItemClass = `${itemClass} text-gms-text hover:bg-gms-nav-active focus:
 
 /**
  * Avatar menu button (APG menu button pattern), laid out as the owner's top-navbar image
- * (2026-10-14): email + role, Settings, User and permission, Sign out. Enter/Space/ArrowDown
+ * (2026-10-14): username (was email, ADR-0020) + role, Settings, User and permission, Sign out. Enter/Space/ArrowDown
  * open on the first item, ArrowUp on the last; arrows/Home/End move; Escape closes and
  * returns focus; Tab closes.
  *
@@ -126,8 +127,8 @@ export function AccountMenu({ user, onSignOut }: Readonly<{ user: AccountMenuUse
           className="absolute right-0 top-[41px] z-50 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-gms-md border border-gms-border bg-gms-surface shadow-gms-overlay"
         >
           <div role="none" className="px-3 pb-2.5 pt-3">
-            <p className="truncate text-sm font-semibold text-gms-text" title={user.email}>
-              {user.email}
+            <p className="truncate text-sm font-semibold text-gms-text" title={user.username}>
+              {user.username}
             </p>
             <p className="mt-0.5 min-h-4 truncate text-xs text-gms-text-muted">{roleLabel}</p>
           </div>

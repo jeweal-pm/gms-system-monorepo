@@ -1,3 +1,26 @@
+# Owner decisions: user-permission SA revision 2 (revision 1 below)
+
+## Revision 2 (2026-10-15, ADR-0020)
+
+- Feature ID / SA revision / source UI revision: `user-permission` / 2 / 2 (screenshots `rev2-01..04` in [source](../../../frontend/user-permission/source/))
+- Status: **approved and implemented** — [ADR-0020](../../../../adr/0020-username-login-and-permission-matrix-v2.md) revision 1 Accepted 2026-10-15, owner: "frontend backend อนุมัติ ADR-0020" (an instruction to implement). This bundle revision only records what the ADR decided; it adds no new decision beyond the items marked "backend detail".
+
+| ID | Decision (rev 2) | Replaces |
+|---|---|---|
+| D2-01 | Username is the only identity: Better Auth `username` plugin, `POST /api/auth/sign-in/username`, `/sign-in/email` disabled. Rule: trim, lowercase, 3–64 of `a-z 0-9 . _ - @ +`, unique, immutable. Not validated as an email. | C-05 R (username = email) |
+| D2-02 | `User.email` = internal `<id>@users.invalid`, never shown/editable; `/change-email` and `/update-user` disabled (backend detail: also `/is-username-available`, to avoid an unauthenticated enumeration probe). | — |
+| D2-03 | Migration: `username = lower(trim(email))`, then email → internal value; existing users sign in with their old email text. | — |
+| D2-04 | License subject = username (sent in the license server's existing `email` field); mock scenarios match the whole username (`license-expired`) or the legacy local part. | ADR-0013 subject |
+| D2-05 | Catalog v2: 9 actions, 39 leaves (Dashboard 5 actions), 347 cells; sections/groups not stored; all v1 grants deleted; Super Admin = all 9. | C-07 catalog v1, Q-UP-13 |
+| D2-06 | Super Admin rows: personal info (name, phone, locations) editable; permissions, active, password (Profile only) and delete locked → `SUPER_ADMIN_LOCKED`. Photo stays deferred. | Q-UP-14 "Super Admin read-only" |
+| D2-07 | CRM accepts `username`; `email` accepted as a deprecated alias; both different → 400. Backend detail: duplicate → `USERNAME_TAKEN`, or the old `EMAIL_ALREADY_EXISTS` when only `email` was sent; response adds `username` and keeps `email` as an echo of the username. | ADR-0015 CRM body |
+| D2-08 | Backend detail: `userAdmin.update.expectedUpdatedAt` optional; `password: ""` = unchanged; impossible-format usernames at sign-in answer the same 401 as a wrong password and count toward the lockout. | rev 1 update contract |
+| D2-09 | Home shortcuts: v2 keys; non–Super Admins need `dashboard:VIEW`, then `<slug>:VIEW` per item. | C-07 shortcut filter |
+
+Follow-ups owned outside backend: notify the CRM team (send `username`) and the license-server team (accept a non-email subject; rename the field) before connecting a real license server (ADR-0020 consequences).
+
+---
+
 # Owner decisions: user-permission SA revision 1
 
 - Feature ID / SA revision / source UI revision: `user-permission` / 1 / 1 (UI approved 2026-10-12)

@@ -4,6 +4,7 @@ import * as argon2 from "argon2";
 import { prisma } from "../database/prisma-client";
 import { LicenseDomainError, LicenseService } from "../license/license.service";
 import type { PermissionActionValue } from "../permission/catalog";
+import { internalEmailFor } from "../auth/username-policy";
 
 /**
  * One provisioning routine for both creation paths (ADR-0017 §1): CRM `POST /api/v1/users`
@@ -11,7 +12,7 @@ import type { PermissionActionValue } from "../permission/catalog";
  * `ProvisioningError.reason` to their own public contract.
  */
 export type ProvisionInput = {
-  email: string; // already normalized (trimmed, lowercased)
+  username: string; // already normalized and validated (ADR-0020 username rule)
   name: string;
   password: string;
   role: "admin" | "user";
@@ -24,7 +25,7 @@ export type ProvisionInput = {
 };
 
 export type ProvisioningFailure =
-  | { reason: "EMAIL_ALREADY_EXISTS" }
+  | { reason: "USERNAME_TAKEN" }
   | { reason: "LICENSE_NOT_ELIGIBLE" }
   | { reason: "LICENSE_LOOKUP_FAILED"; cause: LicenseDomainError }
   | { reason: "SEAT_LIMIT_REACHED"; used: number; limit: number }
@@ -49,10 +50,10 @@ export class UserProvisioningService {
     return prisma.user.count({ where: { role: "user" } });
   }
 
-  async provision(input: ProvisionInput): Promise<{ id: string; email: string; createdAt: Date; updatedAt: Date }> {
-    const email = input.email;
-    if (await prisma.user.findUnique({ where: { email }, select: { id: true } })) {
-      throw new ProvisioningError({ reason: "EMAIL_ALREADY_EXISTS" });
+  async provision(input: ProvisionInput): Promise<{ id: string; username: string; createdAt: Date; updatedAt: Date }> {
+    const username = input.username;
+    if (await prisma.user.findUnique({ where: { username }, select: { id: true } })) {
+      throw new ProvisioningError({ reason: "USERNAME_TAKEN" });
     }
     if (input.seatLimit !== undefined) {
       // Cheap pre-check so a full deployment does not call the license server; re-checked under the lock.
@@ -62,7 +63,7 @@ export class UserProvisioningService {
 
     let preflight: { eligible: true; token?: string } | { eligible: false };
     try {
-      preflight = await this.licenseService.lookupForProvisioning(email);
+      preflight = await this.licenseService.lookupForProvisioning(username);
     } catch (error) {
       const cause = error instanceof LicenseDomainError ? error : new LicenseDomainError("LICENSE_UNVERIFIABLE", 503);
       throw new ProvisioningError({ reason: "LICENSE_LOOKUP_FAILED", cause });
@@ -72,7 +73,7 @@ export class UserProvisioningService {
     const passwordHash = await argon2.hash(input.password, { type: argon2.argon2id });
     const now = new Date();
     const userId = randomUUID();
-    let user: { id: string; email: string; createdAt: Date; updatedAt: Date };
+    let user: { id: string; username: string; createdAt: Date; updatedAt: Date };
     try {
       user = await prisma.$transaction(async (transaction) => {
         if (input.seatLimit !== undefined) {
@@ -84,7 +85,9 @@ export class UserProvisioningService {
           data: {
             id: userId,
             name: input.name,
-            email,
+            username,
+            // ADR-0020: internal, never shown or editable; Better Auth still requires the column.
+            email: internalEmailFor(userId),
             emailVerified: true,
             role: input.role,
             active: input.active ?? true,
@@ -93,7 +96,7 @@ export class UserProvisioningService {
             createdAt: now,
             updatedAt: now,
           },
-          select: { id: true, email: true, createdAt: true, updatedAt: true },
+          select: { id: true, username: true, createdAt: true, updatedAt: true },
         });
         await transaction.account.create({
           data: { id: randomUUID(), accountId: userId, providerId: "credential", userId, password: passwordHash, createdAt: now, updatedAt: now },
@@ -110,7 +113,7 @@ export class UserProvisioningService {
       });
     } catch (error) {
       if (error instanceof ProvisioningError) throw error;
-      if (isUniqueConstraintError(error)) throw new ProvisioningError({ reason: "EMAIL_ALREADY_EXISTS" });
+      if (isUniqueConstraintError(error)) throw new ProvisioningError({ reason: "USERNAME_TAKEN" });
       throw error;
     }
 

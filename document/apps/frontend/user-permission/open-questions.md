@@ -1,6 +1,6 @@
 # Open questions and conflicts: user-permission
 
-- Feature ID / UI revision: `user-permission` / 1
+- Feature ID / UI revision: `user-permission` / 1 and 2 (revision 2 questions at the end)
 - Status: pending-review (answers not recorded)
 - Source: [five supplied screenshots](source/) (see [ui-spec.md](ui-spec.md#source-and-evidence))
 - Central TODO: [user-permission.md](../../../task/todo/user-permission.md)
@@ -56,3 +56,18 @@ creates UI revision 2 and requires a new review of the affected items.
 | Q-UP-26 | non-blocking | Screenshot 3 shows a light grey band behind the title row (`#F3F3F5`). Is it a hover state or an artifact? The header "Price" is not uppercase while the other column headers are. Is that intentional? | Screenshot 3; screenshot 1 | FE-UP-003, FE-UP-006 |
 | Q-UP-27 | non-blocking | The sampled primary color is `#006A70`, while the existing `--gms-teal` is `#006c68`. The sampled font looks like IBM Plex Sans, while the app body uses Arial. Should the design tokens be adopted globally? (Proposal: add tokens; global font change only if Q-UP-21 approves a shell restyle.) | Pixel sampling; `frontend/src/app/globals.css` | FE-UP-011 |
 | Q-UP-28 | non-blocking | The "Draft" badge text (sampled `~#FFAB00` on `#FFE7B8`) is below the 4.5:1 contrast requirement. Is a darker amber text color acceptable? | Pixel sampling | FE-UP-007 |
+
+## Revision 2 (ADR-0020) questions
+
+Raised 2026-10-15 while implementing UI revision 2. None blocks the approved scope; the stated
+default is implemented until the owner answers. Answers that change flow or contracts create a
+new revision.
+
+| ID | Kind | Question | Default implemented | Evidence | Affected TODO IDs |
+|---|---|---|---|---|---|
+| Q-UP2-01 | non-blocking | Which options does the "All Permissions" filter offer? | All Permissions / Turned on (menu has any permission on) / Turned off (menu has none on) | rev2-02 shows only the closed control | FE-UP2-003 |
+| Q-UP2-02 | non-blocking | What does Print output for this page? | Browser print of the open saved user (view mode only); drawer, header and drawer toggle hidden. No dedicated print layout | ADR-0020 §4 says Print follows `user-and-permission:PRINT`; no print design supplied | FE-UP2-001 |
+| Q-UP2-03 | non-blocking | Is the drawer badge "Users 3" the seat limit or the number of users? | Seat limit (`usage.limit`): rev2-02/03 show 3 with one listed user and "0 of 3 users added". "User List N" in the title is the number of saved users (1 in both images) | rev2-02, rev2-03 | FE-UP2-006 |
+| Q-UP2-04 | non-blocking | Password is required on create (ADR-0020 §4) but has no asterisk in rev2-02. Add one in create mode? | Asterisk shown only on create, where the field is required (deviation from rev2-02 for an accurate required marker); none in edit/view | rev2-02, ADR-0020 §4 | FE-UP2-004 |
+| Q-UP2-05 | cross-scope | The avatar menu (`features/home/account-menu.tsx`, frontend-home scope) shows `session.user.email`, which becomes the internal `<id>@users.invalid` after the migration. Show `session.user.username` instead? | Resolved 2026-10-15: the parent assigned it with backend deviation 6; the menu now shows `username` (FE-UP2-010) | ADR-0020 §1 ("ไม่แสดงในหน้าจอ") | FE-UP2-010 |
+| Q-UP2-06 | non-blocking | In rev2-01 the "Memo" heading is indented further than other section headings. Intentional? | Same indent as other sections; label rendered as delivered ("Memo") | rev2-01 | FE-UP2-003 |

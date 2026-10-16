@@ -1,44 +1,40 @@
-import type { inferRouterClient } from "@trpc/client";
-import type { AppRouter } from "@gem-crm/backend-api-gateway/src/trpc/router";
 import { fromContractPhone, toContractPhone, type PhoneValue } from "@/lib/phone";
 import { isCallerLicenseCode, readDomainError } from "@/lib/trpc-error";
+import type { CatalogOutput, CreateUserInput, LocationOptionsOutput, UpdateUserInput, UserDetailOutput, UserListOutput } from "./contract";
 
 /**
- * user-permission data boundary (FE-UP-012, first slice).
+ * user-permission data boundary, UI revision 2 (ADR-0020).
  *
- * Contract: SA revision 1, document/apps/backend/auth/user-permission/api-contract.md
- * ("Implementation notes (first slice)"). Procedures used: permission.catalog,
- * permission.mine, userAdmin.list/get/create/delete/locationOptions. Not yet
- * available: userAdmin.update, photo and CSV routes.
- *
- * Contract output types come from the gateway `AppRouter`; this module maps
- * them to the small view models the components use and maps domain errors.
+ * Procedures: permission.catalog (v2 tree), permission.mine,
+ * userAdmin.list/get/create/update/delete/locationOptions. The identity field
+ * is `username` (sign-in name, immutable after create). Contract output types
+ * come from the gateway `AppRouter` (contract.ts); this module maps them to the
+ * small view models the components use and maps domain errors.
  * Passwords are never logged, cached, or returned.
  */
 
-type Client = inferRouterClient<AppRouter>;
-type Output<T extends (...args: never[]) => Promise<unknown>> = Awaited<ReturnType<T>>;
+export type { CreateUserInput, UpdateUserInput };
 
-export type CatalogOutput = Output<Client["permission"]["catalog"]["query"]>;
-export type UserListOutput = Output<Client["userAdmin"]["list"]["query"]>;
-export type UserDetailOutput = Output<Client["userAdmin"]["get"]["query"]>;
-export type LocationOptionsOutput = Output<Client["userAdmin"]["locationOptions"]["query"]>;
-export type CreateUserInput = Parameters<Client["userAdmin"]["create"]["mutate"]>[0];
-
-export const PERMISSION_ACTIONS = ["VIEW", "ADD", "EDIT", "DELETE", "CANCEL", "PRICE"] as const;
+export const PERMISSION_ACTIONS = ["VIEW", "ADD", "EDIT", "DELETE", "CANCEL", "APPROVE", "PRICE", "PRINT", "EXCEL"] as const;
 export type PermissionAction = (typeof PERMISSION_ACTIONS)[number];
 
-export type PermissionMenu = {
+export type CatalogNodeKind = "section" | "group" | "leaf";
+
+/**
+ * Catalog v2 node. Only `leaf` nodes carry permission cells (`actions`);
+ * section and group rows are UI aggregates and are never sent as grants.
+ */
+export type CatalogNode = {
   id: string;
   label: string;
-  /** Applicable actions of a leaf menu. Group rows derive theirs from children. */
+  kind: CatalogNodeKind;
   actions: readonly PermissionAction[];
-  children?: readonly PermissionMenu[];
+  children: readonly CatalogNode[];
 };
 
-export type PermissionCatalog = { menus: readonly PermissionMenu[]; applicableCount: number };
+export type PermissionCatalog = { nodes: readonly CatalogNode[]; applicableCount: number };
 
-export type UserSummary = Pick<UserListOutput["items"][number], "id" | "name" | "email" | "isSuperAdmin" | "active">;
+export type UserSummary = { id: string; name: string; username: string; isSuperAdmin: boolean; active: boolean };
 
 export type UserList = { items: UserSummary[]; usage: UserListOutput["usage"] };
 
@@ -48,29 +44,34 @@ export type UserDetail = UserSummary & {
   locationIds: string[];
   /** Keys `${menuKey}:${ACTION}`, or "ALL" for a Super Admin. */
   permissions: string[] | "ALL";
-  readOnly: boolean;
+  /** Optimistic-concurrency token sent back as `expectedUpdatedAt`. */
+  updatedAt: string;
 };
 
 export type LocationOption = { id: string; label: string };
 
 // ---- contract -> view model (used as TanStack Query `select`) ----
 
-export function toPermissionCatalog(output: CatalogOutput): PermissionCatalog {
+type CatalogContractNode = CatalogOutput["nodes"][number];
+
+function toCatalogNode(node: CatalogContractNode): CatalogNode {
   return {
-    applicableCount: output.applicableCount,
-    menus: output.nodes.map((node) => ({
-      id: node.key,
-      label: node.label,
-      actions: node.actions ?? [],
-      children: node.children?.map((child) => ({ id: child.key, label: child.label, actions: child.actions })),
-    })),
+    id: node.key,
+    label: node.label,
+    kind: node.kind,
+    actions: node.actions ?? [],
+    children: (node.children ?? []).map(toCatalogNode),
   };
+}
+
+export function toPermissionCatalog(output: CatalogOutput): PermissionCatalog {
+  return { applicableCount: output.applicableCount, nodes: output.nodes.map(toCatalogNode) };
 }
 
 export function toUserList(output: UserListOutput): UserList {
   return {
     usage: output.usage,
-    items: output.items.map(({ id, name, email, isSuperAdmin, active }) => ({ id, name, email, isSuperAdmin, active })),
+    items: output.items.map(({ id, name, username, isSuperAdmin, active }) => ({ id, name, username, isSuperAdmin, active })),
   };
 }
 
@@ -78,14 +79,14 @@ export function toUserDetail(output: UserDetailOutput): UserDetail {
   return {
     id: output.id,
     name: output.name,
-    email: output.email,
+    username: output.username,
     isSuperAdmin: output.isSuperAdmin,
     active: output.active,
     phone: fromContractPhone(output.phone),
     hasPhone: output.phone !== null,
     locationIds: output.locationKeys,
     permissions: output.permissions,
-    readOnly: output.readOnly,
+    updatedAt: output.updatedAt,
   };
 }
 
@@ -93,49 +94,83 @@ export function toLocationOptions(output: LocationOptionsOutput): LocationOption
   return output.items.map(({ key, label }) => ({ id: key, label }));
 }
 
-/** Form values -> strict create input. `photo` is deferred and never sent; `active` stays true until BE-UP-011. */
-export function toCreateUserInput(values: {
-  username: string;
-  password: string;
-  name: string;
-  phone: PhoneValue;
-  locationIds: string[];
-  permissions: string[];
-}): CreateUserInput {
+/** Username rule (ADR-0020 §1): trimmed and lowercased before validation and sending. */
+export function normalizeUsername(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+type PersonalValues = { name: string; phone: PhoneValue; locationIds: string[] };
+
+/** An empty phone number is sent as `null` (Phone No. is optional in UI revision 2). */
+function contractPhone(phone: PhoneValue) {
+  return phone.number.replace(/\D/g, "").length === 0 ? null : toContractPhone(phone);
+}
+
+/** Form values -> strict create input. `photo` is deferred and never sent. */
+export function toCreateUserInput(
+  values: PersonalValues & { username: string; password: string; active: boolean; permissions: string[] },
+): CreateUserInput {
   return {
-    email: values.username.trim(),
+    username: normalizeUsername(values.username),
     password: values.password,
     name: values.name.trim(),
-    phone: toContractPhone(values.phone),
+    phone: contractPhone(values.phone),
     locationKeys: values.locationIds,
-    active: true,
+    active: values.active,
     permissions: values.permissions,
+  };
+}
+
+/**
+ * Form values -> update input. A Super Admin target accepts only personal
+ * information (ADR-0020 §4); an empty password means "unchanged" and is omitted.
+ */
+export function toUpdateUserInput(
+  target: Pick<UserDetail, "id" | "updatedAt" | "isSuperAdmin">,
+  values: PersonalValues & { password: string; active: boolean; permissions: string[] },
+): UpdateUserInput {
+  const personal = {
+    id: target.id,
+    expectedUpdatedAt: target.updatedAt,
+    name: values.name.trim(),
+    phone: contractPhone(values.phone),
+    locationKeys: values.locationIds,
+  };
+  if (target.isSuperAdmin) return personal;
+  return {
+    ...personal,
+    active: values.active,
+    permissions: values.permissions,
+    ...(values.password.length > 0 ? { password: values.password } : {}),
   };
 }
 
 // ---- errors (readDomainError / isCallerLicenseCode / retryTransient live in @/lib/trpc-error) ----
 
 export type FormField = "username" | "password" | "name" | "phone" | "locationIds";
-export type CreateErrorOutcome = {
+export type SaveErrorOutcome = {
   fieldErrors: { field: FormField; message: string }[];
   formError: string | null;
   /** Side effects the page applies. */
   refetchCatalog?: boolean;
   refetchLocations?: boolean;
   refetchList?: boolean;
+  refetchDetail?: boolean;
   recheckAccess?: boolean;
+  /** The edited user no longer exists: leave edit mode. */
+  gone?: boolean;
 };
 
 const PASSWORD_POLICY_MESSAGE = "Password must be 4–64 characters";
-const GENERIC_SAVE_ERROR = "Couldn't save the user. Try again.";
+const USERNAME_RULE_MESSAGE = "Use 3–64 characters: a-z, 0-9, and . _ - @ + (no spaces)";
+const USERNAME_TAKEN_MESSAGE = "This username is already in use";
 
 function fieldMessage(path: string, code: string): { field: FormField; message: string } | null {
   const root = path.split(".")[0];
   switch (root) {
-    case "email":
-      if (code === "duplicate") return { field: "username", message: "This username is already in use" };
-      if (code === "too_big") return { field: "username", message: "Username must be at most 254 characters" };
-      return { field: "username", message: "Enter a valid email address" };
+    case "username":
+      if (code === "duplicate") return { field: "username", message: USERNAME_TAKEN_MESSAGE };
+      return { field: "username", message: USERNAME_RULE_MESSAGE };
     case "password":
       return { field: "password", message: PASSWORD_POLICY_MESSAGE };
     case "name":
@@ -151,10 +186,11 @@ function fieldMessage(path: string, code: string): { field: FormField; message: 
   }
 }
 
-/** userAdmin.create domain codes -> field errors / FormError banner (error-handling.md, frontend + service). */
-export function mapCreateError(error: unknown, usage: UserList["usage"] | undefined): CreateErrorOutcome {
+/** userAdmin.create / userAdmin.update domain codes -> field errors / FormError banner. */
+export function mapSaveError(error: unknown, kind: "create" | "update", usage: UserList["usage"] | undefined): SaveErrorOutcome {
   const { domainCode, fieldErrors } = readDomainError(error);
   const mappedFields = fieldErrors.map((entry) => fieldMessage(entry.path, entry.code)).filter((entry) => entry !== null);
+  const nothingSaved = kind === "create" ? "Couldn't save the user. Try again." : "Couldn't save the changes. Try again.";
 
   switch (domainCode) {
     case "VALIDATION_ERROR": {
@@ -166,8 +202,25 @@ export function mapCreateError(error: unknown, usage: UserList["usage"] | undefi
     }
     case "PASSWORD_POLICY_VIOLATION":
       return { fieldErrors: [{ field: "password", message: PASSWORD_POLICY_MESSAGE }], formError: null };
-    case "EMAIL_ALREADY_EXISTS":
-      return { fieldErrors: [{ field: "username", message: "This username is already in use" }], formError: null };
+    case "USERNAME_TAKEN":
+      return { fieldErrors: [{ field: "username", message: USERNAME_TAKEN_MESSAGE }], formError: null };
+    case "USERNAME_IMMUTABLE":
+      return { fieldErrors: [], formError: "The username can't be changed after the user is created.", refetchDetail: true };
+    case "SUPER_ADMIN_LOCKED":
+      return {
+        fieldErrors: [],
+        formError: "Super Admin permissions, password and Active status can't be changed. Nothing was saved.",
+        refetchDetail: true,
+      };
+    case "USER_CHANGED":
+      return {
+        fieldErrors: [],
+        formError: "This user was changed by someone else. Cancel to load the latest details, then edit again.",
+        refetchDetail: true,
+        refetchList: true,
+      };
+    case "USER_NOT_FOUND":
+      return { fieldErrors: [], formError: "This user no longer exists. It may have been deleted.", refetchList: true, gone: true };
     case "LOCATION_UNKNOWN":
       return { fieldErrors: [{ field: "locationIds", message: "Select a location from the list" }], formError: null, refetchLocations: true };
     case "PERMISSION_UNKNOWN":
@@ -185,16 +238,16 @@ export function mapCreateError(error: unknown, usage: UserList["usage"] | undefi
         refetchList: true,
       };
     case "USER_LICENSE_NOT_ELIGIBLE":
-      return { fieldErrors: [], formError: "This email has no issued license. Contact sales." };
+      return { fieldErrors: [], formError: "This username has no issued license. Contact sales." };
     case "USER_LICENSE_UNVERIFIABLE":
       return { fieldErrors: [], formError: "Couldn't verify the license. Try again." };
     case "SUPER_ADMIN_REQUIRED":
-      return { fieldErrors: [], formError: "Only a Super Admin can add users.", recheckAccess: true };
+      return { fieldErrors: [], formError: "Only a Super Admin can manage users.", recheckAccess: true };
     default:
       if (isCallerLicenseCode(domainCode)) return { fieldErrors: [], formError: "Your license doesn't allow this right now. Nothing was saved." };
       if (domainCode === "UNAUTHORIZED") return { fieldErrors: [], formError: "Your session has ended. Sign in again." };
       // USER_SERVICE_UNAVAILABLE, INTERNAL_SERVER_ERROR, network failure or timeout.
-      return { fieldErrors: [], formError: GENERIC_SAVE_ERROR };
+      return { fieldErrors: [], formError: nothingSaved };
   }
 }
 
@@ -208,6 +261,7 @@ export function mapDeleteError(error: unknown): DeleteErrorOutcome {
   switch (domainCode) {
     case "USER_NOT_FOUND":
       return { kind: "gone", message: "This user was already deleted." };
+    case "SUPER_ADMIN_LOCKED":
     case "SUPER_ADMIN_READ_ONLY":
       return { kind: "dialog", message: "Super Admin accounts and your own account can't be deleted." };
     case "SUPER_ADMIN_REQUIRED":

@@ -28,7 +28,13 @@ async function createContext({ req }: { req: Request; res: Response }): Promise<
     if (typeof user !== "object" || user === null) return { session: null, license: null, authz: NO_AUTHZ, cookie: null, activateLicense: null };
     const userRecord = user as Record<string, unknown>;
     if (typeof userRecord.id !== "string" || typeof userRecord.email !== "string" || typeof userRecord.name !== "string") return { session: null, license: null, authz: NO_AUTHZ, cookie: null, activateLicense: null };
-    const sessionUser: SessionUser = { id: userRecord.id, email: userRecord.email, name: userRecord.name, role: typeof userRecord.role === "string" ? userRecord.role : undefined };
+    const sessionUser: SessionUser = {
+      id: userRecord.id,
+      username: typeof userRecord.username === "string" ? userRecord.username : "",
+      email: userRecord.email,
+      name: userRecord.name,
+      role: typeof userRecord.role === "string" ? userRecord.role : undefined,
+    };
     const license = parseLicenseStatus(contextData.license);
     const authz = parseAuthz((data as { authz?: unknown }).authz);
     if (!license) return { session: { user: sessionUser }, license: { state: "UNVERIFIABLE" }, authz, cookie, activateLicense: null };

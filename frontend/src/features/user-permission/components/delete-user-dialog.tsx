@@ -15,10 +15,11 @@ type DeleteUserDialogProps = {
 };
 
 /**
- * FE-UP-009 delete confirmation (S4) over `userAdmin.delete` (FE-UP-012).
+ * FE-UP-009 / FE-UP2-007 delete confirmation (rev2-04: "Delete {username}?",
+ * Keep user / Delete) over `userAdmin.delete`.
  * Success: list invalidated, cached detail removed, selection cleared, toast.
  * Failures stay inside the dialog, except USER_NOT_FOUND (already gone).
- * The trigger is not rendered for Super Admin rows (read-only).
+ * The header Delete button is disabled for a Super Admin or the signed-in user.
  */
 export function DeleteUserDialog({ user, onClose, onDeleted }: DeleteUserDialogProps) {
   const toast = useToast();
@@ -64,7 +65,7 @@ export function DeleteUserDialog({ user, onClose, onDeleted }: DeleteUserDialogP
   return (
     <ConfirmDialog
       open={user !== null}
-      title={`Delete ${user?.name ?? "user"}?`}
+      title={`Delete ${user?.username ?? "user"}?`}
       body="The account and its permissions will be removed. This can't be undone."
       cancelLabel="Keep user"
       confirmLabel="Delete"

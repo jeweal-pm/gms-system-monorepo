@@ -1,135 +1,150 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { Fragment, useState } from "react";
-import { PERMISSION_ACTIONS, type PermissionAction, type PermissionMenu } from "../api";
+import { Fragment, type ReactNode } from "react";
+import { PERMISSION_ACTIONS, type CatalogNode } from "../api";
 import { aggregateState, applicableKeys, toggleKeys, type PermissionValues } from "../permission-utils";
 import { cx, focusRing } from "@/components/ui/button";
-import { ReadOnlyCheck, TriStateCheckbox } from "@/components/ui/checkbox";
-
-/** Header text as shown in the source ("Price" is mixed case; Q-UP-26). */
-const actionHeader: Record<PermissionAction, string> = {
-  VIEW: "VIEW",
-  ADD: "ADD",
-  EDIT: "EDIT",
-  DELETE: "DELETE",
-  CANCEL: "CANCEL",
-  PRICE: "Price",
-};
+import { DisabledCheckbox, TriStateCheckbox } from "@/components/ui/checkbox";
 
 type PermissionMatrixProps = {
-  catalog: readonly PermissionMenu[];
+  /** Visible (search/filter-applied) catalog tree. */
+  nodes: readonly CatalogNode[];
   values: PermissionValues;
-  /** Omit for the read-only view of a saved user. */
+  /** Omit for a read-only matrix (view mode or locked Super Admin). */
   onChange?: (values: PermissionValues) => void;
+  collapsed: ReadonlySet<string>;
+  onToggleGroup: (id: string) => void;
+  /** While searching, matching groups are always expanded. */
+  forceExpand: boolean;
+  /** ID of the Super Admin lock banner, linked to every locked cell. */
+  lockedDescriptionId?: string;
 };
 
+const cellBorder = "border-b border-gms-border";
+
 /**
- * C-13 PermissionMatrix. Group and Select All states are derived from leaf
- * cells; non-applicable cells are not rendered as checkboxes and are not
- * counted. No implied rules between actions are applied (Q-UP-13).
+ * C-13 PermissionMatrix v2 (rev2-01..03): 9 action columns, "Select All",
+ * section headings, group rows with "N sub-menus" and a chevron, and leaf
+ * rows. Section/group/Select All states are derived from the visible leaf
+ * cells and are never sent as grants. Non-applicable cells render "—".
+ * No implied rules between actions are applied (Q-UP-13). Row keys are kind-prefixed:
+ * section `purchase` and leaf `purchase` share a catalog key.
  */
-export function PermissionMatrix({ catalog, values, onChange }: PermissionMatrixProps) {
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
-
-  function toggleGroup(id: string) {
-    setCollapsed((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  /** One row of cells; `menus` are the leaf/group menus this row aggregates. */
-  function cells(label: string, menus: readonly PermissionMenu[], className?: string) {
+export function PermissionMatrix({ nodes, values, onChange, collapsed, onToggleGroup, forceExpand, lockedDescriptionId }: PermissionMatrixProps) {
+  /** One row of cells aggregating the leaves under `scope`. */
+  function cells(label: string, scope: readonly CatalogNode[], className?: string) {
     return PERMISSION_ACTIONS.map((action) => {
-      const keys = applicableKeys(menus, action);
+      const keys = applicableKeys(scope, action);
       const state = aggregateState(keys, values);
-      const name = `${label} ${actionHeader[action]}`;
+      const name = `${label} ${action}`;
       return (
-        <td key={action} className={cx("text-center align-middle", className)}>
+        <td key={action} className={cx("h-full text-center align-middle", className)}>
           {state === null ? (
-            <span className="sr-only">{`${name}: not applicable`}</span>
+            <>
+              <span aria-hidden className="text-gms-text-placeholder">—</span>
+              <span className="sr-only">{`${name}: not applicable`}</span>
+            </>
           ) : onChange ? (
             <TriStateCheckbox label={name} state={state} onToggle={() => onChange(toggleKeys(keys, values))} />
           ) : (
-            <ReadOnlyCheck label={name} state={state} />
+            <DisabledCheckbox label={name} state={state} describedBy={lockedDescriptionId} />
           )}
         </td>
       );
     });
   }
 
-  return (
-    <table className="w-full table-fixed border-separate border-spacing-0 text-[15px] text-gms-text">
-      <colgroup>
-        <col className="w-[28%]" />
-        {PERMISSION_ACTIONS.map((action) => <col key={action} className="w-[12%]" />)}
-      </colgroup>
-      <thead>
-        <tr>
-          <th scope="col" className="sticky top-0 z-10 h-[38px] border-b border-gms-border bg-gms-page pl-3 text-left text-sm font-medium uppercase">
-            Menu
-          </th>
-          {PERMISSION_ACTIONS.map((action) => (
-            <th key={action} scope="col" className="sticky top-0 z-10 h-[38px] border-b border-gms-border bg-gms-page text-center text-sm font-medium">
-              {actionHeader[action]}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
+  function leafRow(node: CatalogNode, nested: boolean) {
+    return (
+      <tr key={`leaf:${node.id}`} className={nested ? "bg-gms-surface" : "bg-gms-surface-muted"}>
+        <th
+          scope="row"
+          className={cx(
+            "text-left",
+            cellBorder,
+            nested ? "h-[42px] pl-[75px] font-normal text-gms-text-secondary" : "h-[50px] pl-[50px] font-semibold text-gms-text",
+          )}
+        >
+          <span className="block truncate">{node.label}</span>
+        </th>
+        {cells(node.label, [node], cellBorder)}
+      </tr>
+    );
+  }
+
+  function groupRows(node: CatalogNode) {
+    const isCollapsed = !forceExpand && collapsed.has(node.id);
+    const count = node.children.length;
+    return (
+      <Fragment key={`group:${node.id}`}>
         <tr className="bg-gms-surface-muted">
-          <th scope="row" className="h-[39px] pl-11 text-left font-semibold">Select All</th>
-          {cells("Select All", catalog)}
+          <th scope="row" className={cx("h-[50px] pl-[22px] text-left font-semibold text-gms-text", cellBorder)}>
+            <div className="flex min-w-0 items-center">
+              <button
+                type="button"
+                aria-expanded={!isCollapsed}
+                aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${node.label}`}
+                onClick={() => onToggleGroup(node.id)}
+                className={cx("mr-2 shrink-0 rounded-gms-sm p-0.5 text-gms-text", focusRing)}
+              >
+                <ChevronDown size={18} aria-hidden className={cx("transition-transform", isCollapsed && "-rotate-90")} />
+              </button>
+              <span className="truncate">{node.label}</span>
+              <span className="ml-4 shrink-0 text-[13px] font-normal text-gms-text">{`${count} sub-menu${count === 1 ? "" : "s"}`}</span>
+            </div>
+          </th>
+          {cells(node.label, [node], cellBorder)}
         </tr>
-        {catalog.map((menu) => {
-          const children = menu.children ?? [];
-          const isGroup = children.length > 0;
-          const isCollapsed = collapsed.has(menu.id);
-          return (
-            <Fragment key={menu.id}>
-              <tr>
-                <th scope="row" className="h-12 border-b border-gms-border pl-6 text-left font-semibold">
-                  <div className="flex items-center">
-                    <span className="inline-flex w-6 shrink-0">
-                      {isGroup && (
-                        <button
-                          type="button"
-                          aria-expanded={!isCollapsed}
-                          aria-label={`${isCollapsed ? "Expand" : "Collapse"} ${menu.label}`}
-                          onClick={() => toggleGroup(menu.id)}
-                          className={cx("-ml-1 rounded-gms-sm p-0.5 text-gms-text", focusRing)}
-                        >
-                          <ChevronDown size={16} aria-hidden className={cx("transition-transform", isCollapsed && "-rotate-90")} />
-                        </button>
-                      )}
-                    </span>
-                    <span className="truncate">{menu.label}</span>
-                    {isGroup && (
-                      <span className="ml-3 inline-flex h-6 shrink-0 items-center rounded-gms-sm bg-gms-page px-2 text-xs font-normal text-gms-text">
-                        {`${children.length} sub-menus`}
-                      </span>
-                    )}
-                  </div>
-                </th>
-                {cells(menu.label, [menu], "border-b border-gms-border")}
-              </tr>
-              {isGroup &&
-                !isCollapsed &&
-                children.map((child) => (
-                  <tr key={child.id}>
-                    <th scope="row" className="h-10 truncate border-b border-gms-border pl-[72px] text-left font-normal text-gms-text-secondary">
-                      {child.label}
-                    </th>
-                    {cells(child.label, [child], "border-b border-gms-border")}
-                  </tr>
-                ))}
-            </Fragment>
-          );
-        })}
-      </tbody>
-    </table>
+        {!isCollapsed && node.children.map((child) => leafRow(child, true))}
+      </Fragment>
+    );
+  }
+
+  function nodeRows(node: CatalogNode): ReactNode {
+    if (node.kind === "leaf") return leafRow(node, false);
+    if (node.kind === "group") return groupRows(node);
+    return (
+      <Fragment key={`section:${node.id}`}>
+        <tr className="bg-gms-surface">
+          {/* Labels are rendered as delivered by the catalog (SETUP… in caps, "Memo" in title case per design). */}
+          <th scope="rowgroup" colSpan={PERMISSION_ACTIONS.length + 1} className={cx("h-[42px] pl-4 text-left font-semibold text-gms-primary", cellBorder)}>
+            {node.label}
+          </th>
+        </tr>
+        {node.children.map((child) => (child.kind === "group" ? groupRows(child) : leafRow(child, false)))}
+      </Fragment>
+    );
+  }
+
+  return (
+    // Horizontal scroll only below xl, so the sticky header keeps working with page scroll on desktop.
+    <div className="overflow-x-auto xl:overflow-visible">
+      <table className="w-full min-w-[960px] table-fixed border-separate border-spacing-0 text-[15px] text-gms-text">
+        <colgroup>
+          <col className="w-[31%]" />
+          {PERMISSION_ACTIONS.map((action) => <col key={action} />)}
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col" className="sticky top-0 z-10 h-[42px] border-b border-gms-border bg-gms-page pl-3 text-left text-[15px] font-medium uppercase">
+              Menu
+            </th>
+            {PERMISSION_ACTIONS.map((action) => (
+              <th key={action} scope="col" className="sticky top-0 z-10 h-[42px] border-b border-gms-border bg-gms-page text-center text-[15px] font-medium">
+                {action}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="bg-gms-surface-muted">
+            <th scope="row" className={cx("h-[42px] pl-[46px] text-left font-semibold", cellBorder)}>Select All</th>
+            {cells("Select All", nodes, cellBorder)}
+          </tr>
+          {nodes.map((node) => nodeRows(node))}
+        </tbody>
+      </table>
+    </div>
   );
 }

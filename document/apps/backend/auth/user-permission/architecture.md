@@ -1,13 +1,34 @@
 # Service architecture: auth + gateway / user-permission
 
-- Feature ID / SA revision: `user-permission` / 1
+- Feature ID / SA revision: `user-permission` / **2** (revision 1: 2026-10-12)
 - Source UI revision / TODO: 1 (approved 2026-10-12, UI only) / [central TODO](../../../../task/todo/user-permission.md) (backend rows `BE-UP-*` to be integrated by the parent)
-- Status: **pending-review**
-- approved-revision: none · approved-by: none · approved-at: none · approval-evidence: none
+- Status: **implemented** (revision 2, backend 2026-10-15)
+- approved-revision: SA 2 via [ADR-0020](../../../../adr/0020-username-login-and-permission-matrix-v2.md) revision 1 · approved-by: owner (developer_07) · approved-at: 2026-10-15 · approval-evidence: "frontend backend อนุมัติ ADR-0020" (also the implement instruction; ADR §"งานต่อเนื่อง" item 2 assigns this bundle update). Revision 1 approved 2026-10-12 ("frontend backend หน้า user permission ให้สามารถ add user และ delete user ได้").
 - ADRs: [ADR-0016 permissions](../../../../adr/0016-per-user-menu-action-permissions.md) (Proposed), [ADR-0017 admin-managed users](../../../../adr/0017-super-admin-managed-users.md) (Proposed); reused unchanged: ADR-0008, ADR-0011, ADR-0012, ADR-0013, ADR-0014, ADR-0015
 - Main flow: [user-permission-flow.md](../../../../diagram/user-permission-flow.md)
 - Review bundle: this file, [owner decisions](decisions.md), [API contract](api-contract.md), [authorization](authorization.md), [sequence](sequence-diagram.md), [database](database-diagram.md), [errors](error-handling.md), [dependencies](dependencies.md), [testing](testing.md), both ADRs, central TODO
 - Frontend sources: [ui-spec](../../../frontend/user-permission/ui-spec.md), [data-fetching](../../../frontend/user-permission/data-fetching.md), [error-handling](../../../frontend/user-permission/error-handling.md), [SA handoff](../../../../coordination/handoffs/user-permission-sa.md)
+
+## Revision 2 changes (ADR-0020; overrides revision 1 text below)
+
+- **Identity:** login is `POST /api/auth/sign-in/username` via the Better Auth `username` plugin
+  (bundled in the installed `better-auth` 1.7.7; no new package). `auth.User.username` (varchar 64,
+  unique, CHECK `^[a-z0-9._@+-]{3,64}$`) is the identity and the license subject. `auth.User.email` is
+  the internal `<id>@users.invalid`. `/sign-in/email`, `/update-user`, `/change-email` and
+  `/is-username-available` are disabled. Lockout/rate-limit/LoginAttempt (ADR-0012) hash the
+  normalized username with the same HMAC, so buckets of migrated users are unchanged.
+- **Catalog v2:** sections/groups/leaves with 9 actions, 39 leaves, 347 applicable cells; all v1
+  grants deleted by the migration. Gateway `dashboard.shortcutGroups` follows v2 keys and requires
+  `dashboard:VIEW` for non–Super Admins.
+- **Update** (`PATCH /internal/v1/user-admin/users/:id`, gateway `userAdmin.update`) is now delivered.
+  Super Admin targets are no longer read-only: name, phone and locations are editable; permissions,
+  active, password and delete stay locked (`SUPER_ADMIN_LOCKED`).
+- **Inactive sign-in** (`ACCOUNT_INACTIVE` 403) is delivered on `/sign-in/username`.
+- **CRM** `POST /api/v1/users` takes `username` (deprecated `email` alias).
+- Still deferred: photo upload/download and CSV export (no route, `photo` rejected by strict schemas).
+- Capacity: ≤ 576 grant rows per user (was 384); session-context is still one PK-prefix query;
+  update is one transaction (timeout 4 s) with one Argon2id hash outside it. No new container,
+  process, cache or retry.
 
 ## Domain and service boundaries
 
@@ -31,7 +52,7 @@ would need cross-service consistency for create/delete with the credential and l
 | Photo bytes | auth `auth.UserPhoto` | set/remove inside create/update; `GET /internal/v1/user-admin/users/:id/photo` |
 | Browser contract | gateway `src/trpc/**` | tRPC `permission.*`, `userAdmin.*` |
 | Binary/CSV download | gateway `src/app.controller.ts` (or a new `user-admin.controller.ts`) | REST `GET /api/v1/user-admin/users/:id/photo`, `GET /api/v1/user-admin/export.csv` through the existing `/api/v1` proxy |
-| Inactive sign-in refusal | auth `src/auth/auth.ts` after-hook | Better Auth `/api/auth/sign-in/email` response `403 ACCOUNT_INACTIVE` |
+| Inactive sign-in refusal | auth `src/auth/auth.ts` after-hook | Better Auth `/api/auth/sign-in/username` response `403 ACCOUNT_INACTIVE` (rev 2) |
 
 Gateway never touches the database. Auth enforces authorization for every internal
 operation from the session it validates itself, independently of gateway.

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Req } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Req } from "@nestjs/common";
 import type { Request } from "express";
 import { UserAdminService } from "./user-admin.service";
 
@@ -39,6 +39,13 @@ export class UserAdminController {
   async get(@Req() request: Request, @Param("id") id: string) {
     await this.userAdmin.requireSuperAdmin(request);
     return this.userAdmin.get(id);
+  }
+
+  @Patch("user-admin/users/:id")
+  @HttpCode(HttpStatus.OK)
+  async update(@Req() request: Request, @Param("id") id: string, @Body() body: unknown) {
+    const actor = await this.userAdmin.requireSuperAdmin(request);
+    return this.userAdmin.update(actor, id, body);
   }
 
   @Delete("user-admin/users/:id")

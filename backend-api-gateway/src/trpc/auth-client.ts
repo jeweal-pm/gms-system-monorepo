@@ -30,7 +30,7 @@ const fallbackDomainCode: Partial<Record<TrpcCode, string>> = {
 
 type AuthCall<T> = {
   cookie: string | null;
-  method: "GET" | "POST" | "DELETE";
+  method: "GET" | "POST" | "PATCH" | "DELETE";
   path: string;
   timeoutMs: number;
   responseSchema: z.ZodType<T>;

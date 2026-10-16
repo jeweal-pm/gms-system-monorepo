@@ -68,7 +68,7 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
           breadcrumbs={breadcrumbs}
-          user={{ name: session.user.name, email: session.user.email }}
+          user={{ name: session.user.name, username: session.user.username ?? "" }}
           onSignOut={handleSignOut}
           menuButtonRef={menuButtonRef}
           isNavigationOpen={isNavigationOpen}

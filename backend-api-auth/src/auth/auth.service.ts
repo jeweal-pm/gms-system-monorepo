@@ -4,13 +4,26 @@ import { z } from "zod";
 import { LicenseDomainError } from "../license/license.service";
 import { ProvisioningError, UserProvisioningService } from "../user-admin/user-provisioning.service";
 import { passwordSchema } from "./password-policy";
+import { usernameSchema } from "./username-policy";
 
+/**
+ * CRM provisioning (ADR-0015, changed by ADR-0020 §1): `username` is the identity. The
+ * deprecated `email` field is still accepted as the username during the CRM transition; both
+ * present with different normalized values -> 400.
+ */
 const createUserSchema = z.object({
-  email: z.email().max(254),
+  username: usernameSchema.optional(),
+  email: usernameSchema.optional(),
   name: z.string().trim().min(1).max(120),
   role: z.literal("SUPER_ADMIN"),
   password: passwordSchema,
-}).strict();
+}).strict().superRefine((value, ctx) => {
+  if (value.username === undefined && value.email === undefined) {
+    ctx.addIssue({ code: "custom", path: ["username"], message: "username is required" });
+  } else if (value.username !== undefined && value.email !== undefined && value.username !== value.email) {
+    ctx.addIssue({ code: "custom", path: ["email"], message: "username and email must match when both are sent" });
+  }
+});
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
@@ -36,17 +49,19 @@ export class AuthService {
       throw new BadRequestException({ error: "VALIDATION_ERROR", details: issues.map((issue) => issue.message) });
     }
 
-    const { email, name, password } = parsed.data;
-    const normalizedEmail = email.trim().toLowerCase();
+    const { name, password } = parsed.data;
+    const usedDeprecatedEmail = parsed.data.username === undefined;
+    const username = (parsed.data.username ?? parsed.data.email)!;
 
-    // Shared provisioning (ADR-0017 §1). The CRM contract (201/400/409/422/503 bodies) is unchanged.
-    let user: { id: string; email: string; createdAt: Date };
+    // Shared provisioning (ADR-0017 §1). Status codes are unchanged; see spec 0001 for bodies.
+    let user: { id: string; username: string; createdAt: Date };
     try {
-      user = await this.provisioning.provision({ email: normalizedEmail, name, password, role: "admin" });
+      user = await this.provisioning.provision({ username, name, password, role: "admin" });
     } catch (error) {
       if (!(error instanceof ProvisioningError)) throw error;
       const failure = error.failure;
-      if (failure.reason === "EMAIL_ALREADY_EXISTS") throw new ConflictException({ error: "EMAIL_ALREADY_EXISTS" });
+      // Callers still on the deprecated `email` field keep the old duplicate code.
+      if (failure.reason === "USERNAME_TAKEN") throw new ConflictException({ error: usedDeprecatedEmail ? "EMAIL_ALREADY_EXISTS" : "USERNAME_TAKEN" });
       if (failure.reason === "LICENSE_LOOKUP_FAILED") throw licenseHttpException(failure.cause);
       if (failure.reason === "LICENSE_NOT_ELIGIBLE") {
         throw new HttpException({ error: { code: "LICENSE_REQUIRED", message: "An eligible license is required before creating this account" } }, HttpStatus.UNPROCESSABLE_ENTITY);
@@ -54,7 +69,8 @@ export class AuthService {
       throw licenseHttpException(new LicenseDomainError("LICENSE_UNVERIFIABLE", 503));
     }
     this.logger.log("CRM provisioned a user account");
-    return { userId: user.id, email: user.email, createdAt: user.createdAt.toISOString() };
+    // `email` is a deprecated echo of the username (never the internal address).
+    return { userId: user.id, username: user.username, email: user.username, createdAt: user.createdAt.toISOString() };
   }
 
   validatePasswordChange(input: unknown) {
