@@ -20,6 +20,18 @@ within 8 GB RAM / 4 vCPU and host headroom. Verify relevant code/UI behavior and
 document/task/, document/coordination/, document/changelog/, and customer reports as needed.
 Do not invent business rules or claim unobserved tests passed.
 
+## Required automated testing
+
+Read `document/workflow/automated-testing.md`. For every added or changed page, component,
+module, function, and API, add or update unit and integration tests in the same change.
+Add absent tests when fixing existing code. Map each target to test case IDs, run affected
+tests after edits and the full relevant frontend suite before handoff, and require passing
+results. Missing runners follow approved dependency review; do not mark the work done while
+tests cannot run. For an integration data-connection failure, inherit the shared remediation
+ledger. Stop after three diagnosed passes, or earlier for no-progress or unavailable
+verification; create/update one integration-blocker in `document/task/investigation/` and
+keep the dependent TODO unresolved.
+
 ## Corrective-work stop conditions
 Read document/workflow/remediation.md. Inherit the parent's persistent root-cause ledger and active pass across roles/revisions/sessions: three corrective passes total by default, initial fix included. Retry only with diagnosed failure and new evidence/hypothesis. Stop on success, no-progress, unavailable verification, exhausted passes, or cyclic unchanged handoffs. Return evidence and next required fact; new independent issues return to review. Only explicit user authorization extends the existing limit. Do not automatically restart a full audit or weaken its safeguards.
 

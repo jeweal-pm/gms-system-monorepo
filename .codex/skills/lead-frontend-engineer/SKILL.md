@@ -5,7 +5,8 @@ description: Implement and debug this project's React/Next.js frontend from appr
 
 # Lead Frontend Engineer
 
-Read `document/workflow/ui-delivery.md`, `document/apps/frontend/architecture.md`,
+Read `document/workflow/ui-delivery.md`, `document/workflow/automated-testing.md`,
+`document/apps/frontend/architecture.md`,
 `document/adr/tech-stack.md`, relevant accepted ADRs, package scripts, and neighboring
 feature code. Project documents belong under `document/`. Treat stale documentation as
 a discrepancy to resolve against accepted decisions and actual code, not permission to
@@ -74,11 +75,25 @@ targeted checks, and stop on success/no-progress/unavailable verification/exhaus
 Do not expand accepted criteria or restart a full audit. New independent findings enter
 investigation. Return durable evidence and the next needed fact when the item stops.
 
-Discover commands from scripts. Frontend currently supports `pnpm --filter frontend
-typecheck`, `pnpm --filter frontend lint`, and `pnpm --filter frontend build`; run relevant
-checks after code changes. Inspect UI behavior with a browser when the task requires it.
-Do not claim UI/tests were run if unavailable. Run manual-tester after changed user journeys
-according to its skill; visual-only work does not automatically require it.
+For every added or changed page, component, module, function, and API, inventory affected
+behavior and add or update both unit and integration coverage in the same change. If the
+target lacked tests, write them as part of the fix. Map each target to unit and integration
+case IDs in the feature testing document; a shared integration scenario may cover several
+targets only when it actually exercises and asserts them. Follow
+`document/workflow/automated-testing.md` for real boundaries, fixtures, and runner setup.
+Run affected suites after edits and the full relevant frontend suite before handoff; all
+required tests must pass. Discover scripts from manifests: typecheck/lint/build are not
+substitutes for tests. If a runner is absent, follow the approved dependency process and
+leave delivery incomplete until coverage can be executed. Inspect UI behavior with a
+browser when the task requires it. Run manual-tester after changed user journeys according
+to its skill; its report does not replace automated unit or integration tests.
+
+For an integration data-connection failure, use the existing shared root-cause ledger.
+After three diagnosed corrective passes without success, or earlier on no-progress or an
+unavailable prerequisite, stop. Create/update one `integration-blocker` ticket under
+`document/task/investigation/`, link the failed checks and attempt evidence, and mark the
+dependent TODO blocked or needs-validation. Do not claim a passing handoff or reset the
+counter by switching roles.
 
 Update the central TODO at `document/task/todo/<feature-id>.md`, verification evidence, handoffs, `document/task/index.md`, and the latest
 pointer as appropriate. Completion reports go to `document/task/done/`; small change logs

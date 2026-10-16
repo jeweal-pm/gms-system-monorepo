@@ -15,7 +15,7 @@ Start with [ADR-0001](adr/0001-record-architecture-decisions.md),
 | `spec/` | Shared product and API requirements |
 | `diagram/` | Editable main business flows |
 | `task/` | Task registry, latest frontend pointer, and `done/` completion records |
-| `task/investigation/` | Audit findings awaiting owner review and selected later fixes |
+| `task/investigation/` | Audit findings and unresolved integration test blockers for owner review |
 | `coordination/` | Scope ownership, task claims, cross-role handoffs |
 | `testing/` | Test scenarios and `user-check/` customer reports/screenshots |
 | `reviews/<role>/` | Technical review summaries; actionable audit findings link to investigation tickets |
@@ -39,6 +39,8 @@ Packages stay proposed until approved and installed during implementation.
 See [integration and validator instructions](skills/spec/sec-auditor-integration.md).
 Selected fixes follow [bounded remediation](workflow/remediation.md), with persistent
 cross-role attempt history, targeted verification, and explicit terminal outcomes.
+Frontend/backend changes follow [automated testing](workflow/automated-testing.md): unit
+and integration coverage is required for every affected item and must pass before handoff.
 Use [infra delivery](workflow/infra-delivery.md) when ADR/service changes affect containers;
 [the service index](infra/service-index.md) tracks research/configuration coverage.
 Use [DevOps delivery](workflow/devops-delivery.md) for GitHub CI/images and
