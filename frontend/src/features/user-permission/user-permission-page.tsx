@@ -5,7 +5,6 @@ import { ChevronLeft, ChevronRight, Info, ShieldAlert, Trash2 } from "lucide-rea
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { SetupTabs } from "@/features/setup/setup-tabs";
 import { trpc } from "@/providers/app-providers";
 import { isCallerLicenseCode, readDomainError } from "@/lib/trpc-error";
 import { loadErrorMessage, mapCreateError, toCreateUserInput, type UserSummary } from "./api";
@@ -38,7 +37,6 @@ export function  UserPermissionPage() {
 function PageFrame({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-gms-page">
-      <SetupTabs />
       <div className="min-h-0 flex-1 overflow-y-auto p-6">{children}</div>
     </div>
   );
@@ -205,7 +203,6 @@ function UserPermissionWorkspace() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-gms-page">
-      <SetupTabs />
       <div className="relative flex min-h-0 flex-1">
         <div className="min-w-0 flex-1 overflow-y-auto pb-6 pl-6 pr-10 pt-6">
           <PageHeader
