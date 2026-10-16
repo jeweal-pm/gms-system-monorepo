@@ -98,34 +98,34 @@ export function LoginForm() {
             setValue("username", account.username, { shouldValidate: true });
             setValue("password", account.password, { shouldValidate: true });
           }}
-          className={`flex min-h-[84px] w-full min-w-0 items-start gap-4 rounded-xl px-5 py-4 text-left text-[16px] leading-6 text-[#31515d] transition hover:ring-2 hover:ring-[#54bfd7]/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#45b7d0] ${account.highlighted ? "bg-[#d9f2fa]" : "bg-[#f5f5f7]"}`}
+          className={`flex min-h-[84px] w-full min-w-0 items-start gap-4 rounded-xl px-5 py-4 text-left text-gms-body text-[#31515d] transition hover:ring-2 hover:ring-[#54bfd7]/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#45b7d0] ${account.highlighted ? "bg-[#d9f2fa]" : "bg-[#f5f5f7]"}`}
         >
-          <span aria-hidden="true" className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 border-[#55bed6] text-[12px] font-bold text-[#55bed6]">i</span>
+          <span aria-hidden="true" className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 border-[#55bed6] text-gms-label font-bold text-[#55bed6]">i</span>
           <span className="min-w-0 break-words"><span>Use Username : <strong>{account.username}</strong></span><br /><span>Password : <strong>{account.password}</strong></span></span>
         </button>
       ))}
 
       <div className="relative mt-[27px] space-y-1">
-        <label className="absolute left-5 top-2 text-[13px] leading-4 text-[#89949a]" htmlFor="username">Username</label>
-        <input id="username" autoComplete="username" type="text" autoCapitalize="none" autoCorrect="off" spellCheck={false} aria-invalid={errors.username ? true : undefined} {...register("username")} defaultValue={demoAccounts[0]?.username ?? ""} className="h-[64px] w-full rounded-xl border border-transparent bg-[#eeeeef] px-5 pt-[17px] text-[16px] text-[#283942] outline-none transition focus:border-[#00817b] focus:ring-2 focus:ring-[#00817b]/15" />
-        {errors.username && <p className="px-1 text-xs text-red-600">{errors.username.message}</p>}
+        <label className="absolute left-5 top-2 text-gms-label leading-4 text-[#89949a]" htmlFor="username">Username</label>
+        <input id="username" autoComplete="username" type="text" autoCapitalize="none" autoCorrect="off" spellCheck={false} aria-invalid={errors.username ? true : undefined} {...register("username")} defaultValue={demoAccounts[0]?.username ?? ""} className="h-[64px] w-full rounded-xl border border-transparent bg-[#eeeeef] px-5 pt-[17px] text-gms-body text-[#283942] outline-none transition focus:border-[#00817b] focus:ring-2 focus:ring-[#00817b]/15" />
+        {errors.username && <p className="px-1 text-gms-label text-red-600">{errors.username.message}</p>}
       </div>
 
       <div className="space-y-1">
         <div className="relative">
-          <label className="absolute left-5 top-2 text-[13px] leading-4 text-[#89949a]" htmlFor="password">Password</label>
-          <input id="password" autoComplete="current-password" type={showPassword ? "text" : "password"} {...register("password")} defaultValue={demoAccounts[0]?.password ?? ""} className="h-[64px] w-full rounded-xl border border-transparent bg-[#eeeeef] px-5 pr-14 pt-[17px] text-[16px] text-[#283942] outline-none transition focus:border-[#00817b] focus:ring-2 focus:ring-[#00817b]/15" />
+          <label className="absolute left-5 top-2 text-gms-label leading-4 text-[#89949a]" htmlFor="password">Password</label>
+          <input id="password" autoComplete="current-password" type={showPassword ? "text" : "password"} {...register("password")} defaultValue={demoAccounts[0]?.password ?? ""} className="h-[64px] w-full rounded-xl border border-transparent bg-[#eeeeef] px-5 pr-14 pt-[17px] text-gms-body text-[#283942] outline-none transition focus:border-[#00817b] focus:ring-2 focus:ring-[#00817b]/15" />
           <button aria-label={showPassword ? "Hide password" : "Show password"} type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 flex w-14 items-center justify-center text-[#8da0a6] hover:text-[#283942]">
             {showPassword ? <Eye size={22} /> : <EyeOff size={22} />}
           </button>
         </div>
-        {errors.password && <p className="px-1 text-xs text-red-600">{errors.password.message}</p>}
+        {errors.password && <p className="px-1 text-gms-label text-red-600">{errors.password.message}</p>}
       </div>
 
-      <div className="mt-8 flex flex-wrap items-center justify-between gap-y-3 pt-1 text-[15px]">
+      <div className="mt-8 flex flex-wrap items-center justify-between gap-y-3 pt-1 text-gms-body">
         <label className="flex items-center gap-2.5 text-[#657681]"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="size-5 rounded border border-[#cbdce2] accent-[#007570]" /> Remember this device</label>      </div>
-      {serverError && <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{lockoutSeconds > 0 ? `บัญชีถูกล็อกชั่วคราว กรุณารออีก ${lockoutSeconds} วินาที` : serverError}</p>}
-      <button disabled={submitting || lockoutSeconds > 0} type="submit" className="mt-[19px] h-[64px] w-full rounded-xl bg-[#006d70] text-[17px] font-semibold text-white shadow-sm transition hover:bg-[#005a5d] disabled:cursor-wait disabled:opacity-65">
+      {serverError && <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-gms-body text-red-700">{lockoutSeconds > 0 ? `บัญชีถูกล็อกชั่วคราว กรุณารออีก ${lockoutSeconds} วินาที` : serverError}</p>}
+      <button disabled={submitting || lockoutSeconds > 0} type="submit" className="mt-[19px] h-[64px] w-full rounded-xl bg-[#006d70] text-gms-body font-semibold text-white shadow-sm transition hover:bg-[#005a5d] disabled:cursor-wait disabled:opacity-65">
         {submitting ? "Logging in…" : lockoutSeconds > 0 ? `Try again in ${lockoutSeconds}s` : "Log in"}
       </button>
     </form>

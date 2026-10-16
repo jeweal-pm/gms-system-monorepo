@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { MasterCodeDialog } from "./master-code-dialog";
 import { setupLandingTiles } from "./setup-destinations";
-import { SetupTileButton, SetupTileLink } from "./setup-tile";
+import { SetupTileButton, SetupTileLink, SetupTileUnavailable } from "./setup-tile";
 
 /**
  * Setup landing `/setup` (N-10, S3): centred `<h1>` and four tiles (3 links + the Master Code
@@ -32,12 +32,14 @@ export function SetupLanding() {
 
   return (
     <div className="@container px-6 pt-10 pb-12 md:px-4">
-      <h1 className="text-center text-2xl leading-8 font-semibold text-gms-text">Setup</h1>
-      <ul className="mx-auto mt-12 grid w-fit grid-cols-[repeat(2,144px)] gap-x-8 gap-y-6 @min-[672px]:grid-cols-[repeat(4,144px)]">
+      <h1 className="text-center text-gms-title font-semibold text-gms-text">Setup</h1>
+      <ul className="mx-auto mt-12 grid w-fit grid-cols-[repeat(2,144px)] gap-x-8 gap-y-16 @min-[672px]:grid-cols-[repeat(4,144px)]">
         {setupLandingTiles.map((tile) => (
           <li key={tile.id}>
             {tile.kind === "link" ? (
               <SetupTileLink variant="landing" href={tile.href} label={tile.label} icon={tile.icon} color={tile.color} />
+            ) : tile.kind === "unavailable" ? (
+              <SetupTileUnavailable variant="landing" label={tile.label} icon={tile.icon} color={tile.color} />
             ) : (
               <SetupTileButton ref={masterCodeButtonRef} variant="landing" label={tile.label} icon={tile.icon} color={tile.color} onClick={() => setIsMasterCodeOpen(true)} />
             )}

@@ -17,7 +17,7 @@ export function userInitials(name: string) {
 }
 
 const itemClass =
-  "flex h-9 w-full items-center px-3 text-left text-sm outline-none transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gms-primary";
+  "flex h-9 w-full items-center px-3 text-left text-gms-body outline-none transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gms-primary";
 const linkItemClass = `${itemClass} text-gms-text hover:bg-gms-nav-active focus:bg-gms-nav-active`;
 
 /**
@@ -113,7 +113,7 @@ export function AccountMenu({ user, onSignOut }: Readonly<{ user: AccountMenuUse
         aria-haspopup="menu"
         aria-expanded={isOpen}
         aria-controls={isOpen ? menuId : undefined}
-        className="flex size-[30px] shrink-0 items-center justify-center rounded-full bg-gms-text text-xs font-semibold text-gms-on-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gms-primary"
+        className="flex size-[30px] shrink-0 items-center justify-center rounded-full bg-gms-text text-gms-label font-semibold text-gms-on-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gms-primary"
       >
         {initials || <UserRound aria-hidden size={14} />}
       </button>
@@ -127,10 +127,10 @@ export function AccountMenu({ user, onSignOut }: Readonly<{ user: AccountMenuUse
           className="absolute right-0 top-[41px] z-50 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-gms-md border border-gms-border bg-gms-surface shadow-gms-overlay"
         >
           <div role="none" className="px-3 pb-2.5 pt-3">
-            <p className="truncate text-sm font-semibold text-gms-text" title={user.username}>
+            <p className="truncate text-gms-body font-semibold text-gms-text" title={user.username}>
               {user.username}
             </p>
-            <p className="mt-0.5 min-h-4 truncate text-xs text-gms-text-muted">{roleLabel}</p>
+            <p className="mt-0.5 min-h-4 truncate text-gms-label text-gms-text-muted">{roleLabel}</p>
           </div>
           <div role="separator" className="border-t border-gms-border" />
           <div role="none" className="py-1">

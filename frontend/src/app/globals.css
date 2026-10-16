@@ -9,6 +9,16 @@
  */
 @theme {
   --font-sans: var(--font-ibm-plex-sans-thai), "IBM Plex Sans Thai", Arial, Helvetica, sans-serif;
+
+  /* Type scale (owner 2026-10-16, whole system): page title 24, heading 16, body 14, label 12. */
+  --text-gms-title: 24px;
+  --text-gms-title--line-height: 32px;
+  --text-gms-heading: 16px;
+  --text-gms-heading--line-height: 24px;
+  --text-gms-body: 14px;
+  --text-gms-body--line-height: 20px;
+  --text-gms-label: 12px;
+  --text-gms-label--line-height: 16px;
   --color-gms-primary: #006a70;
   --color-gms-primary-strong: #0e6064;
   --color-gms-primary-subtle: #fafcfc;
@@ -54,7 +64,11 @@
   --color-gms-rail-button: #f7f7f7;
   --color-gms-tooltip: #000000;
   --color-gms-tile-indigo: #5040db;
-  --color-gms-tile-green: #14a460;
+  /* Setup tiles, owner design 2026-10-16 (User and Permission teal, Notifications red, Document Setup blue, Stone Factory brown). */
+  --color-gms-tile-green: #0e9888;
+  --color-gms-tile-red: #e5484d;
+  --color-gms-tile-blue: #0d80ea;
+  --color-gms-tile-stone: #a1887f;
   --color-gms-tile-neutral: #737780;
   --color-gms-scrim: rgb(52 62 62 / 0.4);
   --spacing-gms-rail: 56px;
@@ -80,10 +94,90 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: #fff; color: var(--gms-ink); font-family: var(--font-sans); }
+body { margin: 0; background: #fff; color: var(--gms-ink); font-family: var(--font-sans); font-size: var(--text-gms-body); line-height: var(--text-gms-body--line-height); }
 button, input, select, textarea { font: inherit; }
 @layer base {
   a { color: inherit; text-decoration: none; }
+}
+
+/*
+ * Scrollbars on every page (owner 2026-10-16): hidden until the pointer is over the scrolling area.
+ * The track keeps its thin width, so content does not move when the thumb appears. Base layer, so the
+ * `scrollbar-none` utility (sidebar lists) still hides a scrollbar completely.
+ */
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  *:hover {
+    scrollbar-color: var(--color-gms-text-placeholder) transparent;
+  }
+  /* Browsers without scrollbar-color (older WebKit). */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: transparent;
+  }
+  *:hover::-webkit-scrollbar-thumb {
+    background: var(--color-gms-text-placeholder);
+  }
+}
+
+/*
+ * Modal dialogs (`gms-dialog`, Master Code; owner 2026-10-16): the page behind is dimmed and blurred,
+ * and the dialog fades and scales in on open (fades out on close where supported). Native <dialog>
+ * with @starting-style, no library. Off with reduced motion.
+ */
+@layer components {
+  .gms-dialog {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+    transition:
+      opacity 200ms ease-out,
+      transform 200ms ease-out,
+      overlay 200ms allow-discrete,
+      display 200ms allow-discrete;
+  }
+  .gms-dialog[open] {
+    opacity: 1;
+    transform: none;
+  }
+  .gms-dialog::backdrop {
+    background-color: rgb(52 62 62 / 0);
+    backdrop-filter: blur(0);
+    transition:
+      background-color 200ms ease-out,
+      backdrop-filter 200ms ease-out,
+      overlay 200ms allow-discrete,
+      display 200ms allow-discrete;
+  }
+  .gms-dialog[open]::backdrop {
+    background-color: var(--color-gms-scrim);
+    backdrop-filter: blur(2px);
+  }
+  @starting-style {
+    .gms-dialog[open] {
+      opacity: 0;
+      transform: translateY(8px) scale(0.97);
+    }
+    .gms-dialog[open]::backdrop {
+      background-color: rgb(52 62 62 / 0);
+      backdrop-filter: blur(0);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .gms-dialog,
+    .gms-dialog::backdrop {
+      transition: none;
+    }
+  }
 }
 
 /* Hide the scrollbar but keep the element scrollable (wheel, touch, keyboard). */
@@ -92,4 +186,22 @@ button, input, select, textarea { font: inherit; }
   &::-webkit-scrollbar {
     display: none;
   }
+}
+
+/*
+ * Browser autofill (owner 2026-10-16): Chrome paints autofilled inputs light blue, which hides the
+ * field fill and leaves the field label's lower half (white) as a visible chip. Keep the field's own
+ * background (white, error red, read-only grey) by delaying the autofill background change
+ * indefinitely, and keep the normal text colour. Unlayered on purpose, so Tailwind's
+ * `transition-colors` utility (utilities layer) cannot override the transition.
+ */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: var(--color-gms-text);
+  caret-color: var(--color-gms-text);
+  transition: background-color 600000s 0s, color 600000s 0s;
 }

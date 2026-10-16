@@ -47,7 +47,7 @@ function HeaderClock() {
   const minute = useSyncExternalStore(subscribeToMinute, currentMinute, noMinuteOnServer);
   const date = minute === null ? null : new Date(minute * 60_000);
   return (
-    <span className="mr-2.5 hidden min-w-[150px] items-center gap-1.5 text-[13px] leading-5 whitespace-nowrap text-gms-text-muted md:flex">
+    <span className="mr-2.5 hidden min-w-[150px] items-center gap-1.5 text-gms-label leading-5 whitespace-nowrap text-gms-text-muted md:flex">
       <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-gms-success" />
       {date && <time dateTime={date.toISOString()}>{formatClock(date)}</time>}
     </span>
@@ -107,7 +107,7 @@ function NotificationsButton() {
       </button>
       <div role="status" aria-live="polite" className="absolute right-0 top-10 z-50">
         {notice && (
-          <p className="rounded-gms-md border border-gms-border bg-gms-surface px-3 py-2 text-[13px] whitespace-nowrap text-gms-text shadow-gms-overlay">{notice}</p>
+          <p className="rounded-gms-md border border-gms-border bg-gms-surface px-3 py-2 text-gms-label whitespace-nowrap text-gms-text shadow-gms-overlay">{notice}</p>
         )}
       </div>
     </div>

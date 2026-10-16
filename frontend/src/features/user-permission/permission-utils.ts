@@ -56,33 +56,29 @@ export function grantsFromValues(values: PermissionValues, nodes: readonly Catal
   return applicableKeys(nodes).filter((key) => values[key]);
 }
 
-export type PermissionFilter = "all" | "on" | "off";
+/** `"all"` or the id of one top-level menu (Dashboard, a section such as Setup or Pre-Sale). */
+export const ALL_SECTIONS = "all";
+
+/** Section filter options (owner design 2026-10-16): "All Permissions", then every top-level menu. */
+export function sectionOptions(nodes: readonly CatalogNode[]): { value: string; label: string }[] {
+  return [{ value: ALL_SECTIONS, label: "All Permissions" }, ...nodes.map((node) => ({ value: node.id, label: node.label }))];
+}
 
 /**
- * Search + "All Permissions" filter. A label match on a section or group keeps
- * its whole subtree; a leaf is kept when it (or an ancestor) matches the query
- * and passes the on/off filter. Empty sections and groups are pruned.
+ * Visible catalog: only the chosen top-level menu (or all), then the search text, which keeps a
+ * node when it or an ancestor matches.
  */
-export function filterCatalog(
-  nodes: readonly CatalogNode[],
-  query: string,
-  filter: PermissionFilter,
-  values: PermissionValues,
-): CatalogNode[] {
+export function filterCatalog(nodes: readonly CatalogNode[], query: string, section: string): CatalogNode[] {
   const needle = query.trim().toLowerCase();
-  const passesFilter = (leaf: CatalogNode) => {
-    if (filter === "all") return true;
-    const anyOn = leaf.actions.some((action) => values[permissionKey(leaf.id, action)]);
-    return filter === "on" ? anyOn : !anyOn;
-  };
   const walk = (list: readonly CatalogNode[], ancestorMatched: boolean): CatalogNode[] =>
     list.flatMap((node) => {
       const matched = ancestorMatched || needle === "" || node.label.toLowerCase().includes(needle);
-      if (node.kind === "leaf") return matched && passesFilter(node) ? [node] : [];
+      if (node.kind === "leaf") return matched ? [node] : [];
       const children = walk(node.children, matched);
       return children.length > 0 ? [{ ...node, children }] : [];
     });
-  return walk(nodes, false);
+  const scoped = section === ALL_SECTIONS ? nodes : nodes.filter((node) => node.id === section);
+  return walk(scoped, false);
 }
 
 /** IDs of every group node (collapsible rows). */

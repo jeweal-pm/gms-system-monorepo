@@ -65,9 +65,9 @@ export function LogoUploadTile({ id, value, savedUrl, onChange, readOnly }: Logo
 
   if (src && readOnly) {
     return (
-      <div className={cx(tileSize, "flex items-center justify-center rounded-gms-lg bg-gms-checkbox-readonly p-3 outline-1 outline-gms-border outline-dashed")}>
+      <div className={cx(tileSize, "flex items-center justify-center overflow-hidden rounded-gms-lg bg-gms-checkbox-readonly outline-1 outline-gms-border outline-dashed")}>
         {/* eslint-disable-next-line @next/next/no-img-element -- blob/same-origin logo of unknown size; next/image adds nothing here */}
-        <img src={src} alt="Company logo" className="max-h-full max-w-full object-contain" />
+        <img src={src} alt="Company logo" className="size-full object-cover" />
       </div>
     );
   }
@@ -81,10 +81,10 @@ export function LogoUploadTile({ id, value, savedUrl, onChange, readOnly }: Logo
             onClick={() => inputRef.current?.click()}
             aria-label="Replace company logo, JPEG or PNG up to 10 MB"
             aria-describedby={error ? errorId : undefined}
-            className={cx("flex size-full items-center justify-center rounded-gms-lg p-3", focusRing)}
+            className={cx("flex size-full items-center justify-center overflow-hidden rounded-gms-lg", focusRing)}
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- see above */}
-            <img src={src} alt="" className="max-h-full max-w-full object-contain" />
+            <img src={src} alt="" className="size-full object-cover" />
           </button>
           <button
             type="button"
@@ -97,7 +97,7 @@ export function LogoUploadTile({ id, value, savedUrl, onChange, readOnly }: Logo
           {input}
         </div>
         {error && (
-          <p id={errorId} className="mt-1 text-[13px] italic leading-[18px] text-gms-danger">
+          <p id={errorId} className="mt-1 text-gms-label italic text-gms-danger">
             {error}
           </p>
         )}
@@ -120,12 +120,12 @@ export function LogoUploadTile({ id, value, savedUrl, onChange, readOnly }: Logo
         )}
       >
         <ImagePlus size={28} strokeWidth={1.5} className="mb-1 text-gms-text" aria-hidden />
-        <span className="text-[13px] font-semibold text-gms-text">{readOnly ? "No logo" : "Upload photo"}</span>
-        {!readOnly && <span className="text-xs text-gms-text-secondary">JPEG or PNG only</span>}
+        <span className="text-gms-label font-semibold text-gms-text">{readOnly ? "No logo" : "Upload photo"}</span>
+        {!readOnly && <span className="text-gms-label text-gms-text-secondary">JPEG or PNG only</span>}
       </button>
       {input}
       {error && (
-        <p id={errorId} className="mt-1 text-[13px] italic leading-[18px] text-gms-danger">
+        <p id={errorId} className="mt-1 text-gms-label italic text-gms-danger">
           {error}
         </p>
       )}

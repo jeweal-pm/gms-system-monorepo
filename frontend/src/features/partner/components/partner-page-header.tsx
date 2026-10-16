@@ -102,8 +102,8 @@ export function PartnerPageHeader({
     <div className="mb-4 space-y-3 print:hidden">
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-3">
-          <h1 className="min-w-0 break-words text-2xl font-medium leading-8 text-gms-text-heading">{partnerTitle(entity, mode, recordName)}</h1>
-          <span className="text-sm text-gms-text-secondary">{total === undefined ? `${entity.singular} List` : `${entity.singular} List ${total}`}</span>
+          <h1 className="min-w-0 break-words text-gms-title font-medium text-gms-text-heading">{partnerTitle(entity, mode, recordName)}</h1>
+          <span className="text-gms-body text-gms-text-secondary">{total === undefined ? `${entity.singular} List` : `${entity.singular} List ${total}`}</span>
         </div>
         <div className="flex items-center gap-1">
           <IconButton label={`Print saved ${noun}`} onClick={onPrint} disabled={!savedLoaded}>

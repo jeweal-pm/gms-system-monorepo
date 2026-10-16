@@ -80,7 +80,7 @@ export function MultiSelect({ id, label, options, value, onChange, onBlur, error
   }
 
   return (
-    <FieldShell id={id} label={label} required={required} error={error} labelAsText>
+    <FieldShell id={id} label={label} required={required} error={error} labelAsText readOnly={readOnly}>
       <div
         className={cx(
           fieldBoxClass({ invalid: Boolean(error), readOnly }),
@@ -96,7 +96,7 @@ export function MultiSelect({ id, label, options, value, onChange, onBlur, error
         {selected.length > 0 && (
           <ul aria-label={`Selected ${label}`} className="flex min-w-0 flex-wrap gap-1.5">
             {selected.map((option) => (
-              <li key={option.id} className="inline-flex h-7 items-center gap-1.5 rounded-gms-sm bg-gms-surface-sunken pl-2 pr-1.5 text-[13px] text-gms-text">
+              <li key={option.id} className="inline-flex h-7 items-center gap-1.5 rounded-gms-sm bg-gms-surface-sunken pl-2 pr-1.5 text-gms-label text-gms-text">
                 {option.label}
                 {!readOnly && (
                   <button
@@ -119,7 +119,9 @@ export function MultiSelect({ id, label, options, value, onChange, onBlur, error
           ref={comboboxRef}
           id={id}
           role="combobox"
-          tabIndex={0}
+          // Read-only (view mode) is not focusable, like the disabled text fields (owner 2026-10-16).
+          tabIndex={readOnly ? -1 : 0}
+          aria-disabled={readOnly || undefined}
           aria-labelledby={`${id}-label`}
           aria-haspopup="listbox"
           aria-expanded={open}
@@ -147,9 +149,9 @@ export function MultiSelect({ id, label, options, value, onChange, onBlur, error
           hidden={!open}
           className="absolute left-0 right-0 top-full z-30 mt-1 max-h-60 overflow-auto rounded-gms-md border border-gms-border bg-gms-surface py-1 shadow-gms-overlay"
         >
-          {status === "loading" && <li className="px-4 py-2 text-sm text-gms-text-secondary">Loading…</li>}
-          {status === "error" && <li className="px-4 py-2 text-sm text-gms-danger">Couldn&apos;t load locations.</li>}
-          {status === "ready" && options.length === 0 && <li className="px-4 py-2 text-sm text-gms-text-secondary">No locations</li>}
+          {status === "loading" && <li className="px-4 py-2 text-gms-body text-gms-text-secondary">Loading…</li>}
+          {status === "error" && <li className="px-4 py-2 text-gms-body text-gms-danger">Couldn&apos;t load locations.</li>}
+          {status === "ready" && options.length === 0 && <li className="px-4 py-2 text-gms-body text-gms-text-secondary">No locations</li>}
           {hasOptions &&
             options.map((option, index) => {
               const isSelected = value.includes(option.id);
@@ -166,7 +168,7 @@ export function MultiSelect({ id, label, options, value, onChange, onBlur, error
                     toggle(option.id);
                   }}
                   className={cx(
-                    "flex cursor-pointer items-center gap-2 px-4 py-2 text-sm text-gms-text",
+                    "flex cursor-pointer items-center gap-2 px-4 py-2 text-gms-body text-gms-text",
                     index === activeIndex && "bg-gms-surface-sunken",
                   )}
                 >

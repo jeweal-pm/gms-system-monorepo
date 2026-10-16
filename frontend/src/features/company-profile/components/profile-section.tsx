@@ -13,10 +13,10 @@ export function ProfileSection({ id, title, description, children }: Readonly<{ 
       className="grid grid-cols-1 gap-x-16 gap-y-4 border-t border-gms-border py-6 first:border-t-0 first:pt-2 lg:grid-cols-[240px_minmax(0,860px)] xl:grid-cols-[330px_minmax(0,860px)]"
     >
       <div>
-        <h2 id={titleId} className="text-[15px] leading-5 font-normal text-gms-text">
+        <h2 id={titleId} className="text-gms-heading font-normal text-gms-text">
           {title}
         </h2>
-        {description && <p className="mt-1.5 text-[13px] leading-[18px] text-gms-text-secondary">{description}</p>}
+        {description && <p className="mt-1.5 text-gms-label text-gms-text-secondary">{description}</p>}
       </div>
       <div className="min-w-0">{children}</div>
     </section>

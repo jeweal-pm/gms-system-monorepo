@@ -128,7 +128,7 @@ function useRailTooltip(label: string, menu?: React.ReactNode) {
       onClick={(event) => {
         if (event.target instanceof Element && event.target.closest("a[href]")) hide();
       }}
-      className="fixed inset-auto m-0 min-w-[188px] overflow-visible rounded-gms-md border-0 bg-gms-tooltip p-1.5 text-[13px] leading-[18px] text-gms-on-primary shadow-gms-overlay"
+      className="fixed inset-auto m-0 min-w-[188px] overflow-visible rounded-gms-md border-0 bg-gms-tooltip p-1.5 text-gms-label text-gms-on-primary shadow-gms-overlay"
     >
       <span aria-hidden className="absolute top-(--rail-arrow-top) -left-[3px] size-2 -translate-y-1/2 rotate-45 bg-gms-tooltip" />
       <div className="relative">{menu}</div>
@@ -138,7 +138,7 @@ function useRailTooltip(label: string, menu?: React.ReactNode) {
       ref={tipRef}
       popover="manual"
       aria-hidden
-      className="pointer-events-none fixed inset-auto m-0 -translate-y-1/2 overflow-visible rounded-md border-0 bg-gms-tooltip px-3 py-[7px] text-[13px] leading-[18px] whitespace-nowrap text-gms-on-primary"
+      className="pointer-events-none fixed inset-auto m-0 -translate-y-1/2 overflow-visible rounded-md border-0 bg-gms-tooltip px-3 py-[7px] text-gms-label whitespace-nowrap text-gms-on-primary"
     >
       <span className="absolute top-1/2 -left-[3px] size-2 -translate-y-1/2 rotate-45 bg-gms-tooltip" />
       <span className="relative">{label}</span>

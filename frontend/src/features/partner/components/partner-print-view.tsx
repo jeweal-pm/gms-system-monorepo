@@ -47,7 +47,7 @@ type PartnerPrintViewProps = {
 
 function Row({ label, value }: { label: string; value: string | null | undefined }) {
   return (
-    <div className="grid grid-cols-[180px_1fr] gap-3 py-1 text-sm">
+    <div className="grid grid-cols-[180px_1fr] gap-3 py-1 text-gms-body">
       <dt className="font-semibold">{label}</dt>
       <dd>{value && value.trim() !== "" ? value : "-"}</dd>
     </div>
@@ -57,12 +57,12 @@ function Row({ label, value }: { label: string; value: string | null | undefined
 function AddressBlock({ section, countryLabel }: { section: PrintAddressSection; countryLabel: (code: string) => string }) {
   return (
     <section className="mt-6 break-inside-avoid-page">
-      <h2 className="border-b border-black pb-1 text-base font-semibold">{`${section.title} (${section.addresses.length})`}</h2>
+      <h2 className="border-b border-black pb-1 text-gms-heading font-semibold">{`${section.title} (${section.addresses.length})`}</h2>
       {[...section.addresses]
         .sort((a, b) => a.position - b.position)
         .map((address) => (
           <div key={address.id} className="mt-3 break-inside-avoid">
-            <h3 className="text-sm font-semibold">{`#${address.position}${address.isDefault ? " (Default)" : ""}`}</h3>
+            <h3 className="text-gms-body font-semibold">{`#${address.position}${address.isDefault ? " (Default)" : ""}`}</h3>
             <dl>
               <Row label={section.nameLabel} value={address.name} />
               {section.withTaxId && <Row label="Tax ID" value={address.taxId} />}
@@ -93,11 +93,11 @@ export function PartnerPrintView({ entity, partner, addressSections, currencyLab
   return createPortal(
     <div className={`${styles.printRoot} bg-white p-8 text-black`}>
       <header className="flex items-baseline justify-between border-b-2 border-black pb-2">
-        <h1 className="text-xl font-semibold">{`${entity.singular} ${partner.name}`}</h1>
-        <p className="text-xs">{printedAt ? `Printed ${printedAt}` : ""}</p>
+        <h1 className="text-gms-title font-semibold">{`${entity.singular} ${partner.name}`}</h1>
+        <p className="text-gms-label">{printedAt ? `Printed ${printedAt}` : ""}</p>
       </header>
       <section className="mt-4">
-        <h2 className="border-b border-black pb-1 text-base font-semibold">{`${entity.singular} Information`}</h2>
+        <h2 className="border-b border-black pb-1 text-gms-heading font-semibold">{`${entity.singular} Information`}</h2>
         <dl className="mt-2">
           <Row label="Code Name" value={partner.code} />
           <Row label="Name" value={partner.name} />

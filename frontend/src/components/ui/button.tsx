@@ -32,7 +32,7 @@ export function Button({ variant = "secondary", icon, loading = false, loadingLa
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={cx(
-        "inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-gms-md px-4 text-[15px] font-medium transition-colors disabled:cursor-not-allowed",
+        "inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-gms-md px-4 text-gms-body font-medium transition-colors disabled:cursor-not-allowed",
         loading ? "" : "disabled:opacity-40",
         variantClass[variant],
         focusRing,
@@ -79,7 +79,7 @@ export function IconButton({ label, className, children, type = "button", unavai
         <span
           id={tooltipId}
           role="tooltip"
-          className="pointer-events-none absolute right-0 top-full z-40 mt-1 hidden whitespace-nowrap rounded-gms-sm bg-gms-text px-2 py-1 text-xs text-gms-on-primary group-focus-within:block group-hover:block"
+          className="pointer-events-none absolute right-0 top-full z-40 mt-1 hidden whitespace-nowrap rounded-gms-sm bg-gms-text px-2 py-1 text-gms-label text-gms-on-primary group-focus-within:block group-hover:block"
         >
           {unavailableReason}
         </span>

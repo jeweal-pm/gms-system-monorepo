@@ -89,6 +89,7 @@ export type RailModule = { id: string; label: string; icon: LucideIcon } & ({ ki
  */
 export const setupOwnedPlaceholders = [
   { slug: "notifications", label: "Notifications", masterCode: false },
+  { slug: "document-setup", label: "Document Setup", masterCode: false },
   { slug: "currency", label: "Currency", masterCode: true },
   { slug: "stone-master", label: "Stone Master", masterCode: true },
   { slug: "location-master", label: "Location Master", masterCode: true },

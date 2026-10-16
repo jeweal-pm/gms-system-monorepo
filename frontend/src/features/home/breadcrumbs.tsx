@@ -9,7 +9,7 @@ import type { Breadcrumb } from "./navigation";
 export function Breadcrumbs({ items }: Readonly<{ items: Breadcrumb[] }>) {
   return (
     <nav aria-label="Breadcrumb" className="min-w-0">
-      <ol className="flex min-w-0 items-center gap-2 text-[13px] leading-5">
+      <ol className="flex min-w-0 items-center gap-2 text-gms-label leading-5">
         {items.map((item, index) => {
           const isCurrent = index === items.length - 1;
           return (

@@ -65,7 +65,7 @@ function CompanyProfileLoader({ access }: { access: PartnerAccess }) {
     return (
       <div className="px-6 pt-6">
         <div role="alert" className="flex max-w-xl flex-col items-start gap-3 rounded-gms-lg border border-gms-border bg-gms-surface p-6">
-          <p className="text-sm text-gms-text">Couldn&apos;t load the company profile.</p>
+          <p className="text-gms-body text-gms-text">Couldn&apos;t load the company profile.</p>
           <Button onClick={() => void query.refetch()}>Retry</Button>
         </div>
       </div>
@@ -233,23 +233,23 @@ function CompanyProfileWorkspace({ access, saved, refetch }: { access: PartnerAc
 
       <form id={FORM_ID} noValidate onSubmit={handleSubmit(save, focusFirstError)} className="lg:pl-10">
         <ProfileSection id="company-details" title="Details">
-          <p className="mb-2 text-sm text-gms-text">Company Logo</p>
+          <p className="mb-2 text-gms-label font-semibold text-gms-text">Company Logo</p>
           <LogoUploadTile id="cp-logo" value={logo} savedUrl={logoUrl(saved)} onChange={setLogo} readOnly={readOnly} />
 
-          <h3 className="mt-8 mb-5 text-[15px] leading-5 font-medium text-gms-text">General Information</h3>
+          <h3 className="mt-8 mb-5 text-gms-heading font-medium text-gms-text">General Information</h3>
           <div className={fieldGrid}>
-            <TextField id="cp-name" label="Name/Company Name" required autoComplete="organization" error={errors.name?.message} {...fieldProps} {...register("name")} />
-            <TextField id="cp-taxId" label="Tax ID" autoComplete="off" error={errors.taxId?.message} {...fieldProps} {...register("taxId")} />
-            <TextField id="cp-contactName" label="Contact Person Name" required autoComplete="name" error={errors.contactName?.message} {...fieldProps} {...register("contactName")} />
+            <TextField labelPosition="above" id="cp-name" label="Name/Company Name" required autoComplete="organization" error={errors.name?.message} {...fieldProps} {...register("name")} />
+            <TextField labelPosition="above" id="cp-taxId" label="Tax ID" autoComplete="off" error={errors.taxId?.message} {...fieldProps} {...register("taxId")} />
+            <TextField labelPosition="above" id="cp-contactName" label="Contact Person Name" required autoComplete="name" error={errors.contactName?.message} {...fieldProps} {...register("contactName")} />
             <Controller
               control={control}
               name="phone"
               render={({ field }) => (
-                <PhoneField id="cp-phone" label="Phone No." required value={field.value} onChange={field.onChange} onBlur={field.onBlur} inputRef={field.ref} error={errors.phone?.message} readOnly={readOnly} />
+                <PhoneField labelPosition="above" id="cp-phone" label="Phone No." required value={field.value} onChange={field.onChange} onBlur={field.onBlur} inputRef={field.ref} error={errors.phone?.message} readOnly={readOnly} />
               )}
             />
-            <TextField id="cp-email" label="Email" type="email" required autoComplete="email" error={errors.email?.message} {...fieldProps} {...register("email")} />
-            <TextField
+            <TextField labelPosition="above" id="cp-email" label="Email" type="email" required autoComplete="email" error={errors.email?.message} {...fieldProps} {...register("email")} />
+            <TextField labelPosition="above"
               id="cp-website"
               label="Website"
               type="url"
@@ -269,28 +269,40 @@ function CompanyProfileWorkspace({ access, saved, refetch }: { access: PartnerAc
 
         <ProfileSection id="company-address" title="Address" description="Manage company address and contact information.">
           <div className={fieldGrid}>
-            <TextField id="cp-address" label="Address" required autoComplete="address-line1" className="md:col-span-2" error={errors.address?.message} {...fieldProps} {...register("address")} />
-            <TextField id="cp-address2" label="Address Line 2 (optional)" autoComplete="address-line2" className="md:col-span-2" error={errors.address2?.message} {...fieldProps} {...register("address2")} />
-            <SelectField
-              id="cp-countryCode"
-              label="Country"
-              required
-              placeholder="Select country"
-              autoComplete="country"
-              options={options.data?.countries ?? []}
-              status={optionList.status}
-              onRetry={optionList.onRetry}
-              error={errors.countryCode?.message}
-              readOnly={readOnly}
-              {...register("countryCode", {
-                // State and City belong to the chosen country: clear them when it changes (partner DV-04).
-                onChange: () => {
-                  setValue("state", "", { shouldDirty: true });
-                  setValue("city", "", { shouldDirty: true });
-                },
-              })}
+            <TextField labelPosition="above" id="cp-address" label="Address" required autoComplete="address-line1" className="md:col-span-2" error={errors.address?.message} {...fieldProps} {...register("address")} />
+            <TextField labelPosition="above" id="cp-address2" label="Address Line 2 (optional)" autoComplete="address-line2" className="md:col-span-2" error={errors.address2?.message} {...fieldProps} {...register("address2")} />
+            {/* Controlled: the options load after the form, so an uncontrolled select would lose the saved
+                value and keep the placeholder colour (owner screenshot 2026-10-16). */}
+            <Controller
+              control={control}
+              name="countryCode"
+              render={({ field }) => (
+                <SelectField
+                  labelPosition="above"
+                  id="cp-countryCode"
+                  label="Country"
+                  required
+                  placeholder="Select country"
+                  autoComplete="country"
+                  options={options.data?.countries ?? []}
+                  status={optionList.status}
+                  onRetry={optionList.onRetry}
+                  error={errors.countryCode?.message}
+                  readOnly={readOnly}
+                  ref={field.ref}
+                  name={field.name}
+                  value={field.value}
+                  onBlur={field.onBlur}
+                  onChange={(event) => {
+                    field.onChange(event.target.value);
+                    // State and City belong to the chosen country: clear them when it changes (partner DV-04).
+                    setValue("state", "", { shouldDirty: true });
+                    setValue("city", "", { shouldDirty: true });
+                  }}
+                />
+              )}
             />
-            <TextField
+            <TextField labelPosition="above"
               id="cp-state"
               label="State/Province"
               required
@@ -301,7 +313,7 @@ function CompanyProfileWorkspace({ access, saved, refetch }: { access: PartnerAc
               {...fieldProps}
               {...register("state")}
             />
-            <TextField
+            <TextField labelPosition="above"
               id="cp-city"
               label="City"
               required
@@ -312,24 +324,35 @@ function CompanyProfileWorkspace({ access, saved, refetch }: { access: PartnerAc
               {...fieldProps}
               {...register("city")}
             />
-            <TextField id="cp-postcode" label="Postcode" required autoComplete="postal-code" error={errors.postcode?.message} {...fieldProps} {...register("postcode")} />
+            <TextField labelPosition="above" id="cp-postcode" label="Postcode" required autoComplete="postal-code" error={errors.postcode?.message} {...fieldProps} {...register("postcode")} />
           </div>
         </ProfileSection>
 
         <ProfileSection id="company-currency" title="Company Currency">
           <div className={fieldGrid}>
             {/* DV-01: the design labels this "Contact Person Name"; it is the company currency. */}
-            <SelectField
-              id="cp-currencyCode"
-              label="Currency"
-              required
-              placeholder="Select currency"
-              options={options.data?.currencies ?? []}
-              status={optionList.status}
-              onRetry={optionList.onRetry}
-              error={errors.currencyCode?.message}
-              readOnly={readOnly}
-              {...register("currencyCode")}
+            <Controller
+              control={control}
+              name="currencyCode"
+              render={({ field }) => (
+                <SelectField
+                  labelPosition="above"
+                  id="cp-currencyCode"
+                  label="Currency"
+                  required
+                  placeholder="Select currency"
+                  options={options.data?.currencies ?? []}
+                  status={optionList.status}
+                  onRetry={optionList.onRetry}
+                  error={errors.currencyCode?.message}
+                  readOnly={readOnly}
+                  ref={field.ref}
+                  name={field.name}
+                  value={field.value}
+                  onBlur={field.onBlur}
+                  onChange={(event) => field.onChange(event.target.value)}
+                />
+              )}
             />
           </div>
         </ProfileSection>
@@ -413,8 +436,8 @@ function CompanyProfileHeader({
 }: Readonly<{ mode: Mode; canEdit: boolean; submitting: boolean; refreshing: boolean; onCancel: () => void; onEdit: () => void; onRefresh: () => void }>) {
   const editing = mode !== "view" && canEdit;
   return (
-    <div className="sticky top-0 z-10 -mx-4 mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 bg-gms-surface px-4 pt-6 pb-3 sm:-mx-6 sm:px-6">
-      <h1 className="text-[28px] leading-9 font-medium text-gms-text-heading">Company Profile</h1>
+    <div className="sticky top-0 z-20 -mx-4 mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 bg-gms-surface px-4 pt-6 pb-3 sm:-mx-6 sm:px-6">
+      <h1 className="text-gms-title font-medium text-gms-text-heading">Company Profile</h1>
       <div className="flex flex-col items-end gap-3">
         <div className="flex items-center gap-1">
           <IconButton label="Print company profile" unavailableReason="Printing isn't available yet">

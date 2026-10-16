@@ -114,7 +114,7 @@ export function LabeledCheckbox({ id, label, checked, onChange, locked = false, 
   const [attempted, setAttempted] = useState(false);
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      <label htmlFor={id} className={cx("inline-flex items-center gap-2.5 text-[15px] text-gms-text", blocked ? "cursor-default" : "cursor-pointer")}>
+      <label htmlFor={id} className={cx("inline-flex items-center gap-2.5 text-gms-body text-gms-text", blocked ? "cursor-default" : "cursor-pointer")}>
         <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center">
           <input
             ref={inputRef}
@@ -141,7 +141,7 @@ export function LabeledCheckbox({ id, label, checked, onChange, locked = false, 
         {label}
       </label>
       {hasHint && (
-        <span id={`${id}-hint`} className={cx("text-xs text-gms-text-secondary", !attempted && "sr-only")}>
+        <span id={`${id}-hint`} className={cx("text-gms-label text-gms-text-secondary", !attempted && "sr-only")}>
           {hint}
         </span>
       )}

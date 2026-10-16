@@ -43,8 +43,8 @@ function PhotoTile({ onClick, disabled }: { onClick: () => void; disabled?: bool
       )}
     >
       <ImagePlus size={28} strokeWidth={1.5} className="mb-1 text-gms-text" aria-hidden />
-      <span className="text-[13px] font-semibold text-gms-text">Upload photo</span>
-      <span className="text-xs text-gms-text-secondary">JPEG or PNG only</span>
+      <span className="text-gms-label font-semibold text-gms-text">Upload photo</span>
+      <span className="text-gms-label text-gms-text-secondary">JPEG or PNG only</span>
     </button>
   );
 }
@@ -87,7 +87,7 @@ export function PersonalInformationCard({ mode, form, locations, superAdmin, isS
   );
 
   return (
-    <Card title="Personal Information" titleId="personal-information-title" titleClassName="text-lg font-medium text-gms-text" trailing={activeSwitch}>
+    <Card title="Personal Information" titleId="personal-information-title" titleClassName="text-gms-heading font-medium text-gms-text" trailing={activeSwitch}>
       <div className="flex flex-col gap-6 sm:flex-row">
         <PhotoTile onClick={onPhotoClick} disabled={readOnly} />
         <div className={grid}>

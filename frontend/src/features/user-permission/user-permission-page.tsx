@@ -67,7 +67,7 @@ function AccessGuard() {
     return (
       <PageFrame>
         <div role="alert" className="flex flex-col items-start gap-3 rounded-gms-lg border border-gms-border bg-gms-surface p-6">
-          <p className="text-sm text-gms-text">{message}</p>
+          <p className="text-gms-body text-gms-text">{message}</p>
           <Button onClick={() => void mine.refetch()}>Retry</Button>
         </div>
       </PageFrame>
@@ -79,11 +79,11 @@ function AccessGuard() {
       <PageFrame>
         <section aria-labelledby="access-denied-title" className="flex flex-col items-start gap-3 rounded-gms-lg border border-gms-border bg-gms-surface p-8">
           <ShieldAlert size={28} className="text-gms-text-secondary" aria-hidden />
-          <h1 id="access-denied-title" className="text-xl font-medium text-gms-text-heading">
+          <h1 id="access-denied-title" className="text-gms-title font-medium text-gms-text-heading">
             You don&apos;t have access to User and permission
           </h1>
-          <p className="text-sm text-gms-text-secondary">Only a Super Admin can manage users and permissions.</p>
-          <Link href="/" className={cx("mt-2 rounded-gms-md border border-gms-border px-4 py-2 text-sm font-medium text-gms-text hover:bg-gms-surface-sunken", focusRing)}>
+          <p className="text-gms-body text-gms-text-secondary">Only a Super Admin can manage users and permissions.</p>
+          <Link href="/" className={cx("mt-2 rounded-gms-md border border-gms-border px-4 py-2 text-gms-body font-medium text-gms-text hover:bg-gms-surface-sunken", focusRing)}>
             Back to Home
           </Link>
         </section>
@@ -314,7 +314,7 @@ function UserPermissionWorkspace() {
 
           {selectedUserId !== null && detail.isError ? (
             <div role="alert" className="flex flex-col items-start gap-3 rounded-gms-lg border border-gms-border bg-gms-surface p-6">
-              <p className="text-sm text-gms-text">{loadErrorMessage(detail.error, "this user")}</p>
+              <p className="text-gms-body text-gms-text">{loadErrorMessage(detail.error, "this user")}</p>
               {!detailNotFound && <Button onClick={() => void detail.refetch()}>Retry</Button>}
             </div>
           ) : !showForm ? (
@@ -331,7 +331,7 @@ function UserPermissionWorkspace() {
               aria-label={mode === "create" ? "Create user" : mode === "edit" ? "Edit user" : "User details"}
             >
               {formError && (
-                <p role="alert" className="rounded-gms-md border border-gms-danger bg-gms-danger-subtle px-4 py-3 text-sm text-gms-danger">
+                <p role="alert" className="rounded-gms-md border border-gms-danger bg-gms-danger-subtle px-4 py-3 text-gms-body text-gms-danger">
                   {formError}
                 </p>
               )}
@@ -370,8 +370,8 @@ function UserPermissionWorkspace() {
           aria-label={drawerOpen ? "Hide users panel" : "Show users panel"}
           onClick={() => setDrawerOpen((open) => !open)}
           className={cx(
-            "absolute top-4 z-20 flex h-10 w-6 items-center justify-center rounded-l-gms-sm bg-gms-primary-strong text-gms-on-primary print:hidden",
-            drawerOpen ? "right-80" : "right-0",
+            "absolute top-4 z-40 flex h-10 w-6 items-center justify-center rounded-l-gms-sm bg-gms-primary-strong text-gms-on-primary print:hidden",
+            drawerOpen ? "max-sm:hidden sm:right-80" : "right-0",
             focusRing,
           )}
         >

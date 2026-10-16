@@ -19,7 +19,7 @@ export function Switch({ id, label, checked, onChange, readOnly = false, disable
   const locked = readOnly || disabled;
   return (
     <div className="flex items-center gap-2">
-      {hint && <span id={`${id}-hint`} className="text-xs text-gms-text-secondary">{hint}</span>}
+      {hint && <span id={`${id}-hint`} className="text-gms-label text-gms-text-secondary">{hint}</span>}
       <button
         id={id}
         type="button"
@@ -42,7 +42,7 @@ export function Switch({ id, label, checked, onChange, readOnly = false, disable
       >
         <span className={cx("inline-block h-[18px] w-[18px] rounded-full bg-gms-surface transition-transform", checked ? "translate-x-[19px]" : "translate-x-[3px]")} />
       </button>
-      <span id={`${id}-label`} className="text-[13px] text-gms-text">{label}</span>
+      <span id={`${id}-label`} className="text-gms-label text-gms-text">{label}</span>
     </div>
   );
 }

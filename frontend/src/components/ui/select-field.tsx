@@ -3,7 +3,7 @@
 import { ChevronDown } from "lucide-react";
 import type { Ref, SelectHTMLAttributes } from "react";
 import { cx } from "./button";
-import { FieldShell, fieldBoxClass, fieldFocusClass } from "./outlined-field";
+import { FieldShell, fieldBoxClass, fieldFocusClass, type LabelPosition } from "./outlined-field";
 
 export type SelectOption = { value: string; label: string };
 
@@ -21,6 +21,7 @@ type SelectFieldProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, "id" | "ch
   /** Shown with a Retry action when `status` is "error". */
   loadErrorMessage?: string;
   onRetry?: () => void;
+  labelPosition?: LabelPosition;
   ref?: Ref<HTMLSelectElement>;
 };
 
@@ -40,6 +41,7 @@ export function SelectField({
   status = "ready",
   loadErrorMessage = "Couldn't load the list.",
   onRetry,
+  labelPosition,
   className,
   ref,
   value,
@@ -49,7 +51,7 @@ export function SelectField({
   const loading = status === "loading";
   const describedBy = [error ? `${id}-error` : null, status === "error" ? `${id}-load-error` : null].filter(Boolean).join(" ") || undefined;
   return (
-    <FieldShell id={id} label={label} required={required} error={error} className={className}>
+    <FieldShell id={id} label={label} required={required} error={error} readOnly={readOnly} disabled={disabled} labelPosition={labelPosition} className={className}>
       <div className="relative">
         <select
           ref={ref}
@@ -97,7 +99,7 @@ export function SelectField({
         )}
       </div>
       {status === "error" && (
-        <p id={`${id}-load-error`} className="mt-1 flex flex-wrap items-center gap-x-2 pl-4 text-[13px] leading-[18px] text-gms-danger">
+        <p id={`${id}-load-error`} className="mt-1 flex flex-wrap items-center gap-x-2 pl-4 text-gms-label text-gms-danger">
           {loadErrorMessage}
           {onRetry && (
             <button type="button" onClick={onRetry} className="font-medium text-gms-primary underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-gms-primary">
