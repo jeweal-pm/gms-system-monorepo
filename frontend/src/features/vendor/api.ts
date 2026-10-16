@@ -43,7 +43,10 @@ export function toFormValues(detail: VendorDetail): VendorFormValues {
   };
 }
 
-/** Duplicate (FE-VEN-009): the saved vendor without Code Name and without address IDs. */
+/**
+ * Duplicate (FE-VEN-009): the saved vendor without Code Name and without address IDs.
+ * The empty Code Name is then prefilled with `vendor.nextCode` (ADR-0021 §2).
+ */
 export function toDuplicateValues(detail: VendorDetail): VendorFormValues {
   const values = toFormValues(detail);
   return { ...values, code: "", invoiceAddresses: values.invoiceAddresses.map((address) => ({ ...address, id: null })) };
@@ -61,7 +64,7 @@ const nullIfEmpty = (value: string) => {
 export function toVendorFields(values: VendorFormValues): VendorFieldsInput {
   return {
     name: values.name.trim(),
-    code: nullIfEmpty(values.code),
+    code: values.code.trim(), // required (ADR-0021 §1)
     currencyCode: values.currencyCode,
     active: values.active,
     firstName: values.firstName.trim(),
@@ -124,6 +127,8 @@ export type SaveErrorOutcome = {
   recheckAccess?: boolean;
   refetchOptions?: boolean;
   refetchList?: boolean;
+  /** VENDOR_CODE_TAKEN: request a new suggested Code Name (ADR-0021 §2). */
+  refetchNextCode?: boolean;
   /**
    * Create failed without a definite answer (timeout / service unavailable): the vendor may have
    * been created (create is not idempotent). Refresh the list before allowing a retry (customer
@@ -142,7 +147,8 @@ export function mapSaveError(error: unknown, action: "create" | "edit"): SaveErr
   const { domainCode, fieldErrors } = readVendorError(error);
   switch (domainCode) {
     case "VENDOR_CODE_TAKEN":
-      return { fieldErrors: [{ name: "code", message: "This code name is already in use" }], formError: null };
+      // ADR-0021 §2: the suggestion is not reserved; refetch `nextCode` for a fresh one.
+      return { fieldErrors: [{ name: "code", message: "This code name is already in use" }], formError: null, refetchNextCode: true };
     case "VALIDATION_ERROR": {
       const mapped = fieldErrors.map((entry) => mapServerFieldError(entry.path, entry.code)).filter((entry): entry is MappedFieldError => entry !== null);
       const multipleDefaults = fieldErrors.some((entry) => entry.code === "multiple_defaults");

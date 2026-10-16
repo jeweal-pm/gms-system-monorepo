@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { validationException } from "../common/errors";
 import { membershipErrors as sharedMembershipErrors } from "../common/partner-schemas";
-import { addressDetail, listPage, scalarData, scalarDetail, SCALAR_FIELDS, WRITE_TX } from "../common/persistence";
+import { addressDetail, listPage, nextPartnerCode, scalarData, scalarDetail, SCALAR_FIELDS, WRITE_TX } from "../common/persistence";
 import { OPTIONS_RESPONSE } from "../common/reference-data";
 import { prisma } from "../database/prisma-client";
 import { AddressType } from "../generated/prisma/client";
@@ -51,6 +51,11 @@ export class CustomerService {
 
   list(query: ListQuery) {
     return listPage("customer", query, mapPersistenceError);
+  }
+
+  /** ADR-0021 §2: suggested next running Code Name (`C001` …); not reserved. */
+  nextCode() {
+    return nextPartnerCode("customer", mapPersistenceError);
   }
 
   async get(id: string) {

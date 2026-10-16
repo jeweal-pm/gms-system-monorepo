@@ -1,10 +1,9 @@
 "use client";
 
-import { ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import type { Ref } from "react";
 import { Controller, useFormState, useWatch, type FieldValues, type UseFormReturn } from "react-hook-form";
 import { cx, focusRing } from "@/components/ui/button";
-import { Badge } from "@/components/ui/card";
 import { LabeledCheckbox } from "@/components/ui/checkbox";
 import { TextField } from "@/components/ui/outlined-field";
 import { SelectField } from "@/components/ui/select-field";
@@ -31,15 +30,14 @@ type AddressItemProps<TForm extends FieldValues & PartnerAddressValues> = {
   layout: AddressLayout;
   defaultRule: DefaultRule;
   index: number;
-  expanded: boolean;
   hasErrors: boolean;
   readOnly: boolean;
   options: OptionsState;
-  onToggle: () => void;
-  /** Absent for item #1 and in read-only mode. */
+  /** Absent when the item cannot be removed (item #1); the trash icon then renders disabled. */
   onRemove?: () => void;
   onDefaultChange: (checked: boolean) => void;
-  headerButtonRef?: Ref<HTMLButtonElement>;
+  /** The "Set as default address" checkbox; the list focuses it after the next item is removed. */
+  defaultInputRef?: Ref<HTMLInputElement>;
 };
 
 const gridClass: Record<AddressLayout, string> = {
@@ -64,9 +62,12 @@ function spans(layout: AddressLayout, withTaxId: boolean) {
 }
 
 /**
- * Partner C-10 (customer FE-CUS-007, vendor FE-VEN-006): one accordion address item. The frame
- * turns red while any field has an error (DV-12), with a "Has errors" tag when collapsed so color
- * is not the only signal (P-07).
+ * Partner C-10 (customer FE-CUS-007 / rev 3 FE-CUS-R3-002, vendor FE-VEN-006 / rev 4 FE-VEN-R4-002):
+ * one address card. Rev 3/4 design: the "#N" label sits outside the card on the left; the light gray,
+ * rounded card has no collapse chevron and no "Default" badge. Its first row holds the
+ * "Set as default address" checkbox (left) and the red trash icon (right); the field grid follows.
+ * The frame turns red while any field has an error (DV-12). In read-only mode the checkbox and the
+ * trash icon are shown disabled.
  */
 export function AddressItem<TForm extends FieldValues & PartnerAddressValues>({
   form,
@@ -75,14 +76,12 @@ export function AddressItem<TForm extends FieldValues & PartnerAddressValues>({
   layout,
   defaultRule,
   index,
-  expanded,
   hasErrors,
   readOnly,
   options,
-  onToggle,
   onRemove,
   onDefaultChange,
-  headerButtonRef,
+  defaultInputRef,
 }: AddressItemProps<TForm>) {
   const { control, register } = form as unknown as UseFormReturn<AddressForm>;
   const arrayName = type.arrayName;
@@ -92,46 +91,45 @@ export function AddressItem<TForm extends FieldValues & PartnerAddressValues>({
   const hasCountry = countryCode !== "";
   const title = `${type.itemLabel} #${index + 1}`;
   const itemId = `${idPrefix}-${type.key}-${index}`;
-  const bodyId = `${itemId}-body`;
   const section = type.autofillSection;
   const span = spans(layout, type.withTaxId);
   const regionPlaceholder = (text: string) => (hasCountry ? text : "Choose a country first");
+  // `exactlyOne` (customer): the current default cannot be unticked; ticking another one moves it.
   const locked = defaultRule === "exactlyOne" && isDefault;
+  const removeLabel = `Remove ${type.itemLabel.toLowerCase()} #${index + 1}`;
+  const canRemove = Boolean(onRemove) && !readOnly;
+  const removeHint = readOnly ? undefined : index === 0 ? `The first ${type.itemLabel.toLowerCase()} cannot be removed` : undefined;
 
   return (
-    <fieldset className={cx("min-w-0 rounded-gms-md border bg-gms-page", hasErrors ? "border-gms-danger" : "border-gms-border")}>
-      <legend className="sr-only">{title}</legend>
-      <div className={cx("flex min-h-[46px] items-center justify-between gap-3 pl-2 pr-3", expanded && "border-b border-gms-border")}>
-        <button
-          ref={headerButtonRef}
-          type="button"
-          aria-expanded={expanded}
-          aria-controls={bodyId}
-          aria-label={title}
-          onClick={onToggle}
-          className={cx("flex min-h-[38px] min-w-0 flex-1 items-center gap-3 rounded-gms-sm px-2 text-left", focusRing)}
-        >
-          {expanded ? <ChevronDown size={18} className="shrink-0 text-gms-text" aria-hidden /> : <ChevronRight size={18} className="shrink-0 text-gms-text" aria-hidden />}
-          <span className="text-[15px] font-semibold text-gms-text">{`#${index + 1}`}</span>
-          {hasErrors && !expanded && <span className="text-xs font-medium text-gms-danger">Has errors</span>}
-        </button>
-        <div className="flex shrink-0 items-center gap-2">
-          {isDefault && <Badge variant="default">Default</Badge>}
-          {onRemove && (
-            <button
-              type="button"
-              aria-label={`Remove ${type.itemLabel.toLowerCase()} #${index + 1}`}
-              title={`Remove ${type.itemLabel.toLowerCase()} #${index + 1}`}
-              onClick={onRemove}
-              className={cx("inline-flex h-8 w-8 items-center justify-center rounded-gms-sm text-gms-danger hover:bg-gms-danger-subtle", focusRing)}
-            >
-              <Trash2 size={18} aria-hidden />
-            </button>
-          )}
+    <div className="flex min-w-0 items-start gap-3 @min-[28rem]:gap-4">
+      <span aria-hidden className="w-7 shrink-0 pt-4 text-[15px] font-semibold text-gms-text @min-[28rem]:w-9">{`#${index + 1}`}</span>
+      <fieldset className={cx("@container min-w-0 flex-1 rounded-gms-lg border bg-gms-page px-4 pb-4 pt-3", hasErrors ? "border-gms-danger" : "border-transparent")}>
+        <legend className="sr-only">{title}</legend>
+        <div className="mb-4 flex min-h-[38px] items-center justify-between gap-3">
+          <LabeledCheckbox
+            id={`${itemId}-default`}
+            label="Set as default address"
+            checked={isDefault}
+            locked={locked}
+            hint={defaultRule === "exactlyOne" ? "One address must be the default" : undefined}
+            readOnly={readOnly}
+            onChange={onDefaultChange}
+            inputRef={defaultInputRef}
+          />
+          <button
+            type="button"
+            aria-label={removeLabel}
+            title={removeHint ?? removeLabel}
+            disabled={!canRemove}
+            onClick={canRemove ? onRemove : undefined}
+            className={cx(
+              "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-gms-sm text-gms-danger hover:bg-gms-danger-subtle disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent",
+              focusRing,
+            )}
+          >
+            <Trash2 size={18} aria-hidden />
+          </button>
         </div>
-      </div>
-
-      <div id={bodyId} hidden={!expanded} className="p-4">
         <div className={gridClass[layout]}>
           <TextField
             id={`${itemId}-name`}
@@ -216,18 +214,7 @@ export function AddressItem<TForm extends FieldValues & PartnerAddressValues>({
             {...register(`${base}.postcode`)}
           />
         </div>
-        <div className="mt-5">
-          <LabeledCheckbox
-            id={`${itemId}-default`}
-            label="Set as default address"
-            checked={isDefault}
-            locked={locked}
-            hint={defaultRule === "exactlyOne" ? "One address must be the default" : undefined}
-            readOnly={readOnly}
-            onChange={onDefaultChange}
-          />
-        </div>
-      </div>
-    </fieldset>
+      </fieldset>
+    </div>
   );
 }

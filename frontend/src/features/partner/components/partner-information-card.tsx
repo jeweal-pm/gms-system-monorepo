@@ -43,7 +43,7 @@ export function PartnerInformationCard<TForm extends FieldValues & PartnerInfoVa
       }
     >
       <div className={grid}>
-        <TextField id={`${idPrefix}-code`} label="Code Name" autoComplete="off" readOnly={readOnly} error={errors.code?.message} {...register("code")} />
+        <TextField id={`${idPrefix}-code`} label="Code Name" required autoComplete="off" readOnly={readOnly} error={errors.code?.message} {...register("code")} />
         <TextField id={`${idPrefix}-name`} label="Name" required autoComplete="organization" readOnly={readOnly} error={errors.name?.message} {...register("name")} />
         <Controller
           control={control}

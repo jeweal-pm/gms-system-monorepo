@@ -38,6 +38,14 @@ export function useCustomerTotal(): number | undefined {
   return list.data?.pages[0]?.total;
 }
 
+/**
+ * ADR-0021 §2: suggested next Code Name (`{ code: "C001" }`). Requested only in create mode with
+ * ADD (the gateway requires `customer:ADD`); always refetched when create mode starts, never polled.
+ */
+export function useCustomerNextCode(enabled: boolean) {
+  return trpc.customer.nextCode.useQuery(undefined, { enabled, staleTime: 0, gcTime: 60_000, retry: retryTransient, refetchOnWindowFocus: false });
+}
+
 export function useCustomerDetail(id: string | null) {
   return trpc.customer.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient });
 }

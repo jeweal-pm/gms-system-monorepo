@@ -8,7 +8,7 @@ import { CustomerService } from "./customer.service";
 
 /**
  * Internal REST for the gateway only (api-contract.md "Internal REST contract"). The global
- * ServiceTokenGuard has already authenticated the caller. `options` is declared before `:id`.
+ * ServiceTokenGuard has already authenticated the caller. `options` and `next-code` are declared before `:id`.
  */
 @Controller("internal/v1/customers")
 export class CustomerController {
@@ -22,6 +22,12 @@ export class CustomerController {
   @Get("options")
   options() {
     return this.customers.options();
+  }
+
+  /** ADR-0021: declared before `:id` so `next-code` is never parsed as an ID. */
+  @Get("next-code")
+  nextCode() {
+    return this.customers.nextCode();
   }
 
   @Get(":id")

@@ -1,6 +1,6 @@
 # Frontend acceptance and verification: vendor
 
-- UI revision: 2 (revision 1 + owner answers Q-VEN-01/02/03; cases TC-VEN-06/07/08 updated for Q-VEN-03 on 2026-10-15)
+- UI revision: 4 ([revision 4 cases and checks](#revision-4-draft-row-and-address-card-checks-2026-10-16)); revision 3 = ADR-0021 ([revision 3 cases and checks](#revision-3-adr-0021-checks-2026-10-16)). TC-VEN-06, 07 (collapse part), 10 and the draft-row part of TC-VEN-11 are superseded by revision 4. Revision 2 = revision 1 + owner answers Q-VEN-01/02/03; cases TC-VEN-04, 11, 16 are superseded where revision 3 says so.
 - Reference images: [source/](source/) S1–S4, 1920×1080 CSS (assumed DPR 2)
 - TODO: [vendor.md](../../../task/todo/vendor.md); pattern cases: [customer testing](../customer/testing.md)
 - Checks discovered: `pnpm --filter frontend typecheck`, `lint`, `build` (run inside `f1-system-frontend-1`; the host has no `node_modules`). No unit/E2E runner is installed; pure logic can be checked with a throwaway Node script, which is not a test suite.
@@ -60,3 +60,45 @@ No browser was available in either run, so every visual, keyboard and interactio
 | TC-VEN-20 | FE-VEN-001 | After extraction | Run the customer journeys (TC-CUS-05…24) | Customer unchanged in look and behavior | 1920×1080 | not run in a browser (typecheck/lint pass; customer schema behavior unchanged per the Node check) |
 | TC-VEN-21 | FE-VEN-012 | — | 1280, 1024, 768, 390 px | Customer responsive rules; address grid 4 → 2 → 1 columns (card body ≥ 900 / ≥ 600 px); no horizontal page scroll | widths listed | not run |
 | TC-VEN-22 | all | — | Keyboard-only create, edit, duplicate, delete | Every control reachable with visible focus; dialogs trap and return focus | keyboard | not run |
+
+## Revision 4 (draft row and address card) checks, 2026-10-16
+
+One run covers customer revision 3 and vendor revision 4 (shared `features/partner/**`). The target → case map, commands
+and results are in [customer testing, revision 3](../customer/testing.md#revision-3-draft-row-and-address-card-checks-2026-10-16).
+Vendor-specific targets: `vendor/vendor-page.tsx` (`draft={access.add}`, removed accordion ref, `focusFirstError`) and
+`vendor/components/vendors-drawer.tsx` (prop type) — IT-R3-01/04; `atMostOne` default rule — UT-R3-02d, UT-R3-03c/e.
+
+Executed: typecheck exit 0; lint exit 0 (2 existing warnings); frontend restarted; GET `/setup/vendor` 200 (not signed
+in); throwaway logic check "New vendor" pass (not a suite). **Automated-testing status: not satisfied** (no runner;
+FE-VEN-R4-005 blocked). Browser cases below: not run.
+
+| Case ID | TODO | Starting state | User actions | Expected result | Evidence |
+|---|---|---|---|---|---|
+| TC-VEN-31 | FE-VEN-R4-001 | ADD, create mode, drawer open | Type a Code Name and a Name | Draft row stays "New vendor" / "Not saved yet" with the Draft badge | not run |
+| TC-VEN-32 | FE-VEN-R4-002 | Create mode | Compare the Invoice Address card with rev4-01/02 | "#1" outside on the left; gray rounded card, no chevron, no Default badge; first row checkbox + red trash; 4-column grid (VD-03) unchanged; dashed "+ Add another invoice address" | not run |
+| TC-VEN-33 | FE-VEN-R4-003 | Create mode, 3 items | Tick #2; tick #3; untick #3; tick #3 and remove #3 | Only one ticked at a time; unticking leaves none; removing the default leaves none; new vendor starts with #1 unticked | not run |
+| TC-VEN-34 | FE-VEN-R4-004 | Create / view mode | Inspect trash; switch to view | #1 trash disabled; #2 removable; view mode: checkbox and trash disabled | not run |
+
+## Revision 3 (ADR-0021) checks, 2026-10-16
+
+One run covers customer revision 2 and vendor revision 3 (shared `features/partner/**`). The target → case map, the
+commands and the full results are in [customer testing, revision 2](../customer/testing.md#revision-2-adr-0021-checks-2026-10-16).
+Vendor-specific targets: `vendor/api.ts` `toVendorFields` (UT-ADR21-04b), `mapSaveError` `VENDOR_CODE_TAKEN` →
+`refetchNextCode` (UT-ADR21-04d), `required` → "Code Name is required" (UT-ADR21-04f); `vendor/hooks.ts`
+`useVendorNextCode` (IT-ADR21-01/02); `vendor/vendor-page.tsx` modes and prefill (TC-VEN-23…29).
+
+Executed: typecheck exit 0; lint exit 0 (2 existing warnings); throwaway logic script 34/34 (not a suite); live tRPC
+15/15 including `vendor.nextCode` 200 `V001`, create with `V001`, `nextCode` → `V002`, `v001` → 409 `VENDOR_CODE_TAKEN`,
+blank → 400 `VALIDATION_ERROR code:"required"`, `list q=V001` finds it, cleanup delete 200; signed-in GET `/setup/vendor` 200.
+**Automated-testing status: not satisfied** (no runner; FE-VEN-018 blocked). Browser cases below: not run.
+
+| Case ID | TODO | Starting state | User actions | Expected result | Evidence |
+|---|---|---|---|---|---|
+| TC-VEN-23 | FE-VEN-014/015 | ADD+EDIT+DELETE, no selection | Open `/setup/vendor` | "Add Vendor", "Vendor List N"; Cancel/Save enabled; Create Vendor/Edit/Delete disabled; Code Name `*` prefilled `V…`; one Invoice Address card only | not run |
+| TC-VEN-24 | FE-VEN-014 | Saved vendor selected | Inspect | Title = vendor name; read-only; Create Vendor/Edit/Delete enabled; Cancel/Save disabled | not run |
+| TC-VEN-25 | FE-VEN-014 | View | Edit → change → Cancel | Saved values restored; view mode | not run |
+| TC-VEN-26 | FE-VEN-014 | View | Edit → change → Save | "Vendor saved"; view mode | not run |
+| TC-VEN-27 | FE-VEN-014 | Limited permissions | Inspect | Buttons hidden per ADD/EDIT/DELETE | not run |
+| TC-VEN-28 | FE-VEN-016 | Create | Clear Code Name, blur | "Code Name is required" | not run |
+| TC-VEN-29 | FE-VEN-016 | Two tabs, same suggestion | Save A then B | B shows the taken error and the next suggestion; typed values never replaced | not run |
+| TC-VEN-30 | FE-VEN-017 | Drawer | Compare with rev3-02 | Bold Code Name / Name; green dot; Inactive badge | not run |

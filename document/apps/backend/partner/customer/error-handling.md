@@ -1,6 +1,6 @@
 # Service error handling: partner + gateway / customer
 
-- Source UI revision / SA revision: 1 / 1 (pending-review)
+- Source UI revision / SA revision: 2 / **2** (ADR-0021, see [Revision 2](#revision-2--adr-0021-implemented-2026-10-16)); revision 1: 1 / 1
 - Frontend counterpart: `document/apps/frontend/customer/error-handling.md` (ui-spec, in progress)
 - Partner envelope (same as auth): `{error:{code, message, fieldErrors?: {path, code}[]}}`, `fieldErrors` ≤ 50
 - Gateway: `domainError(trpcCode, domainCode, fieldErrors)` from `src/trpc/domain-error.ts` (existing); the
@@ -54,3 +54,20 @@ has no 502 code (`BAD_GATEWAY` exists in tRPC 11 but would split the frontend ha
 - No stack traces, raw SQL, Prisma messages, service token, or customer personal data (names, codes,
   emails, phones, tax IDs, addresses) in responses or logs, beyond echoing field **paths** in `fieldErrors`.
 - Every partner log line carries the pino-http request ID; gateway logs the partner route and status.
+
+## Revision 2 — ADR-0021 (implemented 2026-10-16)
+
+| Scenario | Partner | Gateway (tRPC code / `domainCode` / `fieldErrors`) | UI | Recovery | Logging |
+|---|---|---|---|---|---|
+| Code Name empty or whitespace (create/update) | 400 `VALIDATION_ERROR` `[{path:"code",code:"required"}]` | `BAD_REQUEST` / `VALIDATION_ERROR` / same (rejected at gateway before partner) | "Code Name is required" | enter a code | none |
+| Code Name missing / `null` / not a string | 400 `{path:"code",code:"invalid_type"}` | `BAD_REQUEST` / `VALIDATION_ERROR` / same | as required | — | none |
+| Code Name > 120 characters | 400 `{path:"code",code:"too_big"}` | same | field error | shorten | none |
+| Suggested code taken meanwhile (no reservation) | 409 `CUSTOMER_CODE_TAKEN` `[{path:"code",code:"duplicate"}]` | `CONFLICT` / `CUSTOMER_CODE_TAKEN` | Code Name field error | refetch `customer.nextCode`, resubmit | none |
+| `customer.nextCode` without `customer:ADD` | — (not called) | `FORBIDDEN` / `PERMISSION_DENIED` | no suggestion (create not allowed anyway) | — | none |
+| `customer.nextCode` partner down / 401 / 503 / malformed output | 503 or n/a | `SERVICE_UNAVAILABLE` / `PARTNER_UNAVAILABLE` | leave Code Name empty for manual entry | retry later | gateway `partner.unavailable` (route `GET /customers/next-code`, no values) |
+| `nextCode` DB failure | 503 `PARTNER_UNAVAILABLE` (pool/timeout) or 500 | mapped as above | as above | — | `customer.db_unavailable` with Prisma code |
+
+Implementation: gateway `describeError` now reports a zod `custom` issue by its `params.code` (non-empty string) —
+`required` here; other custom issues without `params.code` stay `custom`; non-custom issue codes are unchanged
+(`src/trpc/domain-error.ts`). Partner `zodFieldErrors` already did this. `formatPartnerCode` throws on a non-positive
+database value (cannot happen with `COALESCE(max,0)+1`), which surfaces as 500 `INTERNAL_SERVER_ERROR`.

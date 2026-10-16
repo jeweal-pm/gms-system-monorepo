@@ -102,7 +102,8 @@ const emailSchema = z
 
 /** Partner Information fields shared by customer and vendor; spread into each entity's `z.object`. */
 export const partnerInfoShape = {
-  code: optionalText("Code name", 120),
+  // ADR-0021 §1: required, trimmed, 1–120 characters (unique case-insensitively on the server).
+  code: requiredText("Code Name", 120),
   name: requiredText("Name", 200),
   currencyCode: z.string().min(1, "Currency is required"),
   active: z.boolean(),

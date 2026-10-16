@@ -1,7 +1,7 @@
 # Frontend TODO: vendor
 
 - feature-id: `vendor`
-- revision: 2
+- revision: 3 (ADR-0021; see [Revision (ADR-0021) frontend](#revision-adr-0021-frontend)); revision 2 rows below are unchanged
 - status: in-progress (UI revision 2 approved; SA revision 1 + ADR-0019 approved 2026-10-15; backend started)
 - source: six owner-supplied screenshots (2026-10-15), four unique, in [source/](../../apps/frontend/vendor/source/) (3840×2160 each; assumed 1920×1080 CSS at DPR 2)
 - ui-spec: [ui-spec.md](../../apps/frontend/vendor/ui-spec.md)
@@ -164,3 +164,65 @@ list the affected item IDs. UI approval does not approve the SA bundle.
 No corrective work is open. If a defect arises during implementation, link one root-cause ledger and apply
 [bounded remediation](../../workflow/remediation.md): default pass limit 3, record the allocated/active pass and
 per-pass evidence, and share the counts with backend. New revisions, reviewers or sessions do not reset them.
+
+## Revision (ADR-0021) frontend
+
+- source-ui-revision: 3 ([rev3-01](../../apps/frontend/vendor/source/rev3-01-shared-header-reference.png), [rev3-02](../../apps/frontend/vendor/source/rev3-02-drawer-row-code-name.png); same images as customer rev 2); spec: [ui-spec revision 3](../../apps/frontend/vendor/ui-spec.md#revision-3-adr-0021)
+- governing decision: [ADR-0021](../../adr/0021-partner-code-running-number-and-record-modes.md) — Accepted 2026-10-16
+- approved-by / approved-at: project owner, 2026-10-16
+- approval-evidence: owner 2026-10-16: "...vendor คนเเรกเป็น V001 ... ทำ adr เเล้วเริ่มทำเลย" (full quote in ADR-0021)
+- contract used: gateway `vendor.nextCode` (query, `vendor:ADD`, `{code:"V001"}`), `code` required on create/update, `VENDOR_CODE_TAKEN` / `VALIDATION_ERROR {path:"code",code:"required"}` — observed live on 2026-10-16 (see [testing](../../apps/frontend/vendor/testing.md#revision-3-adr-0021-checks-2026-10-16)); backend handoff path: `document/coordination/handoffs/partner-code-adr0021-backend.md` (not present when this record was written)
+- claimed paths: as in [customer.md](customer.md#revision-adr-0021-frontend) (one change for both entities through `features/partner/**`)
+- source revision: working tree on `feat/16-10-26-fix-design-add-runingnumber` over HEAD `974134c` (uncommitted)
+
+| Done | ID | Status | Owner | Task / component | Allowed files | Depends on | Acceptance criteria | Verification |
+|---|---|---|---|---|---|---|---|---|
+| [ ] | FE-VEN-014 | implemented 2026-10-16; needs-validation (browser not run, no test runner) | frontend | Header + modes as customer FE-CUS-019 with "Add Vendor" / record name, "Vendor List N", Create Vendor; Invoice Address only (unchanged) | `frontend/src/features/partner/components/partner-page-header.tsx`, `frontend/src/features/vendor/vendor-page.tsx` | ADR-0021 §3 | As FE-CUS-019 | UT-ADR21-03a…k; TC-VEN-23…27 |
+| [ ] | FE-VEN-015 | implemented 2026-10-16; needs-validation | frontend | Code Name required `*` (shared schema/mapper), sent trimmed | `frontend/src/features/partner/**`, `frontend/src/features/vendor/api.ts` | ADR-0021 §1 | As FE-CUS-020 | UT-ADR21-01a…h, 04b, 04d, 04f, 04g; IT-ADR21-03/04 |
+| [ ] | FE-VEN-016 | implemented 2026-10-16; needs-validation | frontend | Prefill from `vendor.nextCode`; `VENDOR_CODE_TAKEN` → field error + refetch | `frontend/src/features/vendor/{hooks.ts,vendor-page.tsx,api.ts}`, `frontend/src/features/partner/{hooks.ts,code-suggestion.ts}` | ADR-0021 §2; backend `vendor.nextCode` | As FE-CUS-021 | UT-ADR21-02a…g, 04d; IT-ADR21-01/02; TC-VEN-28/29 |
+| [ ] | FE-VEN-017 | implemented 2026-10-16; needs-validation | frontend | Drawer rows bold Code Name / Name (shared drawer); supersedes Q-VEN-04 default | `frontend/src/features/partner/components/partner-drawer.tsx` | ADR-0021 §4 | Matches rev3-02 | IT-ADR21-05; TC-VEN-30 |
+| [ ] | FE-VEN-018 | **blocked** — no frontend unit/integration runner installed; dependency additions not authorized in this run | frontend → parent (dependency review) | Automated unit + integration tests for FE-VEN-014…017 | test files under `frontend/src/features/{partner,vendor}/**` once a runner is approved | owner-approved runner proposal | Mapped cases run and pass | testing.md |
+| [ ] | FE-VEN-019 | security part done — sec-auditor + security-auditor 2026-10-16: **advisory pass, no confirmed issue**, same tree (HEAD `974134c` + 17 backend / 30 total files; reviewer hash `87b94f89b8d8d24b`/`cf22cb98f572a23d`, test-doc recipe `7bf1dae7582b00c6` — same content, different recipes; backend tests re-run on it 37/37 + 23/23). Hardening → INV-20261016-001 (pending owner review); browser checks TC-VEN-23…30 + manual-tester still pending | parent → `sec-auditor` + `security-auditor`; frontend → manual-tester | Focused security reviews on the same revision; browser checks TC-VEN-23…30; manual-tester journey | none | FE-VEN-014…017 | Both reviews recorded; browser results recorded | security-review.md; testing.md |
+
+Record (2026-10-16, frontend): same run and evidence as [customer FE-CUS-019…025](customer.md#revision-adr-0021-frontend) (typecheck/lint exit 0; logic 34/34; live tRPC 15/15 incl. vendor `nextCode` V001 → V002, `VENDOR_CODE_TAKEN`, blank code `required`; `/setup/vendor` 200 signed in). Browser, automated suite and security reviews not run; this revision stays unresolved until FE-VEN-018/019 pass.
+
+## Revision (ADR-0021) backend
+
+- governing decision: [ADR-0021](../../adr/0021-partner-code-running-number-and-record-modes.md) — Accepted 2026-10-16; source UI revision 3, SA revision 2
+- approval-evidence: owner 2026-10-16 (full quote in ADR-0021, ending "ทำ adr เเล้วเริ่มทำเลย"); parent instruction: "Implement the backend for ADR-0021 … on the current branch `feat/16-10-26-fix-design-add-runingnumber`"
+- SA bundle revision 2: [api-contract](../../apps/backend/partner/vendor/api-contract.md#revision-2--adr-0021-implemented-2026-10-16), [database](../../apps/backend/partner/vendor/database-diagram.md#revision-2--adr-0021-implemented-2026-10-16), [errors](../../apps/backend/partner/vendor/error-handling.md#revision-2--adr-0021-implemented-2026-10-16), [testing](../../apps/backend/partner/vendor/testing.md#revision-2--adr-0021-automated-tests-2026-10-16)
+- handoff: [partner-code-adr0021-backend.md](../../coordination/handoffs/partner-code-adr0021-backend.md); shared with [customer](./customer.md#revision-adr-0021-backend) (one implementation for both entities)
+- source revision tested: HEAD `974134c` + uncommitted backend working tree, content hash `7bf1dae7582b00c6`; not committed
+
+| Done | ID | Status | Owner | Task | Allowed files | Acceptance | Verification |
+|---|---|---|---|---|---|---|---|
+| [x] | BE-VEN-016 | done 2026-10-16 | backend | `code` required on create/update (partner + gateway): trim, 1–120, empty → `VALIDATION_ERROR` `{path:"code",code:"required"}`; missing/null → `invalid_type`; `VENDOR_CODE_TAKEN` kept; gateway `describeError` reports custom issues by `params.code` | `backend-api-partner/src/common/partner-schemas.ts`, `backend-api-gateway/src/trpc/{partner-schemas.ts,domain-error.ts}` | rules identical at both layers | UT-PC-01/02, UT-GW-PC-01…03, IT-PC-03/06/07, IT-GW-PC-04, LIVE-02/03 — pass |
+| [x] | BE-VEN-017 | done 2026-10-16 | backend (prisma path parent-serialized; single writer this run) | Migration `20261016090000_partner_code_required`: backfill NULL codes with `V`+≥3 digits by `created_at, id`, `code_key = lower(code)`, then `code`/`code_key` NOT NULL; `schema.prisma` `String` | `backend-api-partner/prisma/**` | no data loss; diff empty | scratch DB backfill (C011…C013, V999…V1001), dev DB applied, `migrate diff` empty, IT-PC-08 — pass |
+| [x] | BE-VEN-018 | done 2026-10-16 | backend | Partner `GET /internal/v1/vendors/next-code` → `{code:"V001"}`; max(suffix of `^[Vv][0-9]+$`, ≤ 18 significant digits)::bigint + 1 in SQL; route before `:id` | `backend-api-partner/src/common/persistence.ts`, `backend-api-partner/src/vendor/vendor.{controller,service}.ts` | format/ordering per ADR-0021 §2 | UT-PC-03/04, IT-PC-01/02/04/05 — pass |
+| [x] | BE-VEN-019 | done 2026-10-16 | backend | Gateway `vendor.nextCode` query, no input, `permittedProcedure("vendor","ADD")`, `callPartner` 3 s, output `{code}` validated | `backend-api-gateway/src/trpc/{router.ts,vendor-schemas.ts,partner-schemas.ts}` | ADD/Super Admin only; partner not called when denied | UT-GW-PC-04, IT-GW-PC-01…03, LIVE-01/03/04 — pass |
+| [x] | BE-VEN-020 | done 2026-10-16 | backend | Automated unit + integration tests (`node:test`, no new dependency) and full partner/gateway suites; typecheck + lint | `backend-api-partner/test/**`, `backend-api-gateway/test/**` | all pass | partner 37/37, gateway 23/23; partner + gateway `typecheck`/`lint` exit 0 |
+| [x] | BE-VEN-021 | done 2026-10-16 | backend | SA bundle revision 2 docs + handoff | `document/apps/backend/partner/vendor/**`, `document/coordination/handoffs/partner-code-adr0021-backend.md` | contract recorded as implemented | review |
+| [x] | BE-VEN-022 | done — sec-auditor + security-auditor 2026-10-16: **advisory pass, no confirmed issue**, same tree (HEAD `974134c` + 17 backend / 30 total files; reviewer hash `87b94f89b8d8d24b`/`cf22cb98f572a23d`, test-doc recipe `7bf1dae7582b00c6` — same content, different recipes; backend tests re-run on it 37/37 + 23/23). Hardening → INV-20261016-001 (pending owner review) | parent → `sec-auditor` + `security-auditor` | Focused read-only review of the backend diff (hash `7bf1dae7582b00c6`): trust boundaries gateway→partner (service token, `permittedProcedure` ADD), raw SQL in `nextPartnerCode` (parameterized regex/limit, fixed table identifiers), migration backfill | none (review only) | both results on the same revision; findings staged in investigation | security-review.md |
+
+Record (2026-10-16, backend): dev stack restarted in order partner → gateway; partner log "Applying migration `20261016090000_partner_code_required`" and "All migrations have been successfully applied"; both watch compiles "Found 0 errors". Live: `vendor.nextCode` → `V001` (existing code does not match the running-number pattern); create without code → 400; duplicate → 409 `VENDOR_CODE_TAKEN`. All `BT21*` test rows deleted (customer 0, vendor 0 remaining). Not run: `nest build`/image build (no manifest/Dockerfile change), security reviews (parent). Deviation: the partner path is `/internal/v1/vendors/next-code` (the existing internal prefix), i.e. the ADR's `GET /vendors/next-code`. The gateway list/detail output still types `code` as `string | null` for compatibility although `null` is no longer produced.
+
+Corrective ledger (ADR-0021 backend): pass limit 3; passes allocated 0. No defect was found in backend verification, so no corrective pass was used. The frontend record above lists a frontend-only mapper fix (`required` message); that fix is outside this ledger.
+
+## Revision (customer rev 3 / vendor rev 4) frontend
+
+- source-ui-revision: vendor 4 ([rev4-01](../../apps/frontend/vendor/source/rev4-01-address-card-no-default.png), [rev4-02](../../apps/frontend/vendor/source/rev4-02-address-card-default-checked.png)); spec: [ui-spec revision 4](../../apps/frontend/vendor/ui-spec.md#revision-4-draft-row-and-address-card)
+- approved-by / approved-at: project owner, 2026-10-16
+- approval-evidence: the owner instruction of 2026-10-16 quoted in [customer.md](customer.md#revision-customer-rev-3--vendor-rev-4-frontend), recorded as approval of customer UI revision 3 and vendor UI revision 4
+- contract: unchanged; default rule from ADR-0019 / Q-VEN-03 unchanged (0 or 1 default)
+- claimed paths and source revision: as in [customer.md](customer.md#revision-customer-rev-3--vendor-rev-4-frontend) (one change through `features/partner/**`; hash `15b0711a0e4dfed3`)
+
+| Done | ID | Status | Owner | Task / component | Allowed files | Depends on | Acceptance criteria | Verification |
+|---|---|---|---|---|---|---|---|---|
+| [ ] | FE-VEN-R4-001 | implemented 2026-10-16; needs-validation (browser not run, no test runner) | frontend | Drawer draft row title fixed "New vendor", subtitle "Not saved yet", Draft badge | `frontend/src/features/partner/components/partner-drawer.tsx`, `frontend/src/features/vendor/{vendor-page.tsx,components/vendors-drawer.tsx}` | — | Typing Code Name/Name leaves the draft row unchanged | UT-R3-01b; IT-R3-01; TC-VEN-31 |
+| [ ] | FE-VEN-R4-002 | implemented 2026-10-16; needs-validation | frontend | New invoice address card (shared with customer FE-CUS-R3-002), vendor 4-column grid kept | `frontend/src/features/partner/components/{address-item.tsx,address-list-card.tsx}`, `frontend/src/features/vendor/vendor-page.tsx` | — | Matches rev4-01/02 except #1 trash disabled (A-09) | UT-R3-02e; IT-R3-04; TC-VEN-32 |
+| [ ] | FE-VEN-R4-003 | implemented 2026-10-16; needs-validation | frontend | Default rule unchanged (0 or 1): toggles freely, ticking one unticks others, new vendor #1 unticked, removing the default leaves none | `frontend/src/features/partner/components/address-list-card.tsx` | ADR-0019 / Q-VEN-03 | As described | UT-R3-02d, UT-R3-03c/e; TC-VEN-33 |
+| [ ] | FE-VEN-R4-004 | implemented 2026-10-16; needs-validation | frontend | Trash/read-only rules as FE-CUS-R3-004 | `frontend/src/features/partner/components/{address-item.tsx,address-list-card.tsx}` | — | As FE-CUS-R3-004 | UT-R3-02a/b; IT-R3-02/03; TC-VEN-34 |
+| [ ] | FE-VEN-R4-005 | **blocked** — no frontend unit/integration runner; dependency additions not authorized | frontend → parent (dependency review) | Automated tests for FE-VEN-R4-001…004 | test files under `frontend/src/features/{partner,vendor}/**` once a runner is approved | owner-approved runner proposal | Mapped cases run and pass | testing.md |
+| [ ] | FE-VEN-R4-006 | security part done — sec-auditor + security-auditor 2026-10-16: **clear, no findings**, both on the same bytes — HEAD `974134c` + 7 files, sha256 of raw concatenation `36a4629f1eeb630d` (the `15b0711a0e4dfed3` recorded earlier was not reproducible; parent re-pinned); browser checks TC-VEN-31…34 + manual-tester pending | parent → `sec-auditor` + `security-auditor`; frontend → manual-tester | Focused security reviews on hash `15b0711a0e4dfed3` (shared with FE-CUS-R3-006); browser checks TC-VEN-31…34 | none | FE-VEN-R4-001…004 | Both reviews and browser results recorded | security-review.md; testing.md |
+
+Record (2026-10-16, frontend): same run and evidence as [customer FE-CUS-R3-001…007](customer.md#revision-customer-rev-3--vendor-rev-4-frontend) (typecheck/lint exit 0; `/setup/vendor` 200 not signed in; "New vendor" logic check pass). This revision stays unresolved until FE-VEN-R4-005/006 pass.

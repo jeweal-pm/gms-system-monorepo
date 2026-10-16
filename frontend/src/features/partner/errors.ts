@@ -13,7 +13,7 @@ export type MappedFieldError = { name: string; message: string };
 type FieldRule = { label: string; max?: number };
 
 const infoFieldRules: Record<string, FieldRule> = {
-  code: { label: "Code name", max: 120 },
+  code: { label: "Code Name", max: 120 },
   name: { label: "Name", max: 200 },
   currencyCode: { label: "Currency" },
   firstName: { label: "First name", max: 100 },
@@ -40,7 +40,8 @@ function ruleMessage(field: string, rule: FieldRule, code: string): string {
   if (field === "countryCode") return code === "unknown" ? "Choose a country from the list" : "Country is required";
   if (field === "email" && code !== "too_big") return code === "too_small" ? "Email is required" : "Enter a valid email address";
   if (code === "too_big" && rule.max !== undefined) return `${rule.label} must be at most ${rule.max} characters`;
-  if (code === "too_small" || code === "invalid_type") return `${rule.label} is required`;
+  // `required`: blank Code Name (ADR-0021 §1).
+  if (code === "too_small" || code === "invalid_type" || code === "required") return `${rule.label} is required`;
   return `Check ${rule.label}`;
 }
 

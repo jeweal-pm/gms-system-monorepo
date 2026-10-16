@@ -1,6 +1,6 @@
 # API contract: partner + gateway / customer
 
-- Source UI revision / SA revision: 1 / 1 (**pending-review; proposed, not implemented**)
+- Source UI revision / SA revision: 2 / **2** (ADR-0021, approved 2026-10-16 — see [Revision 2](#revision-2--adr-0021-implemented-2026-10-16)); revision 1: 1 / 1 approved 2026-10-14
 - Existing shared contracts reused unchanged: `permission.mine` (button visibility), gateway `errorFormatter` (`data.domainCode`, `data.fieldErrors`), session-context `authz` ([user-permission API](../../auth/user-permission/api-contract.md))
 - Consuming frontend TODO IDs: `FE-CUS-*` in [central TODO](../../../../task/todo/customer.md) (ui-spec is writing it in parallel; the parent links exact IDs when merging `BE-CUS-*`)
 - Diagrams/errors: [sequence](sequence-diagram.md), [errors](error-handling.md), [authorization](authorization.md), [database](database-diagram.md)
@@ -39,7 +39,7 @@ const shippingAddressInput = z.object(addressBase).strict();   // no taxId
 
 const customerFields = {
   name:         z.string().trim().min(1).max(200),
-  code:         optText(120),                              // "Code Name"; unique case-insensitively when present
+  code:         requiredCode,                              // rev 2 (ADR-0021): "Code Name", required, trim, 1–120, unique case-insensitively
   currencyCode: CURRENCY,
   active:       z.boolean(),
   firstName:    z.string().trim().min(1).max(100),
@@ -82,6 +82,7 @@ type CustomerDetail = CustomerListItem & {
 | `customer.update` mutation | `{ id: z.uuid(), expectedUpdatedAt: z.iso.datetime({ offset: false, precision: 3 }), ...customerFields }` strict (full replacement) | `{ id: string, updatedAt: string }` | `customer:EDIT` | `VALIDATION_ERROR`, `CUSTOMER_NOT_FOUND`, `CUSTOMER_STALE`, `CUSTOMER_CODE_TAKEN`, `PERMISSION_DENIED`, `PARTNER_UNAVAILABLE` | 5 s |
 | `customer.delete` mutation | `{ id: z.uuid() }` | `{ ok: true }` | `customer:DELETE` | `CUSTOMER_NOT_FOUND`, `PERMISSION_DENIED`, `PARTNER_UNAVAILABLE` | 5 s |
 | `customer.options` query | none | `{ currencies: {code: string, name: string}[] /* ≤ 400 */, countries: {code: string, name: string}[] /* ≤ 300 */ }` sorted by code / by name | `customer:VIEW` | `PERMISSION_DENIED`, `PARTNER_UNAVAILABLE` | 3 s |
+| `customer.nextCode` query (rev 2) | none | `{ code: string }` e.g. `"C001"` | `customer:ADD` | `PERMISSION_DENIED`, `PARTNER_UNAVAILABLE` | 3 s |
 
 All procedures are built with `permittedProcedure("customer", action)`, which first applies
 the existing `licensedProcedure` (`UNAUTHORIZED`, `LICENSE_*`). Super Admin passes every action.
@@ -109,6 +110,7 @@ Base URL `PARTNER_SERVICE_URL` (Compose `http://backend-api-partner:3201`). JSON
 |---|---|---|---|
 | `GET /internal/v1/customers?q=&active=&cursor=&limit=` | query params as `customer.list` (`active` = `true`/`false`) | `200 {items, nextCursor, total}` | 400, 401 |
 | `GET /internal/v1/customers/options` | — | `200 {currencies, countries}` | 401 |
+| `GET /internal/v1/customers/next-code` (rev 2) | — | `200 {code}` | 401 |
 | `GET /internal/v1/customers/:id` | UUID path | `200 CustomerDetail` | 400 (non-UUID), 401, 404 `CUSTOMER_NOT_FOUND` |
 | `POST /internal/v1/customers` | `customerFields` | `201 {id, updatedAt}` | 400 `VALIDATION_ERROR`, 401, 409 `CUSTOMER_CODE_TAKEN` |
 | `PUT /internal/v1/customers/:id` | `{expectedUpdatedAt, ...customerFields}` (no `id` in body) | `200 {id, updatedAt}` | 400, 401, 404, 409 `CUSTOMER_STALE` / `CUSTOMER_CODE_TAKEN` |
@@ -116,7 +118,7 @@ Base URL `PARTNER_SERVICE_URL` (Compose `http://backend-api-partner:3201`). JSON
 | `GET /health/live` | no auth | `200 {status:"ok"}` | — |
 | `GET /health/ready` | no auth; `SELECT 1` with 1 s timeout | `200 {status:"ok"}` / `503 {status:"unavailable"}` | — |
 
-Route order: `/customers/options` is declared before `/customers/:id`.
+Route order: `/customers/options` and `/customers/next-code` are declared before `/customers/:id`.
 
 Error envelope (same as auth): `{ error: { code: string, message: string, fieldErrors?: {path: string, code: string}[] } }`.
 `message` is a fixed English sentence per code and is never forwarded by gateway.
@@ -164,3 +166,30 @@ Implemented as written for SA revision 1 (approved 2026-10-14T11:45+07:00). Impl
 - **Update** uses `updateMany({ where: { id, updatedAt: expected } })` with `updatedAt = max(now, expected + 1 ms)` computed in the service (allowed by database-diagram.md); `name_key`, `code_key` and `email` are lowered by PostgreSQL `lower()` in the same transaction so the CHECK constraints always hold.
 - **Options:** 162 currencies on Node 24.11.0 ICU; 249 countries.
 - **Additive (coordinator request 2026-10-14):** `dashboard.shortcutGroups` items have optional `href`; Customer now carries `href: "/setup/customer"` (slug unchanged). The frontend dashboard must use the `href` when it is present (it currently builds `/modules/<slug>`).
+
+## Revision 2 — ADR-0021 (implemented 2026-10-16)
+
+- Approval: [ADR-0021](../../../../adr/0021-partner-code-running-number-and-record-modes.md) Accepted, owner 2026-10-16 (ADR-0021 Approval evidence, ending "ทำ adr เเล้วเริ่มทำเลย"). UI revision 2, SA revision 2.
+- Contract changes (everything else in this file is unchanged):
+
+| Item | Revision 1 | Revision 2 |
+|---|---|---|
+| `code` in `customer.create` / `customer.update` and partner POST/PUT | `optText(120)`: optional, empty → `null` | **required**: `z.string().trim().max(120)` + empty after trim → custom issue `{path:"code", code:"required"}`. Missing / `null` / non-string → `{path:"code", code:"invalid_type"}`; > 120 → `too_big`. Same rule at gateway and partner (`requiredCodeSchema`). |
+| `code` in list items / detail | `string \| null` | always a non-empty string after migration `20261016090000_partner_code_required`; the gateway output schema still accepts `null` (backward-compatible type, no `null` is produced) |
+| `customer.nextCode` query | — | **new**, see below |
+| Uniqueness | case-insensitive via `code_key`, many `NULL`s | unchanged rule; `NULL` no longer possible. Duplicate → 409 `CUSTOMER_CODE_TAKEN` `[{path:"code",code:"duplicate"}]` |
+
+**`customer.nextCode`** (tRPC query, gateway)
+
+| Input | Output | Permission | Errors | Timeout |
+|---|---|---|---|---|
+| none | `{ code: string }` — `^[CV][0-9]{3,19}$`, e.g. `{ code: "C001" }` | `permittedProcedure("customer", "ADD")` (Super Admin passes) | `UNAUTHORIZED`, `LICENSE_*`, `PERMISSION_DENIED` (FORBIDDEN), `PARTNER_UNAVAILABLE` (partner down/503/malformed output), `CUSTOMER_NOT_FOUND` (partner 404 fallback) | 3 s (read) |
+
+**Partner** `GET /internal/v1/customers/next-code` (service token; actor header optional as for every GET) → `200 { "code": "C001" }`; 401 without/wrong token.
+Declared before `/customers/:id`, so `next-code` is never parsed as an ID.
+
+Rule (ADR-0021 §2): `next = max(numeric suffix of codes matching ^[Cc][0-9]+$ whose suffix has ≤ 18 significant digits) + 1`, `1` when none match;
+computed in PostgreSQL as `bigint` (`substring(code FROM 2)::bigint`, the 18-digit guard prevents overflow), returned as text, formatted as
+`"C" + next padded with zeros to at least 3 digits` (`C001`, `C999`, `C1000`). Codes in any other format (e.g. `C-0001`, `CM01`) are not counted.
+It is a **suggestion, not a reservation**: a concurrent create with the same code gets 409 `CUSTOMER_CODE_TAKEN`; the client refetches `nextCode`.
+One aggregate over the `customer` table (sequential scan; bounded by the table size, read-only, no transaction).

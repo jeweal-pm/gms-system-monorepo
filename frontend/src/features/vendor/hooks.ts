@@ -38,6 +38,14 @@ export function useVendorTotal(): number | undefined {
   return list.data?.pages[0]?.total;
 }
 
+/**
+ * ADR-0021 §2: suggested next Code Name (`{ code: "V001" }`). Requested only in create mode with
+ * ADD (the gateway requires `vendor:ADD`); always refetched when create mode starts, never polled.
+ */
+export function useVendorNextCode(enabled: boolean) {
+  return trpc.vendor.nextCode.useQuery(undefined, { enabled, staleTime: 0, gcTime: 60_000, retry: retryTransient, refetchOnWindowFocus: false });
+}
+
 export function useVendorDetail(id: string | null) {
   return trpc.vendor.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient });
 }

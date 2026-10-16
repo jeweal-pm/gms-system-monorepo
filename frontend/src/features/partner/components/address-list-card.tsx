@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus } from "lucide-react";
-import { useImperativeHandle, useRef, useState, type Ref } from "react";
+import { useRef } from "react";
 import { useFieldArray, useFormState, type FieldValues, type UseFormReturn } from "react-hook-form";
 import { cx, focusRing } from "@/components/ui/button";
 import { Card, CountBadge } from "@/components/ui/card";
@@ -18,11 +18,6 @@ import {
 } from "../schema";
 import { AddressItem, type AddressLayout } from "./address-item";
 
-export type AddressListHandle = {
-  /** Expands the given item indexes (submit with errors). */
-  expand: (indexes: readonly number[]) => void;
-};
-
 /** Internal view of the form: only the configured address array is touched. */
 type AddressForm = Record<AddressArrayName, AddressFormValue[]>;
 
@@ -35,12 +30,11 @@ type AddressListCardProps<TForm extends FieldValues & PartnerAddressValues> = {
   defaultRule: DefaultRule;
   readOnly: boolean;
   options: OptionsState;
-  ref?: Ref<AddressListHandle>;
 };
 
 /**
- * Partner C-09 (customer FE-CUS-007, vendor FE-VEN-006): one address type's list. 1–10 items;
- * item #1 cannot be removed. Default handling follows `defaultRule`:
+ * Partner C-09 (customer FE-CUS-007 / FE-CUS-R3-002, vendor FE-VEN-006 / FE-VEN-R4-002): one address
+ * type's list. 1–10 items, all always open (rev 3/4 removed the accordion); item #1 cannot be removed. Default handling follows `defaultRule`:
  * - `exactlyOne` (customer P-01): ticking moves the default, it can't be unticked, removing it makes #1 the default.
  * - `atMostOne` (vendor Q-VEN-03): ticking moves the default, unticking leaves none, removing it leaves none.
  */
@@ -52,38 +46,15 @@ export function AddressListCard<TForm extends FieldValues & PartnerAddressValues
   defaultRule,
   readOnly,
   options,
-  ref,
 }: AddressListCardProps<TForm>) {
   const { control, getValues, setValue } = form as unknown as UseFormReturn<AddressForm>;
   const arrayName = type.arrayName;
   const { fields, append, remove } = useFieldArray({ control, name: arrayName, keyName: "fieldKey" });
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
-  const headerRefs = useRef(new Map<string, HTMLButtonElement>());
+  const defaultInputs = useRef(new Map<string, HTMLInputElement>());
   const { errors } = useFormState({ control, name: arrayName });
   const errorIndexes = addressIndexesWithErrors(errors as Record<string, unknown>, arrayName);
   const atLimit = fields.length >= ADDRESS_MAX;
   const limitHelpId = `${idPrefix}-${type.key}-limit`;
-
-  useImperativeHandle(
-    ref,
-    () => ({
-      expand: (indexes) => {
-        const keys = indexes.map((index) => fields[index]?.fieldKey).filter((key): key is string => Boolean(key));
-        if (keys.length === 0) return;
-        setCollapsed((current) => new Set([...current].filter((key) => !keys.includes(key))));
-      },
-    }),
-    [fields],
-  );
-
-  function toggle(fieldKey: string) {
-    setCollapsed((current) => {
-      const next = new Set(current);
-      if (next.has(fieldKey)) next.delete(fieldKey);
-      else next.add(fieldKey);
-      return next;
-    });
-  }
 
   function changeDefault(index: number, checked: boolean) {
     if (!checked) {
@@ -103,7 +74,8 @@ export function AddressListCard<TForm extends FieldValues & PartnerAddressValues
     if (defaultRule === "exactlyOne" && getValues(`${arrayName}.${index}.isDefault`)) setValue(`${arrayName}.0.isDefault`, true, { shouldDirty: true });
     const previousKey = fields[index - 1]?.fieldKey;
     remove(index);
-    if (previousKey) headerRefs.current.get(previousKey)?.focus();
+    // Focus moves to the previous card's first control (its default checkbox).
+    if (previousKey) defaultInputs.current.get(previousKey)?.focus();
   }
 
   function add() {
@@ -132,16 +104,14 @@ export function AddressListCard<TForm extends FieldValues & PartnerAddressValues
             layout={layout}
             defaultRule={defaultRule}
             index={index}
-            expanded={!collapsed.has(field.fieldKey)}
             hasErrors={errorIndexes.includes(index)}
             readOnly={readOnly}
             options={options}
-            onToggle={() => toggle(field.fieldKey)}
             onRemove={index > 0 && !readOnly ? () => removeAt(index) : undefined}
             onDefaultChange={(checked) => changeDefault(index, checked)}
-            headerButtonRef={(element) => {
-              if (element) headerRefs.current.set(field.fieldKey, element);
-              else headerRefs.current.delete(field.fieldKey);
+            defaultInputRef={(element) => {
+              if (element) defaultInputs.current.set(field.fieldKey, element);
+              else defaultInputs.current.delete(field.fieldKey);
             }}
           />
         ))}
