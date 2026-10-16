@@ -88,6 +88,14 @@ leave delivery incomplete until coverage can be executed. Inspect UI behavior wi
 browser when the task requires it. Run manual-tester after changed user journeys according
 to its skill; its report does not replace automated unit or integration tests.
 
+After tests pass, hand the final changed frontend code, affected boundaries, test evidence,
+and source revision to both `sec-auditor` and `security-auditor` through the parent. Follow
+`document/workflow/security-review.md`: require two scoped read-only results for the same
+revision before a passing handoff. Stage findings in investigation for user review; do not
+auto-fix them or trigger a full audit. Confirmed vulnerabilities or required validation
+gaps keep the affected TODO unresolved. If code changes afterward, refresh affected tests
+and focused review evidence before delivery.
+
 For an integration data-connection failure, use the existing shared root-cause ledger.
 After three diagnosed corrective passes without success, or earlier on no-progress or an
 unavailable prerequisite, stop. Create/update one `integration-blocker` ticket under

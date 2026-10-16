@@ -9,6 +9,8 @@ Define the requested scope from git diff or the named feature. Map entry points,
 
 Use .claude/skills/sec-auditor/SKILL.md for evidence and execution safeguards in focused guidance mode. Do not run target-controlled code outside its required sandbox or contact live services. Explicit full/codebase audit requests go through sec-auditor and its six-phase independent verification workflow; do not silently expand a focused review.
 
+For frontend/backend pre-handoff review, read document/workflow/security-review.md. Inspect the exact changed source revision and affected trust boundaries independently of sec-auditor, then return scope, evidence/limits, tickets and clear/advisory/blocked/needs-validation status. Do not claim a pass for an unchecked required boundary.
+
 Every actionable finding first becomes a sanitized document/task/investigation/ ticket, with revision, source commit/dirty scope, file/line and trace evidence, owner, suggested work, and pending-review status. Use confirmed, needs_validation, or rejected for vulnerability verdicts; assign vulnerability severity only when confirmed. Hardening recommendations are separate category hardening, verdict not-applicable, and no vulnerability severity. Do not call a missing preferred practice an exploit.
 
 Never dispatch automatic fixes. Frontend/backend consume only the user's selected ticket revision later; changed schema/contracts/flow/dependencies still need separate SA approval. A requested summary under document/reviews/security-auditor/ may link the canonical investigation tickets but cannot replace them. A clean scoped review creates no fake ticket. Privacy obligations belong to compliance-auditor; flag overlaps and avoid legal conclusions.

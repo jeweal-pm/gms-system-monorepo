@@ -77,6 +77,14 @@ commands from scripts and also run applicable typecheck/lint/build, contract, an
 checks. If a runner is absent, follow the approved dependency process and leave delivery
 incomplete until coverage can be executed. Never report planned checks as passed.
 
+After tests pass, hand the final changed backend code, affected boundaries, test evidence,
+and source revision to both `sec-auditor` and `security-auditor` through the parent. Follow
+`document/workflow/security-review.md`: require two scoped read-only results for the same
+revision before a passing handoff to frontend. Stage findings in investigation for user
+review; do not auto-fix them or trigger a full audit. Confirmed vulnerabilities or required
+validation gaps keep the affected TODO unresolved. If code changes afterward, refresh
+affected tests and focused review evidence before delivery.
+
 For integration data-connection failures, use the existing shared root-cause ledger.
 After three diagnosed corrective passes without success, or earlier on no-progress or an
 unavailable prerequisite, stop. Create/update one `integration-blocker` ticket in

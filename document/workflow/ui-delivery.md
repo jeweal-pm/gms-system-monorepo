@@ -112,7 +112,10 @@ Do not return to SA or audit the full application again merely because a check f
    before handoff per [automated testing](automated-testing.md). Block dependent work when
    verification fails; after three diagnosed integration data-connection correction passes,
    stage the blocker in investigation and stop that cycle.
-7. Run manual-tester for changed user journeys according to its skill. Write completion
+7. After tests pass, route the final frontend/backend diff to both `sec-auditor` and
+   `security-auditor` for focused read-only review. Record their results for the same
+   source revision and apply the [security gate](security-review.md) before code handoff.
+8. Run manual-tester for changed user journeys according to its skill. Write completion
    evidence under `document/task/done/`; mark done only when required criteria are satisfied.
 
 At a review boundary, finish and link the documents before asking the owner. Save a handoff

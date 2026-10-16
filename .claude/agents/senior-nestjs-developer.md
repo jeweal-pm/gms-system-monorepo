@@ -31,6 +31,15 @@ the shared remediation ledger. Stop after three diagnosed passes, or earlier for
 no-progress or unavailable verification; create/update one integration-blocker in
 `document/task/investigation/` and keep the dependent TODO unresolved.
 
+## Security review gate
+
+Read `document/workflow/security-review.md`. After passing tests, send the final backend
+diff/source revision and affected trust boundaries through the parent to both
+`sec-auditor` and `security-auditor` for focused read-only reviews. Require both results
+on the same revision before handoff to frontend. Stage findings in investigation; do not
+auto-fix or run a full audit. Confirmed vulnerabilities or required security validation
+gaps keep the affected TODO unresolved. Refresh affected reviews after code edits.
+
 ## Corrective-work stop conditions
 Read document/workflow/remediation.md. Inherit the parent's persistent root-cause ledger and active pass across roles/revisions/sessions: three corrective passes total by default, initial fix included. Retry only with diagnosed failure and new evidence/hypothesis. Stop on success, no-progress, unavailable verification, exhausted passes, or cyclic unchanged handoffs. Return evidence and next required fact; new independent issues return to review. Only explicit user authorization extends the existing limit. Do not automatically restart a full audit or weaken its safeguards.
 

@@ -5,7 +5,7 @@ task records, handoffs, reviews, test reports, and screenshots. Executable skill
 agent definitions remain in `.codex/`; `agents/` mirrors the agent definitions.
 Read `document/README.md` and `document/workflow/ui-delivery.md` for documentation work.
 
-| Prompt | Agent | Skill |
+| Prompt | Agent | Skill / definition |
 |---|---|---|
 | `ui-spec` | `ui-spec` | `.codex/skills/ui-spec/SKILL.md` |
 | `sa`, `solution architect` | `sa` | `.codex/skills/sa/SKILL.md` |
@@ -13,6 +13,7 @@ Read `document/README.md` and `document/workflow/ui-delivery.md` for documentati
 | `backend` | `senior-nestjs-developer` | `.codex/skills/senior-nestjs-developer/SKILL.md` |
 | `manual-test`, `manual-tester`, `user test` | `manual-tester` | `.codex/skills/manual-tester/SKILL.md` |
 | `sec-auditor`, `sec-audit` | `sec-auditor` | `.codex/skills/sec-auditor/SKILL.md` |
+| `security-auditor` | `security-auditor` | `.codex/agents/security-auditor.toml` |
 | `infra` | `infra` | `.codex/skills/infra/SKILL.md` |
 | `devops` | `devops` | `.codex/skills/devops/SKILL.md` |
 
@@ -50,6 +51,13 @@ their scope, including untested code they fix. Run relevant suites to pass befor
 If an integration data-connection failure remains after three diagnosed corrective passes,
 or progress/verification becomes unavailable earlier, record one `integration-blocker` in
 `document/task/investigation/` and keep the dependent TODO unresolved.
+
+Before a frontend/backend code handoff is complete, route its final changed code through
+both `sec-auditor` and `security-auditor` for scoped, read-only review under
+`document/workflow/security-review.md`. Record both results against the same source
+revision. Confirmed issues or required security validation gaps block the affected TODO;
+hardening advice enters investigation for owner review. Do not run a full audit, auto-fix
+findings, or repeat reviews without changed evidence.
 
 Audit findings first enter `document/task/investigation/` for user review. Auditors do
 not edit application code or automatically dispatch fixes. Frontend/backend/infra consume only
