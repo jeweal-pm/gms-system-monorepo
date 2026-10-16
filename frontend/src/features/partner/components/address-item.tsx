@@ -102,7 +102,7 @@ export function AddressItem<TForm extends FieldValues & PartnerAddressValues>({
 
   return (
     <div className="flex min-w-0 items-start gap-3 @min-[28rem]:gap-4">
-      <span aria-hidden className="w-7 shrink-0 pt-4 text-[15px] font-semibold text-gms-text @min-[28rem]:w-9">{`#${index + 1}`}</span>
+      <span aria-hidden className="w-7 shrink-0 pt-4 text-gms-body font-semibold text-gms-text @min-[28rem]:w-9">{`#${index + 1}`}</span>
       <fieldset className={cx("@container min-w-0 flex-1 rounded-gms-lg border bg-gms-page px-4 pb-4 pt-3", hasErrors ? "border-gms-danger" : "border-transparent")}>
         <legend className="sr-only">{title}</legend>
         <div className="mb-4 flex min-h-[38px] items-center justify-between gap-3">

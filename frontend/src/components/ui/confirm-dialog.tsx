@@ -53,10 +53,10 @@ export function ConfirmDialog({ open, title, body, cancelLabel, confirmLabel, pe
       }}
       className="m-auto w-[min(640px,calc(100vw-32px))] rounded-gms-xl bg-gms-surface p-0 text-gms-text shadow-gms-overlay backdrop:bg-black/30"
     >
-      <h2 id={titleId} className="border-b border-gms-divider-dialog px-5 py-4 text-xl font-bold leading-7">{title}</h2>
+      <h2 id={titleId} className="border-b border-gms-divider-dialog px-5 py-4 text-gms-heading font-bold">{title}</h2>
       <div className="border-b border-gms-divider-dialog px-5 py-4">
-        <p id={bodyId} className="text-base leading-6">{body}</p>
-        {error && <p role="alert" className="mt-3 text-sm text-gms-danger">{error}</p>}
+        <p id={bodyId} className="text-gms-body">{body}</p>
+        {error && <p role="alert" className="mt-3 text-gms-body text-gms-danger">{error}</p>}
       </div>
       <div className="flex justify-end gap-3 px-5 py-3.5">
         <Button ref={cancelRef} variant="secondary" disabled={pending} onClick={onCancel} className="disabled:opacity-100">

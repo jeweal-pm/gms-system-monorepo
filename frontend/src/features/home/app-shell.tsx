@@ -81,7 +81,7 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
     <div className="flex h-screen overflow-hidden bg-gms-surface">
       <a
         href="#main-content"
-        className="sr-only z-50 rounded-gms-md bg-gms-surface px-3 py-2 text-sm text-gms-text shadow-gms-overlay focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
+        className="sr-only z-50 rounded-gms-md bg-gms-surface px-3 py-2 text-gms-body text-gms-text shadow-gms-overlay focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
       >
         Skip to content
       </a>

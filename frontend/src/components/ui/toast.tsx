@@ -61,7 +61,7 @@ function ToastCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: num
         aria-hidden
         className={cx("mt-0.5 shrink-0", toast.tone === "success" ? "text-gms-success" : toast.tone === "error" ? "text-gms-danger" : "text-gms-primary")}
       />
-      <p className="min-w-0 flex-1 text-[15px] leading-[22px] text-gms-text">{toast.message}</p>
+      <p className="min-w-0 flex-1 text-gms-body leading-[22px] text-gms-text">{toast.message}</p>
       <button type="button" aria-label="Dismiss notification" onClick={() => onDismiss(toast.id)} className={cx("shrink-0 rounded-gms-sm p-1 text-gms-text hover:bg-gms-surface-sunken", focusRing)}>
         <X size={18} aria-hidden />
       </button>

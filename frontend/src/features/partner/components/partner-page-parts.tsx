@@ -55,7 +55,7 @@ export function PartnerAccessGuard({ entity, children }: { entity: PartnerEntity
     return (
       <PartnerPageFrame>
         <div role="alert" className="flex flex-col items-start gap-3 rounded-gms-lg border border-gms-border bg-gms-surface p-6">
-          <p className="text-sm text-gms-text">{message}</p>
+          <p className="text-gms-body text-gms-text">{message}</p>
           <Button onClick={() => void mine.refetch()}>Retry</Button>
         </div>
       </PartnerPageFrame>
@@ -69,11 +69,11 @@ export function PartnerAccessGuard({ entity, children }: { entity: PartnerEntity
       <PartnerPageFrame>
         <section aria-labelledby={titleId} className="flex flex-col items-start gap-3 rounded-gms-lg border border-gms-border bg-gms-surface p-8">
           <ShieldAlert size={28} className="text-gms-text-secondary" aria-hidden />
-          <h1 id={titleId} className="text-xl font-medium text-gms-text-heading">
+          <h1 id={titleId} className="text-gms-title font-medium text-gms-text-heading">
             {`You don't have access to ${entity.singular}`}
           </h1>
-          <p className="text-sm text-gms-text-secondary">{`Ask an administrator for the ${entity.singular} view permission.`}</p>
-          <Link href="/" className={cx("mt-2 rounded-gms-md border border-gms-border px-4 py-2 text-sm font-medium text-gms-text hover:bg-gms-surface-sunken", focusRing)}>
+          <p className="text-gms-body text-gms-text-secondary">{`Ask an administrator for the ${entity.singular} view permission.`}</p>
+          <Link href="/" className={cx("mt-2 rounded-gms-md border border-gms-border px-4 py-2 text-gms-body font-medium text-gms-text hover:bg-gms-surface-sunken", focusRing)}>
             Back to Home
           </Link>
         </section>
@@ -143,7 +143,7 @@ export function DrawerToggle({ entity, open, drawerId, onToggle, ref }: { entity
 export function FormErrorBanner({ message, onReload, reloading }: { message: string; onReload?: () => void; reloading?: boolean }) {
   return (
     <div role="alert" className="flex flex-wrap items-center gap-3 rounded-gms-md border border-gms-danger bg-gms-danger-subtle px-4 py-3">
-      <p className="min-w-0 flex-1 text-sm text-gms-danger">{message}</p>
+      <p className="min-w-0 flex-1 text-gms-body text-gms-danger">{message}</p>
       {onReload && (
         <Button onClick={onReload} disabled={reloading}>
           Reload
@@ -158,7 +158,7 @@ export function EmptySelection({ entity }: { entity: PartnerEntity }) {
   return (
     <section aria-label={`No ${lowerSingular(entity)} selected`} className="flex flex-col items-start gap-3 rounded-gms-lg border border-gms-border bg-gms-surface p-8">
       <Users size={28} className="text-gms-text-secondary" aria-hidden />
-      <p className="text-base text-gms-text">{`Select a ${lowerSingular(entity)} from the list.`}</p>
+      <p className="text-gms-body text-gms-text">{`Select a ${lowerSingular(entity)} from the list.`}</p>
     </section>
   );
 }
@@ -167,7 +167,7 @@ export function EmptySelection({ entity }: { entity: PartnerEntity }) {
 export function DetailLoadError({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div role="alert" className="flex flex-col items-start gap-3 rounded-gms-lg border border-gms-border bg-gms-surface p-6">
-      <p className="text-sm text-gms-text">{message}</p>
+      <p className="text-gms-body text-gms-text">{message}</p>
       {onRetry && <Button onClick={onRetry}>Retry</Button>}
     </div>
   );

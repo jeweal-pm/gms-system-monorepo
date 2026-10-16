@@ -32,6 +32,19 @@ format dates with explicit locale/timezone. Do not use blanket hydration suppres
 hide an application rendering error. Preserve session-loading/redirect behavior and avoid
 duplicate auth reads/request waterfalls without evidence.
 
+## Typography scale (owner standard, 2026-10-16)
+
+The owner set one type scale for the whole system: "แก้ไข font size ให้เป็นขนาดมาตรฐาน ให้ขนาดตัวอักษรปกติเป็น size 14 px Size หัวข้อเป็น 16px Size หัว lable เป็น 12 px" plus page titles 24 px. Tokens in `frontend/src/app/globals.css` (Tailwind `--text-*`); use only these four, never `text-sm`/`text-[15px]` etc.
+
+| Class | Size / line height | Use |
+|---|---|---|
+| `text-gms-title` | 24 / 32 | page title (`h1`) on every page, login and print view |
+| `text-gms-heading` | 16 / 24 | card, section, drawer, dialog and panel headings (`h2`/`h3`) |
+| `text-gms-body` | 14 / 20 | normal text, field values, buttons, sidebar items, table cells, toasts (also the `body` default) |
+| `text-gms-label` | 12 / 16 | field labels, group labels, helper/error text, breadcrumbs, badges, tooltips |
+
+This supersedes the font sizes recorded in earlier feature design-system documents (user-permission, customer, vendor, app-navigation, company-profile).
+
 ## Dependencies, contracts, and capacity
 
 Follow [UI delivery](../../workflow/ui-delivery.md): read approved TODOs and the central

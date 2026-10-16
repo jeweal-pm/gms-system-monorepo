@@ -115,7 +115,7 @@ export function PartnerDrawer<TItem extends PartnerListItem>({
     >
       <header className="flex h-[58px] shrink-0 items-center justify-between border-b border-gms-border px-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-base font-semibold text-gms-text">{entity.plural}</h2>
+          <h2 className="text-gms-heading font-semibold text-gms-text">{entity.plural}</h2>
           {total !== undefined && <CountBadge>{total}</CountBadge>}
         </div>
         <button type="button" aria-label={`Close ${plural} panel`} onClick={onClose} className={cx("rounded-gms-sm p-1 text-gms-text hover:bg-gms-surface-sunken", focusRing)}>
@@ -134,7 +134,7 @@ export function PartnerDrawer<TItem extends PartnerListItem>({
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="Search name or code name..."
             autoComplete="off"
-            className="h-10 w-full rounded-gms-md border border-gms-border bg-gms-surface pl-11 pr-3 text-base text-gms-text outline-none placeholder:text-gms-text-placeholder focus:border-gms-primary focus:ring-2 focus:ring-gms-primary/20"
+            className="h-10 w-full rounded-gms-md border border-gms-border bg-gms-surface pl-11 pr-3 text-gms-body text-gms-text outline-none placeholder:text-gms-text-placeholder focus:border-gms-primary focus:ring-2 focus:ring-gms-primary/20"
           />
         </label>
 
@@ -145,7 +145,7 @@ export function PartnerDrawer<TItem extends PartnerListItem>({
                 <Plus size={18} className="mt-0.5 shrink-0 text-gms-text" aria-hidden />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-gms-text">{draftRowTitle(entity)}</span>
-                  <span className="block truncate text-[15px] text-gms-text-secondary">Not saved yet</span>
+                  <span className="block truncate text-gms-body text-gms-text-secondary">Not saved yet</span>
                 </span>
                 <Badge variant="draft">Draft</Badge>
               </button>
@@ -162,7 +162,7 @@ export function PartnerDrawer<TItem extends PartnerListItem>({
 
           {list.isError && items.length === 0 && (
             <li role="alert" className="space-y-2 px-3 py-3">
-              <p className="text-sm text-gms-text">{loadErrorMessage(list.error, plural)}</p>
+              <p className="text-gms-body text-gms-text">{loadErrorMessage(list.error, plural)}</p>
               <Button onClick={() => void list.refetch()}>Retry</Button>
             </li>
           )}
@@ -179,7 +179,7 @@ export function PartnerDrawer<TItem extends PartnerListItem>({
                       {item.code || "No code name"}
                       <span className="sr-only">{item.active ? ", active" : ", inactive"}</span>
                     </span>
-                    <span className="block truncate text-sm text-gms-text-secondary">{item.name}</span>
+                    <span className="block truncate text-gms-body text-gms-text-secondary">{item.name}</span>
                   </span>
                   {!item.active && <Badge variant="inactive">Inactive</Badge>}
                 </button>
@@ -188,11 +188,11 @@ export function PartnerDrawer<TItem extends PartnerListItem>({
           })}
 
           {list.isSuccess && items.length === 0 && (
-            <li className="px-3 py-3 text-sm text-gms-text-secondary">{search ? `No ${plural} match "${search}"` : `No ${plural} yet`}</li>
+            <li className="px-3 py-3 text-gms-body text-gms-text-secondary">{search ? `No ${plural} match "${search}"` : `No ${plural} yet`}</li>
           )}
 
           {isFetchingNextPage && (
-            <li className="flex items-center gap-2 px-3 py-3 text-sm text-gms-text-secondary">
+            <li className="flex items-center gap-2 px-3 py-3 text-gms-body text-gms-text-secondary">
               <LoaderCircle size={16} className="animate-spin" aria-hidden />
               Loading more…
             </li>
@@ -200,7 +200,7 @@ export function PartnerDrawer<TItem extends PartnerListItem>({
 
           {list.isError && items.length > 0 && (
             <li role="alert" className="space-y-2 px-3 py-3">
-              <p className="text-sm text-gms-text">{loadErrorMessage(list.error, `more ${plural}`)}</p>
+              <p className="text-gms-body text-gms-text">{loadErrorMessage(list.error, `more ${plural}`)}</p>
               <Button onClick={loadMore}>Retry</Button>
             </li>
           )}

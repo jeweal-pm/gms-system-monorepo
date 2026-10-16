@@ -6,10 +6,10 @@ import { cx } from "./button";
 export function fieldBoxClass({ invalid, readOnly, disabled }: { invalid?: boolean; readOnly?: boolean; disabled?: boolean }) {
   if (disabled) {
     // Disabled (customer C-07, e.g. State/City before a Country): grey fill, grey text, no hover border.
-    return "h-[52px] w-full cursor-not-allowed rounded-gms-md border border-gms-border bg-gms-field-disabled text-base text-gms-checkbox-readonly transition-colors";
+    return "h-[52px] w-full cursor-not-allowed rounded-gms-md border border-gms-border bg-gms-field-disabled text-gms-body text-gms-checkbox-readonly transition-colors";
   }
   return cx(
-    "h-[52px] w-full rounded-gms-md border text-base text-gms-text transition-colors",
+    "h-[52px] w-full rounded-gms-md border text-gms-body text-gms-text transition-colors",
     invalid ? "border-gms-danger bg-gms-danger-subtle" : "border-gms-border bg-gms-surface",
     readOnly ? "cursor-default" : !invalid && "hover:border-gms-text-placeholder",
   );
@@ -35,7 +35,7 @@ type FieldShellProps = {
  */
 export function FieldShell({ id, label, required, error, labelAsText, children, className }: FieldShellProps) {
   const labelClass = cx(
-    "absolute -top-2 left-3 z-10 bg-gms-surface px-1 text-xs font-semibold leading-4",
+    "absolute -top-2 left-3 z-10 bg-gms-surface px-1 text-gms-label font-semibold leading-4",
     error ? "text-gms-danger" : "text-gms-text",
   );
   const labelContent = (
@@ -53,7 +53,7 @@ export function FieldShell({ id, label, required, error, labelAsText, children, 
       )}
       {children}
       {error && (
-        <p id={`${id}-error`} className="mt-1 pl-4 text-[13px] italic leading-[18px] text-gms-danger">
+        <p id={`${id}-error`} className="mt-1 pl-4 text-gms-label italic text-gms-danger">
           {error}
         </p>
       )}

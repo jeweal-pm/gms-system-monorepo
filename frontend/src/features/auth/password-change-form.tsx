@@ -53,14 +53,14 @@ export function PasswordChangeForm() {
         ["confirmPassword", "ยืนยันรหัสผ่านใหม่", "new-password"],
       ] as const).map(([name, label, autoComplete]) => (
         <div key={name}>
-          <label htmlFor={name} className="mb-1.5 block text-xs font-medium text-[#465661]">{label}</label>
-          <input id={name} type="password" autoComplete={autoComplete} {...register(name)} className="h-10 w-full rounded border border-[#d9e1e5] px-3 text-sm outline-none focus:border-[#00817b] focus:ring-2 focus:ring-[#00817b]/15" />
-          {errors[name] && <p className="mt-1 text-xs text-red-600">{errors[name]?.message}</p>}
+          <label htmlFor={name} className="mb-1.5 block text-gms-label font-medium text-[#465661]">{label}</label>
+          <input id={name} type="password" autoComplete={autoComplete} {...register(name)} className="h-10 w-full rounded border border-[#d9e1e5] px-3 text-gms-body outline-none focus:border-[#00817b] focus:ring-2 focus:ring-[#00817b]/15" />
+          {errors[name] && <p className="mt-1 text-gms-label text-red-600">{errors[name]?.message}</p>}
         </div>
       ))}
-      <p className="text-xs leading-5 text-[#687887]">ใช้รหัสผ่าน 4–64 ตัวอักษร โดยไม่จำกัดรูปแบบตัวอักษร</p>
-      {message && <p role="status" className="text-xs text-[#006c68]">{message}</p>}
-      <button disabled={busy} className="h-10 rounded bg-[#006d68] px-5 text-sm font-semibold text-white hover:bg-[#005a56] disabled:opacity-60">{busy ? "กำลังบันทึก…" : "บันทึกรหัสผ่าน"}</button>
+      <p className="text-gms-label leading-5 text-[#687887]">ใช้รหัสผ่าน 4–64 ตัวอักษร โดยไม่จำกัดรูปแบบตัวอักษร</p>
+      {message && <p role="status" className="text-gms-label text-[#006c68]">{message}</p>}
+      <button disabled={busy} className="h-10 rounded bg-[#006d68] px-5 text-gms-body font-semibold text-white hover:bg-[#005a56] disabled:opacity-60">{busy ? "กำลังบันทึก…" : "บันทึกรหัสผ่าน"}</button>
     </form>
   );
 }

@@ -17,7 +17,7 @@ export function SidebarContextPanel({ nav, pathname }: Readonly<{ nav: ContextNa
   const titleId = useId();
   return (
     <nav aria-labelledby={titleId} className="flex h-full w-gms-sidebar shrink-0 flex-col border-r border-gms-border bg-gms-surface-muted px-[14px] py-4">
-      <h2 id={titleId} className="shrink-0 px-1.5 pt-2.5 text-xl leading-7 font-semibold text-gms-text">
+      <h2 id={titleId} className="shrink-0 px-1.5 pt-2.5 text-gms-heading font-semibold text-gms-text">
         {nav.title}
       </h2>
       <ul className="scrollbar-none mt-[26px] flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
@@ -27,7 +27,7 @@ export function SidebarContextPanel({ nav, pathname }: Readonly<{ nav: ContextNa
             <li key={group.id}>
               <Link
                 href={group.href}
-                className={`flex h-9 items-center gap-2 rounded-gms-md px-2 text-[15px] leading-5 text-gms-text transition-colors hover:bg-gms-nav-active ${sidebarFocusRing}`}
+                className={`flex h-9 items-center gap-2 rounded-gms-md px-2 text-gms-body leading-5 text-gms-text transition-colors hover:bg-gms-nav-active ${sidebarFocusRing}`}
               >
                 <Icon aria-hidden size={18} strokeWidth={1.5} className="shrink-0" />
                 <span className="min-w-0 flex-1 truncate">{group.label}</span>
@@ -41,7 +41,7 @@ export function SidebarContextPanel({ nav, pathname }: Readonly<{ nav: ContextNa
                       <Link
                         href={child.href}
                         aria-current={active ? "page" : undefined}
-                        className={`flex h-8 items-center rounded-gms-md px-4 text-sm leading-5 transition-colors hover:bg-gms-nav-active ${sidebarFocusRing} ${
+                        className={`flex h-8 items-center rounded-gms-md px-4 text-gms-body leading-5 transition-colors hover:bg-gms-nav-active ${sidebarFocusRing} ${
                           active ? "bg-gms-nav-active text-gms-text" : "text-gms-text-secondary"
                         }`}
                       >

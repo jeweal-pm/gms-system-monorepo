@@ -91,7 +91,7 @@ export function PermissionMatrix({ nodes, values, onChange, collapsed, onToggleG
                 <ChevronDown size={18} aria-hidden className={cx("transition-transform", isCollapsed && "-rotate-90")} />
               </button>
               <span className="truncate">{node.label}</span>
-              <span className="ml-4 shrink-0 text-[13px] font-normal text-gms-text">{`${count} sub-menu${count === 1 ? "" : "s"}`}</span>
+              <span className="ml-4 shrink-0 text-gms-label font-normal text-gms-text">{`${count} sub-menu${count === 1 ? "" : "s"}`}</span>
             </div>
           </th>
           {cells(node.label, [node], cellBorder)}
@@ -120,18 +120,18 @@ export function PermissionMatrix({ nodes, values, onChange, collapsed, onToggleG
   return (
     // Horizontal scroll only below xl, so the sticky header keeps working with page scroll on desktop.
     <div className="overflow-x-auto xl:overflow-visible">
-      <table className="w-full min-w-[960px] table-fixed border-separate border-spacing-0 text-[15px] text-gms-text">
+      <table className="w-full min-w-[960px] table-fixed border-separate border-spacing-0 text-gms-body text-gms-text">
         <colgroup>
           <col className="w-[31%]" />
           {PERMISSION_ACTIONS.map((action) => <col key={action} />)}
         </colgroup>
         <thead>
           <tr>
-            <th scope="col" className="sticky top-0 z-10 h-[42px] border-b border-gms-border bg-gms-page pl-3 text-left text-[15px] font-medium uppercase">
+            <th scope="col" className="sticky top-0 z-10 h-[42px] border-b border-gms-border bg-gms-page pl-3 text-left text-gms-body font-medium uppercase">
               Menu
             </th>
             {PERMISSION_ACTIONS.map((action) => (
-              <th key={action} scope="col" className="sticky top-0 z-10 h-[42px] border-b border-gms-border bg-gms-page text-center text-[15px] font-medium">
+              <th key={action} scope="col" className="sticky top-0 z-10 h-[42px] border-b border-gms-border bg-gms-page text-center text-gms-body font-medium">
                 {action}
               </th>
             ))}

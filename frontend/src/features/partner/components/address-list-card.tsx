@@ -88,7 +88,7 @@ export function AddressListCard<TForm extends FieldValues & PartnerAddressValues
     <Card
       title={type.title}
       titleId={`${idPrefix}-${type.key}-title`}
-      titleClassName="text-lg font-medium text-gms-text"
+      titleClassName="text-gms-heading font-medium text-gms-text"
       headerClassName="min-h-[55px] px-4"
       bodyClassName="@container p-4"
       badge={<CountBadge>{fields.length}</CountBadge>}
@@ -123,7 +123,7 @@ export function AddressListCard<TForm extends FieldValues & PartnerAddressValues
               disabled={atLimit}
               aria-describedby={atLimit ? limitHelpId : undefined}
               className={cx(
-                "flex h-[42px] w-full items-center justify-center gap-2 rounded-gms-md border border-dashed border-gms-primary text-[15px] font-medium text-gms-primary transition-colors hover:bg-gms-primary-subtle disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent",
+                "flex h-[42px] w-full items-center justify-center gap-2 rounded-gms-md border border-dashed border-gms-primary text-gms-body font-medium text-gms-primary transition-colors hover:bg-gms-primary-subtle disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent",
                 focusRing,
               )}
             >
@@ -131,7 +131,7 @@ export function AddressListCard<TForm extends FieldValues & PartnerAddressValues
               {`Add another ${type.key} address`}
             </button>
             {atLimit && (
-              <p id={limitHelpId} className="mt-1.5 text-xs text-gms-text-secondary">
+              <p id={limitHelpId} className="mt-1.5 text-gms-label text-gms-text-secondary">
                 {`Up to ${ADDRESS_MAX} ${type.key} addresses`}
               </p>
             )}

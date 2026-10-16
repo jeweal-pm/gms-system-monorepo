@@ -31,7 +31,7 @@ export function PartnerInformationCard<TForm extends FieldValues & PartnerInfoVa
     <Card
       title={title}
       titleId={`${idPrefix}-information-title`}
-      titleClassName="text-lg font-medium text-gms-text"
+      titleClassName="text-gms-heading font-medium text-gms-text"
       headerClassName="min-h-[65px]"
       bodyClassName="@container lg:px-[39px]"
       trailing={
@@ -69,7 +69,7 @@ export function PartnerInformationCard<TForm extends FieldValues & PartnerInfoVa
         />
       </div>
 
-      <h3 className="mb-5 mt-6 text-sm font-medium text-gms-text">Basic Information</h3>
+      <h3 className="mb-5 mt-6 text-gms-body font-medium text-gms-text">Basic Information</h3>
       <div className={grid}>
         <TextField id={`${idPrefix}-first-name`} label="First name" required autoComplete="given-name" readOnly={readOnly} error={errors.firstName?.message} {...register("firstName")} />
         <TextField id={`${idPrefix}-middle-name`} label="Middle name" autoComplete="additional-name" readOnly={readOnly} error={errors.middleName?.message} {...register("middleName")} />

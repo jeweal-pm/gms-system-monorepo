@@ -96,7 +96,7 @@ export function Sidebar({
             return (
               <div key={section.id} data-nav-section={section.id}>
                 {section.title && (
-                  <h2 id={headingId} className="mb-1 text-[13px] font-normal leading-[17px] text-gms-text-subtle">
+                  <h2 id={headingId} className="mb-1 text-gms-label font-normal text-gms-text-subtle">
                     {section.title}
                   </h2>
                 )}

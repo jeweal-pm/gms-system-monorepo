@@ -60,10 +60,10 @@ const toolButton = cx(
 
 /** Content styles: Tailwind preflight removes list and code styling, so restore it inside the editor. */
 const contentClass = [
-  "min-h-[104px] px-3 py-3 text-sm leading-[22px] text-gms-text outline-none",
+  "min-h-[104px] px-3 py-3 text-gms-body leading-[22px] text-gms-text outline-none",
   "[&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5",
   "[&_a]:text-gms-primary [&_a]:underline",
-  "[&_code]:rounded-gms-sm [&_code]:bg-gms-surface-sunken [&_code]:px-1 [&_code]:font-mono [&_code]:text-[13px]",
+  "[&_code]:rounded-gms-sm [&_code]:bg-gms-surface-sunken [&_code]:px-1 [&_code]:font-mono [&_code]:text-gms-label",
   "[&_pre]:my-1 [&_pre]:rounded-gms-md [&_pre]:bg-gms-surface-sunken [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0",
   "[&_p.is-editor-empty:first-child]:before:pointer-events-none [&_p.is-editor-empty:first-child]:before:float-left [&_p.is-editor-empty:first-child]:before:h-0 [&_p.is-editor-empty:first-child]:before:text-gms-text-placeholder [&_p.is-editor-empty:first-child]:before:content-[attr(data-placeholder)]",
 ].join(" ");
@@ -221,7 +221,7 @@ export function RichTextField({ id, labelledBy, value, onChange, onBlur, placeho
         </div>
         {linkOpen && !readOnly && (
           <div id={`${linkInputId}-row`} className="flex flex-wrap items-center gap-2 border-t border-gms-border bg-gms-surface px-3 py-2">
-            <label htmlFor={linkInputId} className="text-[13px] text-gms-text-secondary">
+            <label htmlFor={linkInputId} className="text-gms-label text-gms-text-secondary">
               Link
             </label>
             <input
@@ -243,7 +243,7 @@ export function RichTextField({ id, labelledBy, value, onChange, onBlur, placeho
                   editor?.commands.focus();
                 }
               }}
-              className="h-8 min-w-0 flex-1 rounded-gms-sm border border-gms-border px-2 text-sm outline-none focus:border-gms-primary"
+              className="h-8 min-w-0 flex-1 rounded-gms-sm border border-gms-border px-2 text-gms-body outline-none focus:border-gms-primary"
             />
             <Button variant="primary" className="h-8" onClick={applyLink}>
               Apply
@@ -252,7 +252,7 @@ export function RichTextField({ id, labelledBy, value, onChange, onBlur, placeho
               Cancel
             </Button>
             {linkError && (
-              <p id={`${linkInputId}-error`} className="w-full text-[13px] italic text-gms-danger">
+              <p id={`${linkInputId}-error`} className="w-full text-gms-label italic text-gms-danger">
                 {linkError}
               </p>
             )}
@@ -263,7 +263,7 @@ export function RichTextField({ id, labelledBy, value, onChange, onBlur, placeho
         </div>
       </div>
       {error && (
-        <p id={errorId} className="mt-1 pl-4 text-[13px] italic leading-[18px] text-gms-danger">
+        <p id={errorId} className="mt-1 pl-4 text-gms-label italic text-gms-danger">
           {error}
         </p>
       )}

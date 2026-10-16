@@ -32,7 +32,7 @@ function TileContent({ label, icon: Icon, color, variant }: Readonly<TileContent
       >
         <Icon size={variant === "landing" ? 32 : 26} strokeWidth={1.5} />
       </span>
-      <span className="mt-2.5 text-sm leading-5 font-medium whitespace-nowrap group-hover:underline">{label}</span>
+      <span className="mt-2.5 text-gms-body leading-5 font-medium whitespace-nowrap group-hover:underline">{label}</span>
     </>
   );
 }

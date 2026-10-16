@@ -48,7 +48,7 @@ export function UsersDrawer({ open, list, listStatus, listErrorMessage, onRetry,
     >
       <header className="flex h-[58px] shrink-0 items-center justify-between border-b border-gms-border px-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-base font-semibold text-gms-text">Users</h2>
+          <h2 className="text-gms-heading font-semibold text-gms-text">Users</h2>
           {/* rev2-02/03 "Users 3" equals the seat limit of the helper text (Q-UP2-03). */}
           {list && <CountBadge>{list.usage.limit}</CountBadge>}
         </div>
@@ -67,12 +67,12 @@ export function UsersDrawer({ open, list, listStatus, listErrorMessage, onRetry,
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search name or username..."
             autoComplete="off"
-            className="h-10 w-full rounded-gms-md border border-gms-border bg-gms-surface pl-11 pr-3 text-base text-gms-text outline-none placeholder:text-gms-text-placeholder focus:border-gms-primary focus:ring-2 focus:ring-gms-primary/20"
+            className="h-10 w-full rounded-gms-md border border-gms-border bg-gms-surface pl-11 pr-3 text-gms-body text-gms-text outline-none placeholder:text-gms-text-placeholder focus:border-gms-primary focus:ring-2 focus:ring-gms-primary/20"
           />
         </label>
 
         {list && (
-          <p className="mt-3 px-2 text-xs text-gms-text">{`${list.usage.used} of ${list.usage.limit} users added. Super Admin is not counted.`}</p>
+          <p className="mt-3 px-2 text-gms-label text-gms-text">{`${list.usage.used} of ${list.usage.limit} users added. Super Admin is not counted.`}</p>
         )}
 
         <ul className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pb-4" aria-label="User list">
@@ -82,9 +82,9 @@ export function UsersDrawer({ open, list, listStatus, listErrorMessage, onRetry,
                 <Plus size={18} className="mt-0.5 shrink-0 text-gms-text" aria-hidden />
                 <span className="min-w-0 flex-1">
                   <span className="block font-medium text-gms-text">New user</span>
-                  <span className="block truncate text-[15px] text-gms-text-secondary">{draft.username.trim() || "Not saved yet"}</span>
+                  <span className="block truncate text-gms-body text-gms-text-secondary">{draft.username.trim() || "Not saved yet"}</span>
                 </span>
-                <span className="shrink-0 rounded-gms-sm bg-gms-warning-subtle px-1.5 py-0.5 text-xs font-medium text-gms-warning-text">Draft</span>
+                <span className="shrink-0 rounded-gms-sm bg-gms-warning-subtle px-1.5 py-0.5 text-gms-label font-medium text-gms-warning-text">Draft</span>
               </button>
             </li>
           )}
@@ -99,7 +99,7 @@ export function UsersDrawer({ open, list, listStatus, listErrorMessage, onRetry,
 
           {listStatus === "error" && (
             <li role="alert" className="space-y-2 px-3 py-3">
-              <p className="text-sm text-gms-text">{listErrorMessage ?? "Couldn't load users."}</p>
+              <p className="text-gms-body text-gms-text">{listErrorMessage ?? "Couldn't load users."}</p>
               <Button onClick={onRetry}>Retry</Button>
             </li>
           )}
@@ -119,7 +119,7 @@ export function UsersDrawer({ open, list, listStatus, listErrorMessage, onRetry,
                         {user.name}
                         <span className="sr-only">{user.active ? ", active" : ", inactive"}</span>
                       </span>
-                      <span className="block truncate text-[15px] text-gms-text-secondary">{user.username}</span>
+                      <span className="block truncate text-gms-body text-gms-text-secondary">{user.username}</span>
                     </span>
                     {user.isSuperAdmin && (
                       <span className="shrink-0 text-gms-primary" title="Super Admin">
@@ -133,7 +133,7 @@ export function UsersDrawer({ open, list, listStatus, listErrorMessage, onRetry,
             })}
 
           {listStatus === "success" && normalized && filtered.length === 0 && (
-            <li className="px-3 py-3 text-sm text-gms-text-secondary">{`No users match "${query.trim()}"`}</li>
+            <li className="px-3 py-3 text-gms-body text-gms-text-secondary">{`No users match "${query.trim()}"`}</li>
           )}
         </ul>
       </div>

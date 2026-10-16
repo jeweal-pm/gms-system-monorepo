@@ -47,7 +47,7 @@ export function MasterCodeDialog({ open, onClose }: Readonly<{ open: boolean; on
       className="m-auto max-h-none w-[min(662px,calc(100vw-32px))] max-w-none overflow-visible border-0 bg-transparent p-0 text-gms-text backdrop:bg-gms-scrim"
     >
       <div className="@container flex max-h-[calc(100dvh-32px)] flex-col items-center gap-6">
-        <h2 id={titleId} className="shrink-0 text-lg leading-[26px] font-normal text-gms-on-primary">
+        <h2 id={titleId} className="shrink-0 text-gms-heading font-normal text-gms-on-primary">
           Master Code
         </h2>
         <div className="relative min-h-0 w-full overflow-y-auto overscroll-contain rounded-gms-2xl bg-gms-surface px-[27px] pt-[31px] pb-8 shadow-gms-overlay md:min-h-[473px]">

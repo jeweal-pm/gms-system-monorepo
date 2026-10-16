@@ -65,7 +65,7 @@ function CompanyProfileLoader({ access }: { access: PartnerAccess }) {
     return (
       <div className="px-6 pt-6">
         <div role="alert" className="flex max-w-xl flex-col items-start gap-3 rounded-gms-lg border border-gms-border bg-gms-surface p-6">
-          <p className="text-sm text-gms-text">Couldn&apos;t load the company profile.</p>
+          <p className="text-gms-body text-gms-text">Couldn&apos;t load the company profile.</p>
           <Button onClick={() => void query.refetch()}>Retry</Button>
         </div>
       </div>
@@ -233,10 +233,10 @@ function CompanyProfileWorkspace({ access, saved, refetch }: { access: PartnerAc
 
       <form id={FORM_ID} noValidate onSubmit={handleSubmit(save, focusFirstError)} className="lg:pl-10">
         <ProfileSection id="company-details" title="Details">
-          <p className="mb-2 text-sm text-gms-text">Company Logo</p>
+          <p className="mb-2 text-gms-label font-semibold text-gms-text">Company Logo</p>
           <LogoUploadTile id="cp-logo" value={logo} savedUrl={logoUrl(saved)} onChange={setLogo} readOnly={readOnly} />
 
-          <h3 className="mt-8 mb-5 text-[15px] leading-5 font-medium text-gms-text">General Information</h3>
+          <h3 className="mt-8 mb-5 text-gms-heading font-medium text-gms-text">General Information</h3>
           <div className={fieldGrid}>
             <TextField id="cp-name" label="Name/Company Name" required autoComplete="organization" error={errors.name?.message} {...fieldProps} {...register("name")} />
             <TextField id="cp-taxId" label="Tax ID" autoComplete="off" error={errors.taxId?.message} {...fieldProps} {...register("taxId")} />
@@ -414,7 +414,7 @@ function CompanyProfileHeader({
   const editing = mode !== "view" && canEdit;
   return (
     <div className="sticky top-0 z-10 -mx-4 mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-3 bg-gms-surface px-4 pt-6 pb-3 sm:-mx-6 sm:px-6">
-      <h1 className="text-[28px] leading-9 font-medium text-gms-text-heading">Company Profile</h1>
+      <h1 className="text-gms-title font-medium text-gms-text-heading">Company Profile</h1>
       <div className="flex flex-col items-end gap-3">
         <div className="flex items-center gap-1">
           <IconButton label="Print company profile" unavailableReason="Printing isn't available yet">

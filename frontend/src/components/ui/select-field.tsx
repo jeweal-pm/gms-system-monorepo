@@ -97,7 +97,7 @@ export function SelectField({
         )}
       </div>
       {status === "error" && (
-        <p id={`${id}-load-error`} className="mt-1 flex flex-wrap items-center gap-x-2 pl-4 text-[13px] leading-[18px] text-gms-danger">
+        <p id={`${id}-load-error`} className="mt-1 flex flex-wrap items-center gap-x-2 pl-4 text-gms-label text-gms-danger">
           {loadErrorMessage}
           {onRetry && (
             <button type="button" onClick={onRetry} className="font-medium text-gms-primary underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-gms-primary">

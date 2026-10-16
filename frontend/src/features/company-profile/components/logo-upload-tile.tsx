@@ -97,7 +97,7 @@ export function LogoUploadTile({ id, value, savedUrl, onChange, readOnly }: Logo
           {input}
         </div>
         {error && (
-          <p id={errorId} className="mt-1 text-[13px] italic leading-[18px] text-gms-danger">
+          <p id={errorId} className="mt-1 text-gms-label italic text-gms-danger">
             {error}
           </p>
         )}
@@ -120,12 +120,12 @@ export function LogoUploadTile({ id, value, savedUrl, onChange, readOnly }: Logo
         )}
       >
         <ImagePlus size={28} strokeWidth={1.5} className="mb-1 text-gms-text" aria-hidden />
-        <span className="text-[13px] font-semibold text-gms-text">{readOnly ? "No logo" : "Upload photo"}</span>
-        {!readOnly && <span className="text-xs text-gms-text-secondary">JPEG or PNG only</span>}
+        <span className="text-gms-label font-semibold text-gms-text">{readOnly ? "No logo" : "Upload photo"}</span>
+        {!readOnly && <span className="text-gms-label text-gms-text-secondary">JPEG or PNG only</span>}
       </button>
       {input}
       {error && (
-        <p id={errorId} className="mt-1 text-[13px] italic leading-[18px] text-gms-danger">
+        <p id={errorId} className="mt-1 text-gms-label italic text-gms-danger">
           {error}
         </p>
       )}
