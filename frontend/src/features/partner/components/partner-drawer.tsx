@@ -63,7 +63,7 @@ const rowState = (selected: boolean) => (selected ? "border-gms-primary bg-gms-p
 /**
  * Partner C-11 (customer FE-CUS-009, vendor FE-VEN-008): non-modal list drawer. Server search
  * (debounced by the caller), keyset pages of 50 loaded when the end of the list scrolls into view,
- * with a "Load more" button for keyboard users. Pushes content at ≥1280 px, overlays below (Q-CUS-05).
+ * with a "Load more" button for keyboard users. Always overlays the content (owner 2026-10-16: the form keeps its width).
  * The entity feature owns the query and passes it in.
  */
 export function PartnerDrawer<TItem extends PartnerListItem>({
@@ -109,7 +109,7 @@ export function PartnerDrawer<TItem extends PartnerListItem>({
       aria-label={entity.plural}
       hidden={!open}
       className={cx(
-        "absolute inset-y-0 right-0 z-30 w-full shrink-0 flex-col border-l border-gms-border-drawer bg-gms-surface shadow-gms-overlay sm:w-80 xl:static xl:z-auto xl:shadow-none print:hidden",
+        "absolute inset-y-0 right-0 z-30 w-full shrink-0 flex-col border-l border-gms-border-drawer bg-gms-surface shadow-gms-overlay sm:w-80 print:hidden",
         open ? "flex" : "hidden",
       )}
     >

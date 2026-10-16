@@ -4,7 +4,7 @@ import { ChevronsUpDown } from "lucide-react";
 import type { Ref } from "react";
 import { PHONE_COUNTRIES, phoneCountry, type PhoneValue } from "@/lib/phone";
 import { cx } from "./button";
-import { FieldShell, fieldBoxClass, fieldFocusWithinClass, readOnlyControlClass } from "./outlined-field";
+import { FieldShell, fieldBoxClass, fieldFocusWithinClass, readOnlyControlClass, type LabelPosition } from "./outlined-field";
 
 /**
  * Provisional country list from `phone.ts` (Q-UP-09; DEP-UP-01/02 are proposed,
@@ -42,13 +42,14 @@ type PhoneFieldProps = {
   required?: boolean;
   readOnly?: boolean;
   inputRef?: Ref<HTMLInputElement>;
+  labelPosition?: LabelPosition;
 };
 
 /** C-11: country selector + national number in one outlined box. */
-export function PhoneField({ id, label, value, onChange, onBlur, error, required, readOnly, inputRef }: PhoneFieldProps) {
+export function PhoneField({ id, label, value, onChange, onBlur, error, required, readOnly, inputRef, labelPosition }: PhoneFieldProps) {
   const country = phoneCountry(value.country);
   return (
-    <FieldShell id={id} label={label} required={required} error={error} readOnly={readOnly}>
+    <FieldShell id={id} label={label} required={required} error={error} readOnly={readOnly} labelPosition={labelPosition}>
       <div
         className={cx(fieldBoxClass({ invalid: Boolean(error), readOnly }), "flex items-center", !readOnly && fieldFocusWithinClass)}
         onBlur={(event) => {

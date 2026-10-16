@@ -1,11 +1,13 @@
-import { Banknote, Bell, CodeXml, Crown, FileBadge, FileUser, MapPinned, Pickaxe, Settings, UserLock, UserRound, type LucideIcon } from "lucide-react";
+import { Banknote, Bell, CodeXml, Crown, Factory, FileBadge, FileCog, FileUser, MapPinned, Pickaxe, Settings, UserLock, UserRound, type LucideIcon } from "lucide-react";
 import { setupPlaceholderLink } from "@/features/home/navigation";
 
-/** Tile square colors (design-system tokens; Notifications uses the primary color exactly). */
-export type SetupTileColor = "indigo" | "green" | "primary" | "neutral";
+/** Tile square colors (design-system tokens, owner design 2026-10-16). */
+export type SetupTileColor = "indigo" | "green" | "red" | "blue" | "stone" | "neutral";
 
 export type SetupLinkDestination = { kind: "link"; id: string; label: string; href: string; icon: LucideIcon; color: SetupTileColor };
 export type SetupMasterCodeEntry = { kind: "master-code"; id: string; label: string; icon: LucideIcon; color: SetupTileColor };
+/** Shown faded and not clickable until the page exists (Stone Factory in the 2026-10-16 design). */
+export type SetupUnavailableEntry = { kind: "unavailable"; id: string; label: string; icon: LucideIcon; color: SetupTileColor };
 
 const placeholder = (slug: Parameters<typeof setupPlaceholderLink>[0], icon: LucideIcon, color: SetupTileColor): SetupLinkDestination => ({
   kind: "link",
@@ -15,12 +17,18 @@ const placeholder = (slug: Parameters<typeof setupPlaceholderLink>[0], icon: Luc
   color,
 });
 
-/** Setup landing tiles in reading order (S3). Company Profile has its page (company-profile FE-CP-001); Notifications is a placeholder (Q-NAV-05). */
-export const setupLandingTiles: (SetupLinkDestination | SetupMasterCodeEntry)[] = [
+/**
+ * Setup landing tiles in reading order (S3 + owner design 2026-10-16). Company Profile has its page
+ * (company-profile FE-CP-001); Notifications and Document Setup are placeholders (Q-NAV-05); Stone
+ * Factory is drawn faded in the design, so it is shown as not available yet.
+ */
+export const setupLandingTiles: (SetupLinkDestination | SetupMasterCodeEntry | SetupUnavailableEntry)[] = [
   { kind: "link", id: "company-profile", label: "Company Profile", href: "/setup/company-profile", icon: Settings, color: "indigo" },
   { kind: "link", id: "user-permission", label: "User and Permission", href: "/setup/user-permission", icon: UserLock, color: "green" },
-  placeholder("notifications", Bell, "primary"),
+  placeholder("notifications", Bell, "red"),
   { kind: "master-code", id: "master-code", label: "Master Code", icon: CodeXml, color: "neutral" },
+  placeholder("document-setup", FileCog, "blue"),
+  { kind: "unavailable", id: "stone-factory", label: "Stone Factory", icon: Factory, color: "stone" },
 ];
 
 /** Master Code modal tiles (S4). Partner Master opens the Vendor page (Q-NAV-04); the rest are placeholders. */

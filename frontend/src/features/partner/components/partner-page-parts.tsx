@@ -14,7 +14,7 @@ import { usePermissionMine } from "../hooks";
  * page). The state machine wiring stays in each entity's `<entity>-page.tsx`.
  */
 
-/** Below this width the drawer overlays the content (Q-CUS-05), so it starts closed. */
+/** The drawer always overlays the content (owner 2026-10-16); below this width it starts closed. */
 const PUSH_LAYOUT_QUERY = "(min-width: 1280px)";
 
 export const printDateFormatter = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Bangkok", dateStyle: "medium", timeStyle: "short" });
@@ -88,7 +88,7 @@ const subscribeNever = () => () => {};
 
 /**
  * Drawer open state: the user's choice in this visit, else the remembered state (localStorage,
- * convenience only), else open only where it pushes the content. The server snapshot is "open"
+ * convenience only), else open on wide screens (≥ 1280 px) only. The server snapshot is "open"
  * (deterministic hydration).
  */
 export function useDrawerPreference(storageKey: string): { open: boolean; setOpen: (open: boolean) => void } {

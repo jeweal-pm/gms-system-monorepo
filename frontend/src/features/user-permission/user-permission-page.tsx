@@ -370,8 +370,8 @@ function UserPermissionWorkspace() {
           aria-label={drawerOpen ? "Hide users panel" : "Show users panel"}
           onClick={() => setDrawerOpen((open) => !open)}
           className={cx(
-            "absolute top-4 z-20 flex h-10 w-6 items-center justify-center rounded-l-gms-sm bg-gms-primary-strong text-gms-on-primary print:hidden",
-            drawerOpen ? "right-80" : "right-0",
+            "absolute top-4 z-40 flex h-10 w-6 items-center justify-center rounded-l-gms-sm bg-gms-primary-strong text-gms-on-primary print:hidden",
+            drawerOpen ? "max-sm:hidden sm:right-80" : "right-0",
             focusRing,
           )}
         >

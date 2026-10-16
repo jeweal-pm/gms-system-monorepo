@@ -119,6 +119,8 @@ export function PermissionMatrix({ nodes, values, onChange, collapsed, onToggleG
 
   return (
     // Horizontal scroll only below xl, so the sticky header keeps working with page scroll on desktop.
+    // `-top-6` cancels the scroll area padding (pt-6) so the header sticks flush under the topbar
+    // with no gap (owner 2026-10-16).
     <div className="overflow-x-auto xl:overflow-visible">
       <table className="w-full min-w-[960px] table-fixed border-separate border-spacing-0 text-gms-body text-gms-text">
         <colgroup>
@@ -127,11 +129,11 @@ export function PermissionMatrix({ nodes, values, onChange, collapsed, onToggleG
         </colgroup>
         <thead>
           <tr>
-            <th scope="col" className="sticky top-0 z-10 h-[42px] border-b border-gms-border bg-gms-page pl-3 text-left text-gms-body font-medium uppercase">
+            <th scope="col" className="sticky -top-6 z-10 h-[42px] border-b border-gms-border bg-gms-page pl-3 text-left text-gms-body font-medium uppercase">
               Menu
             </th>
             {PERMISSION_ACTIONS.map((action) => (
-              <th key={action} scope="col" className="sticky top-0 z-10 h-[42px] border-b border-gms-border bg-gms-page text-center text-gms-body font-medium">
+              <th key={action} scope="col" className="sticky -top-6 z-10 h-[42px] border-b border-gms-border bg-gms-page text-center text-gms-body font-medium">
                 {action}
               </th>
             ))}

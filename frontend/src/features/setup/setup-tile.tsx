@@ -8,7 +8,9 @@ import type { SetupTileColor } from "./setup-destinations";
 const tileColorClass: Record<SetupTileColor, string> = {
   indigo: "bg-gms-tile-indigo",
   green: "bg-gms-tile-green",
-  primary: "bg-gms-primary",
+  red: "bg-gms-tile-red",
+  blue: "bg-gms-tile-blue",
+  stone: "bg-gms-tile-stone",
   neutral: "bg-gms-tile-neutral",
 };
 
@@ -46,6 +48,15 @@ export function SetupTileLink({ href, onNavigate, ...content }: Readonly<TileCon
     <Link href={href} onNavigate={onNavigate} className={tileClassName}>
       <TileContent {...content} />
     </Link>
+  );
+}
+
+/** Not available yet (faded as in the design): not a link, announced as disabled, tooltip on hover. */
+export function SetupTileUnavailable(content: Readonly<TileContentProps>) {
+  return (
+    <span role="link" aria-disabled="true" title={`${content.label} isn't available yet`} className="flex w-full cursor-not-allowed flex-col items-center rounded-gms-lg px-1 py-2 text-gms-text opacity-25">
+      <TileContent {...content} />
+    </span>
   );
 }
 

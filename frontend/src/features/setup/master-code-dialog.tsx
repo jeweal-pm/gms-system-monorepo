@@ -44,13 +44,13 @@ export function MasterCodeDialog({ open, onClose }: Readonly<{ open: boolean; on
         // Only the dialog box itself (outside the title/card wrapper) or the ::backdrop targets the dialog.
         if (event.target === event.currentTarget) onClose(true);
       }}
-      className="m-auto max-h-none w-[min(662px,calc(100vw-32px))] max-w-none overflow-visible border-0 bg-transparent p-0 text-gms-text backdrop:bg-gms-scrim"
+      className="m-auto max-h-none w-[min(662px,calc(100vw-32px))] max-w-none overflow-visible border-0 bg-transparent p-0 text-gms-text gms-dialog"
     >
       <div className="@container flex max-h-[calc(100dvh-32px)] flex-col items-center gap-6">
         <h2 id={titleId} className="shrink-0 text-gms-heading font-normal text-gms-on-primary">
           Master Code
         </h2>
-        <div className="relative min-h-0 w-full overflow-y-auto overscroll-contain rounded-gms-2xl bg-gms-surface px-[27px] pt-[31px] pb-8 shadow-gms-overlay md:min-h-[473px]">
+        <div className="relative min-h-0 w-full overflow-y-auto overscroll-contain rounded-gms-lg bg-gms-surface px-[27px] pt-[31px] pb-8 shadow-gms-overlay md:min-h-[473px]">
           <ul ref={gridRef} className="grid grid-cols-2 gap-y-6 @min-[480px]:grid-cols-3 @min-[640px]:grid-cols-4">
             {masterCodeDestinations.map((destination) => (
               <li key={destination.id} className="flex justify-center">

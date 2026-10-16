@@ -27,7 +27,7 @@ const itemBase = "flex w-full items-start gap-3 rounded-gms-md border px-3 py-3 
 const itemState = (selected: boolean) =>
   selected ? "border-gms-primary bg-gms-primary-subtle" : "border-transparent hover:bg-gms-surface-sunken";
 
-/** C-16 / C-17: non-modal Users drawer that pushes the content (S1, S2, S5; rev2-02/03). Rows show name + username. */
+/** C-16 / C-17: non-modal Users drawer over the content (owner 2026-10-16: the form keeps its width; S1, S2, S5). Rows show name + username. */
 export function UsersDrawer({ open, list, listStatus, listErrorMessage, onRetry, selectedUserId, draft, onSelectDraft, onSelectUser, onClose, closeButtonRef }: UsersDrawerProps) {
   const [query, setQuery] = useState("");
   const normalized = query.trim().toLowerCase();
@@ -44,7 +44,10 @@ export function UsersDrawer({ open, list, listStatus, listErrorMessage, onRetry,
       id={USERS_DRAWER_ID}
       aria-label="Users"
       hidden={!open}
-      className={cx("w-80 shrink-0 flex-col border-l border-gms-border-drawer bg-gms-surface print:hidden", open ? "flex" : "hidden")}
+      className={cx(
+        "absolute inset-y-0 right-0 z-30 w-full shrink-0 flex-col border-l border-gms-border-drawer bg-gms-surface shadow-gms-overlay sm:w-80 print:hidden",
+        open ? "flex" : "hidden",
+      )}
     >
       <header className="flex h-[58px] shrink-0 items-center justify-between border-b border-gms-border px-4">
         <div className="flex items-center gap-3">

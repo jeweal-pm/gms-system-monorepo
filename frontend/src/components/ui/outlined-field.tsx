@@ -36,9 +36,17 @@ type FieldShellProps = {
   /** Field state, so the label's lower half matches the field fill. */
   readOnly?: boolean;
   disabled?: boolean;
+  /**
+   * `notch` (default): the label sits across the top border. `above`: the label sits above the field
+   * with no background at all (company profile, owner 2026-10-16) and reserves its own 22 px, so the
+   * grid gap between rows stays intact.
+   */
+  labelPosition?: LabelPosition;
   children: ReactNode;
   className?: string;
 };
+
+export type LabelPosition = "notch" | "above";
 
 /**
  * The label sits across the top border: its upper half is transparent (the card or panel behind
@@ -55,10 +63,10 @@ function labelBackground({ invalid, readOnly, disabled }: { invalid: boolean; re
  * C-09 notched outline: the label sits on the top border. The required "*"
  * is visual; controls also set aria-required. Errors render below in italics.
  */
-export function FieldShell({ id, label, required, error, labelAsText, readOnly, disabled, children, className }: FieldShellProps) {
+export function FieldShell({ id, label, required, error, labelAsText, readOnly, disabled, labelPosition = "notch", children, className }: FieldShellProps) {
   const labelClass = cx(
-    "absolute -top-2 left-3 z-10 px-1 text-gms-label font-semibold leading-4",
-    labelBackground({ invalid: Boolean(error), readOnly, disabled }),
+    "absolute z-[1] text-gms-label font-semibold leading-4",
+    labelPosition === "above" ? "top-0 left-1" : cx("-top-2 left-3 px-1", labelBackground({ invalid: Boolean(error), readOnly, disabled })),
     error ? "text-gms-danger" : "text-gms-text",
   );
   const labelContent = (
@@ -68,7 +76,7 @@ export function FieldShell({ id, label, required, error, labelAsText, readOnly, 
     </>
   );
   return (
-    <div className={cx("relative", className)}>
+    <div className={cx("relative", labelPosition === "above" && "pt-[22px]", className)}>
       {labelAsText ? (
         <span id={`${id}-label`} className={labelClass}>{labelContent}</span>
       ) : (
@@ -88,13 +96,14 @@ type TextFieldProps = Omit<InputHTMLAttributes<HTMLInputElement>, "id"> & {
   id: string;
   label: string;
   error?: string;
+  labelPosition?: LabelPosition;
   ref?: Ref<HTMLInputElement>;
 };
 
 /** C-09 / C-10 OutlinedTextField (also used for the password field). */
-export function TextField({ id, label, error, required, readOnly, disabled, className, ref, ...props }: TextFieldProps) {
+export function TextField({ id, label, error, required, readOnly, disabled, labelPosition, className, ref, ...props }: TextFieldProps) {
   return (
-    <FieldShell id={id} label={label} required={required} error={error} readOnly={readOnly} disabled={disabled} className={className}>
+    <FieldShell id={id} label={label} required={required} error={error} readOnly={readOnly} disabled={disabled} labelPosition={labelPosition} className={className}>
       <input
         ref={ref}
         id={id}
