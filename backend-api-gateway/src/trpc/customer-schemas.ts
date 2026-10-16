@@ -13,6 +13,7 @@ import {
   listOutputSchema,
   MAX_ADDRESSES,
   mutationOutputSchema,
+  nextCodeOutputSchema,
   optionsOutputSchema,
   partnerScalarFields,
   timestamp,
@@ -73,3 +74,6 @@ export const customerMutationOutputSchema = mutationOutputSchema;
 export const customerDeleteOutputSchema = deleteOutputSchema;
 
 export const customerOptionsOutputSchema = optionsOutputSchema;
+
+/** ADR-0021: `customer.nextCode` output `{code}`. */
+export const customerNextCodeOutputSchema = nextCodeOutputSchema;

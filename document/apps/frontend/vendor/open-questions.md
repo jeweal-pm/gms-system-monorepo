@@ -1,6 +1,6 @@
 # Open questions and conflicts: vendor
 
-- Feature ID / UI revision: `vendor` / 1
+- Feature ID / UI revision: `vendor` / 3 (revision 1 questions below; [revision 3 notes](#revision-3-adr-0021-2026-10-16) at the end)
 - Status: answered 2026-10-15 (UI revision 2). Owner answers: **Q-VEN-01** labels as Customer; **Q-VEN-02** Phone optional (as Customer); **Q-VEN-03** " default ไม่ต้องติ๊ก" = a default invoice address is **not required**: new items start unchecked, the user may tick at most one (ticking another moves it), it can be unticked, and saving with none is valid (the S4 red frame is not used). Q-VEN-04/05/06: documented defaults.
 - Source: [four unique screenshots](source/) (see [ui-spec.md](ui-spec.md#source-and-evidence)); pattern [customer UI rev 1](../customer/ui-spec.md) (approved 2026-10-14)
 - Central TODO: [vendor.md](../../../task/todo/vendor.md)
@@ -30,3 +30,24 @@ writing the `vendor.*` contract; the others have defaults that frontend builds u
 | A-03 | The customer page components are typed to the customer form, so Vendor can't use them directly, and copying is not allowed | FE-VEN-001 extracts them to `frontend/src/features/partner/` and moves customer onto them. Touches the customer feature (regression check TC-VEN-20). | FE-VEN-001 |
 | A-04 | ADR-0018 says future Quotation/Sale documents must store their own copy of the customer's name, because delete is permanent. Purchase documents will reference vendors. | SA decides whether Vendor delete is also permanent and records the same rule for PO/Purchase | SA-VEN-05 |
 | A-05 | Duplicate icon is grey in S1 (draft mode) | Matches the customer rule (enabled only for a loaded saved record) | FE-VEN-003 |
+
+## Revision 3 (ADR-0021), 2026-10-16
+
+ADR-0021 decides the header, modes, required Code Name with `V001` suggestions and the drawer row for Vendor too.
+It **supersedes Q-VEN-04**: the bold first line is the Code Name and the second line is the Name only (owner:
+"SAMPLE_VENDOR_A คือ codename V-0001 · Sample Vendor A Co., Ltd. คือ name").
+
+The open UI-detail questions are shared with Customer and listed once in
+[customer open questions, revision 2](../customer/open-questions.md#revision-2-adr-0021-2026-10-16): Q-CUS-07
+(code-taken replacement copy), Q-CUS-08 (Cancel in create mode), Q-CUS-09 (no hint when `nextCode` fails),
+Q-CUS-10 (legacy rows without a code), A-07 (no test runner; FE-VEN-018 blocked). None blocks; the defaults are built.
+
+## Revision 4 (draft row and address card), 2026-10-16
+
+Shared with [customer revision 3](../customer/open-questions.md#revision-3-draft-row-and-address-card-2026-10-16):
+the draft row title is always "New vendor"; P-07 (collapsed "Has errors" tag) no longer applies; #1 trash is shown
+disabled (A-09); automated tests wait for a runner (A-11; FE-VEN-R4-005 blocked).
+
+Vendor-specific note: the vendor default rule is unchanged (0 or 1 default, ADR-0019 / Q-VEN-03 as implemented in
+revision 2). A new vendor starts with #1 **unchecked**, which matches rev4-01; ticking one unticks the others and the
+ticked one can be unticked. No new question.

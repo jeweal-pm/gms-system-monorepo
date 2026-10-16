@@ -28,8 +28,8 @@ export function escapeLike(value: string): string {
 }
 
 /** Keys and email are lowered by PostgreSQL itself so the CHECK constraints always hold (customer D-02). */
-export async function normalizedKeys(tx: Tx, input: { name: string; code: string | null; email: string }) {
-  const [row] = await tx.$queryRaw<{ nameKey: string; codeKey: string | null; email: string }[]>`
+export async function normalizedKeys(tx: Tx, input: { name: string; code: string; email: string }) {
+  const [row] = await tx.$queryRaw<{ nameKey: string; codeKey: string; email: string }[]>`
     SELECT lower(${input.name}::text) AS "nameKey", lower(${input.code}::text) AS "codeKey", lower(${input.email}::text) AS "email"`;
   return row;
 }
@@ -137,6 +137,36 @@ export async function listPage(table: keyof typeof LIST_TABLES, query: ListQuery
     };
   } catch (error) {
     throw mapError(error, "list");
+  }
+}
+
+/** ADR-0021 §2: running-number prefix per partner table. */
+export const CODE_PREFIX = { customer: "C", vendor: "V" } as const;
+/** Digits (after leading zeros) that still fit a bigint after `+ 1`; longer suffixes are not counted. */
+export const MAX_COUNTED_DIGITS = 18;
+
+/** `<prefix>` + the number, zero-padded to at least 3 digits: C001, C999, C1000. */
+export function formatPartnerCode(prefix: string, next: string): string {
+  if (!/^[1-9][0-9]*$/.test(next)) throw new Error("invalid running number");
+  return `${prefix}${next.padStart(3, "0")}`;
+}
+
+/**
+ * ADR-0021 §2 suggestion (not a reservation): max numeric suffix of codes matching
+ * `^[Pp][0-9]+$` (P = prefix, suffix ≤ 18 significant digits) + 1, computed in PostgreSQL as
+ * bigint and returned as text; 1 when none match. Read-only; one aggregate over the table.
+ */
+export async function nextPartnerCode(table: keyof typeof LIST_TABLES, mapError: (error: unknown, operation: string) => unknown) {
+  const prefix = CODE_PREFIX[table];
+  const pattern = `^[${prefix}${prefix.toLowerCase()}][0-9]+$`;
+  try {
+    const [row] = await prisma.$queryRaw<{ next: string }[]>`
+      SELECT (COALESCE(max(substring("code" FROM 2)::bigint), 0) + 1)::text AS "next"
+      FROM ${LIST_TABLES[table]}
+      WHERE "code" ~ ${pattern} AND length(ltrim(substring("code" FROM 2), '0')) <= ${MAX_COUNTED_DIGITS}`;
+    return { code: formatPartnerCode(prefix, row.next) };
+  } catch (error) {
+    throw mapError(error, "nextCode");
   }
 }
 

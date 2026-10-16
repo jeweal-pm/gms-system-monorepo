@@ -1,7 +1,7 @@
 # UI specification: customer
 
-- Feature ID / revision: `customer` / 1
-- Status: pending-review
+- Feature ID / revision: `customer` / 3 (revision 3 = [draft row title and address card design](#revision-3-draft-row-and-address-card) on top of revision 2; revision 2 = [ADR-0021 changes](#revision-2-adr-0021) on top of revision 1 below)
+- Status: revision 1 approved 2026-10-14; revision 2 approved 2026-10-16 with ADR-0021 ("...ทำ adr เเล้วเริ่มทำเลย"); revision 3 approved 2026-10-16 by the owner instruction quoted in [revision 3](#revision-3-draft-row-and-address-card)
 - Source: three owner-supplied screenshots (not Figma), in [source/](source/)
 - Viewport / source dimensions: all three are 1920×1080 px. **Assumption:** device-pixel ratio 1, so the viewport is 1920×1080 CSS px. This is supported by the shell geometry, which matches the user-permission source at DPR 2 exactly (sidebar ~235, header ~47, drawer ~319 CSS px). All CSS values below are estimates unless marked as sampled.
 - Inspection evidence: each image viewed with the image reader. Pixel colors and edges sampled on the originals with System.Drawing on 2026-10-14. No Figma file or design tokens were supplied.
@@ -9,6 +9,46 @@
 - Requirements / main flow: [main flow](#main-user-flow) below. The editable flow [customer-flow.md](../../../diagram/customer-flow.md) is owned by SA (ADR-0018 follow-up step 2; SA draft revision 1, pending-review). [Open questions](open-questions.md)
 - Review bundle: this file, [design-system.md](design-system.md), [conventions.md](conventions.md), [form-guidelines.md](form-guidelines.md), [data-fetching.md](data-fetching.md), [error-handling.md](error-handling.md), [dependencies.md](dependencies.md), [testing.md](testing.md), [open-questions.md](open-questions.md); central TODO: [`document/task/todo/customer.md`](../../../task/todo/customer.md)
 - Pattern feature: [user-permission](../user-permission/ui-spec.md) (UI revision 1, approved 2026-10-12; implemented in `frontend/src/features/user-permission/`)
+
+## Revision 3 (draft row and address card)
+
+- Owner instruction (2026-10-16), recorded as approval of customer UI revision 3 and vendor UI revision 4: "frontend backend ปรับให้หน่อยตอนเขียนcode name ตรง draft ไม่ต้องเปลี่ยนตามนะ เป็น new customer นั้นเเหละ และนี่คือ รูปที่สองและสามเป็นแบบใหม่ของ invoice address ในทั้ง customer และ vendor set as default address ย้ายมาด้านบนแทน เลข 1 ด้วย เปลี่ยนตามที่บอกให้หน่อย"
+- Source: [rev3-01-current-draft-row-issue.png](source/rev3-01-current-draft-row-issue.png) (the bug: the draft row title followed the typed Code Name), [rev3-02-address-card-no-default.png](source/rev3-02-address-card-no-default.png) (new card, unchecked) and [rev3-03-address-card-default-checked.png](source/rev3-03-address-card-default-checked.png) (new card, #1 checked). Viewed with the image reader on 2026-10-16. Vendor revision 4 uses the matching vendor images.
+- Frontend-only. No API, schema, contract or business-rule change; the default-address rules stay those of ADR-0018 (customer) and ADR-0019 (vendor) and match the backend.
+- Implemented in the shared module (`frontend/src/features/partner/components/address-item.tsx`, `address-list-card.tsx`, `partner-drawer.tsx`), so Vendor gets the same design. TODO IDs: FE-CUS-R3-001 … FE-CUS-R3-004.
+
+| Area | Revision 3 behavior | Supersedes |
+|---|---|---|
+| Drawer draft row | Fixed title **"New customer"**, subtitle **"Not saved yet"**, "Draft" badge. The title never mirrors the Code Name or Name being typed (owner: "ตรง draft ไม่ต้องเปลี่ยนตามนะ เป็น new customer"). Saved rows are unchanged (bold Code Name / Name) | revision 2 "Drawer rows" draft-row text; DV-02 |
+| Address item layout | "#N" label on the **left, outside** the card (bold 15 px, not focusable; the `<fieldset>` legend "Invoice address #N" stays the accessible name). Card: light gray `gms-page` fill, radius `gms-lg` (12 px), no visible border (red border while any field has an error, DV-12), padding ~16 px. **No collapse chevron and no "Default" badge**; every item is always open | Address item (accordion) row, C-11 expanded/collapsed, "Collapse/expand item" interaction, "Has errors" collapsed tag |
+| First row in the card | "Set as default address" checkbox on the left; red trash icon on the right | checkbox as the last row; trash in the accordion header |
+| Field grid | Unchanged: Name/Company Name\* + Tax ID; Address\* full row; Country\* + State/Province\*; City\* + Postcode\* (Shipping: Name\* full row, then the same rows) | - |
+| Add button | Dashed "+ Add another invoice address" below the items; Shipping keeps "+ Add another shipping address". Count badge next to the section title unchanged | - |
+| Shipping | Uses the same card for consistency (the mock shows Invoice only) | - |
+| Trash | Rules unchanged: item #1 cannot be removed, so its trash icon renders **disabled** (tooltip "The first invoice address cannot be removed"); items #2+ are removable; 1-10 items. After removing an item, focus moves to the previous item's default checkbox | trash hidden on #1; focus to the previous header button |
+| Read-only (view mode / no EDIT) | Checkbox and trash are shown disabled (`aria-disabled` checkbox, `disabled` trash) | trash hidden in read-only |
+| Default rule (unchanged, ADR-0018 §3 / P-01) | Exactly one default per address type. Checking another item moves the default there. The checked default cannot be unchecked: it stays checked with `aria-disabled` and the hint "One address must be the default". A new customer starts with **#1 checked** for Invoice and Shipping. Removing the default item makes #1 the default | - |
+
+Design items **not** followed in revision 3: the mock shows #1 **unchecked** (rev3-02); for Customer that state is not allowed (exactly one default, ADR-0018), so a new customer shows #1 checked as in rev3-03. The mock shows an enabled trash icon on #1; #1 stays non-removable, so it is shown disabled. Submit with errors no longer needs to expand items (all are open); it still focuses the first error in visual order.
+
+## Revision 2 (ADR-0021)
+
+- Source: [rev2-01-add-customer-view-edit-header.png](source/rev2-01-add-customer-view-edit-header.png) (full page, 3840×2160, DPR 2 → 1920×1080 CSS) and [rev2-02-drawer-row-code-name.png](source/rev2-02-drawer-row-code-name.png) (one drawer row). Both viewed with the image reader on 2026-10-16. Vendor revision 3 uses the same images.
+- Governing decision: [ADR-0021](../../../adr/0021-partner-code-running-number-and-record-modes.md) (Accepted 2026-10-16). Header/mode model: User & Permission revision 2 ([ADR-0020](../../../adr/0020-username-login-and-permission-matrix-v2.md)).
+- Implemented in the shared Partner Master module (`frontend/src/features/partner/**`), so the same behavior applies to Vendor.
+
+| Area | Revision 2 behavior | Supersedes |
+|---|---|---|
+| Title | Create mode "Add Customer"; view/edit mode = the saved customer's Name (while it loads: "Customer"); next to it "Customer List N" (capital L) | ui-spec "Page header row" title per mode; Q-CUS-03 "Edit Customer" |
+| Header icons | Print (saved customer loaded), Excel (`aria-disabled`, tooltip "Excel export isn't available yet"), Duplicate (ADD, saved loaded), Refresh — unchanged behavior | — |
+| Header buttons | Second row, right-aligned: **Create Customer** (+ icon), **Cancel**, **Save** (primary), **Edit** (primary, pencil), **Delete** (danger). Create mode: Cancel + Save enabled, the rest disabled. View mode: form read-only; Create/Edit/Delete enabled; Cancel/Save disabled. Edit mode: Cancel + Save enabled. Saving/deleting disables the others. Create/Edit/Delete are hidden without ADD/EDIT/DELETE; Cancel/Save hidden for users with neither ADD nor EDIT (P-05 / ADR-0016 kept) | toolbar table (single Create Customer / Save button, Delete next to Refresh); Q-CUS-02 placement |
+| Modes | Selecting a customer opens **view** (read-only for everyone). **Edit** makes it editable (focus Code Name). **Cancel** in edit restores the saved values and returns to view; in create it returns to the customer that was open before Create Customer / Duplicate, otherwise starts a fresh draft. **Save** in edit updates and returns to view; in create opens the new customer in view. Delete keeps the existing confirm dialog. Unsaved-change prompt kept for row switch, Refresh, Duplicate, Create Customer and the draft row | always-editable form for users with EDIT |
+| Code Name | Required `*`: trimmed, 1–120 characters; empty → "Code Name is required"; > 120 → "Code Name must be at most 120 characters"; first in focus order | Code Name optional (revision 1, form-guidelines) |
+| Suggested code | In create mode (with ADD) the field is prefilled from `customer.nextCode` (`{code:"C001"}`); editable. The suggestion is the field default, so an untouched draft is not "unsaved". It is requested again whenever create mode starts (incl. Duplicate, Cancel, Refresh, after delete). A value the user typed is never replaced | Duplicate "clears Code Name" (TC-CUS-22) now clears and prefills the suggestion |
+| Code taken | `CUSTOMER_CODE_TAKEN` → field error "This code name is already in use" and `nextCode` is refetched. If the field still held the untouched suggestion, it is replaced by the new one and the error reads "C001 is already in use. C002 is suggested instead; check it, then save again." | — |
+| Drawer rows | Bold first line = **Code Name**; second line = **Name**; green dot = Active, "Inactive" badge otherwise; draft row: typed Code Name (fallback "New customer") / typed Name (fallback "Not saved yet"); search by name or code unchanged. A legacy row without a code shows "No code name" in placeholder color on the first line | DV-02, P-08, TC-CUS-16/17 |
+
+Design items **not** followed in revision 2 (ADR-0021 §3, §5): "Create User" → "Create Customer"; drawer title "Vendors" → "Customers"; sidebar "Vender" → existing "Vendor"; drawer search placeholder "Search name or username..." → "Search name or code name..."; draft row "New user / superadmin@example.com" → code/name; sample data `SAMPLE-VENDOR-A` / `V-0001 · Sample Vendor A Co., Ltd.` is illustration only (owner: first line Code Name, second line Name).
 
 ## Source and evidence
 
@@ -246,4 +286,5 @@ flowchart TD
 
 | Revision | Date | Change |
 |---|---|---|
+| 3 | 2026-10-16 | Fixed draft row title "New customer"; new address card (outside "#N", default checkbox + trash on top, no accordion/badge) for Invoice and Shipping. Approved by the owner instruction of 2026-10-16. |
 | 1 | 2026-10-14 | Initial analysis of three screenshots against ADR-0018 revision 1. Status pending-review. |

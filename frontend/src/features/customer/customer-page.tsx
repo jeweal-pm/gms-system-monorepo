@@ -7,7 +7,7 @@ import { useForm, useWatch, type FieldErrors, type Path } from "react-hook-form"
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import type { PartnerAccess } from "@/features/partner/access";
 import { invoiceAddressType, shippingAddressType } from "@/features/partner/address-types";
-import { AddressListCard, type AddressListHandle } from "@/features/partner/components/address-list-card";
+import { AddressListCard } from "@/features/partner/components/address-list-card";
 import { DiscardChangesDialog } from "@/features/partner/components/discard-changes-dialog";
 import { partnerDrawerId } from "@/features/partner/components/partner-drawer";
 import { PartnerInformationCard } from "@/features/partner/components/partner-information-card";
@@ -24,9 +24,9 @@ import {
 } from "@/features/partner/components/partner-page-parts";
 import { PartnerPrintView } from "@/features/partner/components/partner-print-view";
 import type { PartnerEntity } from "@/features/partner/entity";
-import { useUnsavedChangesPrompt } from "@/features/partner/hooks";
+import { useSuggestedCodePrefill, useUnsavedChangesPrompt } from "@/features/partner/hooks";
 import type { OptionsState } from "@/features/partner/options";
-import { addressIndexesWithErrors, errorTreeFromEntries, firstErrorField } from "@/features/partner/schema";
+import { errorTreeFromEntries, firstErrorField } from "@/features/partner/schema";
 import { isPermissionDenied, loadErrorMessage, mapSaveError, type MappedFieldError, readCustomerError, toCustomerFields, toDuplicateValues, toFormValues } from "./api";
 import { CustomersDrawer } from "./components/customers-drawer";
 import { DeleteCustomerDialog } from "./components/delete-customer-dialog";
@@ -37,6 +37,7 @@ import {
   useCustomerDetail,
   useCustomerListsFetching,
   useCustomerLoader,
+  useCustomerNextCode,
   useCustomerOptions,
   useCustomerTotal,
   useUpdateCustomer,
@@ -50,10 +51,13 @@ const CUSTOMER: PartnerEntity = { key: "customer", singular: "Customer", plural:
 const DRAWER_ID = partnerDrawerId(CUSTOMER);
 
 /**
- * Setup › Customer (`customer` UI revision 1, ADR-0018). `permission.mine` gates the page:
+ * Setup › Customer (`customer` UI revision 2, ADR-0018 + ADR-0021). `permission.mine` gates the page:
  * no `customer.*` request is made without `customer:VIEW` (FE-CUS-004).
  * Data: gateway `customer.*` through the typed tRPC client (hooks.ts).
  * UI parts are the shared Partner Master components (vendor FE-VEN-001).
+ * Modes (ADR-0021 §3, like User & Permission): create (new draft), view (saved, read-only),
+ * edit (after Edit; Cancel restores the saved values). Code Name is required and prefilled
+ * from `customer.nextCode` in create mode (ADR-0021 §1–2).
  */
 export function CustomerPage() {
   return (
@@ -72,6 +76,10 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** ID whose saved data is currently in the form; differs from `selectedId` while it loads. */
   const [loadedId, setLoadedId] = useState<string | null>(null);
+  /** Edit mode for the selected customer (after Edit); otherwise a saved customer is shown read-only. */
+  const [editing, setEditing] = useState(false);
+  /** The saved customer open before Create Customer / Duplicate, restored by Cancel (ADR-0021 §3). */
+  const [previousId, setPreviousId] = useState<string | null>(null);
   const drawer = useDrawerPreference(DRAWER_STORAGE_KEY);
   const drawerOpen = drawer.open;
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
@@ -84,8 +92,6 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
   const [focusRequest, setFocusRequest] = useState<FocusRequest>(null);
   const [printedAt, setPrintedAt] = useState("");
   const toggleRef = useRef<HTMLButtonElement>(null);
-  const invoiceRef = useRef<AddressListHandle>(null);
-  const shippingRef = useRef<AddressListHandle>(null);
   const submittingRef = useRef(false);
   /** Latest selection, read by async loads to ignore late responses. */
   const selectionRef = useRef<string | null>(null);
@@ -104,14 +110,17 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
     resolver: zodResolver(customerFormSchema),
     mode: "onBlur",
     reValidateMode: "onChange",
-    shouldFocusError: false, // focus is moved manually after collapsed items are expanded
+    shouldFocusError: false, // focus is moved manually to the first error in visual order
     defaultValues: emptyCustomerForm(),
   });
   const { isDirty } = form.formState;
-  const [watchedName, watchedCode] = useWatch({ control: form.control, name: ["name", "code"] });
+  const watchedName = useWatch({ control: form.control, name: "name" });
 
-  const mode: PartnerMode = selectedId === null ? (access.add ? "draft" : "none") : access.edit ? "edit" : "view";
   const loaded = selectedId !== null && loadedId === selectedId && detail.data?.id === selectedId;
+  const gone = selectedId !== null && goneId === selectedId;
+  const mode: PartnerMode = selectedId === null ? (access.add ? "create" : "none") : editing && access.edit && loaded && !gone ? "edit" : "view";
+  const nextCode = useCustomerNextCode(mode === "create");
+  useSuggestedCodePrefill(form, mode === "create", nextCode.data?.code);
   const submitting = create.isPending || update.isPending || refreshingBeforeRetry;
   const requestFocus = useCallback((name: Path<CustomerFormValues>) => setFocusRequest((current) => ({ name, seq: (current?.seq ?? 0) + 1 })), []);
 
@@ -161,12 +170,50 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
   }
 
   function openDraft() {
+    // Already in create mode: the query stays enabled, so ask for a fresh suggestion explicitly.
+    if (mode === "create") void nextCode.refetch();
     selectionRef.current = null;
-    form.reset(emptyCustomerForm());
+    form.reset(emptyCustomerForm()); // Code Name is prefilled again from `nextCode`
     setFormError(null);
     setSelectedId(null);
     setLoadedId(null);
-    if (access.add) requestFocus("name");
+    setEditing(false);
+    if (access.add) requestFocus("code");
+  }
+
+  /** Create Customer (view mode): a new draft; Cancel returns to the customer open now. */
+  function startCreate() {
+    if (!access.add) return;
+    guard(() => {
+      setPreviousId(selectedId);
+      openDraft();
+    });
+  }
+
+  /** Edit (view mode): the saved customer becomes editable. */
+  function startEdit() {
+    if (!access.edit || !loaded || gone) return;
+    setFormError(null);
+    setEditing(true);
+    requestFocus("code");
+  }
+
+  /**
+   * Cancel. Edit mode: restore the saved values and return to view mode. Create mode: return to the
+   * customer that was open before Create / Duplicate, or start an empty draft again.
+   */
+  function cancel() {
+    setFormError(null);
+    if (mode === "edit") {
+      if (detail.data && detail.data.id === selectedId) applyDetail(detail.data);
+      setEditing(false);
+      return;
+    }
+    if (mode !== "create") return;
+    const previous = previousId;
+    setPreviousId(null);
+    if (previous !== null) selectCustomer(previous);
+    else openDraft();
   }
 
   /**
@@ -189,18 +236,16 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
     });
   }
 
-  function expandAndFocus(tree: Record<string, unknown>) {
-    invoiceRef.current?.expand(addressIndexesWithErrors(tree, "invoiceAddresses"));
-    shippingRef.current?.expand(addressIndexesWithErrors(tree, "shippingAddresses"));
+  function focusFirstError(tree: Record<string, unknown>) {
     const first = firstErrorField(tree, CUSTOMER_ADDRESS_ARRAYS);
     if (first) requestFocus(first as Path<CustomerFormValues>);
   }
 
-  /** Server field errors: set them, expand items that contain them, focus the first in visual order. */
+  /** Server field errors: set them and focus the first in visual order. */
   function showServerFieldErrors(entries: readonly MappedFieldError[]) {
     if (entries.length === 0) return;
     for (const { name, message } of entries) form.setError(name as Path<CustomerFormValues>, { type: "server", message });
-    expandAndFocus(errorTreeFromEntries(entries));
+    focusFirstError(errorTreeFromEntries(entries));
   }
 
   function loadIntoForm(id: string) {
@@ -217,6 +262,7 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
 
   function selectCustomer(id: string) {
     setFormError(null);
+    setEditing(false);
     setSelectedId(id);
     setLoadedId(null);
     loadIntoForm(id);
@@ -226,15 +272,17 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
     const source = detail.data;
     if (!access.add || !loaded || !source) return;
     guard(() => {
-      // Defaults stay empty so the copy counts as unsaved changes.
+      // Defaults stay empty so the copy counts as unsaved changes; Code Name gets the suggestion.
       form.reset(emptyCustomerForm());
       form.reset(toDuplicateValues(source), { keepDefaultValues: true });
       selectionRef.current = null;
+      setPreviousId(source.id);
       setFormError(null);
       setSelectedId(null);
       setLoadedId(null);
-      requestFocus("name");
-      toast.show("info", `Copied from ${source.name}. Enter a code name if needed, then create the customer.`);
+      setEditing(false);
+      requestFocus("code");
+      toast.show("info", `Copied from ${source.name}. Check the code name, then save the new customer.`);
     });
   }
 
@@ -244,6 +292,7 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
       void cache.invalidateLists();
       if (selectedId === null) {
         form.reset(emptyCustomerForm());
+        if (mode === "create") void nextCode.refetch();
         return;
       }
       const id = selectedId;
@@ -259,19 +308,21 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
     window.print();
   }
 
-  const onInvalid = (errors: FieldErrors<CustomerFormValues>) => expandAndFocus(errors as Record<string, unknown>);
+  const onInvalid = (errors: FieldErrors<CustomerFormValues>) => focusFirstError(errors as Record<string, unknown>);
 
   const onValid = async (values: CustomerFormValues) => {
     if (submittingRef.current) return; // double submit
-    if (mode !== "draft" && mode !== "edit") return;
+    if (mode !== "create" && mode !== "edit") return;
     submittingRef.current = true;
     setFormError(null);
     try {
       const fields = toCustomerFields(values);
-      if (mode === "draft") {
+      if (mode === "create") {
         const result = await create.mutateAsync(fields);
         toast.show("success", "Customer created");
         void cache.invalidateLists();
+        setPreviousId(null);
+        setEditing(false); // the new customer opens in view mode
         setSelectedId(result.id);
         setLoadedId(null);
         loadIntoForm(result.id); // one `get` loads the saved customer into the form (create returns only { id, updatedAt })
@@ -282,9 +333,10 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
         void cache.invalidateLists();
         const result = await detail.refetch();
         if (result.data?.id === id) applyDetail(result.data);
+        setEditing(false); // back to view mode
       }
     } catch (cause) {
-      const outcome = mapSaveError(cause, mode === "draft" ? "create" : "edit");
+      const outcome = mapSaveError(cause, mode === "create" ? "create" : "edit");
       if (outcome.refreshListBeforeRetry) {
         // The create may have succeeded (timeout): refresh the list before another submit is allowed.
         setRefreshingBeforeRetry(true);
@@ -298,7 +350,11 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
       }
       setFormError(outcome.formError ? { message: outcome.formError, stale: outcome.stale } : null);
       showServerFieldErrors(outcome.fieldErrors);
-      if (outcome.notFound && selectedId !== null) setGoneId(selectedId);
+      if (outcome.notFound && selectedId !== null) {
+        setGoneId(selectedId);
+        setEditing(false);
+      }
+      if (outcome.refetchNextCode && mode === "create") void nextCode.refetch();
       if (outcome.refetchOptions) void cache.refetchOptions();
       if (outcome.refetchList) void cache.invalidateLists();
       if (outcome.recheckAccess) void cache.recheckAccess();
@@ -313,10 +369,8 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
     window.requestAnimationFrame(() => toggleRef.current?.focus());
   }
 
-  const gone = selectedId !== null && goneId === selectedId;
-  const headerMode: PartnerMode = gone && mode === "edit" ? "view" : mode;
-  const readOnly = mode === "view" || gone;
-  const showForm = mode === "draft" || ((mode === "edit" || mode === "view") && loaded);
+  const readOnly = mode !== "create" && mode !== "edit";
+  const showForm = mode === "create" || ((mode === "edit" || mode === "view") && loaded);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-gms-page">
@@ -325,17 +379,23 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
           <PartnerPageHeader
             entity={CUSTOMER}
             formId={FORM_ID}
-            mode={headerMode}
+            mode={mode}
+            recordName={loaded ? detail.data?.name : undefined}
             total={total}
             savedLoaded={loaded}
             canAdd={access.add}
+            canEdit={access.edit}
             canDelete={access.delete}
+            gone={gone}
             submitting={submitting}
             deleting={deleteTarget !== null}
             refreshing={listsFetching || (selectedId !== null && detail.isFetching)}
             onPrint={print}
             onDuplicate={duplicate}
             onRefresh={refresh}
+            onCreate={startCreate}
+            onCancel={cancel}
+            onEdit={startEdit}
             onDelete={() => {
               if (loaded && detail.data) setDeleteTarget({ id: detail.data.id, name: detail.data.name });
             }}
@@ -354,7 +414,7 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
               id={FORM_ID}
               noValidate
               onSubmit={(event) => void form.handleSubmit(onValid, onInvalid)(event)}
-              aria-label={mode === "draft" ? "Create customer" : mode === "edit" ? "Edit customer" : "Customer details"}
+              aria-label={mode === "create" ? "Create customer" : mode === "edit" ? "Edit customer" : "Customer details"}
               className="space-y-4 print:hidden"
             >
               {formError && <FormErrorBanner message={formError.message} onReload={formError.stale ? reloadLatest : undefined} reloading={detail.isFetching} />}
@@ -363,7 +423,6 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
               <div className="@container">
                 <div className="grid grid-cols-1 items-start gap-4 @min-[1000px]:grid-cols-2 @min-[1000px]:gap-6">
                   <AddressListCard
-                    ref={invoiceRef}
                     form={form}
                     type={invoiceAddressType}
                     idPrefix={CUSTOMER.key}
@@ -373,7 +432,6 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
                     options={optionsState}
                   />
                   <AddressListCard
-                    ref={shippingRef}
                     form={form}
                     type={shippingAddressType}
                     idPrefix={CUSTOMER.key}
@@ -394,12 +452,12 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
           entity={CUSTOMER}
           open={drawerOpen}
           total={total}
-          draft={access.add ? { name: mode === "draft" ? watchedName : "", code: mode === "draft" ? watchedCode : "" } : null}
-          draftSelected={mode === "draft"}
+          draft={access.add}
+          draftSelected={mode === "create"}
           selectedId={selectedId}
           onSelectDraft={() => {
-            if (mode === "draft") requestFocus("name");
-            else guard(openDraft);
+            if (mode === "create") requestFocus("code");
+            else startCreate();
           }}
           onSelectCustomer={(customer) => {
             if (customer.id === selectedId) return;
@@ -414,6 +472,7 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
         customer={deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onDeleted={(id) => {
+          if (previousId === id) setPreviousId(null);
           if (id === selectedId) openDraft();
         }}
       />

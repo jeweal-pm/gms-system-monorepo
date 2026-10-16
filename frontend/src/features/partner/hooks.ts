@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useFormState, useWatch, type FieldValues, type UseFormReturn } from "react-hook-form";
 import { retryTransient } from "@/lib/trpc-error";
 import { trpc } from "@/providers/app-providers";
+import { replacedTakenCodeMessage, shouldPrefillCode } from "./code-suggestion";
 
 /** Existing approved contract; shares the tRPC cache entry with the shell and other pages. */
 export function usePermissionMine() {
@@ -19,6 +21,25 @@ export function useDebouncedSearch(raw: string, delayMs = 300): string {
     return () => window.clearTimeout(timer);
   }, [apply, delayMs]);
   return debounced;
+}
+
+/**
+ * ADR-0021 §2: prefills the suggested Code Name into a new record while the user has not edited the
+ * field. The suggestion becomes the field's default, so an untouched draft stays "not dirty" (no
+ * discard prompt). When a newer suggestion replaces a value the server reported as taken, the field
+ * keeps an error that names both codes.
+ */
+export function useSuggestedCodePrefill<TForm extends FieldValues & { code: string }>(form: UseFormReturn<TForm>, enabled: boolean, suggestion: string | undefined) {
+  const codeForm = form as unknown as UseFormReturn<{ code: string }>;
+  const current = useWatch({ control: codeForm.control, name: "code" });
+  const { dirtyFields } = useFormState({ control: codeForm.control, name: "code" });
+  const codeDirty = Boolean(dirtyFields.code);
+  useEffect(() => {
+    if (!shouldPrefillCode({ enabled, suggestion, current, codeDirty }) || suggestion === undefined) return;
+    const takenError = codeForm.getFieldState("code").error?.type === "server" && current.trim() !== "";
+    codeForm.resetField("code", { defaultValue: suggestion, keepError: takenError });
+    if (takenError) codeForm.setError("code", { type: "server", message: replacedTakenCodeMessage(current.trim(), suggestion) });
+  }, [codeForm, enabled, suggestion, current, codeDirty]);
 }
 
 /** Native prompt on close/reload while the form has unsaved changes. */

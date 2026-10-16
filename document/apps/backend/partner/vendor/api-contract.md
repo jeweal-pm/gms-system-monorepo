@@ -1,6 +1,6 @@
 # API contract: partner + gateway / vendor
 
-- Source UI revision / SA revision: 2 / 1 (**approved** 2026-10-15)
+- Source UI revision / SA revision: 3 / **2** (ADR-0021, approved 2026-10-16 — see [Revision 2](#revision-2--adr-0021-implemented-2026-10-16)); revision 1: 2 / 1 approved 2026-10-15
 - Decision record: [ADR-0019](../../../../adr/0019-vendor-master.md) (Proposed)
 - Existing shared contracts reused unchanged: `permission.mine`, gateway `errorFormatter` (`data.domainCode`, `data.fieldErrors`), session-context `authz`, partner error envelope and internal headers from the [customer contract](../customer/api-contract.md#internal-rest-contract-partner-called-by-gateway-only)
 - Consuming frontend TODO IDs: FE-VEN-002 (dashboard `href`), FE-VEN-005…008 (rules/shapes), FE-VEN-010 (wiring), FE-VEN-011 (error mapping) in the [central TODO](../../../../task/todo/vendor.md); frontend needs in [data-fetching.md](../../../frontend/vendor/data-fetching.md#requirements-for-the-sa-bundle) SA-VEN-01…08
@@ -39,7 +39,7 @@ const invoiceAddressInput = z.object({
 // vendor
 const vendorFields = {
   name:         z.string().trim().min(1).max(200),
-  code:         optText(120),                              // "Code Name"; unique case-insensitively among vendors
+  code:         requiredCode,                              // rev 2 (ADR-0021): "Code Name", required, trim, 1–120, unique case-insensitively among vendors
   currencyCode: CURRENCY,
   active:       z.boolean(),
   firstName:    z.string().trim().min(1).max(100),
@@ -77,6 +77,7 @@ type VendorDetail = VendorListItem & {
 | `vendor.update` mutation | `{ id: z.uuid(), expectedUpdatedAt: z.iso.datetime({ offset: false, precision: 3 }), ...vendorFields }` strict (full replacement) | `{ id: string, updatedAt: string }` | `vendor:EDIT` | `VALIDATION_ERROR`, `VENDOR_NOT_FOUND`, `VENDOR_STALE`, `VENDOR_CODE_TAKEN`, `PERMISSION_DENIED`, `PARTNER_UNAVAILABLE` | 5 s |
 | `vendor.delete` mutation | `{ id: z.uuid() }` strict | `{ ok: true }` | `vendor:DELETE` | `VENDOR_NOT_FOUND`, `PERMISSION_DENIED`, `PARTNER_UNAVAILABLE` | 5 s |
 | `vendor.options` query | none | `{ currencies: {code, name}[] /* ≤ 400, by code */, countries: {code, name}[] /* ≤ 300, by name */ }` | `vendor:VIEW` | `PERMISSION_DENIED`, `PARTNER_UNAVAILABLE` | 3 s |
+| `vendor.nextCode` query (rev 2) | none | `{ code: string }` e.g. `"V001"` | `vendor:ADD` | `PERMISSION_DENIED`, `PARTNER_UNAVAILABLE` | 3 s |
 
 All procedures use `permittedProcedure("vendor", action)` (license check first: `UNAUTHORIZED`, `LICENSE_*`);
 Super Admin passes every action. `customer:*` grants give **no** access to `vendor.*`. Gateway validates every
@@ -106,12 +107,13 @@ POST/PUT/DELETE, `Content-Type: application/json` on POST/PUT), envelope `{error
 |---|---|---|---|
 | `GET /internal/v1/vendors?q=&active=&cursor=&limit=` | as `vendor.list` (`active` = `true`/`false`; `limit` string 1–50) | `200 {items, nextCursor, total}` | 400, 401 |
 | `GET /internal/v1/vendors/options` | — | `200 {currencies, countries}` | 401 |
+| `GET /internal/v1/vendors/next-code` (rev 2) | — | `200 {code}` | 401 |
 | `GET /internal/v1/vendors/:id` | UUID path | `200 VendorDetail` | 400 `{path:"id",code:"invalid_format"}`, 401, 404 `VENDOR_NOT_FOUND` |
 | `POST /internal/v1/vendors` | `vendorFields` | `201 {id, updatedAt}` | 400 `VALIDATION_ERROR`, 401, 409 `VENDOR_CODE_TAKEN`, 413, 415 |
 | `PUT /internal/v1/vendors/:id` | `{expectedUpdatedAt, ...vendorFields}` (no `id` in body) | `200 {id, updatedAt}` | 400, 401, 404, 409 `VENDOR_STALE` / `VENDOR_CODE_TAKEN`, 413, 415 |
 | `DELETE /internal/v1/vendors/:id` | — | `200 {ok: true}` | 400, 401, 404 |
 
-Route order: `/vendors/options` is declared before `/vendors/:id`.
+Route order: `/vendors/options` and `/vendors/next-code` are declared before `/vendors/:id`.
 
 Partner-only validation (beyond the gateway shape): currency in the options set (or equal to the stored value on
 update), every `countryCode` in the ISO list (or among this vendor's stored address countries on update), default
@@ -164,3 +166,30 @@ Handoff: [vendor-backend.md](../../../../coordination/handoffs/vendor-backend.md
 | Logs | `vendor.created/updated/deleted` | as proposed; `vendor.created` carries `invoiceAddressCount`; `vendor.updated` carries `changedFields`, `addressesReplaced`, `invoiceAddressCount` | none |
 
 No deviation from the approved API, schema, flow or dependencies; no package added.
+
+## Revision 2 — ADR-0021 (implemented 2026-10-16)
+
+- Approval: [ADR-0021](../../../../adr/0021-partner-code-running-number-and-record-modes.md) Accepted, owner 2026-10-16 (ADR-0021 Approval evidence, ending "ทำ adr เเล้วเริ่มทำเลย"). UI revision 3, SA revision 2.
+- Contract changes (everything else in this file is unchanged):
+
+| Item | Revision 1 | Revision 2 |
+|---|---|---|
+| `code` in `vendor.create` / `vendor.update` and partner POST/PUT | `optText(120)`: optional, empty → `null` | **required**: `z.string().trim().max(120)` + empty after trim → custom issue `{path:"code", code:"required"}`. Missing / `null` / non-string → `{path:"code", code:"invalid_type"}`; > 120 → `too_big`. Same rule at gateway and partner (`requiredCodeSchema`). |
+| `code` in list items / detail | `string \| null` | always a non-empty string after migration `20261016090000_partner_code_required`; the gateway output schema still accepts `null` (backward-compatible type, no `null` is produced) |
+| `vendor.nextCode` query | — | **new**, see below |
+| Uniqueness | case-insensitive via `code_key`, many `NULL`s | unchanged rule; `NULL` no longer possible. Duplicate → 409 `VENDOR_CODE_TAKEN` `[{path:"code",code:"duplicate"}]` |
+
+**`vendor.nextCode`** (tRPC query, gateway)
+
+| Input | Output | Permission | Errors | Timeout |
+|---|---|---|---|---|
+| none | `{ code: string }` — `^[CV][0-9]{3,19}$`, e.g. `{ code: "V001" }` | `permittedProcedure("vendor", "ADD")` (Super Admin passes) | `UNAUTHORIZED`, `LICENSE_*`, `PERMISSION_DENIED` (FORBIDDEN), `PARTNER_UNAVAILABLE` (partner down/503/malformed output), `VENDOR_NOT_FOUND` (partner 404 fallback) | 3 s (read) |
+
+**Partner** `GET /internal/v1/vendors/next-code` (service token; actor header optional as for every GET) → `200 { "code": "V001" }`; 401 without/wrong token.
+Declared before `/vendors/:id`, so `next-code` is never parsed as an ID.
+
+Rule (ADR-0021 §2): `next = max(numeric suffix of codes matching ^[Vv][0-9]+$ whose suffix has ≤ 18 significant digits) + 1`, `1` when none match;
+computed in PostgreSQL as `bigint` (`substring(code FROM 2)::bigint`, the 18-digit guard prevents overflow), returned as text, formatted as
+`"V" + next padded with zeros to at least 3 digits` (`V001`, `V999`, `V1000`). Codes in any other format (e.g. `V-0001`, `VM01`) are not counted.
+It is a **suggestion, not a reservation**: a concurrent create with the same code gets 409 `VENDOR_CODE_TAKEN`; the client refetches `nextCode`.
+One aggregate over the `vendor` table (sequential scan; bounded by the table size, read-only, no transaction).

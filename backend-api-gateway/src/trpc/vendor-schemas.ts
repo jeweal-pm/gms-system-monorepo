@@ -11,6 +11,7 @@ import {
   listOutputSchema,
   MAX_ADDRESSES,
   mutationOutputSchema,
+  nextCodeOutputSchema,
   optionsOutputSchema,
   partnerScalarFields,
   timestamp,
@@ -63,6 +64,9 @@ export const vendorMutationOutputSchema = mutationOutputSchema;
 export const vendorDeleteOutputSchema = deleteOutputSchema;
 
 export const vendorOptionsOutputSchema = optionsOutputSchema;
+
+/** ADR-0021: `vendor.nextCode` output `{code}`. */
+export const vendorNextCodeOutputSchema = nextCodeOutputSchema;
 
 export type VendorDetailOutput = z.output<typeof vendorDetailOutputSchema>;
 export type VendorListOutput = z.output<typeof vendorListOutputSchema>;

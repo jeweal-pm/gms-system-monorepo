@@ -1,7 +1,7 @@
 # UI specification: vendor
 
-- Feature ID / revision: `vendor` / 2
-- Status: approved 2026-10-15 (revision 2 = revision 1 + owner answers Q-VEN-01/02/03; see the [TODO](../../../task/todo/vendor.md))
+- Feature ID / revision: `vendor` / 4 (revision 4 = [draft row title and address card design](#revision-4-draft-row-and-address-card) on top of revision 3; revision 3 = [ADR-0021 changes](#revision-3-adr-0021) on top of revision 2 below)
+- Status: revision 2 approved 2026-10-15 (revision 1 + owner answers Q-VEN-01/02/03; see the [TODO](../../../task/todo/vendor.md)); revision 3 approved 2026-10-16 with ADR-0021 ("...ทำ adr เเล้วเริ่มทำเลย"); revision 4 approved 2026-10-16 by the owner instruction quoted in [customer revision 3](../customer/ui-spec.md#revision-3-draft-row-and-address-card)
 - Source: six owner-supplied screenshots (not Figma), 2026-10-15. Two pairs are byte-identical, so four unique images are kept in [source/](source/).
 - Viewport / source dimensions: all images are 3840×2160 px. **Assumption:** device-pixel ratio 2, so the viewport is 1920×1080 CSS px. This is supported by the shell geometry, which matches the FE-UP-017 sources (sidebar 236, topbar 48 CSS px). All CSS values below are estimates unless marked as sampled.
 - Inspection evidence: each image viewed with the image reader; detail regions cropped at full resolution (header, drawer, Vendor Information, address item, error states) on 2026-10-15. No Figma file or tokens were supplied.
@@ -9,6 +9,28 @@
 - Pattern feature: [customer](../customer/ui-spec.md) UI revision 1 (approved 2026-10-14; implemented in `frontend/src/features/customer/`), governed by [ADR-0018](../../../adr/0018-customer-master-partner-service.md). ADR-0018 §1 already says `backend-api-partner` will own **Vendor** in the future, but it does **not** define Vendor's data model, API or rules. Those need a new SA decision (see [data-fetching.md](data-fetching.md#requirements-for-the-sa-bundle)).
 - Requirements / main flow: [main flow](#main-user-flow) below and the editable [vendor-flow.md](../../../diagram/vendor-flow.md). [Open questions](open-questions.md)
 - Review bundle: this file, [design-system.md](design-system.md), [conventions.md](conventions.md), [form-guidelines.md](form-guidelines.md), [data-fetching.md](data-fetching.md), [error-handling.md](error-handling.md), [dependencies.md](dependencies.md), [testing.md](testing.md), [open-questions.md](open-questions.md); central TODO: [`document/task/todo/vendor.md`](../../../task/todo/vendor.md)
+
+## Revision 4 (draft row and address card)
+
+- Approval: the owner instruction of 2026-10-16 quoted in [customer revision 3](../customer/ui-spec.md#revision-3-draft-row-and-address-card) ("...รูปที่สองและสามเป็นแบบใหม่ของ invoice address ในทั้ง customer และ vendor set as default address ย้ายมาด้านบนแทน เลข 1 ด้วย..."), recorded as approval of vendor UI revision 4.
+- Source: [rev4-01-address-card-no-default.png](source/rev4-01-address-card-no-default.png) (new card, unchecked) and [rev4-02-address-card-default-checked.png](source/rev4-02-address-card-default-checked.png) (new card, #1 checked). Viewed with the image reader on 2026-10-16. The draft-row bug is the one shown in customer [rev3-01](../customer/source/rev3-01-current-draft-row-issue.png).
+- Frontend-only; no API, schema or rule change. Same shared components as customer revision 3, with Vendor wording. TODO IDs: FE-VEN-R4-001 … FE-VEN-R4-004.
+
+| Area | Revision 4 behavior | Supersedes |
+|---|---|---|
+| Drawer draft row | Fixed title **"New vendor"**, subtitle "Not saved yet", "Draft" badge; never mirrors the typed Code Name or Name | revision 3 draft row (typed Code Name / Name); DV-02 |
+| Address item | Same card as [customer revision 3](../customer/ui-spec.md#revision-3-draft-row-and-address-card): "#N" outside on the left; light gray rounded card without chevron or "Default" badge; first row = "Set as default address" (left) + red trash (right); always open; red border on errors (DV-12). Vendor keeps its **4-column grid capped at ~1220 px** (VD-03) inside the card | Address item accordion row, C-10 expanded/collapsed |
+| Add button | Dashed "+ Add another invoice address"; count badge unchanged | - |
+| Trash / read-only | #1 cannot be removed (trash shown disabled); #2+ removable; 1-10 items. Read-only: checkbox and trash disabled | trash hidden on #1 and in read-only |
+| Default rule (unchanged, ADR-0019 / Q-VEN-03) | **0 or 1** default. The checkbox toggles freely; checking one unchecks the others; unchecking leaves no default. A new vendor starts with #1 **unchecked**, which matches rev4-01 | - |
+
+## Revision 3 (ADR-0021)
+
+- Source: [rev3-01-shared-header-reference.png](source/rev3-01-shared-header-reference.png) and [rev3-02-drawer-row-code-name.png](source/rev3-02-drawer-row-code-name.png) — the same images as customer revision 2 (ADR-0021: "vendor ใช้ภาพเดียวกัน").
+- Governing decision: [ADR-0021](../../../adr/0021-partner-code-running-number-and-record-modes.md) (Accepted 2026-10-16).
+- Behavior is identical to [customer revision 2](../customer/ui-spec.md#revision-2-adr-0021) (shared `features/partner/**`), with Vendor wording: title "Add Vendor" / the vendor's Name, "Vendor List N", buttons **Create Vendor**, Cancel, Save, Edit, Delete; Code Name required `*` and prefilled from `vendor.nextCode` (`{code:"V001"}`); `VENDOR_CODE_TAKEN` → field error + refetch; drawer rows bold Code Name / Name.
+- Vendor keeps its own sections: one full-width **Invoice Address** card (no Shipping card, which the reference image shows for Customer), 4-column item grid, optional default (Q-VEN-03).
+- Superseded: TC-VEN-04 header ("Add/Edit Vendor", single Create Vendor / Save button), TC-VEN-11 and Q-VEN-04 default (bold Name, Code Name second line), TC-VEN-16 Duplicate (Code Name now prefilled with the suggestion).
 
 ## Source and evidence
 
@@ -177,5 +199,6 @@ Same rules as [customer](../customer/ui-spec.md#accessibility): one `<h1>`, card
 
 | Revision | Date | Change |
 |---|---|---|
+| 4 | 2026-10-16 | Fixed draft row title "New vendor"; new address card (outside "#N", default checkbox + trash on top, no accordion/badge). Approved by the owner instruction of 2026-10-16. |
 | 2 | 2026-10-15 | Owner answers Q-VEN-01 (Customer labels), Q-VEN-02 (Phone optional), Q-VEN-03 (default optional, starts unchecked). Approved for implementation. |
 | 1 | 2026-10-15 | Initial analysis of six screenshots (four unique) against the approved customer UI revision 1. Status pending-review. |

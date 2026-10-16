@@ -27,10 +27,20 @@ export const addressBase = {
 
 export const invoiceAddressInput = z.object({ ...addressBase, taxId: optText(32) }).strict();
 
+/**
+ * ADR-0021: required Code Name — trimmed, 1–120 characters. Empty after trimming is
+ * `{path:"code", code:"required"}` (custom issue; `describeError` reads `params.code`);
+ * a missing/`null` value is zod's `invalid_type`. Same rule as partner.
+ */
+export const CODE_MAX = 120;
+export const requiredCodeSchema = z.string().trim().max(CODE_MAX).superRefine((value, ctx) => {
+  if (value === "") ctx.addIssue({ code: "custom", message: "required", params: { code: "required" } });
+});
+
 /** Scalar fields common to every partner entity (name … email), in contract order. */
 export const partnerScalarFields = {
   name: z.string().trim().min(1).max(200),
-  code: optText(120),
+  code: requiredCodeSchema,
   currencyCode: z.string().regex(/^[A-Z]{3}$/),
   active: z.boolean(),
   firstName: z.string().trim().min(1).max(100),
@@ -125,6 +135,9 @@ export const detailScalarOutput = {
 export const mutationOutputSchema = z.object({ id: z.string(), updatedAt: timestamp });
 
 export const deleteOutputSchema = z.object({ ok: z.literal(true) });
+
+/** ADR-0021 §2 suggestion: `C001` / `V001` …; prefix letter + at least 3 digits. */
+export const nextCodeOutputSchema = z.object({ code: z.string().regex(/^[CV][0-9]{3,19}$/) });
 
 const optionItemSchema = z.object({ code: z.string().max(8), name: z.string().max(200) });
 

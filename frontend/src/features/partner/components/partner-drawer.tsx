@@ -27,6 +27,11 @@ export function partnerDrawerId(entity: PartnerEntity): string {
   return `${lowerPlural(entity)}-drawer`;
 }
 
+/** Fixed draft row title, e.g. "New customer" (customer FE-CUS-R3-001, vendor FE-VEN-R4-001). */
+export function draftRowTitle(entity: PartnerEntity): string {
+  return `New ${lowerSingular(entity)}`;
+}
+
 type PartnerDrawerProps<TItem extends PartnerListItem> = {
   entity: PartnerEntity;
   open: boolean;
@@ -40,8 +45,11 @@ type PartnerDrawerProps<TItem extends PartnerListItem> = {
   list: PartnerListQuery<TItem>;
   /** Short inline copy for a list load failure. */
   loadErrorMessage: (error: unknown, subject: string) => string;
-  /** Draft row content (typed Name / Code Name), or null when the user has no ADD permission. */
-  draft: { name: string; code: string } | null;
+  /**
+   * Whether to show the draft row (false when the user has no ADD permission). Customer rev 3 /
+   * vendor rev 4: its title stays "New customer" / "New vendor" and never mirrors the typed Code Name or Name.
+   */
+  draft: boolean;
   draftSelected: boolean;
   selectedId: string | null;
   onSelectDraft: () => void;
@@ -136,8 +144,8 @@ export function PartnerDrawer<TItem extends PartnerListItem>({
               <button type="button" aria-current={draftSelected ? "true" : undefined} onClick={onSelectDraft} className={cx(rowBase, rowState(draftSelected), focusRing)}>
                 <Plus size={18} className="mt-0.5 shrink-0 text-gms-text" aria-hidden />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-gms-text">{draft.name.trim() || `New ${lowerSingular(entity)}`}</span>
-                  <span className="block truncate text-[15px] text-gms-text-secondary">{draft.code.trim() || "Not saved yet"}</span>
+                  <span className="block truncate font-medium text-gms-text">{draftRowTitle(entity)}</span>
+                  <span className="block truncate text-[15px] text-gms-text-secondary">Not saved yet</span>
                 </span>
                 <Badge variant="draft">Draft</Badge>
               </button>
@@ -166,15 +174,12 @@ export function PartnerDrawer<TItem extends PartnerListItem>({
                 <button type="button" aria-current={selected ? "true" : undefined} onClick={() => onSelectItem(item)} className={cx(rowBase, rowState(selected), focusRing)}>
                   <span aria-hidden className={cx("mt-2 h-2 w-2 shrink-0 rounded-full", item.active ? "bg-gms-status-active" : "bg-gms-text-placeholder")} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold text-gms-text">
-                      {item.name}
+                    {/* ADR-0021 §4: Code Name (bold) first, Name second. Legacy rows without a code fall back to a placeholder. */}
+                    <span className={cx("block truncate font-semibold", item.code ? "text-gms-text" : "text-gms-text-placeholder")}>
+                      {item.code || "No code name"}
                       <span className="sr-only">{item.active ? ", active" : ", inactive"}</span>
                     </span>
-                    {item.code ? (
-                      <span className="block truncate text-sm text-gms-text-secondary">{item.code}</span>
-                    ) : (
-                      <span className="block truncate text-sm text-gms-text-placeholder">No code name</span>
-                    )}
+                    <span className="block truncate text-sm text-gms-text-secondary">{item.name}</span>
                   </span>
                   {!item.active && <Badge variant="inactive">Inactive</Badge>}
                 </button>

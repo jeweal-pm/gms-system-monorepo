@@ -45,7 +45,10 @@ export function toFormValues(detail: CustomerDetail): CustomerFormValues {
   };
 }
 
-/** Duplicate (FE-CUS-011): the saved customer without Code Name and without address IDs. */
+/**
+ * Duplicate (FE-CUS-011): the saved customer without Code Name and without address IDs.
+ * The empty Code Name is then prefilled with `customer.nextCode` (ADR-0021 §2).
+ */
 export function toDuplicateValues(detail: CustomerDetail): CustomerFormValues {
   const values = toFormValues(detail);
   return {
@@ -74,7 +77,7 @@ export function toCustomerFields(values: CustomerFormValues): CustomerFieldsInpu
   });
   return {
     name: values.name.trim(),
-    code: nullIfEmpty(values.code),
+    code: values.code.trim(), // required (ADR-0021 §1)
     currencyCode: values.currencyCode,
     active: values.active,
     firstName: values.firstName.trim(),
@@ -121,6 +124,8 @@ export type SaveErrorOutcome = {
   recheckAccess?: boolean;
   refetchOptions?: boolean;
   refetchList?: boolean;
+  /** CUSTOMER_CODE_TAKEN: request a new suggested Code Name (ADR-0021 §2). */
+  refetchNextCode?: boolean;
   /**
    * Create failed without a definite answer (timeout / service unavailable): the customer may
    * have been created. Owner decision 2026-10-14: refresh the list before allowing a retry
@@ -137,7 +142,7 @@ const UNMAPPED_VALIDATION = "Some details couldn't be saved. Check the form and 
 type FieldRule = { label: string; max?: number };
 
 const customerFieldRules: Record<string, FieldRule> = {
-  code: { label: "Code name", max: 120 },
+  code: { label: "Code Name", max: 120 },
   name: { label: "Name", max: 200 },
   currencyCode: { label: "Currency" },
   firstName: { label: "First name", max: 100 },
@@ -162,7 +167,8 @@ function ruleMessage(field: string, rule: FieldRule, code: string): string {
   if (field === "countryCode") return code === "unknown" ? "Choose a country from the list" : "Country is required";
   if (field === "email" && code !== "too_big") return code === "too_small" ? "Email is required" : "Enter a valid email address";
   if (code === "too_big" && rule.max !== undefined) return `${rule.label} must be at most ${rule.max} characters`;
-  if (code === "too_small" || code === "invalid_type") return `${rule.label} is required`;
+  // `required`: blank Code Name (ADR-0021 §1).
+  if (code === "too_small" || code === "invalid_type" || code === "required") return `${rule.label} is required`;
   return `Check ${rule.label}`;
 }
 
@@ -188,7 +194,8 @@ export function mapSaveError(error: unknown, action: "create" | "edit"): SaveErr
   const { domainCode, fieldErrors } = readCustomerError(error);
   switch (domainCode) {
     case "CUSTOMER_CODE_TAKEN":
-      return { fieldErrors: [{ name: "code", message: "This code name is already in use" }], formError: null };
+      // ADR-0021 §2: the suggestion is not reserved; refetch `nextCode` for a fresh one.
+      return { fieldErrors: [{ name: "code", message: "This code name is already in use" }], formError: null, refetchNextCode: true };
     case "VALIDATION_ERROR": {
       const mapped = fieldErrors.map((entry) => mapServerFieldError(entry.path, entry.code)).filter((entry): entry is MappedFieldError => entry !== null);
       const multipleDefaults = fieldErrors.some((entry) => entry.code === "multiple_defaults");

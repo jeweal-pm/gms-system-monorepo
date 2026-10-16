@@ -7,7 +7,7 @@ import { useForm, useWatch, type FieldErrors, type Path } from "react-hook-form"
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import type { PartnerAccess } from "@/features/partner/access";
 import { invoiceAddressType } from "@/features/partner/address-types";
-import { AddressListCard, type AddressListHandle } from "@/features/partner/components/address-list-card";
+import { AddressListCard } from "@/features/partner/components/address-list-card";
 import { DiscardChangesDialog } from "@/features/partner/components/discard-changes-dialog";
 import { partnerDrawerId } from "@/features/partner/components/partner-drawer";
 import { PartnerInformationCard } from "@/features/partner/components/partner-information-card";
@@ -24,14 +24,24 @@ import {
 } from "@/features/partner/components/partner-page-parts";
 import { PartnerPrintView } from "@/features/partner/components/partner-print-view";
 import type { PartnerEntity } from "@/features/partner/entity";
-import { useUnsavedChangesPrompt } from "@/features/partner/hooks";
+import { useSuggestedCodePrefill, useUnsavedChangesPrompt } from "@/features/partner/hooks";
 import type { OptionsState } from "@/features/partner/options";
-import { addressIndexesWithErrors, errorTreeFromEntries, firstErrorField } from "@/features/partner/schema";
+import { errorTreeFromEntries, firstErrorField } from "@/features/partner/schema";
 import { isPermissionDenied, isVendorNotFound, loadErrorMessage, mapSaveError, type MappedFieldError, toDuplicateValues, toFormValues, toVendorFields } from "./api";
 import { DeleteVendorDialog } from "./components/delete-vendor-dialog";
 import { VendorsDrawer } from "./components/vendors-drawer";
 import type { VendorDetail } from "./contract";
-import { useCreateVendor, useUpdateVendor, useVendorCache, useVendorDetail, useVendorListsFetching, useVendorLoader, useVendorOptions, useVendorTotal } from "./hooks";
+import {
+  useCreateVendor,
+  useUpdateVendor,
+  useVendorCache,
+  useVendorDetail,
+  useVendorListsFetching,
+  useVendorLoader,
+  useVendorNextCode,
+  useVendorOptions,
+  useVendorTotal,
+} from "./hooks";
 import { VENDOR_ADDRESS_ARRAYS, emptyVendorForm, vendorFormSchema, type VendorFormValues } from "./schema";
 
 const FORM_ID = "vendor-form";
@@ -41,11 +51,14 @@ const VENDOR: PartnerEntity = { key: "vendor", singular: "Vendor", plural: "Vend
 const DRAWER_ID = partnerDrawerId(VENDOR);
 
 /**
- * Setup › Vendor (`vendor` UI revision 2). `permission.mine` (live) gates the page: no vendor data
+ * Setup › Vendor (`vendor` UI revision 3, ADR-0019 + ADR-0021). `permission.mine` (live) gates the page: no vendor data
  * request is made without `vendor:VIEW` (FE-VEN-003). Data: gateway `vendor.*` through the typed
  * tRPC client (hooks.ts, FE-VEN-010); errors mapped from domain codes in api.ts (FE-VEN-011).
  * Differences from customer: one full-width Invoice Address card with the 4-column wide item grid
  * (VD-02/03) and an optional default address (Q-VEN-03).
+ * Modes (ADR-0021 §3, like User & Permission): create (new draft), view (saved, read-only),
+ * edit (after Edit; Cancel restores the saved values). Code Name is required and prefilled
+ * from `vendor.nextCode` in create mode (ADR-0021 §1–2).
  */
 export function VendorPage() {
   return (
@@ -64,6 +77,10 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** ID whose saved data is currently in the form; differs from `selectedId` while it loads. */
   const [loadedId, setLoadedId] = useState<string | null>(null);
+  /** Edit mode for the selected vendor (after Edit); otherwise a saved vendor is shown read-only. */
+  const [editing, setEditing] = useState(false);
+  /** The saved vendor open before Create Vendor / Duplicate, restored by Cancel (ADR-0021 §3). */
+  const [previousId, setPreviousId] = useState<string | null>(null);
   const drawer = useDrawerPreference(DRAWER_STORAGE_KEY);
   const drawerOpen = drawer.open;
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
@@ -76,7 +93,6 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
   const [focusRequest, setFocusRequest] = useState<FocusRequest>(null);
   const [printedAt, setPrintedAt] = useState("");
   const toggleRef = useRef<HTMLButtonElement>(null);
-  const invoiceRef = useRef<AddressListHandle>(null);
   const submittingRef = useRef(false);
   /** Latest selection, read by async loads to ignore late responses. */
   const selectionRef = useRef<string | null>(null);
@@ -95,14 +111,17 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
     resolver: zodResolver(vendorFormSchema),
     mode: "onBlur",
     reValidateMode: "onChange",
-    shouldFocusError: false, // focus is moved manually after collapsed items are expanded
+    shouldFocusError: false, // focus is moved manually to the first error in visual order
     defaultValues: emptyVendorForm(),
   });
   const { isDirty } = form.formState;
-  const [watchedName, watchedCode] = useWatch({ control: form.control, name: ["name", "code"] });
+  const watchedName = useWatch({ control: form.control, name: "name" });
 
-  const mode: PartnerMode = selectedId === null ? (access.add ? "draft" : "none") : access.edit ? "edit" : "view";
   const loaded = selectedId !== null && loadedId === selectedId && detail.data?.id === selectedId;
+  const gone = selectedId !== null && goneId === selectedId;
+  const mode: PartnerMode = selectedId === null ? (access.add ? "create" : "none") : editing && access.edit && loaded && !gone ? "edit" : "view";
+  const nextCode = useVendorNextCode(mode === "create");
+  useSuggestedCodePrefill(form, mode === "create", nextCode.data?.code);
   const submitting = create.isPending || update.isPending || refreshingBeforeRetry;
   const requestFocus = useCallback((name: Path<VendorFormValues>) => setFocusRequest((current) => ({ name, seq: (current?.seq ?? 0) + 1 })), []);
 
@@ -152,12 +171,50 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
   }
 
   function openDraft() {
+    // Already in create mode: the query stays enabled, so ask for a fresh suggestion explicitly.
+    if (mode === "create") void nextCode.refetch();
     selectionRef.current = null;
-    form.reset(emptyVendorForm());
+    form.reset(emptyVendorForm()); // Code Name is prefilled again from `nextCode`
     setFormError(null);
     setSelectedId(null);
     setLoadedId(null);
-    if (access.add) requestFocus("name");
+    setEditing(false);
+    if (access.add) requestFocus("code");
+  }
+
+  /** Create Vendor (view mode): a new draft; Cancel returns to the vendor open now. */
+  function startCreate() {
+    if (!access.add) return;
+    guard(() => {
+      setPreviousId(selectedId);
+      openDraft();
+    });
+  }
+
+  /** Edit (view mode): the saved vendor becomes editable. */
+  function startEdit() {
+    if (!access.edit || !loaded || gone) return;
+    setFormError(null);
+    setEditing(true);
+    requestFocus("code");
+  }
+
+  /**
+   * Cancel. Edit mode: restore the saved values and return to view mode. Create mode: return to the
+   * vendor that was open before Create / Duplicate, or start an empty draft again.
+   */
+  function cancel() {
+    setFormError(null);
+    if (mode === "edit") {
+      if (detail.data && detail.data.id === selectedId) applyDetail(detail.data);
+      setEditing(false);
+      return;
+    }
+    if (mode !== "create") return;
+    const previous = previousId;
+    setPreviousId(null);
+    if (previous !== null) selectVendor(previous);
+    else openDraft();
   }
 
   /** Only the current selection's data resets the form; background refetches never do (conventions.md). */
@@ -176,17 +233,16 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
     });
   }
 
-  function expandAndFocus(tree: Record<string, unknown>) {
-    invoiceRef.current?.expand(addressIndexesWithErrors(tree, "invoiceAddresses"));
+  function focusFirstError(tree: Record<string, unknown>) {
     const first = firstErrorField(tree, VENDOR_ADDRESS_ARRAYS);
     if (first) requestFocus(first as Path<VendorFormValues>);
   }
 
-  /** Server field errors (FE-VEN-011): set them, expand items that contain them, focus the first in visual order. */
+  /** Server field errors (FE-VEN-011): set them and focus the first in visual order. */
   function showServerFieldErrors(entries: readonly MappedFieldError[]) {
     if (entries.length === 0) return;
     for (const { name, message } of entries) form.setError(name as Path<VendorFormValues>, { type: "server", message });
-    expandAndFocus(errorTreeFromEntries(entries));
+    focusFirstError(errorTreeFromEntries(entries));
   }
 
   function loadIntoForm(id: string) {
@@ -203,6 +259,7 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
 
   function selectVendor(id: string) {
     setFormError(null);
+    setEditing(false);
     setSelectedId(id);
     setLoadedId(null);
     loadIntoForm(id);
@@ -212,15 +269,17 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
     const source = detail.data;
     if (!access.add || !loaded || !source) return;
     guard(() => {
-      // Defaults stay empty so the copy counts as unsaved changes.
+      // Defaults stay empty so the copy counts as unsaved changes; Code Name gets the suggestion.
       form.reset(emptyVendorForm());
       form.reset(toDuplicateValues(source), { keepDefaultValues: true });
       selectionRef.current = null;
+      setPreviousId(source.id);
       setFormError(null);
       setSelectedId(null);
       setLoadedId(null);
-      requestFocus("name");
-      toast.show("info", `Copied from ${source.name}. Enter a code name if needed, then create the vendor.`);
+      setEditing(false);
+      requestFocus("code");
+      toast.show("info", `Copied from ${source.name}. Check the code name, then save the new vendor.`);
     });
   }
 
@@ -230,6 +289,7 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
       void cache.invalidateLists();
       if (selectedId === null) {
         form.reset(emptyVendorForm());
+        if (mode === "create") void nextCode.refetch();
         return;
       }
       const id = selectedId;
@@ -245,19 +305,21 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
     window.print();
   }
 
-  const onInvalid = (errors: FieldErrors<VendorFormValues>) => expandAndFocus(errors as Record<string, unknown>);
+  const onInvalid = (errors: FieldErrors<VendorFormValues>) => focusFirstError(errors as Record<string, unknown>);
 
   const onValid = async (values: VendorFormValues) => {
     if (submittingRef.current) return; // double submit
-    if (mode !== "draft" && mode !== "edit") return;
+    if (mode !== "create" && mode !== "edit") return;
     submittingRef.current = true;
     setFormError(null);
     try {
       const fields = toVendorFields(values);
-      if (mode === "draft") {
+      if (mode === "create") {
         const result = await create.mutateAsync(fields);
         toast.show("success", "Vendor created");
         void cache.invalidateLists();
+        setPreviousId(null);
+        setEditing(false); // the new vendor opens in view mode
         setSelectedId(result.id);
         setLoadedId(null);
         loadIntoForm(result.id);
@@ -268,10 +330,11 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
         void cache.invalidateLists();
         const result = await detail.refetch();
         if (result.data?.id === id) applyDetail(result.data);
+        setEditing(false); // back to view mode
       }
     } catch (cause) {
       // Entered values are kept on every failure (error-handling.md).
-      const outcome = mapSaveError(cause, mode === "draft" ? "create" : "edit");
+      const outcome = mapSaveError(cause, mode === "create" ? "create" : "edit");
       if (outcome.refreshListBeforeRetry) {
         // The create may have succeeded (timeout): refresh the list before another submit is allowed.
         setRefreshingBeforeRetry(true);
@@ -285,7 +348,11 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
       }
       setFormError(outcome.formError ? { message: outcome.formError, stale: outcome.stale } : null);
       showServerFieldErrors(outcome.fieldErrors);
-      if (outcome.notFound && selectedId !== null) setGoneId(selectedId);
+      if (outcome.notFound && selectedId !== null) {
+        setGoneId(selectedId);
+        setEditing(false);
+      }
+      if (outcome.refetchNextCode && mode === "create") void nextCode.refetch();
       if (outcome.refetchOptions) void cache.refetchOptions();
       if (outcome.refetchList) void cache.invalidateLists();
       if (outcome.recheckAccess) void cache.recheckAccess();
@@ -300,10 +367,8 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
     window.requestAnimationFrame(() => toggleRef.current?.focus());
   }
 
-  const gone = selectedId !== null && goneId === selectedId;
-  const headerMode: PartnerMode = gone && mode === "edit" ? "view" : mode;
-  const readOnly = mode === "view" || gone;
-  const showForm = mode === "draft" || ((mode === "edit" || mode === "view") && loaded);
+  const readOnly = mode !== "create" && mode !== "edit";
+  const showForm = mode === "create" || ((mode === "edit" || mode === "view") && loaded);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-gms-page">
@@ -312,17 +377,23 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
           <PartnerPageHeader
             entity={VENDOR}
             formId={FORM_ID}
-            mode={headerMode}
+            mode={mode}
+            recordName={loaded ? detail.data?.name : undefined}
             total={total}
             savedLoaded={loaded}
             canAdd={access.add}
+            canEdit={access.edit}
             canDelete={access.delete}
+            gone={gone}
             submitting={submitting}
             deleting={deleteTarget !== null}
             refreshing={listsFetching || (selectedId !== null && detail.isFetching)}
             onPrint={print}
             onDuplicate={duplicate}
             onRefresh={refresh}
+            onCreate={startCreate}
+            onCancel={cancel}
+            onEdit={startEdit}
             onDelete={() => {
               if (loaded && detail.data) setDeleteTarget({ id: detail.data.id, name: detail.data.name });
             }}
@@ -341,14 +412,13 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
               id={FORM_ID}
               noValidate
               onSubmit={(event) => void form.handleSubmit(onValid, onInvalid)(event)}
-              aria-label={mode === "draft" ? "Create vendor" : mode === "edit" ? "Edit vendor" : "Vendor details"}
+              aria-label={mode === "create" ? "Create vendor" : mode === "edit" ? "Edit vendor" : "Vendor details"}
               className="space-y-4 print:hidden"
             >
               {formError && <FormErrorBanner message={formError.message} onReload={formError.stale ? reloadLatest : undefined} reloading={detail.isFetching} />}
               <PartnerInformationCard form={form} title="Vendor Information" idPrefix={VENDOR.key} readOnly={readOnly} options={optionsState} />
               {/* VD-02: Invoice Address only, full content width; VD-03: 4-column item grid capped at ~1220 px. */}
               <AddressListCard
-                ref={invoiceRef}
                 form={form}
                 type={invoiceAddressType}
                 idPrefix={VENDOR.key}
@@ -367,12 +437,12 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
           entity={VENDOR}
           open={drawerOpen}
           total={total}
-          draft={access.add ? { name: mode === "draft" ? watchedName : "", code: mode === "draft" ? watchedCode : "" } : null}
-          draftSelected={mode === "draft"}
+          draft={access.add}
+          draftSelected={mode === "create"}
           selectedId={selectedId}
           onSelectDraft={() => {
-            if (mode === "draft") requestFocus("name");
-            else guard(openDraft);
+            if (mode === "create") requestFocus("code");
+            else startCreate();
           }}
           onSelectVendor={(vendor) => {
             if (vendor.id === selectedId) return;
@@ -387,6 +457,7 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
         vendor={deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onDeleted={(id) => {
+          if (previousId === id) setPreviousId(null);
           if (id === selectedId) openDraft();
         }}
       />

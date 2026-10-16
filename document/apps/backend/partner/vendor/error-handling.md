@@ -1,6 +1,6 @@
 # Service error handling: partner + gateway / vendor
 
-- Source UI revision / SA revision: 2 / 1 (**approved** 2026-10-15)
+- Source UI revision / SA revision: 3 / **2** (ADR-0021, see [Revision 2](#revision-2--adr-0021-implemented-2026-10-16)); revision 1: 2 / 1
 - Frontend counterpart: [vendor error-handling.md](../../../frontend/vendor/error-handling.md) (FE-VEN-011 maps the codes below)
 - Partner envelope and gateway formatter: unchanged from [customer error handling](../customer/error-handling.md)
 - Gateway mapping (`callPartner`): the customer table applies unchanged, **except** the 404 fallback code is now the
@@ -59,3 +59,20 @@ The customer frontend integration recorded that gateway **input-validation** fai
 raw zod issue JSON in the tRPC `message`, while `data.domainCode`/`data.fieldErrors` are correct. The UI never shows
 `message`, and the same will apply to `vendor.*`. This is an independent, pre-existing gateway behavior; it is not
 redesigned here and should be raised as an investigation item if the owner wants it changed.
+
+## Revision 2 — ADR-0021 (implemented 2026-10-16)
+
+| Scenario | Partner | Gateway (tRPC code / `domainCode` / `fieldErrors`) | UI | Recovery | Logging |
+|---|---|---|---|---|---|
+| Code Name empty or whitespace (create/update) | 400 `VALIDATION_ERROR` `[{path:"code",code:"required"}]` | `BAD_REQUEST` / `VALIDATION_ERROR` / same (rejected at gateway before partner) | "Code Name is required" | enter a code | none |
+| Code Name missing / `null` / not a string | 400 `{path:"code",code:"invalid_type"}` | `BAD_REQUEST` / `VALIDATION_ERROR` / same | as required | — | none |
+| Code Name > 120 characters | 400 `{path:"code",code:"too_big"}` | same | field error | shorten | none |
+| Suggested code taken meanwhile (no reservation) | 409 `VENDOR_CODE_TAKEN` `[{path:"code",code:"duplicate"}]` | `CONFLICT` / `VENDOR_CODE_TAKEN` | Code Name field error | refetch `vendor.nextCode`, resubmit | none |
+| `vendor.nextCode` without `vendor:ADD` | — (not called) | `FORBIDDEN` / `PERMISSION_DENIED` | no suggestion (create not allowed anyway) | — | none |
+| `vendor.nextCode` partner down / 401 / 503 / malformed output | 503 or n/a | `SERVICE_UNAVAILABLE` / `PARTNER_UNAVAILABLE` | leave Code Name empty for manual entry | retry later | gateway `partner.unavailable` (route `GET /vendors/next-code`, no values) |
+| `nextCode` DB failure | 503 `PARTNER_UNAVAILABLE` (pool/timeout) or 500 | mapped as above | as above | — | `vendor.db_unavailable` with Prisma code |
+
+Implementation: gateway `describeError` now reports a zod `custom` issue by its `params.code` (non-empty string) —
+`required` here; other custom issues without `params.code` stay `custom`; non-custom issue codes are unchanged
+(`src/trpc/domain-error.ts`). Partner `zodFieldErrors` already did this. `formatPartnerCode` throws on a non-positive
+database value (cannot happen with `COALESCE(max,0)+1`), which surfaces as 500 `INTERNAL_SERVER_ERROR`.

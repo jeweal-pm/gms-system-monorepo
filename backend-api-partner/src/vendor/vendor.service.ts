@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { validationException } from "../common/errors";
 import { membershipErrors as sharedMembershipErrors } from "../common/partner-schemas";
-import { addressDetail, listPage, scalarData, scalarDetail, SCALAR_FIELDS, WRITE_TX } from "../common/persistence";
+import { addressDetail, listPage, nextPartnerCode, scalarData, scalarDetail, SCALAR_FIELDS, WRITE_TX } from "../common/persistence";
 import { OPTIONS_RESPONSE } from "../common/reference-data";
 import { prisma } from "../database/prisma-client";
 import { mapPersistenceError, vendorNotFound, vendorStale } from "./vendor.errors";
@@ -46,6 +46,11 @@ export class VendorService {
 
   list(query: ListQuery) {
     return listPage("vendor", query, mapPersistenceError);
+  }
+
+  /** ADR-0021 §2: suggested next running Code Name (`V001` …); not reserved. */
+  nextCode() {
+    return nextPartnerCode("vendor", mapPersistenceError);
   }
 
   async get(id: string) {

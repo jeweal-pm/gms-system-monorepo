@@ -8,7 +8,7 @@ import { VendorService } from "./vendor.service";
 
 /**
  * Internal REST for the gateway only (vendor api-contract.md "Internal REST contract"). The global
- * ServiceTokenGuard has already authenticated the caller. `options` is declared before `:id`.
+ * ServiceTokenGuard has already authenticated the caller. `options` and `next-code` are declared before `:id`.
  */
 @Controller("internal/v1/vendors")
 export class VendorController {
@@ -22,6 +22,12 @@ export class VendorController {
   @Get("options")
   options() {
     return this.vendors.options();
+  }
+
+  /** ADR-0021: declared before `:id` so `next-code` is never parsed as an ID. */
+  @Get("next-code")
+  nextCode() {
+    return this.vendors.nextCode();
   }
 
   @Get(":id")

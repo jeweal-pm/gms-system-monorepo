@@ -25,8 +25,9 @@ model Customer {
   id           String            @id @default(uuid()) @db.Uuid
   name         String            @db.VarChar(200)
   nameKey      String            @map("name_key") @db.VarChar(200)
-  code         String?           @db.VarChar(120)
-  codeKey      String?           @unique(map: "customer_code_key_key") @map("code_key") @db.VarChar(120)
+  /// ADR-0021: required; rows without a code were backfilled with the running number (C001 …).
+  code         String            @db.VarChar(120)
+  codeKey      String            @unique(map: "customer_code_key_key") @map("code_key") @db.VarChar(120)
   currencyCode String            @map("currency_code") @db.Char(3)
   active       Boolean           @default(true)
   firstName    String            @map("first_name") @db.VarChar(100)
@@ -74,8 +75,9 @@ model Vendor {
   id           String          @id @default(uuid()) @db.Uuid
   name         String          @db.VarChar(200)
   nameKey      String          @map("name_key") @db.VarChar(200)
-  code         String?         @db.VarChar(120)
-  codeKey      String?         @unique(map: "vendor_code_key_key") @map("code_key") @db.VarChar(120)
+  /// ADR-0021: required; rows without a code were backfilled with the running number (V001 …).
+  code         String          @db.VarChar(120)
+  codeKey      String          @unique(map: "vendor_code_key_key") @map("code_key") @db.VarChar(120)
   currencyCode String          @map("currency_code") @db.Char(3)
   active       Boolean         @default(true)
   firstName    String          @map("first_name") @db.VarChar(100)
