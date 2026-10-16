@@ -15,6 +15,11 @@ See [integration and provenance](../../../document/skills/spec/sec-auditor-integ
 - Default to guidance for focused questions, changed-code reviews, and investigations.
   Load the relevant upstream reference and trace actual code. Do not silently turn a
   focused review into a full audit.
+- Frontend/backend pre-handoff reviews follow
+  `document/workflow/security-review.md`. Inspect the exact changed source revision and
+  affected trust boundaries read-only. Return scope, evidence, limits, ticket IDs, and
+  `clear`, `advisory`, `blocked`, or `needs-validation`. A clean review creates no ticket.
+  Do not claim a security pass when a required boundary was not checked.
 - An explicit full/codebase audit, penetration test, or request for full report artifacts
   selects the upstream six-phase audit. Read `UPSTREAM-SKILL.md` completely before starting.
   If the requested mode is genuinely ambiguous, ask one focused question.

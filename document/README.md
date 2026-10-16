@@ -41,6 +41,8 @@ Selected fixes follow [bounded remediation](workflow/remediation.md), with persi
 cross-role attempt history, targeted verification, and explicit terminal outcomes.
 Frontend/backend changes follow [automated testing](workflow/automated-testing.md): unit
 and integration coverage is required for every affected item and must pass before handoff.
+Their final code also passes the two focused [security reviews](workflow/security-review.md)
+before handoff; findings enter investigation for owner review.
 Use [infra delivery](workflow/infra-delivery.md) when ADR/service changes affect containers;
 [the service index](infra/service-index.md) tracks research/configuration coverage.
 Use [DevOps delivery](workflow/devops-delivery.md) for GitHub CI/images and

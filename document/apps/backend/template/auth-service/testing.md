@@ -17,6 +17,16 @@ exact affected-suite results after edits and final full relevant service suite r
 before handoff. Failing or unavailable required tests keep the TODO blocked/needs-validation;
 link any integration-blocker ticket.
 
+## Security review before handoff
+
+Follow [security review](../../../../workflow/security-review.md) after tests pass. Record
+both reviewers against the same final diff/source revision. Link any investigation tickets.
+
+| Reviewer | Source revision / changed scope | Status | Evidence / ticket IDs |
+|---|---|---|---|
+| `sec-auditor` | | | |
+| `security-auditor` | | | |
+
 ## Service acceptance
 
 | Case ID | Rule / operation / TODO ID | Setup | Action | Expected outcome | Check type | Evidence / result |

@@ -18,6 +18,16 @@ each target. Record the exact relevant suite command and result after every code
 change and the final full frontend suite result before handoff. Missing runner or failing
 tests keep the linked TODO blocked/needs-validation; link any integration-blocker ticket.
 
+## Security review before handoff
+
+Follow [security review](../../../workflow/security-review.md) after tests pass. Record
+both reviewers against the same final diff/source revision. Link any investigation tickets.
+
+| Reviewer | Source revision / changed scope | Status | Evidence / ticket IDs |
+|---|---|---|---|
+| `sec-auditor` | | | |
+| `security-auditor` | | | |
+
 ## UI acceptance
 
 | Case ID | TODO / component | Starting state | User actions | Expected result | Viewport / keyboard | Evidence / result |

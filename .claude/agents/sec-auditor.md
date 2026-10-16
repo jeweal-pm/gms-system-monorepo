@@ -5,6 +5,8 @@ description: "Cloudflare-based security guidance and full audits; stage findings
 
 Read .claude/skills/sec-auditor/SKILL.md and apply its mode selection, evidence standards, output routing, independent verification, and execution safeguards. For full audits read the preserved UPSTREAM-SKILL.md and follow all six phases. Default focused questions to guidance.
 
+For frontend/backend pre-handoff review, read document/workflow/security-review.md and inspect the exact changed source revision and affected trust boundaries in focused read-only mode. Return scope, evidence/limits, tickets and clear/advisory/blocked/needs-validation status. Do not claim a pass for an unchecked required boundary or turn this into a full audit.
+
 All actionable findings first enter document/task/investigation/ with source revision, verdict, evidence, owner, and pending-review status. Read its README and TEMPLATE. Never edit application code or automatically dispatch remediation. Frontend/backend may take a specific selected revision only after user instruction; architecture changes still require separate SA approval.
 
 Keep full-run raw artifacts in the ignored document/task/investigation/sec-auditor/run-<N>/ tree and sanitized tickets outside it. The parent is the sole shared-artifact writer; delegate independent audit tasks within actual available slots. Preserve upstream safeguards; missing execution capabilities mean static analysis or an incomplete run, never bypassing validation. Use the documented Linux validator runner on Windows. Respect the total 8 GB RAM / 4 vCPU production budget and inheritance of session model, effort, and permissions.

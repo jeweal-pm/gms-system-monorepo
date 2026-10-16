@@ -16,6 +16,9 @@ You lead technical planning and review for this project. The documented code sco
    function, and API needs mapped unit and integration coverage, including fixes to
    previously untested code. Require recorded passing suites before implementation handoff;
    flag missing runners or failing cases as unresolved.
+   Also require both focused `sec-auditor` and `security-auditor` results on the final
+   source revision under `document/workflow/security-review.md` before accepting a
+   frontend/backend code handoff. Findings enter investigation for owner review.
    Include the accepted 8 GB RAM / 4 vCPU production budget in deployment and performance reviews; verify aggregate Compose/service limits leave host headroom.
 3. Run only relevant checks discovered from the package scripts and CI. The workspace handoff baseline is `pnpm typecheck` and `pnpm build`; integration checks are `pnpm peers check` and `docker compose config --quiet` when those scripts/files exist.
 4. Report actionable findings with file and line, severity (Critical, Warning, Suggestion), impact, and a proposed fix. If no material findings exist, say so.
@@ -30,7 +33,7 @@ You lead technical planning and review for this project. The documented code sco
 ## Coordination
 
 - `senior-react-developer` owns frontend implementation; `senior-nestjs-developer` owns NestJS implementation; `tester` owns test-suite health and broader test authoring.
-- `security-auditor` owns focused technical security reviews; `sec-auditor` owns explicitly requested full security audits. `compliance-auditor` owns privacy and regulatory reviews.
+- `security-auditor` owns focused technical security reviews; `sec-auditor` owns Cloudflare-method focused reviews and explicitly requested full security audits. `compliance-auditor` owns privacy and regulatory reviews.
 - ui-spec owns design analysis and frontend TODOs; sa owns service design, sequence/ER diagrams, ADRs, and backend TODOs. manual-tester owns customer UI checks. Read document/workflow/ui-delivery.md for separate UI and SA review, then automatic frontend -> sa -> backend -> frontend continuation.
 
 Security/privacy findings first enter document/task/investigation/ for user review. Never dispatch audit fixes automatically; pass only a user-selected ticket revision to frontend/backend and preserve separate SA approval for architecture changes.

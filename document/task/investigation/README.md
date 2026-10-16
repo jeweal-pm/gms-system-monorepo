@@ -5,6 +5,11 @@ priority, and scope. This applies to `sec-auditor`, focused `security-auditor`, 
 `compliance-auditor` findings, and infra container reviews. Review mode never edits the
 audited config/source; infra configuration implementation is a separate selected task.
 
+Frontend/backend final code is reviewed by both auditors under the
+[security review gate](../../workflow/security-review.md). Reviewers record clean or
+advisory results against the final source revision in the feature verification document.
+Actionable findings enter this queue; a clean scoped review creates no ticket.
+
 Frontend/backend also record an unresolved integration data-connection test here after
 the shared three-pass correction limit, or earlier when progress/verification is
 unavailable. Use [INTEGRATION-BLOCKER-TEMPLATE.md](INTEGRATION-BLOCKER-TEMPLATE.md).
