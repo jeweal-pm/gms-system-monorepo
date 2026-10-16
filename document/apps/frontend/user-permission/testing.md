@@ -1,6 +1,6 @@
 # Frontend acceptance and verification: user-permission
 
-- UI revision: 1
+- UI revision: 1 and 2 (revision 2 cases in the last section)
 - Reference image and viewport: [source/](source/) screenshots, 1920×1080 CSS (assumed DPR 2)
 - Relevant TODO / API / SA revisions: [central TODO](../../../task/todo/user-permission.md); SA contract pending
 
@@ -39,3 +39,32 @@ All cases are **not run** (no implementation exists).
 exist. No unit or E2E runner is installed (tech-stack.md). Use browser observation at the listed
 viewports, then run manual-tester for the changed journey. Customer reports go in
 `document/testing/user-check/`.
+
+## Revision 2 (ADR-0020) cases
+
+No browser automation is installed, so every visual/browser case is **not run** unless stated.
+Results below are filled from real commands only.
+
+| Case ID | TODO | Starting state | User actions | Expected result | Evidence / result |
+|---|---|---|---|---|---|
+| TC-UP2-01 | FE-UP2-001 | Create mode | Inspect header | "Add User and Permission", "User List N"; Create User / Edit / Delete faded, Cancel / Save enabled (rev2-02) | not run (browser) |
+| TC-UP2-02 | FE-UP2-001 | Saved regular user selected | Inspect header; hover Excel | Create User / Edit / Delete enabled, Cancel / Save faded; Excel tooltip "Excel export isn't available yet" | not run (browser) |
+| TC-UP2-03 | FE-UP2-002 | View mode | Edit, change Name, Cancel | Saved name restored, view mode | not run (browser) |
+| TC-UP2-04 | FE-UP2-002 | Edit mode | Change Name/permissions, Save | `userAdmin.update` succeeds, "Changes saved", view shows new values | API pass 2026-10-15 (curl via proxy: update 200, `get` shows new values; stale token 409 `USER_CHANGED`); browser not run |
+| TC-UP2-05 | FE-UP2-002 | Edit mode, password blank | Save | Password not sent (unchanged) | code review: `toUpdateUserInput` omits empty password |
+| TC-UP2-06 | FE-UP2-002 | Saved user | Duplicate | New draft with details + permissions, Username/Password empty | not run (browser) |
+| TC-UP2-07 | FE-UP2-003 | Catalog v2 loaded | Inspect matrix | 9 columns, Select All, Dashboard "—" in ADD/EDIT/DELETE/CANCEL, sections, groups "N sub-menus" (rev2-01) | data pass 2026-10-15 (version 2, 39 leaves, 347 cells, groups 7/2/2/2/2/3, Dashboard 5 actions); render not run |
+| TC-UP2-08 | FE-UP2-003 | — | Click Master Code VIEW, then Select All EDIT | 7 sub-menu VIEW cells on; all EDIT cells on; counter updates; aggregates not in the saved grants | not run (browser) |
+| TC-UP2-09 | FE-UP2-003 | — | Search "stock"; filter Turned on | Matching menus with ancestors; groups expanded; empty message when nothing matches | not run (browser) |
+| TC-UP2-10 | FE-UP2-003 | — | Collapse All / Expand All | All groups collapse / expand; chevrons rotate; `aria-expanded` updates | not run (browser) |
+| TC-UP2-11 | FE-UP2-004 | Create mode | Username "ab", "user one", "User1" | Errors for the first two; "User1" accepted and sent as `user1` | server rule pass ("user one" 400 path `username`); client form not run |
+| TC-UP2-12 | FE-UP2-004 | View/edit of saved user | Inspect Username | Read-only, not sent on update | code review |
+| TC-UP2-13 | FE-UP2-005 | Super Admin selected | Inspect, Edit, change Phone, Save | Lock banner, 347 of 347, all cells locked; only Name/Phone/Location editable; Delete disabled | API pass (personal-only update 200; permissions/active:false/delete 403 `SUPER_ADMIN_LOCKED`); UI not run. Seeded Super Admin has no location, so Edit requires choosing one |
+| TC-UP2-14 | FE-UP2-006 | Drawer | Search by username | Rows show name + username; badge = seat limit | not run (browser) |
+| TC-UP2-15 | FE-UP2-007 | Regular user selected | Delete | Dialog "Delete {username}?", Keep user / Delete | not run (browser) |
+| TC-UP2-16 | FE-UP2-008 | Login page | Sign in `superadmin@demo.com` / `password123` via username | Session created | API pass (200 via proxy; `/sign-in/email` 404; wrong password 401 + attemptsRemaining); SSR shows "Username" label; form submit in browser not run |
+| TC-UP2-17 | FE-UP2-008 | Login page | Sign in with `User1` (created as `user1`) | Session created (lowercased by server) | API pass (`FE-UP2-Test` → 200) |
+| TC-UP2-18 | FE-UP2-009 | Running stack | curl create/update/delete `fe-up2-test` | Responses match the view models | pass 2026-10-15 (create 200, dup 409 `USERNAME_TAKEN`, delete 200, repeat 404); test user deleted |
+
+Revision 2 static checks (2026-10-15, inside `f1-system-frontend-1`): `npx tsc --noEmit` exit 0 against the
+current `AppRouter`; `npx eslint src` 0 errors, 2 pre-existing warnings (`login-form.tsx:46`).

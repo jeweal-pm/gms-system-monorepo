@@ -21,6 +21,7 @@ import {
   createUserInputSchema,
   deleteOutputSchema,
   locationOptionsOutputSchema,
+  updateUserInputSchema,
   userDetailOutputSchema,
   userIdInputSchema,
   userListOutputSchema,
@@ -43,7 +44,8 @@ import {
 /** `href` overrides the default `/modules/<slug>` link when the item has a real page (customer, vendor). */
 export type HomeItem = { label: string; slug: string; href?: string };
 export type HomeGroup = { title: string; items: HomeItem[] };
-export type SessionUser = { id: string; email: string; name: string; role?: string };
+/** `username` is the identity (ADR-0020); `email` is the internal `<id>@users.invalid`, never shown. */
+export type SessionUser = { id: string; username: string; email: string; name: string; role?: string };
 export type GatewayLicenseState = "VALID" | "EXPIRING" | "EXPIRED" | "REVOKED" | "REQUIRED" | "GRACE" | "UNVERIFIABLE";
 export type GatewayLicenseStatus = {
   state: GatewayLicenseState;
@@ -103,21 +105,89 @@ export function permittedProcedure(menuKey: string, action: PermissionAction) {
   });
 }
 
+/**
+ * Home shortcuts follow permission catalog v2 (ADR-0020): every `slug` is a v2 menu key and is
+ * shown only with `<slug>:VIEW`. "User and Permission" is Super Admin only (ADR-0017), so it is
+ * not a shortcut. Keep in sync with auth `src/permission/catalog.ts`.
+ */
 export const shortcutGroups: HomeGroup[] = [
-  { title: "Main Menu", items: [{ label: "Dashboard", slug: "dashboard" }, { label: "Quotation", slug: "quotation" }, { label: "Reserve", slug: "reserve" }] },
-  { title: "Company", items: [{ label: "Company Profile", slug: "company-profile" }, { label: "Bank", slug: "bank" }] },
-  { title: "Partner Master", items: [{ label: "Vendor", slug: "vendor", href: "/setup/vendor" }, { label: "Customer", slug: "customer", href: "/setup/customer" }] },
-  { title: "Stone Master", items: ["Stone Group", "Stone", "Shape", "Size", "Color", "Cutting", "Quality", "Clarity"].map((label) => ({ label, slug: label.toLowerCase().replaceAll(" ", "-") })) },
-  { title: "Purchase Order", items: [{ label: "Purchase Order", slug: "purchase-order" }, { label: "Purchase (PU)", slug: "purchase" }] },
-  { title: "Memo", items: ["Memo In", "Memo Return", "Memo Out", "Memo Out Return"].map((label) => ({ label, slug: label.toLowerCase().replaceAll(" ", "-") })) },
-  { title: "Inventory", items: ["Load", "Primary", "Consignment", "Movement", "Memo Outstanding"].map((label) => ({ label, slug: label.toLowerCase().replaceAll(" ", "-") })) },
-  { title: "Finance", items: [{ label: "Receivable", slug: "receivable" }, { label: "Payable", slug: "payable" }] },
-  { title: "Setup", items: ["Main Location", "Sub Location", "Currency", "Certificate Type", "Labour Type"].map((label) => ({ label, slug: label.toLowerCase().replaceAll(" ", "-") })) },
+  { title: "Main Menu", items: [{ label: "Dashboard", slug: "dashboard" }] },
+  { title: "Setup", items: [{ label: "Company Profile", slug: "company-profile" }, { label: "Notifications", slug: "notifications" }] },
+  {
+    title: "Master Code",
+    items: [
+      { label: "Vendor", slug: "vendor", href: "/setup/vendor" },
+      { label: "Customer", slug: "customer", href: "/setup/customer" },
+      { label: "Stone Master", slug: "stone-master" },
+      { label: "Location Master", slug: "location-master" },
+      { label: "Certificate Type", slug: "certificate-type" },
+      { label: "Labor Name", slug: "labor-name" },
+      { label: "Sale Person", slug: "sale-person" },
+    ],
+  },
+  { title: "Pre-Sale", items: [{ label: "Quotation", slug: "quotation" }, { label: "Reserve", slug: "reserve" }] },
+  {
+    title: "Memo",
+    items: [
+      { label: "Memo Receive", slug: "memo-receive" },
+      { label: "Memo Return", slug: "memo-return" },
+      { label: "Memo Out", slug: "memo-out" },
+      { label: "Memo Out-Return", slug: "memo-out-return" },
+      { label: "Memo Outstanding (From Vendor)", slug: "memo-outstanding-vendor" },
+      { label: "Memo Outstanding (From Customer)", slug: "memo-outstanding-customer" },
+    ],
+  },
+  { title: "Purchase", items: [{ label: "Purchase Order (PO)", slug: "purchase-order" }, { label: "Purchase", slug: "purchase" }, { label: "Purchase Outstanding", slug: "purchase-outstanding" }] },
+  {
+    title: "Inventory",
+    items: [
+      { label: "Load to Stock", slug: "load-to-stock" },
+      { label: "Merge/Split", slug: "merge-split" },
+      { label: "Stock Transfer Location", slug: "stock-transfer-location" },
+      { label: "Stock Adjustment", slug: "stock-adjustment" },
+      { label: "Barcode", slug: "barcode" },
+    ],
+  },
+  { title: "Sale", items: [{ label: "Sale", slug: "sale" }] },
+  {
+    title: "Account",
+    items: [
+      { label: "Payable", slug: "payable" },
+      { label: "Receivable", slug: "receivable" },
+      { label: "Outstanding Payable", slug: "outstanding-payable" },
+      { label: "Outstanding Receivable", slug: "outstanding-receivable" },
+    ],
+  },
+  {
+    title: "Report",
+    items: [
+      { label: "Stock Movement (Primary Stock)", slug: "stock-movement-primary" },
+      { label: "Stock Movement (Consignment Stock)", slug: "stock-movement-consignment" },
+      { label: "Closing Stock (Primary Stock)", slug: "closing-stock-primary" },
+      { label: "Closing Stock (Consignment Stock)", slug: "closing-stock-consignment" },
+      { label: "Compare with costing", slug: "sale-report-costing" },
+      { label: "Shareholder Report", slug: "sale-report-shareholder" },
+      { label: "Commission Report", slug: "sale-report-commission" },
+    ],
+  },
 ];
+
+/**
+ * Super Admin sees every shortcut. Others need `dashboard:VIEW` to get any shortcut at all, then
+ * each item needs `<slug>:VIEW`; groups left empty are omitted.
+ */
+export function shortcutGroupsFor(authz: SessionAuthz): HomeGroup[] {
+  if (authz.isSuperAdmin) return shortcutGroups;
+  const granted = new Set(authz.permissions);
+  if (!granted.has("dashboard:VIEW")) return [];
+  return shortcutGroups
+    .map((group) => ({ ...group, items: group.items.filter((item) => granted.has(`${item.slug}:VIEW`)) }))
+    .filter((group) => group.items.length > 0);
+}
 
 export const appRouter = t.router({
   system: t.router({ health: publicProcedure.query(() => ({ status: "ok" as const })) }),
-  dashboard: t.router({ shortcutGroups: licensedProcedure.query(() => shortcutGroups) }),
+  dashboard: t.router({ shortcutGroups: licensedProcedure.query(({ ctx }) => shortcutGroupsFor(ctx.authz)) }),
   session: t.router({ current: authenticatedProcedure.query(({ ctx }) => ctx.session) }),
   license: t.router({
     status: authenticatedProcedure.query(({ ctx }) => {
@@ -151,6 +221,12 @@ export const appRouter = t.router({
     create: superAdminProcedure.input(createUserInputSchema).mutation(({ ctx, input }) => callAuth({
       cookie: ctx.cookie, method: "POST", path: "/internal/v1/user-admin/users", timeoutMs: AUTH_TIMEOUT_MS.create, responseSchema: userMutationOutputSchema, body: input,
     })),
+    update: superAdminProcedure.input(updateUserInputSchema).mutation(({ ctx, input }) => {
+      const { id, ...body } = input;
+      return callAuth({
+        cookie: ctx.cookie, method: "PATCH", path: `/internal/v1/user-admin/users/${encodeURIComponent(id)}`, timeoutMs: AUTH_TIMEOUT_MS.write, responseSchema: userMutationOutputSchema, body,
+      });
+    }),
     delete: superAdminProcedure.input(userIdInputSchema).mutation(({ ctx, input }) => callAuth({
       cookie: ctx.cookie, method: "DELETE", path: `/internal/v1/user-admin/users/${encodeURIComponent(input.id)}`, timeoutMs: AUTH_TIMEOUT_MS.write, responseSchema: deleteOutputSchema,
     })),

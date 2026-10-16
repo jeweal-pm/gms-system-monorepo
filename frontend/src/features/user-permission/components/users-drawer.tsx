@@ -15,6 +15,8 @@ type UsersDrawerProps = {
   listErrorMessage?: string;
   onRetry: () => void;
   selectedUserId: string | null;
+  /** The unsaved new user, shown only while creating (rev2-02); null otherwise (rev2-03). */
+  draft: { username: string } | null;
   onSelectDraft: () => void;
   onSelectUser: (user: UserSummary) => void;
   onClose: () => void;
@@ -25,14 +27,14 @@ const itemBase = "flex w-full items-start gap-3 rounded-gms-md border px-3 py-3 
 const itemState = (selected: boolean) =>
   selected ? "border-gms-primary bg-gms-primary-subtle" : "border-transparent hover:bg-gms-surface-sunken";
 
-/** C-16 / C-17: non-modal Users drawer that pushes the content (S1, S2, S5). */
-export function UsersDrawer({ open, list, listStatus, listErrorMessage, onRetry, selectedUserId, onSelectDraft, onSelectUser, onClose, closeButtonRef }: UsersDrawerProps) {
+/** C-16 / C-17: non-modal Users drawer that pushes the content (S1, S2, S5; rev2-02/03). Rows show name + username. */
+export function UsersDrawer({ open, list, listStatus, listErrorMessage, onRetry, selectedUserId, draft, onSelectDraft, onSelectUser, onClose, closeButtonRef }: UsersDrawerProps) {
   const [query, setQuery] = useState("");
   const normalized = query.trim().toLowerCase();
   const filtered = useMemo(
     () =>
       (list?.items ?? []).filter(
-        (user) => !normalized || user.name.toLowerCase().includes(normalized) || user.email.toLowerCase().includes(normalized),
+        (user) => !normalized || user.name.toLowerCase().includes(normalized) || user.username.toLowerCase().includes(normalized),
       ),
     [list, normalized],
   );
@@ -42,13 +44,13 @@ export function UsersDrawer({ open, list, listStatus, listErrorMessage, onRetry,
       id={USERS_DRAWER_ID}
       aria-label="Users"
       hidden={!open}
-      className={cx("w-80 shrink-0 flex-col border-l border-gms-border-drawer bg-gms-surface", open ? "flex" : "hidden")}
+      className={cx("w-80 shrink-0 flex-col border-l border-gms-border-drawer bg-gms-surface print:hidden", open ? "flex" : "hidden")}
     >
       <header className="flex h-[58px] shrink-0 items-center justify-between border-b border-gms-border px-4">
         <div className="flex items-center gap-3">
           <h2 className="text-base font-semibold text-gms-text">Users</h2>
-          {/* "used / limit" follows the S5 proposal (Q-UP-17). */}
-          {list && <CountBadge>{`${list.usage.used} / ${list.usage.limit}`}</CountBadge>}
+          {/* rev2-02/03 "Users 3" equals the seat limit of the helper text (Q-UP2-03). */}
+          {list && <CountBadge>{list.usage.limit}</CountBadge>}
         </div>
         <button ref={closeButtonRef} type="button" aria-label="Close users panel" onClick={onClose} className={cx("rounded-gms-sm p-1 text-gms-text hover:bg-gms-surface-sunken", focusRing)}>
           <X size={20} aria-hidden />
@@ -74,16 +76,18 @@ export function UsersDrawer({ open, list, listStatus, listErrorMessage, onRetry,
         )}
 
         <ul className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pb-4" aria-label="User list">
-          <li>
-            <button type="button" aria-current={selectedUserId === null ? "true" : undefined} onClick={onSelectDraft} className={cx(itemBase, itemState(selectedUserId === null), focusRing)}>
-              <Plus size={18} className="mt-0.5 shrink-0 text-gms-text" aria-hidden />
-              <span className="min-w-0 flex-1">
-                <span className="block font-medium text-gms-text">New user</span>
-                <span className="block truncate text-[15px] text-gms-text-secondary">Not saved yet</span>
-              </span>
-              <span className="shrink-0 rounded-gms-sm bg-gms-warning-subtle px-1.5 py-0.5 text-xs font-medium text-gms-warning-text">Draft</span>
-            </button>
-          </li>
+          {draft && (
+            <li>
+              <button type="button" aria-current={selectedUserId === null ? "true" : undefined} onClick={onSelectDraft} className={cx(itemBase, itemState(selectedUserId === null), focusRing)}>
+                <Plus size={18} className="mt-0.5 shrink-0 text-gms-text" aria-hidden />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium text-gms-text">New user</span>
+                  <span className="block truncate text-[15px] text-gms-text-secondary">{draft.username.trim() || "Not saved yet"}</span>
+                </span>
+                <span className="shrink-0 rounded-gms-sm bg-gms-warning-subtle px-1.5 py-0.5 text-xs font-medium text-gms-warning-text">Draft</span>
+              </button>
+            </li>
+          )}
 
           {listStatus === "pending" &&
             Array.from({ length: 3 }, (_, index) => (
@@ -115,7 +119,7 @@ export function UsersDrawer({ open, list, listStatus, listErrorMessage, onRetry,
                         {user.name}
                         <span className="sr-only">{user.active ? ", active" : ", inactive"}</span>
                       </span>
-                      <span className="block truncate text-[15px] text-gms-text-secondary">{user.email}</span>
+                      <span className="block truncate text-[15px] text-gms-text-secondary">{user.username}</span>
                     </span>
                     {user.isSuperAdmin && (
                       <span className="shrink-0 text-gms-primary" title="Super Admin">

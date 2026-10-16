@@ -279,8 +279,75 @@ affected item IDs.
   `f1-system-frontend-1`: `pnpm --filter frontend typecheck` exit 0; `pnpm --filter frontend lint` 0 errors (2 pre-existing
   warnings in `login-form.tsx`). Browser check of the open menu **not run**.
 
+## Revision 2 (ADR-0020) backend
+
+- revision: SA 2 (bundle [document/apps/backend/auth/user-permission/](../../apps/backend/auth/user-permission/)), source UI revision 2 (`source/rev2-01..04`)
+- approval: [ADR-0020](../../adr/0020-username-login-and-permission-matrix-v2.md) revision 1 Accepted 2026-10-15, owner (developer_07): "frontend backend อนุมัติ ADR-0020" — an instruction to implement this revision (recorded as given; no further approval inferred)
+- run: backend role, 2026-10-15, branch `feat/15-10-26-check-fix-userpermission` (no branch switch, nothing committed or pushed). Parent made backend the single writer of `backend-api-auth/prisma/**` and both services' `src/main.ts` for this run; no package, lockfile, Compose, Dockerfile or `.env*` change
+- handoff: [user-permission-v2-backend.md](../../coordination/handoffs/user-permission-v2-backend.md)
+
+| Done | ID | Status | Task | Files | Evidence |
+|---|---|---|---|---|---|
+| [x] | BE-UP2-001 | done | Migration `20261015120000_username_permission_v2`: enum + APPROVE/PRINT/EXCEL, `User.username` (unique, CHECK) backfilled from lower(email), email → `<id>@users.invalid`, delete all `UserPermission` | `backend-api-auth/prisma/schema.prisma`, `prisma/migrations/20261015120000_username_permission_v2/migration.sql` | applied on dev DB at auth start-up; `migrate diff` empty; 3 users keep login text; 0 grants (BT-UP2-00) |
+| [x] | BE-UP2-002 | done | Better Auth `username` plugin (installed 1.7.7), `/sign-in/username`; disabled `/sign-in/email`, `/update-user`, `/change-email`, `/is-username-available`; username policy module | `src/auth/auth.ts`, new `src/auth/username-policy.ts` | BT-UP2-01/02 |
+| [x] | BE-UP2-003 | done | Lockout/rate limit/LoginAttempt on `/sign-in/username` (HMAC of normalized username); 401 `INVALID_USERNAME_OR_PASSWORD` + `attemptsRemaining`, 423 `ACCOUNT_LOCKED` + `retryAfterSeconds`; `ACCOUNT_INACTIVE` 403 (closes BE-UP-011) | `src/auth/auth.ts` | BT-UP2-11/12/13 |
+| [x] | BE-UP2-004 | done | Catalog v2 (`version 2`, `actions`, `kind`, 39 leaves, 347), bound 576 | `src/permission/catalog.ts`; gateway `src/trpc/user-admin-schemas.ts` | BT-UP2-04 |
+| [x] | BE-UP2-005 | done | userAdmin `email`→`username`; new `userAdmin.update` (PATCH; Super Admin lock; `USERNAME_IMMUTABLE`, `USER_CHANGED`, password reset → sessions revoked + lockout cleared; deactivate → sessions revoked); `SUPER_ADMIN_LOCKED` on delete (closes BE-UP-007 except photo) | auth `src/user-admin/{user-admin.service,user-admin.controller,user-admin.schemas,user-admin.errors,user-provisioning.service}.ts`; gateway `src/trpc/{router,auth-client,user-admin-schemas}.ts` | BT-UP2-05..10, 15, 17 |
+| [x] | BE-UP2-006 | done | CRM `POST /api/v1/users` `username` + deprecated `email` alias | `src/auth/auth.service.ts` | BT-UP2-16 |
+| [x] | BE-UP2-007 | done | License subject = username (session-context, license status/activate, user-admin license gate, provisioning cache) | `src/auth/auth.controller.ts`, `src/license/{license.service,license.client}.ts`, `src/user-admin/user-admin.service.ts` | BT-UP2-03, 16 |
+| [x] | BE-UP2-008 | done | Session user `username` (session-context + gateway `SessionUser`); `dashboard.shortcutGroups` v2 keys + `dashboard:VIEW` | auth `src/auth/auth.controller.ts`; gateway `src/main.ts`, `src/trpc/router.ts` | BT-UP2-03, 14 |
+| [x] | BE-UP2-009 | done | Dev seed: usernames `superadmin@demo.com` / `user@demo.com`; demo user `dashboard:VIEW` | `src/scripts/seed.ts` | `db:seed` output |
+| [x] | BE-UP2-010 | done | SA rev 2 docs: bundle (api-contract, database-diagram, decisions, testing, sequence, authorization, error-handling, architecture, dependencies), spec 0001/0002, login-flow diagram, login test cases | `document/**` listed | this run |
+| [ ] | BE-UP2-011 | deferred (deviation) | Super Admin/regular `photo` on update/create (still BE-UP-009/012; strict schemas reject `photo`) | — | — |
+
+Checks (2026-10-15): auth `typecheck` 0, `lint` 0, build-config `tsc` 0; gateway `typecheck` 0, `lint` 0, build-config `tsc` 0;
+frontend `tsc --noEmit` 0 errors (read-only); runtime 57/57 ([results](../../apps/backend/auth/user-permission/testing.md#results--sa-revision-2-backend-2026-10-15)).
+
 ## Corrective work
 
-No corrective work is open. If a defect arises during implementation, link one root-cause ledger and apply
+Revision 2 backend (2026-10-15): root cause **RC-UP2-1** — after-hook responses built with `ctx.json(body, {status})`
+keep Better Auth's original endpoint status (observed: `ACCOUNT_INACTIVE` returned 200; impossible-format username
+returned 422). Pass 1 of 3 (initial fix): both responses now use a raw `Response` with an explicit status, like the
+existing 423 path. Re-run: 57/57, closed. Passes used: 1. (A test-script quoting bug was fixed at the same time; not a
+product defect.)
+
+Otherwise no corrective work is open. If a defect arises during implementation, link one root-cause ledger and apply
 [bounded remediation](../../workflow/remediation.md): default pass limit 3, record the allocated/active pass and
 per-pass evidence, and share the counts with backend. New revisions, reviewers or sessions do not reset them.
+
+## Revision 2 (ADR-0020) frontend
+
+- revision: UI 2
+- status: in-progress
+- source: [rev2-01..04](../../apps/frontend/user-permission/source/) (owner screenshots 2026-10-15); [ui-spec revision 2](../../apps/frontend/user-permission/ui-spec.md#revision-2-adr-0020)
+- contract: [ADR-0020](../../adr/0020-username-login-and-permission-matrix-v2.md) revision 1; gateway `AppRouter` (`backend-api-gateway/src/trpc/user-admin-schemas.ts`, SA revision 2 shapes)
+- approved-revision: UI 2 with ADR-0020 revision 1
+- approved-by: owner (developer_07)
+- approved-at: 2026-10-15
+- approval-evidence: 2026-10-15 owner: "frontend backend อนุมัติ ADR-0020" (instruction to implement)
+- task claim: [user-permission-v2-frontend.md](../../coordination/tasks/user-permission-v2-frontend.md)
+- open questions (defaults implemented): Q-UP2-01…06 in [open-questions.md](../../apps/frontend/user-permission/open-questions.md#revision-2-adr-0020-questions)
+
+| Done | ID | Status | Owner | Task | Allowed files | Depends on | Acceptance criteria | Verification |
+|---|---|---|---|---|---|---|---|---|
+| [ ] | FE-UP2-001 | implemented | frontend | Header: title, "User List N", Print / Excel (disabled + tooltip) / Duplicate / Refresh, action row Create User / Cancel / Save / Edit / Delete with create/view/edit states | `frontend/src/features/user-permission/**` | ADR-0020 §4; Q-UP2-02 | Button enablement per mode exactly as rev2-02/03; Delete disabled for Super Admin/self | TC-UP2-01, 02 |
+| [ ] | FE-UP2-002 | implemented | frontend | View/edit/create mode state machine: select user = view; Edit; Cancel (restore / return to previous user); Save = create or `userAdmin.update` (`expectedUpdatedAt`, blank password omitted); Duplicate copies details + permissions, clears Username/Password | `frontend/src/features/user-permission/**` | BE `userAdmin.update` | Saved values restored on Cancel; `USER_CHANGED`, `USER_NOT_FOUND`, `SUPER_ADMIN_LOCKED`, `USERNAME_IMMUTABLE` mapped; password never in Query cache | TC-UP2-03..06 |
+| [ ] | FE-UP2-003 | implemented | frontend | Permission matrix v2: 9 columns, Select All, Dashboard "—", section headings, groups with chevron + "N sub-menus", leaf/sub-menu styles, search, "All Permissions" filter, Expand/Collapse All, "x of 347 permissions on" | `frontend/src/features/user-permission/**`, `frontend/src/components/ui/checkbox.tsx` (additive `DisabledCheckbox`) | catalog v2; Q-UP2-01, 06 | Matches rev2-01/02; aggregates never sent as grants; counter from catalog `applicableCount` | TC-UP2-07..10 |
+| [ ] | FE-UP2-004 | implemented | frontend | Personal Information: Username (create only, 3–64 `[a-z0-9._@+-]` after trim+lowercase, "Used to sign in"), Password optional on edit, Name*, Phone No. optional, Location*, Active switch editable | `frontend/src/features/user-permission/**` | ADR-0020 §1; Q-UP2-04 | Username read-only after creation; client rule equals server rule | TC-UP2-11, 12 |
+| [ ] | FE-UP2-005 | implemented | frontend | Super Admin: locked matrix + lock banner (PRINT/EXCEL included), Name/Phone/Location editable via Edit, Username/Password/Active locked, Delete disabled | `frontend/src/features/user-permission/**` | ADR-0020 §3, §4 | Update sends only `name`, `phone`, `locationKeys` (+ `id`, `expectedUpdatedAt`) | TC-UP2-13 |
+| [ ] | FE-UP2-006 | implemented | frontend | Drawer: "Users {limit}", search by name/username, rows name + username, draft item only while creating | `frontend/src/features/user-permission/**` | Q-UP2-03 | Matches rev2-02/03 | TC-UP2-14 |
+| [ ] | FE-UP2-007 | implemented | frontend | Delete dialog "Delete {username}?" / body / Keep user / Delete | `frontend/src/features/user-permission/**` | — | Copy matches rev2-04 | TC-UP2-15 |
+| [ ] | FE-UP2-008 | implemented | frontend | Login by username: `usernameClient()` in the auth client, `authClient.signIn.username`, label "Username", no e-mail format check, `ACCOUNT_INACTIVE` message, demo buttons "Use Username" | `frontend/src/lib/auth-client.ts`, `frontend/src/features/auth/**` | BE `/sign-in/username` | `user1` and `User1` sign in; lockout/attempts messages unchanged | TC-UP2-16, 17 |
+| [x] | FE-UP2-009 | done (API level; browser not run) | frontend | Contract integration check against the running gateway (types from `AppRouter`; curl: username sign-in, catalog v2, create/update/delete `fe-up2-test`) | none (checks) | backend handoff | Real responses match the view models | TC-UP2-18 |
+| [ ] | FE-UP2-010 | implemented (parent-assigned 2026-10-15, backend deviation 6) | frontend (frontend-home scope) | Avatar menu shows `session.user.username` instead of the internal `<id>@users.invalid` email | `frontend/src/features/home/account-menu.tsx`, `app-shell.tsx` | Q-UP2-05 | Menu header shows the username | manual |
+
+Photo upload (FE-UP-013) remains blocked on photo storage (BE-UP-009); Excel export waits for its own ADR.
+
+### Frontend progress: UI revision 2 (2026-10-15)
+
+- Implemented FE-UP2-001…008 and FE-UP2-010 against the actual backend contract ([handoff](../../coordination/handoffs/user-permission-v2-backend.md)); types come from the gateway `AppRouter` (`features/user-permission/contract.ts`), no local mirror.
+- Backend deviations applied: no `photo` field is sent (Photo tile stays a placeholder with the "Photo upload isn't available yet" toast); `usernameClient()` added to the auth client; catalog rows are keyed `${kind}:${key}` (section `purchase` vs leaf `purchase`); the avatar menu shows `username`; `SUPER_ADMIN_LOCKED` mapped for update and delete; `expectedUpdatedAt` always sent from `get().updatedAt`, so `USER_CHANGED` is detected.
+- Checks run inside `f1-system-frontend-1`: `npx tsc --noEmit` exit 0; `npx eslint src` 0 errors (2 pre-existing warnings in `login-form.tsx`, line 46). After `docker restart f1-system-frontend-1`: `/login` HTTP 200 with the "Username" label and "Use Username" demo buttons in SSR HTML; `/setup/user-permission` HTTP 200.
+- Integration through the frontend same-origin proxies (`localhost:3000/api/auth`, `/api/trpc`), 2026-10-15: `sign-in/username` `superadmin@demo.com` 200 (user body has `username`, internal email); `sign-in/email` 404; wrong password 401 `INVALID_USERNAME_OR_PASSWORD` + `attemptsRemaining: 2`; `permission.catalog` version 2, 9 actions, top level `dashboard` + 8 sections, 39 leaves = 347 cells = `applicableCount`, Dashboard VIEW/APPROVE/PRICE/PRINT/EXCEL, groups Master Code 7 / Memo Outstanding 2 / Account Outstanding 2 / Stock Movement 2 / Closing Stock 2 / Sale Report 3; `userAdmin.list` items carry `username`; create `fe-up2-test` 200; duplicate 409 `USERNAME_TAKEN`; `"user one"` 400 `VALIDATION_ERROR` path `username`; update in the `toUpdateUserInput` shape 200 and `get` shows the new name/phone/permissions; stale `expectedUpdatedAt` 409 `USER_CHANGED`; sign-in as `FE-UP2-Test` (mixed case) 200 and `permission.mine` returned its grants; Super Admin target: `{id, name, phone}` update 200 (values unchanged), `permissions` / `active:false` / delete each 403 `SUPER_ADMIN_LOCKED`; delete `fe-up2-test` 200, repeat 404 `USER_NOT_FOUND`. The test user was deleted.
+- Finding: the seeded Super Admin has `locationKeys: []`. Location is required in the form (and `min(1)` in the contract), so editing the Super Admin requires choosing a location before Save. Not a code defect; noted for the owner.
+- Not run: every browser/visual check (no browser automation), keyboard walk-throughs, `next build`, manual-tester.

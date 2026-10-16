@@ -1,19 +1,20 @@
 # Login & Password Management: Requirements
 
 - **Status:** Draft
-- **Last updated:** 2026-10-12 ([ADR-0015](../adr/0015-remove-forgot-password-and-email.md): CRM กำหนดรหัสผ่านเริ่มต้น, เอา forgot password และ email ออก)
+- **Last updated:** 2026-10-15 ([ADR-0020](../adr/0020-username-login-and-permission-matrix-v2.md): login ด้วย **Username** แทน email); 2026-10-12 ([ADR-0015](../adr/0015-remove-forgot-password-and-email.md): CRM กำหนดรหัสผ่านเริ่มต้น, เอา forgot password และ email ออก)
 - **Related:** [Password Policy](0003-password-policy.md), [API Contract](0001-api-contract.md), [Flow](../diagram/login-flow.md)
 
 ## 1. ภาพรวม
 
-ระบบให้ผู้ใช้ login ด้วย email และ password โดยบัญชีผู้ใช้ถูกสร้างจากระบบ CRM
-ผ่าน API ซึ่ง CRM เป็นผู้กำหนดรหัสผ่านเริ่มต้น ผู้ใช้เปลี่ยนรหัสผ่านเองได้ที่หน้า Profile
+ระบบให้ผู้ใช้ login ด้วย **username** และ password (ADR-0020; username เช่น `user1` หรือค่าหน้าตาเหมือน email ก็ได้
+แต่ระบบไม่ตรวจว่าเป็น email) โดยบัญชี Super Admin ถูกสร้างจากระบบ CRM ผ่าน API และบัญชี user ทั่วไปถูกสร้างโดย Super Admin
+ที่หน้า User and Permission (ADR-0017) ซึ่ง CRM เป็นผู้กำหนดรหัสผ่านเริ่มต้น ผู้ใช้เปลี่ยนรหัสผ่านเองได้ที่หน้า Profile
 ระบบไม่ส่ง email และไม่มี flow ลืมรหัสผ่าน ผู้ใช้ที่ลืมรหัสติดต่อผู้ดูแลระบบนอกระบบ
 
 ## 2. ขอบเขต
 
 **อยู่ใน scope**
-- Login ด้วย email + password
+- Login ด้วย username + password (`POST /api/auth/sign-in/username`; `/sign-in/email` ปิดแล้ว)
 - สร้าง user ผ่าน API ที่ CRM เรียก พร้อมรหัสผ่านเริ่มต้นที่ CRM กำหนด
 - เปลี่ยน password ด้วยตัวเองที่ Super Admin Profile page
 
@@ -22,7 +23,7 @@
 - Login ด้วย social / SSO
 - Multi-factor authentication (MFA)
 - Forgot password และการส่ง email ทุกประเภท ([ADR-0015](../adr/0015-remove-forgot-password-and-email.md))
-- เครื่องมือให้ admin reset รหัสผ่านในระบบ (ต้องทำ ADR แยก)
+- (ย้ายเข้า scope แล้วตาม ADR-0017) Super Admin reset รหัสผ่านของ user ทั่วไปได้ที่หน้า User and Permission
 
 ส่วนที่เป็นสีจางเรื่องบังคับเปลี่ยน password หลัง login ครั้งแรกไม่อยู่ใน scope ตาม [ADR-0011](../adr/0011-change-password-via-profile-page.md)
 
@@ -36,7 +37,7 @@
 
 ## 4. User Stories
 
-- **US-01** ในฐานะ User ฉันต้องการ login ด้วย email และ password เพื่อเข้าใช้งานระบบ
+- **US-01** ในฐานะ User ฉันต้องการ login ด้วย username และ password เพื่อเข้าใช้งานระบบ
 - **US-02** ในฐานะ CRM ฉันต้องการเรียก API เพื่อสร้าง user ใหม่พร้อมรหัสผ่านเริ่มต้น
 - **US-03** (ยกเลิกตาม ADR-0015) ขอรหัสผ่านใหม่ทาง email เมื่อลืมรหัสผ่าน
 - **US-04** ในฐานะ User ฉันต้องการเปลี่ยนรหัสผ่านเป็นของตัวเองได้เมื่อต้องการ โดยไม่ถูกบังคับ
@@ -51,31 +52,37 @@
 | BR-04 | ไม่บังคับให้ user เปลี่ยน password หลัง login ครั้งแรก user เปลี่ยนเองได้ที่ Profile page | [ADR-0011] |
 | BR-05 | Password ที่ user ตั้งเองต้องผ่าน [Password Policy](0003-password-policy.md) | [จาก flow] |
 | BR-06 | ช่อง Confirm password ต้องตรงกับ Password | [จาก flow] |
-| BR-07 | ใส่ password ผิดติดกัน 3 ครั้งให้ล็อกบัญชี 1 นาที และแจ้งจำนวนครั้งที่เหลือ/เวลาที่เหลือตาม ADR-0012 | [ADR-0012] |
+| BR-07 | ใส่ password ผิดติดกัน 3 ครั้งให้ล็อกบัญชี 1 นาที และแจ้งจำนวนครั้งที่เหลือ/เวลาที่เหลือตาม ADR-0012 (นับตาม username ที่ normalize แล้ว) | [ADR-0012], [ADR-0020] |
+| BR-08 | Username: trim, ตัวพิมพ์เล็ก, 3–64 ตัว, `a-z 0-9 . _ - @ +`, ห้ามซ้ำ, แก้ไม่ได้หลังสร้าง (ผูก license); user เดิมใช้ email เดิมเป็น username | [ADR-0020] |
+| BR-09 | บัญชีที่ถูกปิดใช้งาน (Active off) login ไม่ได้แม้ password ถูก (`403 ACCOUNT_INACTIVE`) | [ADR-0017] |
 
 ## 6. Acceptance Criteria
 
 **AC-01 Login (US-01)**
 - Given user มีบัญชีอยู่แล้ว
-- When กรอก email และ password ถูกต้องที่หน้า `/login`
+- When กรอก username (ตัวพิมพ์ใหญ่/เล็กได้) และ password ถูกต้องที่หน้า `/login`
 - Then เข้าสู่ระบบสำเร็จและไปหน้า default
 
-- Given user กรอก email หรือ password ผิด
+- Given user กรอก username หรือ password ผิด
 - When กด login
-- Then แสดงข้อความ "อีเมลหรือรหัสผ่านไม่ถูกต้อง" โดยไม่บอกว่าผิดช่องไหน
+- Then แสดงข้อความ "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง" โดยไม่บอกว่าผิดช่องไหน (API 401 `INVALID_USERNAME_OR_PASSWORD`)
+
+- Given บัญชีถูกปิดใช้งาน
+- When กรอก password ถูก
+- Then แสดง "บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ" (API 403 `ACCOUNT_INACTIVE`) และไม่เข้าสู่ระบบ
 
 - Given user อยู่ที่หน้า `/login`
 - Then ไม่มีลิงก์หรือข้อความเรื่องลืมรหัสผ่าน
 
 **AC-02 สร้าง user ผ่าน CRM (US-02)**
-- Given CRM ส่ง request สร้าง user พร้อม email ที่ยังไม่มีในระบบและ password ที่ผ่าน policy
+- Given CRM ส่ง request สร้าง user พร้อม `username` (หรือ `email` แบบ deprecated) ที่ยังไม่มีในระบบและ password ที่ผ่าน policy
 - When ระบบรับ request
 - Then สร้าง user, เก็บ password แบบ hash และตอบ `201` โดยไม่มี password ใน response
 
 - Given ไม่มี password หรือ password ไม่ผ่าน policy
 - Then ตอบกลับ `400` และไม่สร้าง user
 
-- Given email ซ้ำกับที่มีในระบบ
+- Given username ซ้ำกับที่มีในระบบ
 - Then ตอบกลับ `409 Conflict` และไม่สร้าง user
 
 **AC-03 Forgot password (US-03)** — ยกเลิกตาม ADR-0015

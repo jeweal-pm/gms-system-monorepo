@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { HttpStatus, Injectable, Logger } from "@nestjs/common";
 import type { Request } from "express";
 import { fromNodeHeaders } from "better-auth/node";
-import { auth } from "../auth/auth";
+import * as argon2 from "argon2";
+import { auth, hashLoginIdentity } from "../auth/auth";
 import { prisma } from "../database/prisma-client";
 import { LicenseDomainError, LicenseService } from "../license/license.service";
 import { catalogResponse, isGrantInCatalog, MAX_GRANTS_PER_USER, parsePermissionKey, toPermissionKey, type PermissionActionValue } from "../permission/catalog";
@@ -9,7 +11,7 @@ import { SUPER_ADMIN_ROLE } from "../permission/grants";
 import { isKnownLocation, LOCATION_OPTIONS } from "./location-options";
 import { parseUserSeatLimit, USER_LIST_CAP } from "./seat-limit";
 import { userAdminException, zodFieldErrors, type FieldError } from "./user-admin.errors";
-import { createUserInputSchema, userIdSchema } from "./user-admin.schemas";
+import { createUserInputSchema, updateUserInputSchema, userIdSchema } from "./user-admin.schemas";
 import { ProvisioningError, UserProvisioningService } from "./user-provisioning.service";
 
 const USABLE_LICENSE_STATES = new Set(["VALID", "EXPIRING", "GRACE"]);
@@ -39,7 +41,7 @@ export class UserAdminService {
     const session = await this.requireSession(request);
     let state: string;
     try {
-      state = (await this.licenseService.resolveStatus(session.user.id, session.user.email)).state;
+      state = (await this.licenseService.resolveStatus(session.user.id, session.user.username ?? "")).state;
     } catch (error) {
       state = error instanceof LicenseDomainError && error.code === "LICENSE_REQUIRED" ? "REQUIRED" : "UNVERIFIABLE";
     }
@@ -67,7 +69,7 @@ export class UserAdminService {
       prisma.user.findMany({
         orderBy: [{ role: "asc" }, { createdAt: "asc" }, { id: "asc" }],
         take: USER_LIST_CAP,
-        select: { id: true, name: true, email: true, role: true, active: true, updatedAt: true, photo: { select: { userId: true } } },
+        select: { id: true, name: true, username: true, role: true, active: true, updatedAt: true, photo: { select: { userId: true } } },
       }),
       this.provisioning.countSeats(),
     ]);
@@ -76,7 +78,7 @@ export class UserAdminService {
       items: rows.map((row) => ({
         id: row.id,
         name: row.name,
-        email: row.email,
+        username: row.username,
         isSuperAdmin: row.role === SUPER_ADMIN_ROLE,
         active: row.active,
         hasPhoto: row.photo !== null,
@@ -91,7 +93,7 @@ export class UserAdminService {
     const user = await prisma.user.findUnique({
       where: { id },
       select: {
-        id: true, name: true, email: true, role: true, active: true, updatedAt: true,
+        id: true, name: true, username: true, role: true, active: true, updatedAt: true,
         phoneE164: true, phoneCountry: true,
         locations: { select: { locationKey: true }, orderBy: { locationKey: "asc" }, take: 20 },
         permissions: { select: { menuKey: true, action: true }, take: MAX_GRANTS_PER_USER },
@@ -103,7 +105,7 @@ export class UserAdminService {
     return {
       id: user.id,
       name: user.name,
-      email: user.email,
+      username: user.username,
       isSuperAdmin,
       active: user.active,
       hasPhoto: user.photo !== null,
@@ -114,6 +116,7 @@ export class UserAdminService {
         ? "ALL" as const
         : user.permissions.filter((grant) => isGrantInCatalog(grant.menuKey, grant.action)).map((grant) => toPermissionKey(grant.menuKey, grant.action)).sort(),
       photoVersion: user.photo ? user.photo.sha256.slice(0, PHOTO_VERSION_LENGTH) : null,
+      // SA rev 2: true = permissions, active, password and delete are locked (personal info stays editable).
       readOnly: isSuperAdmin,
     };
   }
@@ -130,30 +133,12 @@ export class UserAdminService {
     }
     const input = parsed.data;
 
-    const duplicates: FieldError[] = [];
-    if (new Set(input.permissions).size !== input.permissions.length) duplicates.push({ path: "permissions", code: "duplicate" });
-    if (new Set(input.locationKeys).size !== input.locationKeys.length) duplicates.push({ path: "locationKeys", code: "duplicate" });
-    if (duplicates.length > 0) throw userAdminException("VALIDATION_ERROR", HttpStatus.BAD_REQUEST, duplicates);
-
-    const grants: { menuKey: string; action: PermissionActionValue }[] = [];
-    let unknownPermissions = 0;
-    for (const key of input.permissions) {
-      const grant = parsePermissionKey(key);
-      if (grant) grants.push(grant);
-      else unknownPermissions += 1;
-    }
-    if (unknownPermissions > 0) {
-      this.logger.warn({ event: "user_admin.permission_unknown", actorId: actor.id, count: unknownPermissions, msg: "Unknown permission keys rejected" });
-      throw userAdminException("PERMISSION_UNKNOWN", HttpStatus.BAD_REQUEST, [{ path: "permissions", code: "unknown" }]);
-    }
-    if (input.locationKeys.some((key) => !isKnownLocation(key))) {
-      throw userAdminException("LOCATION_UNKNOWN", HttpStatus.BAD_REQUEST, [{ path: "locationKeys", code: "unknown" }]);
-    }
+    const grants = this.validateSets(actor, input.permissions, input.locationKeys);
 
     let created: { id: string; updatedAt: Date };
     try {
       created = await this.provisioning.provision({
-        email: input.email,
+        username: input.username,
         name: input.name,
         password: input.password,
         role: "user",
@@ -167,13 +152,13 @@ export class UserAdminService {
       if (!(error instanceof ProvisioningError)) throw error;
       const failure = error.failure;
       switch (failure.reason) {
-        case "EMAIL_ALREADY_EXISTS":
-          throw userAdminException("EMAIL_ALREADY_EXISTS", HttpStatus.CONFLICT, [{ path: "email", code: "duplicate" }]);
+        case "USERNAME_TAKEN":
+          throw userAdminException("USERNAME_TAKEN", HttpStatus.CONFLICT, [{ path: "username", code: "duplicate" }]);
         case "SEAT_LIMIT_REACHED":
           this.logger.log({ event: "user_admin.limit_reached", actorId: actor.id, used: failure.used, limit: failure.limit, msg: "User limit reached" });
           throw userAdminException("USER_LIMIT_REACHED", HttpStatus.CONFLICT);
         case "LICENSE_NOT_ELIGIBLE":
-          this.logger.log({ event: "user_admin.license_not_eligible", actorId: actor.id, msg: "Target email has no eligible license" });
+          this.logger.log({ event: "user_admin.license_not_eligible", actorId: actor.id, msg: "Target username has no eligible license" });
           throw userAdminException("USER_LICENSE_NOT_ELIGIBLE", HttpStatus.UNPROCESSABLE_ENTITY);
         case "LICENSE_LOOKUP_FAILED":
           if (failure.cause.httpStatus < 500) throw userAdminException("USER_LICENSE_NOT_ELIGIBLE", HttpStatus.UNPROCESSABLE_ENTITY);
@@ -186,10 +171,132 @@ export class UserAdminService {
       event: "user_admin.created",
       actorId: actor.id,
       targetId: created.id,
-      fields: ["email", "password", "name", "phone", "locationKeys", "active", "permissions"],
+      fields: ["username", "password", "name", "phone", "locationKeys", "active", "permissions"],
       msg: "User created",
     });
     return { id: created.id, updatedAt: created.updatedAt.toISOString() };
+  }
+
+  /**
+   * SA rev 2 (ADR-0020 §4): regular users accept every field; a Super Admin target (which
+   * includes the caller) accepts only name, phone and locationKeys. Username never changes.
+   */
+  async update(actor: Actor, rawId: string, body: unknown) {
+    const id = parseUserId(rawId);
+    const parsed = updateUserInputSchema.safeParse(body);
+    if (!parsed.success) {
+      const issues = parsed.error.issues;
+      const fieldErrors = zodFieldErrors(parsed.error);
+      if (issues.every((issue) => issue.path[0] === "password" && issue.code !== "invalid_type")) {
+        throw userAdminException("PASSWORD_POLICY_VIOLATION", HttpStatus.BAD_REQUEST, fieldErrors);
+      }
+      throw userAdminException("VALIDATION_ERROR", HttpStatus.BAD_REQUEST, fieldErrors);
+    }
+    const input = parsed.data;
+    const grants = input.permissions !== undefined || input.locationKeys !== undefined
+      ? this.validateSets(actor, input.permissions ?? [], input.locationKeys ?? [])
+      : [];
+
+    // Cheap pre-check so a locked Super Admin request never pays for Argon2; re-checked under the row lock.
+    const current = await prisma.user.findUnique({ where: { id }, select: { role: true } });
+    if (!current) throw userAdminException("USER_NOT_FOUND", HttpStatus.NOT_FOUND);
+    if (current.role === SUPER_ADMIN_ROLE && (input.permissions !== undefined || input.password !== undefined || input.active === false)) {
+      this.logger.warn({ event: "user_admin.update_denied", actorId: actor.id, targetId: id, msg: "Super Admin permissions, status and password are locked" });
+      throw userAdminException("SUPER_ADMIN_LOCKED", HttpStatus.FORBIDDEN);
+    }
+    // Hash outside the transaction (Argon2 is slow).
+    const passwordHash = input.password !== undefined ? await argon2.hash(input.password, { type: argon2.argon2id }) : null;
+
+    const outcome = await prisma.$transaction(async (transaction) => {
+      const rows = await transaction.$queryRaw<Array<{ role: string; username: string; updatedAt: Date }>>`
+        SELECT "role", "username", "updatedAt" FROM "auth"."User" WHERE "id" = ${id} FOR UPDATE`;
+      const target = rows[0];
+      if (!target) return { kind: "NOT_FOUND" as const };
+      if (input.username !== undefined && input.username !== target.username) return { kind: "USERNAME_IMMUTABLE" as const };
+      if (input.expectedUpdatedAt !== undefined && Date.parse(input.expectedUpdatedAt) !== target.updatedAt.getTime()) return { kind: "USER_CHANGED" as const };
+      const isSuperAdmin = target.role === SUPER_ADMIN_ROLE;
+      if (isSuperAdmin && (input.permissions !== undefined || passwordHash !== null || input.active === false)) {
+        return { kind: "SUPER_ADMIN_LOCKED" as const };
+      }
+
+      const now = new Date();
+      const updated = await transaction.user.update({
+        where: { id },
+        data: {
+          updatedAt: now,
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.phone !== undefined ? { phoneE164: input.phone?.e164 ?? null, phoneCountry: input.phone?.country ?? null } : {}),
+          ...(!isSuperAdmin && input.active !== undefined ? { active: input.active } : {}),
+          ...(passwordHash !== null ? { failedLoginCount: 0, lockedUntil: null } : {}),
+        },
+        select: { updatedAt: true },
+      });
+      if (input.locationKeys !== undefined) {
+        await transaction.userLocation.deleteMany({ where: { userId: id } });
+        await transaction.userLocation.createMany({ data: input.locationKeys.map((locationKey) => ({ userId: id, locationKey })) });
+      }
+      if (input.permissions !== undefined) {
+        await transaction.userPermission.deleteMany({ where: { userId: id } });
+        if (grants.length > 0) {
+          await transaction.userPermission.createMany({ data: grants.map((grant) => ({ userId: id, menuKey: grant.menuKey, action: grant.action })) });
+        }
+      }
+      let revokeSessions = input.active === false;
+      if (passwordHash !== null) {
+        const changed = await transaction.account.updateMany({ where: { userId: id, providerId: "credential" }, data: { password: passwordHash, updatedAt: now } });
+        if (changed.count === 0) {
+          await transaction.account.create({ data: { id: randomUUID(), accountId: id, providerId: "credential", userId: id, password: passwordHash, createdAt: now, updatedAt: now } });
+        }
+        await transaction.loginLockout.deleteMany({ where: { emailHash: hashLoginIdentity(target.username) } });
+        revokeSessions = true;
+      }
+      if (revokeSessions) await transaction.session.deleteMany({ where: { userId: id } });
+      return { kind: "UPDATED" as const, updatedAt: updated.updatedAt };
+    }, { timeout: 4_000 });
+
+    switch (outcome.kind) {
+      case "NOT_FOUND":
+        throw userAdminException("USER_NOT_FOUND", HttpStatus.NOT_FOUND);
+      case "USERNAME_IMMUTABLE":
+        throw userAdminException("USERNAME_IMMUTABLE", HttpStatus.BAD_REQUEST, [{ path: "username", code: "immutable" }]);
+      case "USER_CHANGED":
+        throw userAdminException("USER_CHANGED", HttpStatus.CONFLICT);
+      case "SUPER_ADMIN_LOCKED":
+        this.logger.warn({ event: "user_admin.update_denied", actorId: actor.id, targetId: id, msg: "Super Admin permissions, status and password are locked" });
+        throw userAdminException("SUPER_ADMIN_LOCKED", HttpStatus.FORBIDDEN);
+    }
+    this.logger.log({
+      event: "user_admin.updated",
+      actorId: actor.id,
+      targetId: id,
+      fields: (["name", "password", "phone", "locationKeys", "active", "permissions"] as const).filter((field) => input[field] !== undefined),
+      msg: "User updated",
+    });
+    return { id, updatedAt: outcome.updatedAt.toISOString() };
+  }
+
+  /** Shared create/update validation for permission keys and location keys. */
+  private validateSets(actor: Actor, permissions: string[], locationKeys: string[]) {
+    const duplicates: FieldError[] = [];
+    if (new Set(permissions).size !== permissions.length) duplicates.push({ path: "permissions", code: "duplicate" });
+    if (new Set(locationKeys).size !== locationKeys.length) duplicates.push({ path: "locationKeys", code: "duplicate" });
+    if (duplicates.length > 0) throw userAdminException("VALIDATION_ERROR", HttpStatus.BAD_REQUEST, duplicates);
+
+    const grants: { menuKey: string; action: PermissionActionValue }[] = [];
+    let unknownPermissions = 0;
+    for (const key of permissions) {
+      const grant = parsePermissionKey(key);
+      if (grant) grants.push(grant);
+      else unknownPermissions += 1;
+    }
+    if (unknownPermissions > 0) {
+      this.logger.warn({ event: "user_admin.permission_unknown", actorId: actor.id, count: unknownPermissions, msg: "Unknown permission keys rejected" });
+      throw userAdminException("PERMISSION_UNKNOWN", HttpStatus.BAD_REQUEST, [{ path: "permissions", code: "unknown" }]);
+    }
+    if (locationKeys.some((key) => !isKnownLocation(key))) {
+      throw userAdminException("LOCATION_UNKNOWN", HttpStatus.BAD_REQUEST, [{ path: "locationKeys", code: "unknown" }]);
+    }
+    return grants;
   }
 
   async delete(actor: Actor, rawId: string) {
@@ -207,7 +314,7 @@ export class UserAdminService {
     if (outcome === "NOT_FOUND") throw userAdminException("USER_NOT_FOUND", HttpStatus.NOT_FOUND);
     if (outcome === "READ_ONLY") {
       this.logger.warn({ event: "user_admin.delete_denied", actorId: actor.id, targetId: id, msg: "Super Admin or self cannot be deleted" });
-      throw userAdminException("SUPER_ADMIN_READ_ONLY", HttpStatus.FORBIDDEN);
+      throw userAdminException("SUPER_ADMIN_LOCKED", HttpStatus.FORBIDDEN);
     }
     // The license server is not called (QL1 stays external policy).
     this.licenseService.evictStatus(id);

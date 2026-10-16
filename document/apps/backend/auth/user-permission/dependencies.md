@@ -1,6 +1,6 @@
 # Backend dependency decisions: auth + gateway / user-permission
 
-- Source UI revision / SA revision: 1 / 1 (pending-review)
+- Source UI revision / SA revision: 2 / 2 (implemented 2026-10-15). **Rev 2: still no new package.** The username login uses the `username` plugin that ships inside the installed `better-auth` 1.7.7 (`better-auth/plugins`, verified in the auth container `node_modules/better-auth/dist/plugins/username/`); no manifest or lockfile change.
 - Central ledger: [tech-stack.md](../../../../adr/tech-stack.md) (parent integrates the rows below; SA did not edit it)
 - Frontend dependencies: [frontend dependencies.md](../../../frontend/user-permission/dependencies.md) (DEP-UP-01/02 remain frontend-only proposals)
 
