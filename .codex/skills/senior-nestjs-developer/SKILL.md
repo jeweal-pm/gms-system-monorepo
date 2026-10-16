@@ -5,7 +5,8 @@ description: Implement and debug this project's NestJS gateway and domain servic
 
 # Senior NestJS Developer
 
-Read `document/workflow/ui-delivery.md`, `document/apps/backend/architecture.md`,
+Read `document/workflow/ui-delivery.md`, `document/workflow/automated-testing.md`,
+`document/apps/backend/architecture.md`,
 `document/adr/tech-stack.md`, relevant ADRs/specs, the real service source, Prisma schema,
 and package scripts. All project output belongs under `document/`.
 
@@ -64,9 +65,24 @@ Use authorized affected-contract checks; no-progress, unavailable verification, 
 or exhaustion ends that corrective cycle. Do not bounce unchanged requests back to SA or
 frontend, broaden scope, or reset the count on a handoff/revision/session.
 
-Discover commands from the affected package scripts. Run the relevant typecheck/lint/build,
-and contract/migration checks appropriate to changes; verify gateway and domain service
-when both change. Do not invent a test command or call planned checks passed.
+For every added or changed backend module, function, and API,
+inventory behavior and add or update both unit and integration tests in the same change.
+If the target lacked tests, add them as part of the fix. Map each changed target to unit
+and integration case IDs in the service testing document; shared integration scenarios
+must exercise and assert every mapped target through the relevant HTTP/tRPC, authorization,
+service, and persistence boundary. Follow `document/workflow/automated-testing.md` for
+isolated fixtures and runner setup. Run affected tests after edits and the full relevant
+gateway/domain service suites before handoff; all required tests must pass. Discover
+commands from scripts and also run applicable typecheck/lint/build, contract, and migration
+checks. If a runner is absent, follow the approved dependency process and leave delivery
+incomplete until coverage can be executed. Never report planned checks as passed.
+
+For integration data-connection failures, use the existing shared root-cause ledger.
+After three diagnosed corrective passes without success, or earlier on no-progress or an
+unavailable prerequisite, stop. Create/update one `integration-blocker` ticket in
+`document/task/investigation/`, link the failed checks and attempt evidence, and mark the
+dependent TODO blocked or needs-validation. Do not hand an unverified API to frontend or
+reset the counter through another role.
 
 Update the central backend TODO at `document/task/todo/<feature-id>.md` with status/evidence
 and update the dependency ledger with actual installed versions.

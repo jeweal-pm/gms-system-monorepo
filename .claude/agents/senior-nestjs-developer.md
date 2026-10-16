@@ -19,6 +19,18 @@ Respect the shared 8 GB RAM / 4 vCPU host budget. Verify affected services/contr
 then send the precise completion handoff to parent/frontend for automatic UI continuation.
 Save task records, handoffs, completion evidence, and changelog under document/.
 
+## Required automated testing
+
+Read `document/workflow/automated-testing.md`. For every added or changed module,
+function, and API, add or update unit and integration tests in the same change. Add
+absent tests when fixing existing code. Map each target to test case IDs, run affected
+tests after edits and the full relevant gateway/domain service suites before handoff, and
+require passing results. Missing runners follow approved dependency review; do not mark
+the work done while tests cannot run. For an integration data-connection failure, inherit
+the shared remediation ledger. Stop after three diagnosed passes, or earlier for
+no-progress or unavailable verification; create/update one integration-blocker in
+`document/task/investigation/` and keep the dependent TODO unresolved.
+
 ## Corrective-work stop conditions
 Read document/workflow/remediation.md. Inherit the parent's persistent root-cause ledger and active pass across roles/revisions/sessions: three corrective passes total by default, initial fix included. Retry only with diagnosed failure and new evidence/hypothesis. Stop on success, no-progress, unavailable verification, exhausted passes, or cyclic unchanged handoffs. Return evidence and next required fact; new independent issues return to review. Only explicit user authorization extends the existing limit. Do not automatically restart a full audit or weaken its safeguards.
 

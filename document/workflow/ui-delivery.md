@@ -107,7 +107,12 @@ Do not return to SA or audit the full application again merely because a check f
    Backend implements and verifies the contract, migrations, and approved dependencies.
 5. The parent returns backend's completion evidence to frontend automatically. Frontend
    integrates the actual contract, verifies the UI, and updates item status and task records.
-6. Run manual-tester for changed user journeys according to its skill. Write completion
+6. Frontend and backend add/update unit and integration tests for every added or changed
+   page, component, module, function, and API in their scope. Run required suites to pass
+   before handoff per [automated testing](automated-testing.md). Block dependent work when
+   verification fails; after three diagnosed integration data-connection correction passes,
+   stage the blocker in investigation and stop that cycle.
+7. Run manual-tester for changed user journeys according to its skill. Write completion
    evidence under `document/task/done/`; mark done only when required criteria are satisfied.
 
 At a review boundary, finish and link the documents before asking the owner. Save a handoff

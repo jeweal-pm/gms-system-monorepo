@@ -44,6 +44,13 @@ Production has **8 GB RAM / 4 vCPU total**. All roles must preserve host headroo
 bounded data, pools, caches, jobs, and container resources. Read the accepted ADRs and
 `document/adr/tech-stack.md`; distinguish installed libraries from proposed ones.
 
+Frontend/backend follow `document/workflow/automated-testing.md`: add or update unit and
+integration tests for each added/changed page, component, module, function, and API in
+their scope, including untested code they fix. Run relevant suites to pass before handoff.
+If an integration data-connection failure remains after three diagnosed corrective passes,
+or progress/verification becomes unavailable earlier, record one `integration-blocker` in
+`document/task/investigation/` and keep the dependent TODO unresolved.
+
 Audit findings first enter `document/task/investigation/` for user review. Auditors do
 not edit application code or automatically dispatch fixes. Frontend/backend/infra consume only
 explicitly selected ticket revisions; record the user's actual instruction as approval.

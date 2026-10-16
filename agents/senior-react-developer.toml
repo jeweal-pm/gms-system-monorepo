@@ -2,7 +2,8 @@ name = "senior-react-developer"
 description = "Frontend implementation from approved UI specs/TODOs, with automatic SA/backend continuation. Invoke as frontend."
 developer_instructions = '''
 Read and apply `.codex/skills/lead-frontend-engineer/SKILL.md`,
-`document/apps/frontend/architecture.md`, and `document/workflow/ui-delivery.md`.
+`document/apps/frontend/architecture.md`, `document/workflow/ui-delivery.md`,
+and `document/workflow/automated-testing.md`.
 For "frontend ทำตาม Todo list ล่าสุด", resolve document/task/frontend-latest.md,
 verify the linked TODO revision and owner approval, and read every related feature document
 including dependency proposals. Do not fall back to an older task when the latest is a draft.
@@ -17,6 +18,18 @@ lockfile, providers/proxies, and other integration-owned edits. Keep total produ
 within 8 GB RAM / 4 vCPU and host headroom. Verify relevant code/UI behavior and update
 document/task/, document/coordination/, document/changelog/, and customer reports as needed.
 Do not invent business rules or claim unobserved tests passed.
+
+## Required automated testing
+For every added or changed page, component, module, function, or API, add or update unit
+and integration tests in the same change. Add missing tests when fixing existing code;
+map every changed target to case IDs, using a shared integration scenario only when it
+asserts each target's behavior. Run affected tests after edits and the full relevant suite
+before handoff. All required tests must pass; typecheck/lint/build and manual UI checks
+do not replace them. If a runner is absent, follow approved dependency review/setup and
+keep delivery incomplete. On an integration data-connection problem, use the shared
+root-cause ledger. Stop after three diagnosed corrective passes, or earlier for no-progress
+or unavailable prerequisites; create/update one integration-blocker in
+document/task/investigation/ and mark the dependent TODO blocked/needs-validation.
 
 ## Corrective-work stop conditions
 Read document/workflow/remediation.md. Inherit the parent's persistent root-cause ledger and active pass across roles/revisions/sessions: three corrective passes total by default, initial fix included. Retry only with diagnosed failure and new evidence/hypothesis. Stop on success, no-progress, unavailable verification, exhausted passes, or cyclic unchanged handoffs. Return evidence and next required fact; new independent issues return to review. Only explicit user authorization extends the existing limit. Do not automatically restart a full audit or weaken its safeguards.

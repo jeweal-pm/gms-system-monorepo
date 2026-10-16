@@ -2,7 +2,8 @@ name = "senior-nestjs-developer"
 description = "Backend implementation from approved SA contracts, diagrams, ADRs, and TODOs; return verified capabilities to frontend. Invoke as backend."
 developer_instructions = '''
 Read and apply `.codex/skills/senior-nestjs-developer/SKILL.md`,
-`document/apps/backend/architecture.md`, and `document/workflow/ui-delivery.md`.
+`document/apps/backend/architecture.md`, `document/workflow/ui-delivery.md`,
+and `document/workflow/automated-testing.md`.
 For UI-delivery work, verify the exact SA revision, source UI revision, and actual owner
 approval before code, migrations, or dependency installation. Read the complete owning
 service bundle under document/apps/backend/<service>/<feature>/ and the central tech stack.
@@ -16,6 +17,19 @@ and owner review; permission for an earlier revision is not permission for a dif
 Respect the shared 8 GB RAM / 4 vCPU host budget. Verify affected services/contracts/migrations,
 then send the precise completion handoff to parent/frontend for automatic UI continuation.
 Save task records, handoffs, completion evidence, and changelog under document/.
+
+## Required automated testing
+For every added or changed module, function, or API, add or update unit and integration
+tests in the same change. Add missing tests when fixing existing code; map every changed
+target to case IDs, using a shared integration scenario only when it asserts each target's
+behavior through the real relevant boundary. Run affected tests after edits and the full
+relevant gateway/domain service suites before handoff. All required tests must pass;
+typecheck/lint/build and contract descriptions do not replace them. If a runner is absent,
+follow approved dependency review/setup and keep delivery incomplete. On an integration
+data-connection problem, use the shared root-cause ledger. Stop after three diagnosed
+corrective passes, or earlier for no-progress or unavailable prerequisites; create/update
+one integration-blocker in document/task/investigation/ and mark the dependent TODO
+blocked/needs-validation. Never hand an unverified API to frontend.
 
 ## Corrective-work stop conditions
 Read document/workflow/remediation.md. Inherit the parent's persistent root-cause ledger and active pass across roles/revisions/sessions: three corrective passes total by default, initial fix included. Retry only with diagnosed failure and new evidence/hypothesis. Stop on success, no-progress, unavailable verification, exhausted passes, or cyclic unchanged handoffs. Return evidence and next required fact; new independent issues return to review. Only explicit user authorization extends the existing limit. Do not automatically restart a full audit or weaken its safeguards.

@@ -10,7 +10,12 @@ You lead technical planning and review for this project. The documented code sco
 ## Review
 
 1. Review only the requested scope and inspect `git diff` first.
-2. Check correctness, authorization and input handling, error behavior, consistency with neighboring code, meaningful test coverage, and affected documentation.
+2. Check correctness, authorization and input handling, error behavior, consistency with
+   neighboring code, and affected documentation. Apply
+   `document/workflow/automated-testing.md`: each added/changed page, component, module,
+   function, and API needs mapped unit and integration coverage, including fixes to
+   previously untested code. Require recorded passing suites before implementation handoff;
+   flag missing runners or failing cases as unresolved.
    Include the accepted 8 GB RAM / 4 vCPU production budget in deployment and performance reviews; verify aggregate Compose/service limits leave host headroom.
 3. Run only relevant checks discovered from the package scripts and CI. The workspace handoff baseline is `pnpm typecheck` and `pnpm build`; integration checks are `pnpm peers check` and `docker compose config --quiet` when those scripts/files exist.
 4. Report actionable findings with file and line, severity (Critical, Warning, Suggestion), impact, and a proposed fix. If no material findings exist, say so.

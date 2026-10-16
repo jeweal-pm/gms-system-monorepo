@@ -4,6 +4,22 @@
 - Reference Figma/image and viewport: <source>
 - Relevant TODO / API / SA revisions: <links>
 
+## Automated coverage
+
+List every added or changed page, component, module, function, and API adapter. If an
+existing target has no tests, add them during its fix. Update stale tests in the same
+change. Follow [automated testing](../../../workflow/automated-testing.md).
+
+| Target / behavior | Unit case ID and test path | Integration case ID and test path | Boundary / fixture | Command and result |
+|---|---|---|---|---|
+
+One integration scenario can cover multiple targets only when it exercises and asserts
+each target. Record the exact relevant suite command and result after every code/test
+change and the final full frontend suite result before handoff. Missing runner or failing
+tests keep the linked TODO blocked/needs-validation; link any integration-blocker ticket.
+
+## UI acceptance
+
 | Case ID | TODO / component | Starting state | User actions | Expected result | Viewport / keyboard | Evidence / result |
 |---|---|---|---|---|---|---|
 
