@@ -1,6 +1,6 @@
 # Backend verification: partner + gateway / vendor
 
-- Source UI revision / SA revision: 2 / 1 (**approved** 2026-10-15)
+- Source UI revision / SA revision: 3 / **2** (ADR-0021; see [Revision 2](#revision-2--adr-0021-automated-tests-2026-10-16)); revision 1: 2 / 1
 - Approved API/schema/authorization references: none yet. Planned against [API](api-contract.md), [database](database-diagram.md), [authorization](authorization.md), [errors](error-handling.md)
 
 No test runner is installed (no Vitest/Jest). Method is the one that verified customer: partner/gateway
@@ -76,3 +76,64 @@ final), BT-VEN-14 7/7. No corrective pass was used.
 | BT-VEN-19 | **pass** | ad-hoc gateway: `session.current`, `license.status`, `userAdmin.list`, `permission.mine` 200; `dashboard.shortcutGroups` Partner Master = `[{label:"Vendor",slug:"vendor",href:"/setup/vendor"},{label:"Customer",slug:"customer",href:"/setup/customer"}]`. Dev-stack gateway restarted (its watcher had not picked up the bind-mount edits): "Found 0 errors", same dashboard output, `session.current`/`permission.mine` 200, `vendor.options`/`customer.options` 503 `PARTNER_UNAVAILABLE` (the stack has no partner container or token, a gap that predates this run) |
 | BT-VEN-20 | **not run** | the scratch-database rollback check was not selected; rollback stays "redeploy previous images; tables remain" per database-diagram.md |
 | BT-VEN-21 | **pass / partial** | partner `typecheck` (prisma generate + tsc) exit 0, `lint` exit 0, `build` exit 0 (dist has `common/*`, `vendor/*`); gateway `typecheck`, `lint`, `build` exit 0; `docker build -f backend-api-partner/Dockerfile .` exit 0; hardened run (`--read-only`, `/tmp` tmpfs, `--cap-drop ALL`, no-new-privileges, pids 128, 0.35 CPU, 512 MiB, `NODE_ENV=production`): uid 1000, `migrate deploy` "No pending migrations", vendor routes 200, **idle RSS 72.5 MiB / 512 MiB**, 12 pids. Frontend `tsc --noEmit` against the new `AppRouter` type: 0 errors (read-only, in `f1-system-frontend-1`). Not run: root `pnpm -r` (frontend scope), 10 000-row `vendor.list` p95 (not selected) |
+
+## Revision 2 — ADR-0021 automated tests (2026-10-16)
+
+Source revision: branch `feat/16-10-26-fix-design-add-runingnumber`, HEAD `974134c` + uncommitted backend working tree,
+content hash `7bf1dae7582b00c6` (sha256 of the sorted sha256 list of the 15 changed/new backend files; recompute with
+`git status --short -uall -- backend-api-partner backend-api-gateway`). Approval: ADR-0021, owner 2026-10-16.
+
+Runner: Node's built-in `node:test` (Node 24.11.0 in the dev image) — **no new dependency**, no `package.json` change.
+Tests are plain `.mjs` files in `backend-api-<svc>/test/` (excluded from `tsconfig.build.json`) and import the compiled
+`dist/` output, so the service must have compiled first (dev watch or `nest build`). Commands (inside the dev containers):
+
+```sh
+docker exec -w /app/backend-api-partner f1-system-backend-api-partner-1 node --test --test-concurrency=1 'test/*.test.mjs'
+docker exec -w /app/backend-api-gateway f1-system-backend-api-gateway-1 node --test --test-concurrency=1 'test/*.test.mjs'
+```
+
+Integration tests write real rows (prefix `BT21` / `BT21GW`) and delete them in `after`; next-code assertions are relative
+to the value read at the start. The live gateway test signs in with the development seed Super Admin (override with
+`LIVE_TEST_USERNAME`/`LIVE_TEST_PASSWORD`); never run it against production.
+
+### Target → case mapping
+
+| Changed target | Unit | Integration |
+|---|---|---|
+| partner `requiredCodeSchema` / `partnerScalarFields.code` (`common/partner-schemas.ts`) | UT-PC-01 | IT-PC-03, IT-PC-07 |
+| partner `createVendorBodySchema` / `update…BodySchema` | UT-PC-02 | IT-PC-03, IT-PC-04, IT-PC-07 |
+| partner `formatPartnerCode`, `CODE_PREFIX`, `MAX_COUNTED_DIGITS` | UT-PC-03 | IT-PC-01, IT-PC-04, IT-PC-05 |
+| partner `nextPartnerCode` (SQL) + `vendor.service nextCode` | — (SQL; covered through the boundary) | IT-PC-01, IT-PC-04, IT-PC-05; migration SQL on scratch DB (BT-PC-MIG) |
+| partner `GET /internal/v1/vendors/next-code` route + order before `:id` | UT-PC-04 | IT-PC-01, IT-PC-02 |
+| partner `normalizedKeys` (non-null `code_key`) | — | IT-PC-04, IT-PC-07 (`code_key = lower(code)` read back) |
+| Prisma schema + migration `20261016090000_partner_code_required` | — | IT-PC-08; BT-PC-MIG; `prisma validate` / `migrate diff` |
+| gateway `requiredCodeSchema` / `partnerScalarFields.code` | UT-GW-PC-01 | IT-GW-PC-04, IT-GW-PC-LIVE-02 |
+| gateway `create/updateVendorInputSchema` | UT-GW-PC-02 | IT-GW-PC-04, IT-GW-PC-LIVE-02 |
+| gateway `describeError` (custom `params.code`) | UT-GW-PC-02, UT-GW-PC-03 | IT-GW-PC-04, IT-GW-PC-LIVE-02 |
+| gateway `nextCodeOutputSchema` / `vendorNextCodeOutputSchema` | UT-GW-PC-04 | IT-GW-PC-01, IT-GW-PC-03 |
+| gateway `vendor.nextCode` procedure (`permittedProcedure("vendor","ADD")`, `callPartner`) | — | IT-GW-PC-01…03, IT-GW-PC-LIVE-01, 03, 04 |
+
+Files: `backend-api-partner/test/partner-code.unit.test.mjs` (UT-PC-*), `backend-api-partner/test/partner-code.integration.test.mjs`
+(IT-PC-*: real partner HTTP + token guard + PostgreSQL), `backend-api-gateway/test/partner-code.test.mjs` (UT-GW-PC-*, and IT-GW-PC-*:
+`appRouter.createCaller` → permission middleware → real `callPartner` `fetch` → in-process stub partner HTTP server),
+`backend-api-gateway/test/partner-code.live.test.mjs` (IT-GW-PC-LIVE-*: HTTP `/trpc` with a real session → partner → DB).
+Each file covers customer **and** vendor.
+
+### Results (2026-10-16)
+
+| Check | Result | Evidence |
+|---|---|---|
+| partner suite (`test/*.test.mjs`) | **pass** | 37 tests, 7 suites, 37 pass, 0 fail (unit 22 + integration 15) |
+| gateway suite (`test/*.test.mjs`) | **pass** | 23 tests, 8 suites, 23 pass, 0 fail (unit/router 16 + live 7) |
+| IT-PC-01 / LIVE-01 next-code on the dev DB | **pass** | `{"code":"C001"}` / `{"code":"V001"}` — existing codes `CM01`, `V00-22` do not match the pattern (same result as an empty table); the scratch DB returned `14` / `1002` for the seeded data |
+| IT-PC-03 / LIVE-02 create without code | **pass** | 400 `VALIDATION_ERROR`; missing/`null` → `invalid_type`, `""`/`"   "` → `required`; nothing written |
+| IT-PC-06 / LIVE-03 duplicate | **pass** | 409 `VENDOR_CODE_TAKEN` `[{path:"code",code:"duplicate"}]` (case and surrounding spaces ignored) |
+| IT-PC-02 / LIVE-04 | **pass** | partner next-code without / wrong token 401; gateway without session 401 |
+| IT-GW-PC-02 permissions | **pass** | `vendor:ADD` or Super Admin allowed; VIEW+EDIT+DELETE only, other menu's ADD, none → `FORBIDDEN`/`PERMISSION_DENIED`, partner not called |
+| BT-PC-MIG backfill (scratch DB `f1_adr0021_scratch`, dropped) | **pass** | see [database-diagram Revision 2](database-diagram.md#revision-2--adr-0021-implemented-2026-10-16) |
+| dev DB migration | **pass** | partner restart: "Applying migration `20261016090000_partner_code_required`", "All migrations have been successfully applied"; `migrate status` up to date; `migrate diff --from-config-datasource --to-schema` empty; `prisma validate` ok |
+| partner `typecheck`, `lint` | **pass** | `CI=true pnpm --store-dir=/root/.local/share/pnpm/store --filter @gem-crm/backend-api-partner typecheck` / `lint` exit 0 |
+| gateway `typecheck`, `lint` | **pass** | same commands for `@gem-crm/backend-api-gateway`, exit 0; dev watch compile "Found 0 errors" for both after restart |
+| cleanup | **pass** | `BT21%` rows: customer 0, vendor 0; totals back to 1 / 1 |
+| `nest build` / image build | not run | dev watch compiles the same sources; no Dockerfile/manifest change |
+| security review (sec-auditor + security-auditor) | **pending** | routed by the parent; required before the frontend handoff is final |

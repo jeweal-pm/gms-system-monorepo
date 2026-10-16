@@ -13,8 +13,8 @@ type VendorsDrawerProps = {
   open: boolean;
   /** Unfiltered total (header badge). */
   total: number | undefined;
-  /** Draft row content (typed Name / Code Name), or null when the user has no ADD permission. */
-  draft: { name: string; code: string } | null;
+  /** Whether to show the fixed "New ..." draft row (false when the user has no ADD permission). */
+  draft: boolean;
   draftSelected: boolean;
   selectedId: string | null;
   onSelectDraft: () => void;

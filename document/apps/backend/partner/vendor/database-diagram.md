@@ -1,6 +1,6 @@
 # Database diagram: partner / vendor
 
-- Source UI revision / SA revision: 2 / 1 (**approved** 2026-10-15)
+- Source UI revision / SA revision: 3 / **2** (ADR-0021, see [Revision 2](#revision-2--adr-0021-implemented-2026-10-16)); revision 1 (2 / 1) implemented 2026-10-15
 - Owning service / schema: `backend-api-partner` / PostgreSQL schema `partner` in database `f1_system`
 - Actual Prisma schema / migration paths: `backend-api-partner/prisma/schema.prisma` (existing, extended), new `backend-api-partner/prisma/migrations/<YYYYMMDDHHMMSS>_vendor/migration.sql` (timestamp after `20261014120000_customer`). Integration-owned path `backend-api-partner/prisma/**`: backend is the single writer, parent serializes.
 - Migrations table: `partner._prisma_migrations` (existing; D-01 of customer unchanged)
@@ -130,7 +130,7 @@ application rule (zod); the position CHECK plus the `(vendor_id, position)` uniq
 | Object | Purpose |
 |---|---|
 | `vendor_pkey (id)` | get/update/delete by id |
-| `vendor_code_key_key UNIQUE (code_key)` | case-insensitive Code Name uniqueness among vendors; many NULLs allowed |
+| `vendor_code_key_key UNIQUE (code_key)` | case-insensitive Code Name uniqueness among vendors; rev 2: `code`/`code_key` NOT NULL |
 | `vendor_name_key_id_idx (name_key, id)` | list order + keyset cursor |
 | `vendor_active_name_key_id_idx (active, name_key, id)` | list with `active` filter |
 | `vendor_address_pkey (id)` | — |
@@ -159,3 +159,40 @@ application rule (zod); the position CHECK plus the `(vendor_id, position)` uniq
    migration (`DROP TABLE "partner"."vendor_address"; DROP TABLE "partner"."vendor";`) after
    `pg_dump --schema=partner`. Prisma has no down migrations.
 7. `prisma generate` runs in build/typecheck and the dev image as today; never hand-edit `src/generated/prisma`.
+
+## Revision 2 — ADR-0021 (implemented 2026-10-16)
+
+- Approval: [ADR-0021](../../../../adr/0021-partner-code-running-number-and-record-modes.md), owner 2026-10-16 (ADR-0021 Approval evidence, ending "ทำ adr เเล้วเริ่มทำเลย").
+- Migration: `backend-api-partner/prisma/migrations/20261016090000_partner_code_required/migration.sql` (hand-written,
+  `prisma migrate dev --create-only` style; one file for customer **and** vendor). Prisma schema: `code String` and
+  `codeKey String` (were `String?`) on both models.
+- Changed columns on `partner.vendor`: `code varchar(120) NOT NULL`, `code_key varchar(120) NOT NULL` (still `UNIQUE (code_key)`
+  via `vendor_code_key_key`; `code_key = lower(code)`). No other table, index or CHECK changes. The existing
+  `vendor_code_key_chk` / `vendor_code_nonblank_chk` CHECKs are kept; their `IS NULL` branches are now unreachable.
+
+```mermaid
+erDiagram
+    VENDOR {
+        varchar120 code "NOT NULL (rev 2), Code Name"
+        varchar120 code_key UK "NOT NULL (rev 2), lower(code)"
+    }
+```
+
+**Backfill (step 1 of the migration, no data loss):** rows with `code IS NULL` get, in `ORDER BY created_at, id`,
+`'V' || lpad(n, 3, '0')` (no truncation above 999: `V1000`), `n = base + row_number()`, where `base` = max numeric suffix
+of existing codes matching `^[Vv][0-9]+$` with ≤ 18 significant digits (else 0) — the same rule as
+`GET /internal/v1/vendors/next-code`. `code_key = lower(code)`. `updated_at`/`updated_by` are left unchanged (not a user edit).
+Generated numbers are larger than every counted code, so they cannot collide with an existing `code_key`.
+**Step 2:** `ALTER COLUMN code SET NOT NULL, ALTER COLUMN code_key SET NOT NULL`.
+The partner container runs `migrate deploy` before serving (single instance), so no concurrent insert races the backfill.
+
+**Verification:** scratch database (`f1_adr0021_scratch`, dropped afterwards) with rows `C005`, `c010`, a 24-digit `C…` code,
+`CM01` and three NULL codes → `C011`, `C012`, `C013` in `created_at, id` order (24-digit code ignored); vendor `V998` + three NULLs →
+`V999`, `V1000`, `V1001`; all `code_key` lower-case; empty-table run exits 0; inserting a NULL code afterwards fails with
+`not-null constraint`. Dev DB: applied at partner start (`Applying migration 20261016090000_partner_code_required`), no NULL rows
+existed (customer `CM01`, vendor `V00-22` unchanged), `prisma migrate diff --from-config-datasource --to-schema` → empty.
+
+**Rollback:** the previous image cannot write `code: null` any more (NOT NULL) — a previous gateway/frontend sending `code: null`
+would get a 500 from the DB. Roll back only together with a forward migration
+`ALTER TABLE "partner"."vendor" ALTER COLUMN "code" DROP NOT NULL, ALTER COLUMN "code_key" DROP NOT NULL;`
+(backfilled codes stay; they are valid data). Prisma has no down migrations.

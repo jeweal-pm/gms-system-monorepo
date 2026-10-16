@@ -10,6 +10,7 @@ import {
   customerListInputSchema,
   customerListOutputSchema,
   customerMutationOutputSchema,
+  customerNextCodeOutputSchema,
   customerOptionsOutputSchema,
   updateCustomerInputSchema,
 } from "./customer-schemas";
@@ -38,6 +39,7 @@ import {
   vendorListInputSchema,
   vendorListOutputSchema,
   vendorMutationOutputSchema,
+  vendorNextCodeOutputSchema,
   vendorOptionsOutputSchema,
 } from "./vendor-schemas";
 
@@ -248,6 +250,11 @@ export const appRouter = t.router({
       method: "GET", path: "/internal/v1/customers/options", route: "GET /customers/options", timeoutMs: PARTNER_TIMEOUT_MS.read,
       actorId: ctx.session.user.id, responseSchema: customerOptionsOutputSchema, notFoundCode: "CUSTOMER_NOT_FOUND",
     })),
+    /** ADR-0021 §2: suggested next running Code Name (C001 …); a suggestion, not a reservation. */
+    nextCode: permittedProcedure("customer", "ADD").query(({ ctx }) => callPartner({
+      method: "GET", path: "/internal/v1/customers/next-code", route: "GET /customers/next-code", timeoutMs: PARTNER_TIMEOUT_MS.read,
+      actorId: ctx.session.user.id, responseSchema: customerNextCodeOutputSchema, notFoundCode: "CUSTOMER_NOT_FOUND",
+    })),
     create: permittedProcedure("customer", "ADD").input(createCustomerInputSchema).mutation(({ ctx, input }) => {
       assertSingleDefaults(input);
       return callPartner({
@@ -281,6 +288,11 @@ export const appRouter = t.router({
     options: permittedProcedure("vendor", "VIEW").query(({ ctx }) => callPartner({
       method: "GET", path: "/internal/v1/vendors/options", route: "GET /vendors/options", timeoutMs: PARTNER_TIMEOUT_MS.read,
       actorId: ctx.session.user.id, responseSchema: vendorOptionsOutputSchema, notFoundCode: "VENDOR_NOT_FOUND",
+    })),
+    /** ADR-0021 §2: suggested next running Code Name (V001 …); a suggestion, not a reservation. */
+    nextCode: permittedProcedure("vendor", "ADD").query(({ ctx }) => callPartner({
+      method: "GET", path: "/internal/v1/vendors/next-code", route: "GET /vendors/next-code", timeoutMs: PARTNER_TIMEOUT_MS.read,
+      actorId: ctx.session.user.id, responseSchema: vendorNextCodeOutputSchema, notFoundCode: "VENDOR_NOT_FOUND",
     })),
     create: permittedProcedure("vendor", "ADD").input(createVendorInputSchema).mutation(({ ctx, input }) => {
       assertVendorDefaults(input);

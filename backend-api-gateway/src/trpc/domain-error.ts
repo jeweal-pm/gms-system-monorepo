@@ -34,7 +34,16 @@ export function sanitizeFieldErrors(value: unknown): FieldError[] | null {
   return result.length > 0 ? result : null;
 }
 
-type ValidationIssue = { path?: ReadonlyArray<PropertyKey | { key: PropertyKey }>; code?: unknown };
+type ValidationIssue = { path?: ReadonlyArray<PropertyKey | { key: PropertyKey }>; code?: unknown; params?: unknown };
+
+/** zod `custom` issues carry their contract code in `params.code` (e.g. ADR-0021 `required`). */
+function issueCode(issue: ValidationIssue): string {
+  if (issue.code === "custom" && typeof issue.params === "object" && issue.params !== null) {
+    const custom = (issue.params as { code?: unknown }).code;
+    if (typeof custom === "string" && custom.length > 0) return custom.slice(0, 64);
+  }
+  return typeof issue.code === "string" ? issue.code.slice(0, 64) : "invalid";
+}
 
 /**
  * Builds `{domainCode, fieldErrors}` for the errorFormatter (error-handling.md). Input
@@ -48,7 +57,7 @@ export function describeError(error: TRPCError): { domainCode: string | null; fi
     const issues = (cause as { issues: ValidationIssue[] }).issues;
     const fieldErrors = issues.slice(0, MAX_FIELD_ERRORS).map((issue) => ({
       path: (issue.path ?? []).map((segment) => String(typeof segment === "object" && segment !== null ? segment.key : segment)).join(".").slice(0, 128) || "(root)",
-      code: typeof issue.code === "string" ? issue.code.slice(0, 64) : "invalid",
+      code: issueCode(issue),
     }));
     const passwordOnly = issues.length > 0 && issues.every((issue) => {
       const first = issue.path?.[0];

@@ -15,6 +15,15 @@ export const LIST_LIMIT_MAX = 50;
 export const optText = (max: number) =>
   z.string().trim().max(max).transform((value) => (value === "" ? null : value)).nullable();
 
+/**
+ * ADR-0021: required Code Name — trimmed, 1–120 characters. Empty after trimming is
+ * `{path:"code", code:"required"}`; a missing/`null` value is zod's `invalid_type`.
+ */
+export const CODE_MAX = 120;
+export const requiredCodeSchema = z.string().trim().max(CODE_MAX).superRefine((value, ctx) => {
+  if (value === "") ctx.addIssue({ code: "custom", message: "required", params: { code: "required" } });
+});
+
 export const phoneSchema = z.object({
   country: z.string().regex(/^[A-Z]{2}$/),
   e164: z.string().regex(/^\+[1-9]\d{6,14}$/),
@@ -35,7 +44,7 @@ export const invoiceAddressInput = z.object({ ...addressBase, taxId: optText(32)
 /** Scalar fields common to every partner entity (name … email), in contract order. */
 export const partnerScalarFields = {
   name: z.string().trim().min(1).max(200),
-  code: optText(120),
+  code: requiredCodeSchema,
   currencyCode: z.string().regex(/^[A-Z]{3}$/),
   active: z.boolean(),
   firstName: z.string().trim().min(1).max(100),

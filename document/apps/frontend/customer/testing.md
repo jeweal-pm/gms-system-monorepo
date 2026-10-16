@@ -1,6 +1,6 @@
 # Frontend acceptance and verification: customer
 
-- UI revision: 1
+- UI revision: 3 ([revision 3 cases and checks](#revision-3-draft-row-and-address-card-checks-2026-10-16)); revision 2 = ADR-0021 ([revision 2 cases and checks](#revision-2-adr-0021-checks-2026-10-16)). Revision 1 cases TC-CUS-04, 16, 17, 22 are superseded where revision 2 says so; TC-CUS-10, 11, 13 (badge part), 15, 17 and the draft-row part of TC-CUS-40 are superseded by revision 3.
 - Reference image and viewport: [source/](source/) screenshots, 1920×1080 CSS (assumed DPR 1)
 - Relevant TODO / API / SA revisions: [central TODO](../../../task/todo/customer.md); [ADR-0018](../../../adr/0018-customer-master-partner-service.md) rev 1 (Accepted); SA bundle pending
 - ADR observable checks covered: 1, 2, 3 (UI side), 4 (UI side), 5, 6, 7 (UI side), 8, 10
@@ -66,3 +66,98 @@ default-address invariant, mappers, error mapping, permission helper) can be che
 Node script as user-permission did, but such a script is not a test suite. Use browser observation at
 the listed viewports, then run manual-tester for the changed journey; customer reports go in
 `document/testing/user-check/`.
+
+## Revision 2 (ADR-0021) checks, 2026-10-16
+
+Source revision: working tree over HEAD `974134c` on `feat/16-10-26-fix-design-add-runingnumber` (uncommitted).
+Shared with [vendor revision 3](../vendor/testing.md#revision-3-adr-0021-checks-2026-10-16): the change lives in
+`features/partner/**`, so one run covers both entities.
+
+**Automated-testing status: not satisfied.** No unit or integration runner is installed in `frontend/package.json`
+(tech-stack.md lists Vitest as a future addition) and this run was not authorized to add dependencies. The case IDs
+below are mapped so a suite can implement them as-is; the "throwaway script" results are executed evidence but are
+**not** a test suite. FE-CUS-023 stays blocked until an approved runner executes them.
+
+### Target → case map
+
+| Target (changed) | Unit cases | Integration cases |
+|---|---|---|
+| `partner/schema.ts` `partnerInfoShape.code` (required) | UT-ADR21-01a…h | IT-ADR21-03 |
+| `partner/code-suggestion.ts` `shouldPrefillCode`, `replacedTakenCodeMessage` | UT-ADR21-02a…g | TC-CUS-38/39 (browser) |
+| `partner/hooks.ts` `useSuggestedCodePrefill` | (hook; covered by integration) | TC-CUS-38/39 (browser); needs a React test renderer once a runner exists |
+| `partner/components/partner-page-header.tsx` `partnerHeaderButtons`, `partnerTitle`, `PartnerPageHeader` | UT-ADR21-03a…k | TC-CUS-33…37 (browser) |
+| `partner/components/partner-drawer.tsx` row order | — | IT-ADR21-05 (data), TC-CUS-40 (browser) |
+| `partner/components/partner-information-card.tsx` Code Name `*` | — | TC-CUS-33 (browser) |
+| `partner/errors.ts` `required` code | UT-ADR21-04f, 04g | IT-ADR21-04 |
+| `customer/api.ts` `toCustomerFields`, `mapSaveError` (`refetchNextCode`, `required`) | UT-ADR21-04a, 04c, 04e, 04h | IT-ADR21-03, 04 |
+| `customer/hooks.ts` `useCustomerNextCode` | — | IT-ADR21-01, 02 |
+| `customer/customer-page.tsx` modes / Cancel / Edit / prefill wiring | — | TC-CUS-33…39 (browser) |
+
+### Executed
+
+| Check | Command / method | Result |
+|---|---|---|
+| Typecheck | `docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -e CI=true frontend pnpm --store-dir=/root/.local/share/pnpm/store typecheck` (after `restart frontend`) | exit 0, against the gateway `AppRouter` that already exposes `customer.nextCode` / `vendor.nextCode` |
+| Lint | same container, `pnpm … lint` | exit 0; 0 errors; the 2 existing warnings in `features/auth/login-form.tsx:46` |
+| Logic script (throwaway, jiti, real modules, inside the frontend container; deleted after the run) | UT-ADR21-01…04 | 34/34 passed. First run 28/34: the 6 mapper cases failed because the script loaded a second `@trpc/client` copy (harness issue, `instanceof` mismatch); fixed in the script only, no product change |
+| Live tRPC through `http://localhost:3000/api/trpc` (host Node script, signed in as the dev demo Super Admin; password not printed) | IT-ADR21-01…05 for customer and vendor | 15/15 passed: IT-01 `customer.nextCode` 200 `C001`; IT-02 create with `C001` 200, then `nextCode` → `C002`; IT-03 blank code `"   "` → 400 `VALIDATION_ERROR [{path:"code",code:"required"}]`; IT-04 `c001` (other case) → 409 `CUSTOMER_CODE_TAKEN [{path:"code",code:"duplicate"}]`; IT-05 `list q=C001` returns the row with `code:"C001"`; cleanup delete 200. Same for vendor (`V001` → `V002`, `VENDOR_CODE_TAKEN`). |
+| Defect found by IT-03 | server code `required` was not in the mapper rules | fixed in `partner/errors.ts` and `customer/api.ts`; UT-ADR21-04e/f pass after the fix |
+| Routes (signed in) | GET `/setup/customer`, `/setup/vendor`, `/setup/user-permission` | 200 / 200 / 200 (server render only; client UI not observed) |
+| Dev log | `docker compose … logs --since 15m frontend` | no compile/runtime error (only the SIGTERM from the requested restart) |
+| Not run | browser, visual, keyboard, `next build` (shared `.next` volume), automated suite (no runner), security reviews (parent) | — |
+
+### Revision 2 acceptance cases (browser; all not run)
+
+| Case ID | TODO | Starting state | User actions | Expected result | Evidence |
+|---|---|---|---|---|---|
+| TC-CUS-33 | FE-CUS-019/020 | ADD+EDIT+DELETE, no selection | Open `/setup/customer` | Title "Add Customer", "Customer List N"; Print/Duplicate disabled, Excel disabled with tooltip, Refresh; Create Customer, Edit, Delete disabled; Cancel, Save enabled; Code Name shows `*` and the suggested `C…` code | not run |
+| TC-CUS-34 | FE-CUS-019 | Saved customer selected | Inspect header and form | Title = customer name; form read-only; Create Customer, Edit, Delete enabled; Cancel, Save disabled | not run |
+| TC-CUS-35 | FE-CUS-019 | View mode | Edit → change Name → Cancel | Fields editable after Edit (focus Code Name); Cancel restores saved values and returns to view; no discard prompt | not run |
+| TC-CUS-36 | FE-CUS-019 | View mode | Edit → change → Save | "Customer saved" toast; back to view with saved values | not run |
+| TC-CUS-37 | FE-CUS-019 | VIEW only / EDIT only / no DELETE | Inspect buttons | Create/Edit/Delete hidden without ADD/EDIT/DELETE; Cancel/Save hidden for VIEW only | not run |
+| TC-CUS-38 | FE-CUS-021 | Create mode, suggestion `C00n` | Clear Code Name and blur; then Create Customer → Cancel | "Code Name is required"; Cancel returns to the customer open before Create (or a fresh draft with the suggestion) | not run |
+| TC-CUS-39 | FE-CUS-021 | Two tabs in create mode with the same suggestion | Save in A, then Save in B | B: Code Name error naming the taken code; the field now holds the next suggestion; saving again succeeds. A value the user typed is never replaced | not run |
+| TC-CUS-40 | FE-CUS-022 | Drawer open | Compare with rev2-02 | Bold Code Name, second line Name; green dot Active; "Inactive" badge; draft row shows typed Code Name / Name; search by code or name | not run |
+
+## Revision 3 (draft row and address card) checks, 2026-10-16
+
+Source revision: working tree over HEAD `974134c` on `feat/16-10-26-fix-design-add-runingnumber` (uncommitted, on top of
+the uncommitted ADR-0021 work). Changed frontend files: `frontend/src/features/partner/components/{address-item.tsx,address-list-card.tsx,partner-drawer.tsx}`, `frontend/src/features/customer/{customer-page.tsx,components/customers-drawer.tsx}`, `frontend/src/features/vendor/{vendor-page.tsx,components/vendors-drawer.tsx}`. Content hash `15b0711a0e4dfed3` (sha256 prefix of the 7 changed frontend files concatenated in the order listed in the map).
+Shared with [vendor revision 4](../vendor/testing.md#revision-4-draft-row-and-address-card-checks-2026-10-16).
+
+**Automated-testing status: not satisfied.** Same gap as revision 2 (A-07): no frontend unit/integration runner is
+installed and this run was not authorized to add dependencies. Case IDs are mapped below; FE-CUS-R3-005 stays blocked.
+
+### Target → case map
+
+| Target (changed) | Unit cases | Integration cases |
+|---|---|---|
+| `partner/components/partner-drawer.tsx` `draftRowTitle`, draft row markup (`draft: boolean`) | UT-R3-01a (customer → "New customer"), UT-R3-01b (vendor → "New vendor") | IT-R3-01: render the drawer with `draft` and a form whose Code Name/Name change; the draft row text stays "New customer" / "Not saved yet"; TC-CUS-41 (browser) |
+| `customer/components/customers-drawer.tsx` prop type | — | IT-R3-01 |
+| `customer/customer-page.tsx` `draft={access.add}`, removed accordion refs, `focusFirstError` | — | IT-R3-01; IT-R3-04 (submit with an error in invoice #2 focuses its first invalid field); TC-CUS-41, 45 |
+| `partner/components/address-item.tsx` card layout, checkbox row, trash enable/disable, read-only | UT-R3-02a…e: trash enabled only for index ≥ 1 and not read-only; checkbox `aria-disabled` when read-only; checkbox `aria-disabled` when `exactlyOne` and default; not locked for `atMostOne`; "#N" label text | IT-R3-02 (render a list in view mode: all checkboxes `aria-disabled`, all trash `disabled`); TC-CUS-42, 43, 44 |
+| `partner/components/address-list-card.tsx` `changeDefault`, `removeAt`, focus after remove, no collapse state | UT-R3-03a…f: `exactlyOne` tick #2 → only #2 default; `exactlyOne` untick current default → no change; `atMostOne` tick/untick; remove default under `exactlyOne` → #1 default; remove default under `atMostOne` → none; index 0 not removable | IT-R3-03 (add two items, tick #3, remove #3, focus lands on #2 checkbox); TC-CUS-43, 44 |
+
+### Executed
+
+| Check | Command / method | Result |
+|---|---|---|
+| Typecheck | `docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T -e CI=true -e npm_config_store_dir=/root/.local/share/pnpm/store frontend pnpm run typecheck` (`pnpm --store-dir=… run` was rejected by this pnpm as an unknown option for `run`, so the store dir was passed through the environment) | exit 0 (workspace typecheck incl. frontend `tsc --noEmit` "Done") |
+| Lint | same container, `pnpm run lint` | exit 0; 0 errors; the 2 existing warnings in `features/auth/login-form.tsx:46` |
+| Restart + routes | `docker compose … restart frontend`, then `curl` GET `/setup/customer`, `/setup/vendor` on `http://localhost:3000` (not signed in) | 200 / 200; dev log shows both routes compiled and served 200, no compile/runtime error |
+| Logic (throwaway, inside the container, `node --experimental-strip-types` on the real `partner/entity.ts`) | UT-R3-01a/b by mirroring the one-line `draftRowTitle` | "New customer" / "New vendor" — pass (not a test suite) |
+| Static check | `grep` for `draft.code`, `draft.name`, `watchedCode` in `frontend/src/features` | no matches — the draft row no longer reads typed values |
+| Not run | browser/visual/keyboard (no browser automation), `next build` (shared `.next` volume), UT-R3-02/03 and IT-R3-01…04 (no runner, no React test renderer), manual-tester, security reviews (parent) | — |
+
+The default-address logic (`changeDefault`, `removeAt`) is unchanged from revision 2 except that focus after removal
+now goes to the previous card's default checkbox instead of the removed accordion header button.
+
+### Revision 3 acceptance cases (browser; all not run)
+
+| Case ID | TODO | Starting state | User actions | Expected result | Evidence |
+|---|---|---|---|---|---|
+| TC-CUS-41 | FE-CUS-R3-001 | ADD, create mode, drawer open | Type a Code Name and a Name | Draft row stays "New customer" / "Not saved yet" with the Draft badge; compare rev3-01 (the bug) | not run |
+| TC-CUS-42 | FE-CUS-R3-002 | Create mode | Compare Invoice and Shipping cards with rev3-02/03 | "#1" outside on the left; gray rounded card, no chevron, no Default badge; first row checkbox (left) + red trash (right); grid unchanged; dashed "+ Add another invoice address" / "+ Add another shipping address"; count badge | not run |
+| TC-CUS-43 | FE-CUS-R3-003 | Create mode, 3 invoice items | Tick #3; click the ticked #3; remove #3 | Only #3 ticked; clicking it again keeps it ticked (`aria-disabled`, hint shown); removing #3 makes #1 default; new customer starts with #1 ticked in both types | not run |
+| TC-CUS-44 | FE-CUS-R3-004 | Create mode / view mode | Inspect trash on #1 and #2; switch to view mode | #1 trash disabled with tooltip; #2 removable; in view mode every checkbox and trash is disabled | not run |
+| TC-CUS-45 | FE-CUS-R3-002 | Empty required field in invoice #2 | Save | Focus goes to the first invalid field in visual order; the card frame is red | not run |

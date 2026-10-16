@@ -1,6 +1,6 @@
 # Open questions and conflicts: customer
 
-- Feature ID / UI revision: `customer` / 1
+- Feature ID / UI revision: `customer` / 2 (revision 1 questions below; [revision 2 notes](#revision-2-adr-0021-2026-10-16) at the end)
 - Status: pending-review (answers not recorded)
 - Source: [three supplied screenshots](source/) (see [ui-spec.md](ui-spec.md#source-and-evidence)); governing decision [ADR-0018](../../../adr/0018-customer-master-partner-service.md) rev 1 (Accepted)
 - Central TODO: [customer.md](../../../task/todo/customer.md)
@@ -47,4 +47,32 @@ These fill small gaps in the design; they are listed so the owner can see them i
 | P-05 | Buttons without permission are hidden (Excel is the only disabled one) | ui-spec |
 | P-06 | Error copy in English, for example "Name is required" (the design shows "Error message") | [form-guidelines](form-guidelines.md) |
 | P-07 | A collapsed address item with errors shows a red frame **and** a "Has errors" tag; on submit such items expand automatically | ui-spec DV-12 |
-| P-08 | Drawer rows without a Code Name show "No code name" on the second line | ui-spec |
+| P-08 | Drawer rows without a Code Name show "No code name" on the second line (revision 2: on the **first** line, see below) | ui-spec |
+
+## Revision 2 (ADR-0021), 2026-10-16
+
+ADR-0021 answers the header, modes, Code Name and drawer-row questions; it **supersedes Q-CUS-03** (title is the
+record name; Edit is an explicit button) and **Q-CUS-02** placement (Delete is the last header button), and changes
+P-08 (the code is the bold first line). P-05 (hide buttons without permission) is kept, as ADR-0021 §3 allows.
+
+| ID | Blocking? | Question / decision taken | Default used | TODO IDs |
+|---|---|---|---|---|
+| Q-CUS-07 | no | When a save fails with `CUSTOMER_CODE_TAKEN` and the Code Name still held the untouched suggestion, the UI replaces it with the newly fetched suggestion and shows "C001 is already in use. C002 is suggested instead; check it, then save again." It does **not** save automatically. A code the user typed is never replaced. Is that acceptable? | As described (UX copy proposed by frontend, not a business rule) | FE-CUS-021 |
+| Q-CUS-08 | no | Cancel in create mode returns to the customer that was open before Create Customer / Duplicate (User & Permission behavior); with none, it starts a fresh draft. No discard prompt on Cancel (it is an explicit discard), same as User & Permission. | As described | FE-CUS-019 |
+| Q-CUS-09 | no | If `customer.nextCode` fails (e.g. partner unavailable), the Code Name stays empty with no extra message; the user can type a code. Should a hint be shown? | No hint | FE-CUS-021 |
+| Q-CUS-10 | no | Legacy rows without a code (before the backfill migration runs) show "No code name" on the bold line. After ADR-0021's migration every row has a code, so this is a fallback only. | As described | FE-CUS-022 |
+| A-07 | — | Automated tests: no frontend unit/integration runner is installed (tech-stack.md: Vitest planned) and this run could not add dependencies. The mapped case IDs in [testing.md](testing.md#revision-2-adr-0021-checks-2026-10-16) wait for an owner-approved runner proposal; FE-CUS-023 stays blocked. | — | FE-CUS-023 |
+
+## Revision 3 (draft row and address card), 2026-10-16
+
+The owner instruction of 2026-10-16 ([ui-spec revision 3](ui-spec.md#revision-3-draft-row-and-address-card)) answers
+the draft-row question: the title is always "New customer" (supersedes DV-02 and the revision 2 draft-row text). The new
+card removes the accordion, so **P-07** ("Has errors" tag on a collapsed item; expand on submit) no longer applies; the
+red frame stays. The "Default" badge is removed, so the Q-CUS-06 badge-color decision no longer has a visible use here.
+
+| ID | Blocking? | Question / decision taken | Default used | TODO IDs |
+|---|---|---|---|---|
+| A-08 | no | The mock (rev3-02) shows #1 **unchecked**. ADR-0018 / P-01 require exactly one default per type, and the owner said the default rules do not change. | A new customer shows #1 checked (as rev3-03); the checked default cannot be unticked (`aria-disabled` + hint) | FE-CUS-R3-003 |
+| A-09 | no | The mock shows an enabled trash icon on #1. The existing rule keeps #1 non-removable (1–10 items). | #1 trash is shown **disabled** with the tooltip "The first invoice address cannot be removed" | FE-CUS-R3-004 |
+| A-10 | no | The mock shows only Invoice Address. | Shipping Address uses the same card for consistency (owner brief) | FE-CUS-R3-002 |
+| A-11 | — | Automated tests: same gap as A-07 (no frontend runner; no dependency authorization). Cases mapped in [testing.md](testing.md#revision-3-draft-row-and-address-card-checks-2026-10-16). | — | FE-CUS-R3-005 |
