@@ -97,30 +97,45 @@ type TextFieldProps = Omit<InputHTMLAttributes<HTMLInputElement>, "id"> & {
   label: string;
   error?: string;
   labelPosition?: LabelPosition;
+  /** Decorative icon at the right edge (e.g. a chevron on a free-text field styled as a dropdown); hidden in read-only view. */
+  endIcon?: ReactNode;
   ref?: Ref<HTMLInputElement>;
 };
 
 /** C-09 / C-10 OutlinedTextField (also used for the password field). */
-export function TextField({ id, label, error, required, readOnly, disabled, labelPosition, className, ref, ...props }: TextFieldProps) {
+export function TextField({ id, label, error, required, readOnly, disabled, labelPosition, endIcon, className, ref, ...props }: TextFieldProps) {
+  const showEndIcon = Boolean(endIcon) && !readOnly;
+  const input = (
+    <input
+      ref={ref}
+      id={id}
+      aria-required={required || undefined}
+      aria-invalid={error ? true : undefined}
+      aria-describedby={error ? `${id}-error` : undefined}
+      readOnly={readOnly}
+      disabled={disabled || readOnly}
+      className={cx(
+        fieldBoxClass({ invalid: Boolean(error) && !disabled, readOnly, disabled }),
+        showEndIcon ? "pl-4 pr-11" : "px-4",
+        readOnly && !disabled && readOnlyControlClass,
+        disabled ? "placeholder:text-gms-checkbox-readonly" : "placeholder:text-gms-text-placeholder",
+        fieldFocusClass,
+      )}
+      {...props}
+    />
+  );
   return (
     <FieldShell id={id} label={label} required={required} error={error} readOnly={readOnly} disabled={disabled} labelPosition={labelPosition} className={className}>
-      <input
-        ref={ref}
-        id={id}
-        aria-required={required || undefined}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? `${id}-error` : undefined}
-        readOnly={readOnly}
-        disabled={disabled || readOnly}
-        className={cx(
-          fieldBoxClass({ invalid: Boolean(error) && !disabled, readOnly, disabled }),
-          "px-4",
-          readOnly && !disabled && readOnlyControlClass,
-          disabled ? "placeholder:text-gms-checkbox-readonly" : "placeholder:text-gms-text-placeholder",
-          fieldFocusClass,
-        )}
-        {...props}
-      />
+      {showEndIcon ? (
+        <div className="relative">
+          {input}
+          <span aria-hidden className={cx("pointer-events-none absolute right-4 top-1/2 -translate-y-1/2", disabled ? "text-gms-checkbox-readonly" : "text-gms-text")}>
+            {endIcon}
+          </span>
+        </div>
+      ) : (
+        input
+      )}
     </FieldShell>
   );
 }

@@ -4,11 +4,10 @@ import { validationException, type FieldError } from "../common/errors";
 import { toIso, WRITE_TX, type Tx } from "../common/persistence";
 import { COUNTRY_CODES, CURRENCY_CODES, OPTIONS_RESPONSE } from "../common/reference-data";
 import { prisma } from "../database/prisma-client";
-import { Prisma, type CompanyProfile } from "../generated/prisma/client";
+import type { CompanyProfile } from "../generated/prisma/client";
 import { companyLogoNotFound, companyProfileConflict, companyProfileNotFound, imageTooLarge, mapCompanyProfileError, unsupportedImage } from "./company-profile.errors";
 import { LOGO_MAX_BYTES, LOGO_TYPES, type LogoContentType, type SaveCompanyProfileInput } from "./company-profile.schemas";
 import { readLogoFile, removeLogoFile, replaceLogoFile, signatureMatches } from "./logo-storage";
-import type { RichTextDoc } from "./rich-text";
 
 const PROFILE_ID = 1;
 
@@ -23,15 +22,14 @@ function toProfile(row: CompanyProfile) {
     website: row.website,
     address: row.address,
     address2: row.address2,
+    roadStreet: row.roadStreet,
     countryCode: row.countryCode,
     state: row.state,
     city: row.city,
     postcode: row.postcode,
     currencyCode: row.currencyCode,
-    bankDetails: (row.bankDetails ?? null) as RichTextDoc | null,
+    bankDetails: row.bankDetails,
     showBankDetailsOnInvoice: row.showBankDetailsOnInvoice,
-    terms: (row.terms ?? null) as RichTextDoc | null,
-    showTermsOnInvoice: row.showTermsOnInvoice,
     version: row.version,
     logo: row.logoSha256 && row.logoContentType && row.logoSizeBytes
       ? { version: row.logoSha256.slice(0, 16), contentType: row.logoContentType as LogoContentType, sizeBytes: row.logoSizeBytes }
@@ -52,15 +50,14 @@ function profileData(input: SaveCompanyProfileInput) {
     website: input.website,
     address: input.address,
     address2: input.address2,
+    roadStreet: input.roadStreet,
     countryCode: input.countryCode,
     state: input.state,
     city: input.city,
     postcode: input.postcode,
     currencyCode: input.currencyCode,
-    bankDetails: input.bankDetails ?? Prisma.DbNull,
+    bankDetails: input.bankDetails,
     showBankDetailsOnInvoice: input.showBankDetailsOnInvoice,
-    terms: input.terms ?? Prisma.DbNull,
-    showTermsOnInvoice: input.showTermsOnInvoice,
   };
 }
 

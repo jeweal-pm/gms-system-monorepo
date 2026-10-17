@@ -1,17 +1,16 @@
 # Latest frontend TODO
 
 - feature-id: `company-profile`
-- revision: 2
-- status: approved 2026-10-16 (UI revision 2); frontend + backend implemented (SA rev 2); browser/manual verification pending
+- revision: 3
+- status: UI revision 3 and SA revision 3 approved 2026-10-17 and implemented (FE-CP-013…016, BE-CP-011…014); browser/manual verification and security reviews pending (FE-CP-017)
 - todo: [todo/company-profile.md](todo/company-profile.md)
-- source: six owner-supplied screenshots in [apps/frontend/company-profile/source/](../apps/frontend/company-profile/source/)
-- backend-bundles: requires-sa; SA revision 2 [approved](../apps/backend/partner/company-profile/decisions.md) ([handoff](../coordination/handoffs/company-profile-sa.md))
-- dependencies: Tiptap 3.31.4 and libphonenumber-js 1.13.14 **installed** ([dependencies.md](../apps/frontend/company-profile/dependencies.md))
-- updated-at: 2026-10-16T10:30+07:00
+- source: owner-supplied screenshots S7–S9 (rev 3) and S1–S6 (rev 2) in [apps/frontend/company-profile/source/](../apps/frontend/company-profile/source/)
+- backend-bundles: SA revision 3 **approved** in [decisions.md](../apps/backend/partner/company-profile/decisions.md)
+- dependencies: Tiptap 3.31.4 **removed** (SA-CP-17); libphonenumber-js 1.13.14 installed ([dependencies.md](../apps/frontend/company-profile/dependencies.md))
+- updated-at: 2026-10-17
 
-UI revision 2 was approved on 2026-10-16 (owner answers + "อนุมัติ company-profile revision 1"). Independent UI items may proceed; FE-CP-009/010 wait for SA approval and backend.
+Revision 3 approval evidence is recorded in the TODO. Revision 2 (approved 2026-10-16) remains the base for unchanged items.
 
-The previous pointer was `app-navigation` revision 3 (approved 2026-10-15; implemented, browser verification pending);
-its TODO remains in [todo/app-navigation.md](todo/app-navigation.md) and can still be selected explicitly. Before that:
+The previous pointer was `company-profile` revision 2; before that `app-navigation` revision 3 ([todo/app-navigation.md](todo/app-navigation.md)),
 `vendor` revision 2 ([todo/vendor.md](todo/vendor.md)) and `customer` revision 1 ([todo/customer.md](todo/customer.md)).
 Read the linked TODO for authoritative status; see [the delivery workflow](../workflow/ui-delivery.md).

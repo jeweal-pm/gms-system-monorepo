@@ -78,15 +78,14 @@ function input(overrides: Partial<SaveCompanyProfileInput> = {}): SaveCompanyPro
     website: "",
     address: "1 Road",
     address2: "",
+    roadStreet: "Sukhumvit Rd.",
     countryCode: "TH",
     state: "Bangkok",
     city: "Bangkok",
     postcode: "10110",
     currencyCode: "THB",
-    bankDetails: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Bank" }] }] },
+    bankDetails: "Bank: KBank\nAccount: 123-4-56789-0",
     showBankDetailsOnInvoice: true,
-    terms: null,
-    showTermsOnInvoice: false,
     expectedVersion: null,
     ...overrides,
   };
@@ -136,12 +135,14 @@ describe("save", () => {
     expect(db.row).toMatchObject({ id: 1, phoneCountry: "TH", phoneE164: "+66812345678" });
   });
 
-  it("UT-CP-P43 stores an empty rich text as database null", async () => {
-    await service.save("user-1", input({ bankDetails: null }));
-    expect(db.row?.bankDetails).not.toBeNull();
-    expect(String(db.row?.bankDetails)).toContain("DbNull");
+  it("UT-CP-P43 stores Road/Street and plain-text bank details, and returns them unchanged (SA-CP-12/13)", async () => {
+    await service.save("user-1", input());
+    expect(db.row).toMatchObject({ roadStreet: "Sukhumvit Rd.", bankDetails: "Bank: KBank\nAccount: 123-4-56789-0" });
+    expect(db.row).not.toHaveProperty("terms");
     const { profile } = await service.get();
-    expect(profile?.bankDetails).not.toBeUndefined();
+    expect(profile).toMatchObject({ roadStreet: "Sukhumvit Rd.", bankDetails: "Bank: KBank\nAccount: 123-4-56789-0" });
+    expect(profile).not.toHaveProperty("terms");
+    expect(profile).not.toHaveProperty("showTermsOnInvoice");
   });
 
   it("UT-CP-P44 answers CONFLICT for a second first save", async () => {

@@ -4,8 +4,8 @@ import {
   emptyCompanyProfileForm,
   LOGO_MAX_BYTES,
   logoFileError,
+  normalizePlainText,
   normalizeWebsite,
-  richTextLength,
   type CompanyProfileFormValues,
 } from "@/features/company-profile/schema";
 
@@ -34,15 +34,15 @@ function errors(values: CompanyProfileFormValues): Record<string, string> {
   return byPath;
 }
 
-const docWithText = (...texts: string[]) => ({ type: "doc", content: texts.map((text) => ({ type: "paragraph", content: [{ type: "text", text }] })) });
-
 describe("companyProfileSchema", () => {
   it("UT-CP-F01 accepts a complete form", () => {
     expect(errors(validForm())).toEqual({});
   });
 
-  it("UT-CP-F02 starts empty with rich text null and invoice flags off", () => {
-    expect(emptyCompanyProfileForm).toMatchObject({ bankDetails: null, terms: null, showBankDetailsOnInvoice: false, showTermsOnInvoice: false });
+  it("UT-CP-F02 starts empty with blank bank details, the invoice flag off and no terms fields", () => {
+    expect(emptyCompanyProfileForm).toMatchObject({ roadStreet: "", bankDetails: "", showBankDetailsOnInvoice: false });
+    expect(emptyCompanyProfileForm).not.toHaveProperty("terms");
+    expect(emptyCompanyProfileForm).not.toHaveProperty("showTermsOnInvoice");
   });
 
   it("UT-CP-F03 requires every starred field", () => {
@@ -51,6 +51,8 @@ describe("companyProfileSchema", () => {
     expect(result).not.toHaveProperty("taxId");
     expect(result).not.toHaveProperty("website");
     expect(result).not.toHaveProperty("address2");
+    expect(result).not.toHaveProperty("roadStreet");
+    expect(result).not.toHaveProperty("bankDetails");
     expect(result.phone).toBe("Enter a phone number");
   });
 
@@ -76,23 +78,24 @@ describe("companyProfileSchema", () => {
     expect(errors({ ...validForm(), website: "" })).toEqual({});
   });
 
-  it("UT-CP-F09 limits bank details to 5,000 and terms to 10,000 characters", () => {
-    expect(errors({ ...validForm(), bankDetails: docWithText("a".repeat(5_000)) })).toEqual({});
-    expect(errors({ ...validForm(), bankDetails: docWithText("a".repeat(4_000), "b".repeat(1_001)) }).bankDetails).toBe("Bank details must be 5,000 characters or fewer");
-    expect(errors({ ...validForm(), terms: docWithText("a".repeat(10_001)) }).terms).toBe("Terms and conditions must be 10,000 characters or fewer");
+  it("UT-CP-F09 limits bank details to 5,000 characters as the server counts them", () => {
+    expect(errors({ ...validForm(), bankDetails: "a".repeat(5_000) })).toEqual({});
+    // Trailing whitespace is trimmed and CRLF counts as one character (SA-CP-13).
+    expect(errors({ ...validForm(), bankDetails: `${"a".repeat(5_000)}  \r\n` })).toEqual({});
+    expect(errors({ ...validForm(), bankDetails: "a".repeat(5_001) }).bankDetails).toBe("Bank details must be 5,000 characters or fewer");
   });
 
   it("UT-CP-F10 enforces the length limits of text fields", () => {
     expect(errors({ ...validForm(), postcode: "1".repeat(21) }).postcode).toBe("The postcode must be 20 characters or fewer");
     expect(errors({ ...validForm(), taxId: "1".repeat(51) }).taxId).toBe("Tax ID must be 50 characters or fewer");
+    expect(errors({ ...validForm(), roadStreet: "1".repeat(301) }).roadStreet).toBe("Road/Street must be 300 characters or fewer");
   });
 });
 
-describe("richTextLength", () => {
-  it("UT-CP-F11 counts the text of nested nodes and is 0 for null", () => {
-    expect(richTextLength(null)).toBe(0);
-    const nested = { type: "doc", content: [{ type: "bulletList", content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "abc" }, { type: "hardBreak" }, { type: "text", text: "de" }] }] }] }] };
-    expect(richTextLength(nested)).toBe(5);
+describe("normalizePlainText", () => {
+  it("UT-CP-F11 converts CRLF/CR to LF and trims trailing whitespace only", () => {
+    expect(normalizePlainText("  Bank\r\nAcc\r1  \n\n")).toBe("  Bank\nAcc\n1");
+    expect(normalizePlainText("   ")).toBe("");
   });
 });
 

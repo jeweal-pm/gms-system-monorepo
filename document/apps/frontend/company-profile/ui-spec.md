@@ -1,7 +1,26 @@
 # UI specification: company-profile
 
-- Feature ID / revision: `company-profile` / 2 (revision 1 + owner answers, approved 2026-10-16)
-- Status: **approved / in progress** (evidence in the [central TODO](../../../task/todo/company-profile.md))
+- Feature ID / revision: `company-profile` / **3** (owner redesign, 2026-10-17). Revision 2 (approved 2026-10-16) stays below; the **Revision 3** section overrides it where they differ.
+- Status: **revision 3 approved** (layout items implemented; data-coupled items wait for SA revision 3). Evidence in the [central TODO](../../../task/todo/company-profile.md)
+
+## Revision 3 (2026-10-17) — overrides the sections below
+
+- Source: S7 [07-rev3-form-column.png](source/07-rev3-form-column.png) (form, 3352×2456), S8 [08-rev3-full-page.png](source/08-rev3-full-page.png) (full page in the shell, 3840×2160 = 1920 CSS @2×), S9 [09-rev3-logo-states.png](source/09-rev3-logo-states.png) (logo tile: empty / uploading / edit + trash / view)
+- Owner request (verbatim): "design หน้า company profile เปลี่ยน ช่วยแก้แบบ companyprofile ให้หน่อยเอาแบบในรูปนะ"; answers to the clarifying questions: Road/Street "เพิ่มจริง ทำ SA + backend"; City/State "ทำหน้าตาแบบ dropdown แต่ยังพิมพ์เองได้"; Bank Details "เปลี่ยนเป็นข้อความธรรมดา"; Terms "เอาออกจากหน้า เอาออกจาก schema ด้วยไม่ใช่ term and consdition เเล้วในหน้า company proflie"
+
+| ID | Change (S7/S8, positions in CSS px at 1920) | Needs |
+|---|---|---|
+| R3-01 | **Layout**: no label column. Left column 200 px holds "Company Logo" (heading) + the logo tile; right column (≈48 px gap) holds the sections **General Information, Address, Company Currency, Company Bank Details**, each with its title above its fields; 1 px dividers across the right column between sections. Fields max 860 px, 2 columns × ≈422 px, 16 px gap, rows 68 px apart | UI only |
+| R3-02 | **Labels**: notched outline labels (label on the top border, as in vendor/customer) instead of labels above the field | UI only |
+| R3-03 | **Logo tile** 200×200; states per S9: empty (grey, icon, "Upload photo", "JPEG or PNG only"); **uploading** (grey + spinner, while Save uploads the picked file); edit (white + red trash); view (grey). Logo `object-contain` | UI only |
+| R3-04 | **Address**: "Address No.1 \*", "Address No.2" (full width); **Road/Street** (optional) │ Country \*; **City \* │ State/Province \*** (City first); Postcode \*. Design label "Stage/Province" is a typo (DV-04 → "State/Province") | Road/Street: **SA rev 3** |
+| R3-05 | **City / State**: look like dropdowns (chevron, grey disabled "Choose a country first" until a Country is chosen) but stay **free text** (owner) | UI only |
+| R3-06 | **Currency**: label "Company Currency \*", placeholder "Select" (DV-01 closed) | UI only |
+| R3-07 | **Company Bank Details**: plain multi-line text box (no toolbar), placeholder "Enter bank transfer details...", vertical resize; checkbox **"Need to show on invoice"** | Plain text: **SA rev 3** |
+| R3-08 | **Term and Condition removed** from the page and the schema (owner) | **SA rev 3** |
+| R3-09 | Header unchanged (title; Print / Excel / Refresh; Cancel · Save · Edit) | — |
+
+Deviations: DV-01 closed (design now says "Company Currency"); DV-02, DV-03 unchanged; **DV-04** "Stage/Province" → "State/Province".
 - Revision 2 answers: Phone validated with libphonenumber-js (DEP-CP-02); logo ≤ **10 MB**; grey logo tile = read-only, white + trash = edit; Print/Excel disabled; Tiptap for the editors.
 - Source: six owner-supplied screenshots, 2026-10-16, in [source/](source/) (no Figma)
 - Viewport / source dimensions: S1–S3 ≈2100×1180 px. **Assumption:** the viewport is 1920 CSS px wide at ≈DPR 1.09 (the same scale as the app-navigation image 6), so CSS ≈ px ÷ 1.09. S4–S6 are crops of the logo tile.

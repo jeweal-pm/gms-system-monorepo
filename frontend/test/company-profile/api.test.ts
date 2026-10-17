@@ -12,9 +12,9 @@ import {
 } from "@/features/company-profile/api";
 import { emptyCompanyProfileForm } from "@/features/company-profile/schema";
 
-/** UT-CP-F20…F31: contract mapping and logo upload adapter (api.ts, SA revision 2). */
+/** UT-CP-F20…F31: contract mapping and logo upload adapter (api.ts, SA revision 3). */
 
-const bank = { type: "doc" as const, content: [{ type: "paragraph", content: [{ type: "text", text: "Bank" }] }] };
+const bank = "Bank: KBank\nAccount: 123-4-56789-0";
 
 const profile: CompanyProfile = {
   name: "Test Co., Ltd.",
@@ -25,6 +25,7 @@ const profile: CompanyProfile = {
   website: "https://example.com",
   address: "1 Road",
   address2: "Floor 2",
+  roadStreet: "Sukhumvit Rd.",
   countryCode: "TH",
   state: "Bangkok",
   city: "Bangkok",
@@ -32,8 +33,6 @@ const profile: CompanyProfile = {
   currencyCode: "THB",
   bankDetails: bank,
   showBankDetailsOnInvoice: true,
-  terms: null,
-  showTermsOnInvoice: false,
   version: 4,
   logo: { version: "0123456789abcdef", contentType: "image/png", sizeBytes: 2048 },
   updatedAt: "2026-10-16T04:00:00.000Z",
@@ -55,6 +54,7 @@ describe("toFormValues", () => {
       website: "https://example.com",
       address: "1 Road",
       address2: "Floor 2",
+      roadStreet: "Sukhumvit Rd.",
       countryCode: "TH",
       state: "Bangkok",
       city: "Bangkok",
@@ -62,8 +62,6 @@ describe("toFormValues", () => {
       currencyCode: "THB",
       bankDetails: bank,
       showBankDetailsOnInvoice: true,
-      terms: null,
-      showTermsOnInvoice: false,
     });
   });
 });
@@ -72,6 +70,14 @@ describe("toSaveInput", () => {
   it("UT-CP-F21 trims text, converts the phone to E.164 and adds the expected version", () => {
     const values = { ...toFormValues(profile), name: "  Test Co., Ltd.  ", phone: { country: "TH", number: "081 234 5678" } };
     expect(toSaveInput(values, 4)).toMatchObject({ name: "Test Co., Ltd.", phone: { country: "TH", e164: "+66812345678" }, bankDetails: bank, expectedVersion: 4 });
+  });
+
+  it("UT-CP-F40 trims Road/Street and normalizes bank details line breaks; no terms fields (SA rev 3)", () => {
+    const values = { ...toFormValues(profile), roadStreet: "  Rama IV  ", bankDetails: "Bank: KBank\r\nAccount: 1  \r\n" };
+    const input = toSaveInput(values, 4);
+    expect(input).toMatchObject({ roadStreet: "Rama IV", bankDetails: "Bank: KBank\nAccount: 1" });
+    expect(input).not.toHaveProperty("terms");
+    expect(input).not.toHaveProperty("showTermsOnInvoice");
   });
 
   it("UT-CP-F22 sends expectedVersion null for the first save", () => {
@@ -90,7 +96,9 @@ describe("server field errors", () => {
   it.each([
     ["phone.e164", "phone"],
     ["bankDetails", "bankDetails"],
+    ["roadStreet", "roadStreet"],
     ["countryCode", "countryCode"],
+    ["terms", null],
     ["(root)", null],
     ["expectedVersion", null],
   ])("UT-CP-F24 maps the path %j to the form field %j", (path, field) => {
@@ -99,7 +107,7 @@ describe("server field errors", () => {
 
   it("UT-CP-F25 explains known codes and falls back for others", () => {
     expect(fieldErrorMessage({ path: "countryCode", code: "unknown" })).toBe("Choose a value from the list");
-    expect(fieldErrorMessage({ path: "bankDetails", code: "unsafe_link" })).toBe("Links must start with https://, http:// or mailto:");
+    expect(fieldErrorMessage({ path: "bankDetails", code: "too_long" })).toBe("This text is too long");
     expect(fieldErrorMessage({ path: "name", code: "something_new" })).toBe("Check this field");
   });
 });
