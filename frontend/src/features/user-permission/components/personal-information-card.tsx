@@ -1,10 +1,9 @@
 "use client";
 
-import { ImagePlus } from "lucide-react";
+import type { ReactNode } from "react";
 import { Controller, useWatch, type UseFormReturn } from "react-hook-form";
 import type { LocationOption } from "../api";
 import { USERNAME_MAX, type UserFormValues } from "../schema";
-import { cx, focusRing } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { MultiSelect } from "./ui/multi-select";
 import { TextField } from "@/components/ui/outlined-field";
@@ -24,30 +23,11 @@ type PersonalInformationCardProps = {
   superAdmin: boolean;
   /** The signed-in user's own account (cannot be deactivated). */
   isSelf: boolean;
-  onPhotoClick: () => void;
+  /** C-08 photo tile (FE-UP-013), owned by the page because it uploads after Save. */
+  photo: ReactNode;
 };
 
 const noop = () => {};
-
-/** Photo tile layout only (C-08); upload wiring is FE-UP-013 (requires-sa, BE-UP-009 deferred). */
-function PhotoTile({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label="Upload photo, JPEG or PNG only"
-      className={cx(
-        "flex h-[120px] w-[120px] shrink-0 flex-col items-center justify-center gap-1 rounded-gms-md bg-gms-upload-tile text-center shadow-gms-tile transition-colors enabled:hover:brightness-[0.98] disabled:cursor-default",
-        focusRing,
-      )}
-    >
-      <ImagePlus size={28} strokeWidth={1.5} className="mb-1 text-gms-text" aria-hidden />
-      <span className="text-gms-label font-semibold text-gms-text">Upload photo</span>
-      <span className="text-gms-label text-gms-text-secondary">JPEG or PNG only</span>
-    </button>
-  );
-}
 
 const grid = "grid min-w-0 flex-1 grid-cols-1 items-start gap-x-4 gap-y-5 md:grid-cols-2 xl:grid-cols-3";
 
@@ -58,7 +38,7 @@ const grid = "grid min-w-0 flex-1 grid-cols-1 items-start gap-x-4 gap-y-5 md:gri
  * Admin (changed only on the Profile page, ADR-0011). Active cannot be turned
  * off for a Super Admin or the signed-in user.
  */
-export function PersonalInformationCard({ mode, form, locations, superAdmin, isSelf, onPhotoClick }: PersonalInformationCardProps) {
+export function PersonalInformationCard({ mode, form, locations, superAdmin, isSelf, photo }: PersonalInformationCardProps) {
   const {
     control,
     register,
@@ -89,7 +69,7 @@ export function PersonalInformationCard({ mode, form, locations, superAdmin, isS
   return (
     <Card title="Personal Information" titleId="personal-information-title" titleClassName="text-gms-heading font-medium text-gms-text" trailing={activeSwitch}>
       <div className="flex flex-col gap-6 sm:flex-row">
-        <PhotoTile onClick={onPhotoClick} disabled={readOnly} />
+        {photo}
         <div className={grid}>
           {mode === "create" ? (
             <TextField

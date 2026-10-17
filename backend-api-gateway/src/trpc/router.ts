@@ -96,11 +96,8 @@ const protectedProcedure = authenticatedProcedure.use(({ ctx, next }) => {
 });
 const licensedProcedure = protectedProcedure;
 
-/** Super Admin only (role "admin"); never bypasses the license check above. */
-const superAdminProcedure = licensedProcedure.use(({ ctx, next }) => {
-  if (!ctx.authz.isSuperAdmin) throw domainError("FORBIDDEN", "SUPER_ADMIN_REQUIRED");
-  return next();
-});
+/** Catalog leaf gating the User and Permission page and `userAdmin.*` (delegated-admin.md DA-01). */
+const USER_ADMIN_MENU_KEY = "user-and-permission";
 
 /**
  * ADR-0016 rule for every menu-scoped procedure: declare `menuKey:action`. Super Admin passes;
@@ -116,7 +113,7 @@ export function permittedProcedure(menuKey: string, action: PermissionAction) {
 
 /**
  * Home shortcuts follow permission catalog v2 (ADR-0020): every `slug` is a v2 menu key and is
- * shown only with `<slug>:VIEW`. "User and Permission" is Super Admin only (ADR-0017), so it is
+ * shown only with `<slug>:VIEW`. "User and Permission" is opened from Setup (ADR-0023), so it is
  * not a shortcut. Keep in sync with auth `src/permission/catalog.ts`.
  */
 export const shortcutGroups: HomeGroup[] = [
@@ -212,7 +209,7 @@ export const appRouter = t.router({
       }),
   }),
   permission: t.router({
-    catalog: licensedProcedure.query(({ ctx }) => callAuth({
+    catalog: permittedProcedure(USER_ADMIN_MENU_KEY, "VIEW").query(({ ctx }) => callAuth({
       cookie: ctx.cookie, method: "GET", path: "/internal/v1/permission/catalog", timeoutMs: AUTH_TIMEOUT_MS.read, responseSchema: catalogOutputSchema,
     })),
     mine: licensedProcedure.query(({ ctx }) => ({
@@ -220,26 +217,34 @@ export const appRouter = t.router({
       permissions: ctx.authz.isSuperAdmin ? "ALL" as const : ctx.authz.permissions,
     })),
   }),
+  /**
+   * delegated-admin.md DA-01: `user-and-permission:<action>` (Super Admin passes). Auth re-checks the
+   * same grant and enforces DA-02…05 (grant only what you hold, manageable targets only).
+   */
   userAdmin: t.router({
-    list: superAdminProcedure.query(({ ctx }) => callAuth({
+    list: permittedProcedure(USER_ADMIN_MENU_KEY, "VIEW").query(({ ctx }) => callAuth({
       cookie: ctx.cookie, method: "GET", path: "/internal/v1/user-admin/users", timeoutMs: AUTH_TIMEOUT_MS.read, responseSchema: userListOutputSchema,
     })),
-    get: superAdminProcedure.input(userIdInputSchema).query(({ ctx, input }) => callAuth({
+    get: permittedProcedure(USER_ADMIN_MENU_KEY, "VIEW").input(userIdInputSchema).query(({ ctx, input }) => callAuth({
       cookie: ctx.cookie, method: "GET", path: `/internal/v1/user-admin/users/${encodeURIComponent(input.id)}`, timeoutMs: AUTH_TIMEOUT_MS.read, responseSchema: userDetailOutputSchema,
     })),
-    create: superAdminProcedure.input(createUserInputSchema).mutation(({ ctx, input }) => callAuth({
+    create: permittedProcedure(USER_ADMIN_MENU_KEY, "ADD").input(createUserInputSchema).mutation(({ ctx, input }) => callAuth({
       cookie: ctx.cookie, method: "POST", path: "/internal/v1/user-admin/users", timeoutMs: AUTH_TIMEOUT_MS.create, responseSchema: userMutationOutputSchema, body: input,
     })),
-    update: superAdminProcedure.input(updateUserInputSchema).mutation(({ ctx, input }) => {
+    update: permittedProcedure(USER_ADMIN_MENU_KEY, "EDIT").input(updateUserInputSchema).mutation(({ ctx, input }) => {
       const { id, ...body } = input;
       return callAuth({
         cookie: ctx.cookie, method: "PATCH", path: `/internal/v1/user-admin/users/${encodeURIComponent(id)}`, timeoutMs: AUTH_TIMEOUT_MS.write, responseSchema: userMutationOutputSchema, body,
       });
     }),
-    delete: superAdminProcedure.input(userIdInputSchema).mutation(({ ctx, input }) => callAuth({
+    delete: permittedProcedure(USER_ADMIN_MENU_KEY, "DELETE").input(userIdInputSchema).mutation(({ ctx, input }) => callAuth({
       cookie: ctx.cookie, method: "DELETE", path: `/internal/v1/user-admin/users/${encodeURIComponent(input.id)}`, timeoutMs: AUTH_TIMEOUT_MS.write, responseSchema: deleteOutputSchema,
     })),
-    locationOptions: superAdminProcedure.query(({ ctx }) => callAuth({
+    /** user-photo.md PH-04/06: upload is REST (user-photo.controller.ts); removal is here. */
+    removePhoto: permittedProcedure(USER_ADMIN_MENU_KEY, "EDIT").input(userIdInputSchema).mutation(({ ctx, input }) => callAuth({
+      cookie: ctx.cookie, method: "DELETE", path: `/internal/v1/user-admin/users/${encodeURIComponent(input.id)}/photo`, timeoutMs: AUTH_TIMEOUT_MS.write, responseSchema: deleteOutputSchema,
+    })),
+    locationOptions: permittedProcedure(USER_ADMIN_MENU_KEY, "VIEW").query(({ ctx }) => callAuth({
       cookie: ctx.cookie, method: "GET", path: "/internal/v1/user-admin/location-options", timeoutMs: AUTH_TIMEOUT_MS.read, responseSchema: locationOptionsOutputSchema,
     })),
   }),

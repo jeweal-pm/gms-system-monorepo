@@ -1,11 +1,13 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useQueryClient } from "@tanstack/react-query";
 import { Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { authClient } from "@/lib/auth-client";
+import { clearAccountCache } from "@/lib/session-cache";
 import { credentialsSchema, type CredentialsValues } from "./schemas";
 
 const demoAccounts = process.env.NODE_ENV === "development"
@@ -17,6 +19,7 @@ const demoAccounts = process.env.NODE_ENV === "development"
 
 export function LoginForm() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [serverError, setServerError] = useState("");
@@ -79,6 +82,8 @@ export function LoginForm() {
         }
         return;
       }
+      // New account: never reuse the previous account's cached permissions/data.
+      clearAccountCache(queryClient);
       router.replace("/");
       router.refresh();
     } catch {

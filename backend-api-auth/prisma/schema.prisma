@@ -76,7 +76,6 @@ model UserLocation {
 model UserPhoto {
   userId      String   @id @map("user_id")
   contentType String   @map("content_type") @db.VarChar(16)
-  data        Bytes
   sizeBytes   Int      @map("size_bytes")
   sha256      String   @db.Char(64)
   updatedAt   DateTime @updatedAt @map("updated_at")

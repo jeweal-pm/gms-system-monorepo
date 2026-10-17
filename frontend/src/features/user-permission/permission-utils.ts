@@ -59,6 +59,11 @@ export function toggleCells(keys: readonly string[], values: PermissionValues, l
   return next;
 }
 
+/** Keys of a cell the signed-in user may change (DA-02: only permissions they hold); null = all. */
+export function editableKeys(keys: readonly string[], grantable: ReadonlySet<string> | null | undefined): string[] {
+  return grantable ? keys.filter((key) => grantable.has(key)) : [...keys];
+}
+
 /** Number of checked cells that are applicable in the current catalog (stale keys are not counted). */
 export function countEnabled(nodes: readonly CatalogNode[], values: PermissionValues) {
   return applicableKeys(nodes).filter((key) => values[key]).length;

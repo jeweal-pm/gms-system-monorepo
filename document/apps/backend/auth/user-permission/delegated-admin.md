@@ -1,8 +1,8 @@
 # Delegated user administration (user-permission, SA revision 3 proposal)
 
-- Date: 2026-10-17. Status: **pending owner review** (backend and the User and Permission page access wait for approval).
+- Date: 2026-10-17. Status: **approved and implemented 2026-10-17** (owner: "user ปกติ ที่ไม่ใช่ super admin ถ้ามีสิทธิ์สามารถเข้าถึงหน้า user permission ได้"; Q-DA-1/Q-DA-2 defaults). Recorded as [ADR-0023](../../../../adr/0023-delegated-user-administration.md).
 - Owner request (verbatim): "frontend backend มีเปลี่ยนคือ User and permission ทุก user ที่มีสิทธิ์สามารถเข้าได้และถ้าหากเมนูไหนไม่มีสิทธิ์ VIEW ก็จะไม่เห็นเมนูนั้นเลย และ ถ้าหากมีสิทธิ์ view แต่ไม่มีสิทธิ์อื่นให้ปุ่มยังอยู่แต่ disable และหากมีสิทธิ์ view อย่างเดียวให้เข้ามาเจอหน้า add ได้แต่ disable ทุกอย่างไว้"
-- Changes [ADR-0017](../../../../adr/0017-super-admin-managed-users.md) (user management was Super Admin only, enforced in the page, gateway `superAdminProcedure` and auth `user-admin.service.ts` role check). A new ADR-0023 records it on approval.
+- Changes [ADR-0017](../../../../adr/0017-super-admin-managed-users.md) (user management was Super Admin only, enforced in the page, gateway `superAdminProcedure` and auth `user-admin.service.ts` role check). Recorded in ADR-0023.
 - Not part of this proposal (already done in the frontend on the existing `permission.mine` contract, owner instruction): menus hidden without VIEW, buttons disabled instead of hidden, VIEW-only users land on a disabled Add page — see the changelog 2026-10-17-menu-visibility.
 
 ## Decisions (approve "DA as written", or name an ID to change it)
