@@ -108,3 +108,12 @@ revisions, and sessions for the same cause. Do not allocate a fresh budget on ha
 - Remaining risk or reopened validation gap:
 - Completion report under document/task/done/:
 - Final status / date:
+
+## Note — 2026-10-16, backend Vitest port (test guard part)
+
+Recorded by backend; this note does not fill the approval fields above and does not close the ticket.
+
+- Trigger: owner request for customer/vendor unit tests in `test/` ("frontend backend ทำ unit test case ส่วนของ vendor customer ให้หน่อยเหมือน companyprofile", "ทำunit test ให้อยู่ใน folder test สิเหมือนใน companyprofile", "Start again"); the parent instruction asked to make the DB/session cases opt-in and reference this ticket.
+- What changed (test files only, no `src/`, Docker, `.dockerignore` or manifest change): the four `node:test` files named in "Evidence" were ported to Vitest and deleted. The write-capable cases now live in `backend-api-partner/test/partner-shared/partner-code.live.test.ts` (IT-PC-01…08) and `backend-api-gateway/test/partner-shared/partner-code.live.test.ts` (IT-GW-PC-LIVE-01…04). Both are `describe.skipIf(PARTNER_LIVE_TESTS !== "1")`, throw at load when `PARTNER_LIVE_TESTS=1` and `NODE_ENV=production`, and import the Prisma client only after the guard (partner). The seed-credential fallback in the gateway live file is kept, but only behind that opt-in (remediation option 2 of this ticket).
+- Verification on hash `d1c27cbeb7ddc5a0` (HEAD `c583bac` + uncommitted test tree): default `pnpm test` partner 276 passed / 15 skipped, gateway 215 passed / 7 skipped (live files skipped, no DB or HTTP access); opted in once in the dev containers 15/15 and 7/7, `BT21%` rows 0 afterwards; `NODE_ENV=production PARTNER_LIVE_TESTS=1` → refused at load, no request.
+- Still open: the infra/devops part (root `.dockerignore` excluding `**/test`, parent-serialized) — unchanged, so the test files still ship in images (now as `.ts` Vitest files; whether Vitest is present in the production image was not checked). With the opt-in guard, a run in a production container is refused. No host allowlist was added. Tracked as BE-CUS-026 / BE-VEN-026.

@@ -158,3 +158,43 @@ Each file covers customer **and** vendor.
 | cleanup | **pass** | `BT21%` rows: customer 0, vendor 0; totals back to 1 / 1 |
 | `nest build` / image build | not run | dev watch compiles the same sources; no Dockerfile/manifest change |
 | security review (sec-auditor + security-auditor) | **pending** | routed by the parent; required before the frontend handoff is final |
+
+## Automated tests (Vitest) — 2026-10-16
+
+Owner instructions (2026-10-16): "frontend backend ทำ unit test case ส่วนของ vendor customer ให้หน่อยเหมือน companyprofile", "ทำunit test ให้อยู่ใน folder test สิเหมือนใน companyprofile", backend "Start again". Runner `vitest@5.0.3` (already installed, no dependency or manifest change), same layout/mocking as `test/company-profile/` and each package's `vitest.config.mts` (2 fork workers). No file under `backend-api-*/src/` was changed. Source revision: HEAD `c583bac` + uncommitted test tree; hash `d1c27cbeb7ddc5a0` = sha256 of the sorted `sha256sum` list of the 21 added files from `git status --short -uall -- backend-api-partner backend-api-gateway` (deleted `.mjs` files excluded).
+
+The ADR-0021 `node:test` files of [Revision 2](#revision-2--adr-0021-automated-tests-2026-10-16) were ported (same case IDs) and **deleted**: `backend-api-partner/test/partner-code.{unit,integration}.test.mjs`, `backend-api-gateway/test/partner-code{,.live}.test.mjs`. The DB/session cases (IT-PC-*, IT-GW-PC-LIVE-*) are now opt-in Vitest files, skipped unless `PARTNER_LIVE_TESTS=1` and refused when `NODE_ENV=production` (INV-20261016-001, guard part).
+
+Mocked boundaries: partner `src/database/prisma-client` → in-memory stand-in `test/partner-shared/prisma-fake.ts` (transactions roll back on throw; unique `code_key` → P2002 with the driver-adapter index name; raw SQL captured and re-built with `Prisma.sql` for assertions). Gateway: `fetch` stubbed at the network boundary so the real `permittedProcedure` and `callPartner` run; IT-GW-PC uses a real in-process HTTP stub server.
+
+| Target (customer + shared) | Unit case IDs | File |
+|---|---|---|
+| partner `createCustomerBodySchema`/`updateCustomerBodySchema`/`customerIdSchema`: required fields, trim + max length, email, phone, currency/country format, 1..10 per type, strict keys, `taxId` only on invoice, `expectedUpdatedAt` format | UT-CUS-P01…P06, P09, P10, P12 | `backend-api-partner/test/customer/customer.schemas.test.ts` |
+| default-address rule: zero/one accepted by schema, >1 → `multiple_defaults` per array; service sets the first as default when none is marked (exactly one per type) | UT-CUS-P07, P08, P11, P23, P24 | schemas + `customer.service.test.ts` |
+| `CustomerService.create` (lower() keys, actor, positions, `WRITE_TX`, membership, CODE_TAKEN, outage) | UT-CUS-P21…P27 | `backend-api-partner/test/customer/customer.service.test.ts` |
+| `CustomerService.get` / `options` (shape/order, phone null, 404, pool timeout) | UT-CUS-P20, P28…P31 | same |
+| `CustomerService.list` / `listPage` (first page, `limit+1`, cursor keyset, total without cursor, `ILIKE` name OR code with `%`/`_` escaped, active, invalid cursor, `READ_TX` read-only, timestamp text, outage) | UT-CUS-P32…P37 | same |
+| `CustomerService.update` (full replacement, version forward / expected+1 ms, stale → `CUSTOMER_STALE`, 404, row vanished → 404, legacy stored currency/country, rename onto taken code + rollback) | UT-CUS-P38…P44 | same |
+| `CustomerService.delete` (ok then 404, outage) | UT-CUS-P45, P46 | same |
+| `CustomerService.nextCode` / `nextPartnerCode` (C001/C1000, pattern `^[Cc][0-9]+$`, 18-digit bound, outage, malformed aggregate) | UT-CUS-P47, P48 | same |
+| `customer.errors` + `persistenceErrorMapper`: P2002 on `code_key` → `CUSTOMER_CODE_TAKEN`; other P2002 → 500; P2025 → 404; P1001/P2024/P2028 → 503; passthrough | UT-CUS-P60…P66 | `backend-api-partner/test/customer/customer.errors.test.ts` |
+| `CustomerController`: route table, `options`/`next-code` before `:id`, actor header, JSON 415, UUID path, query parsing | UT-CUS-P70…P76 | `backend-api-partner/test/customer/customer.controller.test.ts` |
+| shared partner blocks: `optText`, `phoneSchema`, `expectedUpdatedAtSchema`, `listQuerySchema`, cursor encode/decode, `membershipErrors`, `escapeLike`, `toIso`, `isPrismaUnavailable` | UT-PS-P01…P14 | `backend-api-partner/test/partner-shared/partner-schemas.test.ts` |
+| ADR-0021 ported units (code rule, bodies, `formatPartnerCode`, next-code route order) | UT-PC-01…04 | `backend-api-partner/test/partner-shared/partner-code.test.ts` |
+| gateway `customer-schemas` (inputs, strict, required, 1..10, `assertSingleDefaults`, update meta, outputs bounded/stripped) | UT-CUS-G01…G12 | `backend-api-gateway/test/customer/customer-schemas.test.ts` |
+| gateway `partner-schemas` (`listInputSchema` cursor null/string/≤200 + `direction` forward/backward, limit default/bounds, strict; `listQueryString` drops direction; `assertAtMostOneDefault`; outputs) | UT-PS-G01…G08 | `backend-api-gateway/test/partner-shared/partner-schemas.test.ts` |
+| gateway router `customer.*`: VIEW (list/get/options), ADD (nextCode/create), EDIT (update), DELETE (delete), Super Admin, other actions/menu denied without partner call, session/license; request paths/headers/body; `multiple_defaults` before partner; partner 400/401/403/404/409/413/500/503 → domain codes; network → PARTNER_UNAVAILABLE; timeout (3 s read / 5 s write) → PARTNER_UNAVAILABLE; output stripping, malformed and >1 MiB replies | UT-CUS-G20…G38 | `backend-api-gateway/test/customer/customer.router.test.ts` |
+| ADR-0021 ported gateway cases (code schema, `describeError`, `nextCodeOutputSchema`; router → real `callPartner` → stub HTTP server) | UT-GW-PC-01…04, IT-GW-PC-01…04 | `backend-api-gateway/test/partner-shared/partner-code.test.ts` |
+| **opt-in** live DB/session cases | IT-PC-01…08, IT-GW-PC-LIVE-01…04 | `*/test/partner-shared/partner-code.live.test.ts` |
+
+| Command (PowerShell, dev Compose) | Result |
+|---|---|
+| `docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend-api-partner sh -c "cd /app/backend-api-partner && pnpm test"` | **276 passed, 15 skipped** (14 files + 1 skipped live file); company-profile 76 unchanged, customer/vendor/shared 200 new |
+| same for `backend-api-gateway` | **215 passed, 7 skipped** (11 files + 1 skipped live file); company-profile 49 unchanged, customer/vendor/shared 166 new |
+| `pnpm typecheck` / `pnpm lint` in both containers | exit 0 / exit 0 |
+| `PARTNER_LIVE_TESTS=1 pnpm exec vitest run test/partner-shared/partner-code.live.test.ts` (dev containers, once) | partner 15/15, gateway 7/7; `BT21%` rows afterwards: customer 0, vendor 0 |
+| same with `NODE_ENV=production PARTNER_LIVE_TESTS=1` (gateway) | refused at load: "PARTNER_LIVE_TESTS is refused when NODE_ENV=production (INV-20261016-001)", no request made |
+
+Bugs found: none. Observation (not a defect): gateway `nextCodeOutputSchema` is the shared contract `^[CV][0-9]{3,19}$`, so `vendor.nextCode` would accept a `C…` value from partner (UT-VEN-G34 records the contract; prefix per entity is enforced by partner, UT-CUS-P47/UT-VEN-P39).
+
+Not covered (recorded, not claimed): SQL semantics of `listPage`/`nextPartnerCode` (ILIKE, keyset order, regex, bigint) and DB CHECK/unique/partial indexes except through the opt-in live file; the global `EnvelopeExceptionFilter` and `ServiceTokenGuard` over real HTTP (only the opt-in live run hits them); log content (Nest logger silenced in tests); no mutation run was possible without editing `src/` (forbidden in this task). Infra follow-up of INV-20261016-001 (`.dockerignore` excluding `**/test`) remains open — not changed here.
