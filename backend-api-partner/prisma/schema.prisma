@@ -134,16 +134,15 @@ model CompanyProfile {
   website                  String    @default("") @db.VarChar(300)
   address                  String    @db.VarChar(300)
   address2                 String    @default("") @db.VarChar(300)
+  roadStreet               String    @default("") @map("road_street") @db.VarChar(300)
   countryCode              String    @map("country_code") @db.Char(2)
   state                    String    @db.VarChar(100)
   city                     String    @db.VarChar(100)
   postcode                 String    @db.VarChar(20)
   currencyCode             String    @map("currency_code") @db.Char(3)
-  /// Tiptap/ProseMirror JSON validated by `rich-text.ts`; null = empty.
-  bankDetails              Json?     @map("bank_details")
+  /// Plain text (SA-CP-13), "" = empty; rendered as text, never HTML.
+  bankDetails              String    @default("") @map("bank_details")
   showBankDetailsOnInvoice Boolean   @default(false) @map("show_bank_details_on_invoice")
-  terms                    Json?
-  showTermsOnInvoice       Boolean   @default(false) @map("show_terms_on_invoice")
   logoContentType          String?   @map("logo_content_type") @db.VarChar(16)
   logoSizeBytes            Int?      @map("logo_size_bytes")
   logoSha256               String?   @map("logo_sha256") @db.Char(64)

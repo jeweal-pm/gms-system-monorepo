@@ -1,6 +1,6 @@
 "use client";
 
-import { ImagePlus, Trash2 } from "lucide-react";
+import { ImagePlus, LoaderCircle, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { cx, focusRing } from "@/components/ui/button";
 import { LOGO_TYPES, logoFileError, type LogoChange } from "../schema";
@@ -12,16 +12,19 @@ type LogoUploadTileProps = {
   savedUrl: string | null;
   onChange: (value: LogoChange) => void;
   readOnly: boolean;
+  /** The picked logo is being uploaded (Save in progress): grey tile with a spinner, not interactive. */
+  uploading?: boolean;
 };
 
-const tileSize = "size-32";
+const tileSize = "size-50";
 
 /**
- * CP-07 Company Logo (S1, S4–S6; owner answers Q-CP-03/04): empty upload tile; uploaded logo on a
- * grey tile in view mode; on a white tile with a trash button in edit mode. JPEG/PNG up to 10 MB,
- * checked when picked (the server checks again). Replacing or removing revokes the old preview URL.
+ * CP-07 Company Logo (UI revision 3; owner answers Q-CP-03/04): 200 px tile. Empty upload tile;
+ * uploaded logo on a grey tile in view mode; grey with a spinner while uploading; on a white tile
+ * with a trash button in edit mode. JPEG/PNG up to 10 MB, checked when picked (the server checks
+ * again). Replacing or removing revokes the old preview URL.
  */
-export function LogoUploadTile({ id, value, savedUrl, onChange, readOnly }: LogoUploadTileProps) {
+export function LogoUploadTile({ id, value, savedUrl, onChange, readOnly, uploading = false }: LogoUploadTileProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const src = value.kind === "new" ? value.previewUrl : value.kind === "removed" ? null : savedUrl;
@@ -63,11 +66,20 @@ export function LogoUploadTile({ id, value, savedUrl, onChange, readOnly }: Logo
     />
   );
 
-  if (src && readOnly) {
+  if (src && (readOnly || uploading)) {
     return (
-      <div className={cx(tileSize, "flex items-center justify-center overflow-hidden rounded-gms-lg bg-gms-checkbox-readonly outline-1 outline-gms-border outline-dashed")}>
+      <div
+        aria-busy={uploading || undefined}
+        className={cx(tileSize, "relative flex items-center justify-center overflow-hidden rounded-gms-lg bg-gms-checkbox-readonly outline-1 outline-offset-2 outline-gms-border outline-dashed")}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element -- blob/same-origin logo of unknown size; next/image adds nothing here */}
-        <img src={src} alt="Company logo" className="size-full object-cover" />
+        <img src={src} alt="Company logo" className="size-full object-contain" />
+        {uploading && (
+          <span role="status" className="absolute inset-0 flex items-center justify-center">
+            <LoaderCircle size={32} strokeWidth={1.5} className="animate-spin text-gms-surface" aria-hidden />
+            <span className="sr-only">Uploading logo</span>
+          </span>
+        )}
       </div>
     );
   }
@@ -75,7 +87,7 @@ export function LogoUploadTile({ id, value, savedUrl, onChange, readOnly }: Logo
   if (src) {
     return (
       <div>
-        <div className={cx(tileSize, "relative rounded-gms-lg bg-gms-surface outline-1 outline-gms-border outline-dashed")}>
+        <div className={cx(tileSize, "relative rounded-gms-lg bg-gms-surface shadow-gms-tile outline-1 outline-offset-2 outline-gms-border outline-dashed")}>
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
@@ -84,7 +96,7 @@ export function LogoUploadTile({ id, value, savedUrl, onChange, readOnly }: Logo
             className={cx("flex size-full items-center justify-center overflow-hidden rounded-gms-lg", focusRing)}
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- see above */}
-            <img src={src} alt="" className="size-full object-cover" />
+            <img src={src} alt="" className="size-full object-contain" />
           </button>
           <button
             type="button"

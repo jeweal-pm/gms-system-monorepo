@@ -12,15 +12,14 @@ const validBody = () => ({
   website: "https://example.com",
   address: "1 Road",
   address2: "",
+  roadStreet: "  Sukhumvit Rd.  ",
   countryCode: "TH",
   state: "Bangkok",
   city: "Bangkok",
   postcode: "10110",
   currencyCode: "THB",
-  bankDetails: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Bank" }] }] },
+  bankDetails: "Bank: KBank\r\nAccount: 123-4-56789-0  \n",
   showBankDetailsOnInvoice: true,
-  terms: null,
-  showTermsOnInvoice: false,
   expectedVersion: null,
 });
 
@@ -35,7 +34,19 @@ describe("saveCompanyProfileBodySchema", () => {
     expect(parsed.name).toBe("Test Co., Ltd.");
     expect(parsed.email).toBe("admin@example.com");
     expect(parsed.expectedVersion).toBeNull();
-    expect(parsed.bankDetails).toEqual(validBody().bankDetails);
+    expect(parsed.roadStreet).toBe("Sukhumvit Rd.");
+    // SA-CP-13: CRLF → LF, trailing whitespace trimmed, inner line breaks kept.
+    expect(parsed.bankDetails).toBe("Bank: KBank\nAccount: 123-4-56789-0");
+  });
+
+  it("UT-CP-P28 rejects the removed terms fields (SA-CP-15) and a non-string bank details", () => {
+    expect(issues({ ...validBody(), terms: null, showTermsOnInvoice: false })).toEqual([{ path: "", code: "unrecognized_keys" }]);
+    expect(issues({ ...validBody(), bankDetails: { type: "doc" } }).map((issue) => issue.path)).toEqual(["bankDetails"]);
+  });
+
+  it("UT-CP-P29 limits Road/Street to 300 characters and allows it empty", () => {
+    expect(issues({ ...validBody(), roadStreet: "" })).toEqual([]);
+    expect(issues({ ...validBody(), roadStreet: "a".repeat(301) }).map((issue) => issue.path)).toEqual(["roadStreet"]);
   });
 
   it("UT-CP-P21 rejects unknown keys (strict)", () => {
@@ -54,19 +65,14 @@ describe("saveCompanyProfileBodySchema", () => {
     expect(issues({ ...validBody(), ...change }).map((issue) => issue.path)).toContain(path);
   });
 
-  it("UT-CP-P23 reports rich-text problems with their code", () => {
-    const link = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "x", marks: [{ type: "link", attrs: { href: "javascript:x" } }] }] }] };
-    expect(issues({ ...validBody(), bankDetails: link })).toEqual([{ path: "bankDetails", code: "unsafe_link" }]);
+  it("UT-CP-P23 stores markup-looking bank details as literal text", () => {
+    expect(saveCompanyProfileBodySchema.parse({ ...validBody(), bankDetails: "<script>x</script>" }).bankDetails).toBe("<script>x</script>");
   });
 
-  it("UT-CP-P24 limits bank details to 5,000 and terms to 10,000 characters", () => {
-    const docOf = (length: number) => ({ type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "a".repeat(length) }] }] });
-    expect(issues({ ...validBody(), bankDetails: docOf(5_000) })).toEqual([]);
-    expect(issues({ ...validBody(), bankDetails: docOf(5_001) })).toEqual([{ path: "bankDetails", code: "too_long" }]);
-    expect(issues({ ...validBody(), terms: docOf(10_000) })).toEqual([]);
-    // 10,001 characters must be split over two text nodes (one node is capped at 10,000).
-    const terms = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "a".repeat(10_000) }] }, { type: "paragraph", content: [{ type: "text", text: "b" }] }] };
-    expect(issues({ ...validBody(), terms })).toEqual([{ path: "terms", code: "too_long" }]);
+  it("UT-CP-P24 limits bank details to 5,000 characters after normalizing", () => {
+    expect(issues({ ...validBody(), bankDetails: "a".repeat(5_000) })).toEqual([]);
+    expect(issues({ ...validBody(), bankDetails: `${"a".repeat(5_000)}   \n` })).toEqual([]);
+    expect(issues({ ...validBody(), bankDetails: "a".repeat(5_001) })).toEqual([{ path: "bankDetails", code: "too_long" }]);
   });
 
   it("UT-CP-P25 accepts a positive version and rejects zero", () => {

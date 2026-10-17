@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { FileSpreadsheet, Pencil, Printer, RotateCw, Save } from "lucide-react";
+import { ChevronDown, FileSpreadsheet, Pencil, Printer, RotateCw, Save } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Controller, useForm, useWatch, type FieldErrors } from "react-hook-form";
 import { Button, IconButton, cx } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import { readDomainError } from "@/lib/trpc-error";
 import { fieldErrorMessage, formFieldFor, logoErrorMessage, LogoUploadError, logoUrl, toFormValues, toSaveInput, uploadLogo, type CompanyProfile } from "./api";
 import { LogoUploadTile } from "./components/logo-upload-tile";
 import { ProfileSection, fieldGrid } from "./components/profile-section";
-import { RichTextField } from "./components/rich-text-field";
+import { PlainTextField } from "./components/plain-text-field";
 import { useCompanyProfile, useCompanyProfileCache, useCompanyProfileOptions, useRemoveCompanyLogo, useSaveCompanyProfile } from "./hooks";
 import { COMPANY_PROFILE_FIELD_ORDER, companyProfileSchema, emptyCompanyProfileForm, normalizeWebsite, type CompanyProfileFormValues, type LogoChange } from "./schema";
 
@@ -30,11 +30,8 @@ const COMPANY: PartnerEntity = { key: "company-profile", singular: "Company Prof
 
 type Mode = "setup" | "view" | "edit";
 
-/** RHF types errors on object-valued fields (editor JSON) as nested; only the top-level message is used. */
-const messageOf = (error: unknown) => (typeof (error as { message?: unknown } | undefined)?.message === "string" ? (error as { message: string }).message : undefined);
-
 /**
- * Setup › Company Profile (UI revision 2, SA revision 2). `permission.mine` gates the page with
+ * Setup › Company Profile (UI revision 3, SA revision 3). `permission.mine` gates the page with
  * `company-profile:VIEW`; changes need `company-profile:EDIT` (SA-CP-07). Data: gateway
  * `companyProfile.*` over tRPC; the logo through the REST route (SA-CP-04).
  */
@@ -231,25 +228,27 @@ function CompanyProfileWorkspace({ access, saved, refetch }: { access: PartnerAc
         onRefresh={() => confirmDiscard(() => void reload())}
       />
 
-      <form id={FORM_ID} noValidate onSubmit={handleSubmit(save, focusFirstError)} className="lg:pl-10">
-        <ProfileSection id="company-details" title="Details">
-          <p className="mb-2 text-gms-label font-semibold text-gms-text">Company Logo</p>
-          <LogoUploadTile id="cp-logo" value={logo} savedUrl={logoUrl(saved)} onChange={setLogo} readOnly={readOnly} />
+      {/* UI revision 3: Company Logo in a 200 px left column; the sections stack in the second column. */}
+      <form id={FORM_ID} noValidate onSubmit={handleSubmit(save, focusFirstError)} className="grid grid-cols-1 gap-x-12 pt-6 lg:grid-cols-[200px_minmax(0,1fr)] lg:pl-10">
+        <div className="mb-8 lg:mb-0">
+          <p className="mb-6 text-gms-heading font-medium text-gms-text">Company Logo</p>
+          <LogoUploadTile id="cp-logo" value={logo} savedUrl={logoUrl(saved)} onChange={setLogo} readOnly={readOnly} uploading={submitting && logo.kind === "new"} />
+        </div>
 
-          <h3 className="mt-8 mb-5 text-gms-heading font-medium text-gms-text">General Information</h3>
+        <ProfileSection id="company-general" title="General Information">
           <div className={fieldGrid}>
-            <TextField labelPosition="above" id="cp-name" label="Name/Company Name" required autoComplete="organization" error={errors.name?.message} {...fieldProps} {...register("name")} />
-            <TextField labelPosition="above" id="cp-taxId" label="Tax ID" autoComplete="off" error={errors.taxId?.message} {...fieldProps} {...register("taxId")} />
-            <TextField labelPosition="above" id="cp-contactName" label="Contact Person Name" required autoComplete="name" error={errors.contactName?.message} {...fieldProps} {...register("contactName")} />
+            <TextField id="cp-name" label="Name/Company Name" required autoComplete="organization" error={errors.name?.message} {...fieldProps} {...register("name")} />
+            <TextField id="cp-taxId" label="Tax ID" autoComplete="off" error={errors.taxId?.message} {...fieldProps} {...register("taxId")} />
+            <TextField id="cp-contactName" label="Contact Person Name" required autoComplete="name" error={errors.contactName?.message} {...fieldProps} {...register("contactName")} />
             <Controller
               control={control}
               name="phone"
               render={({ field }) => (
-                <PhoneField labelPosition="above" id="cp-phone" label="Phone No." required value={field.value} onChange={field.onChange} onBlur={field.onBlur} inputRef={field.ref} error={errors.phone?.message} readOnly={readOnly} />
+                <PhoneField id="cp-phone" label="Phone No." required value={field.value} onChange={field.onChange} onBlur={field.onBlur} inputRef={field.ref} error={errors.phone?.message} readOnly={readOnly} />
               )}
             />
-            <TextField labelPosition="above" id="cp-email" label="Email" type="email" required autoComplete="email" error={errors.email?.message} {...fieldProps} {...register("email")} />
-            <TextField labelPosition="above"
+            <TextField id="cp-email" label="Email" type="email" required autoComplete="email" error={errors.email?.message} {...fieldProps} {...register("email")} />
+            <TextField
               id="cp-website"
               label="Website"
               type="url"
@@ -267,10 +266,11 @@ function CompanyProfileWorkspace({ access, saved, refetch }: { access: PartnerAc
           </div>
         </ProfileSection>
 
-        <ProfileSection id="company-address" title="Address" description="Manage company address and contact information.">
+        <ProfileSection id="company-address" title="Address">
           <div className={fieldGrid}>
-            <TextField labelPosition="above" id="cp-address" label="Address" required autoComplete="address-line1" className="md:col-span-2" error={errors.address?.message} {...fieldProps} {...register("address")} />
-            <TextField labelPosition="above" id="cp-address2" label="Address Line 2 (optional)" autoComplete="address-line2" className="md:col-span-2" error={errors.address2?.message} {...fieldProps} {...register("address2")} />
+            <TextField id="cp-address" label="Address No.1" required autoComplete="address-line1" className="md:col-span-2" error={errors.address?.message} {...fieldProps} {...register("address")} />
+            <TextField id="cp-address2" label="Address No.2" autoComplete="address-line2" className="md:col-span-2" error={errors.address2?.message} {...fieldProps} {...register("address2")} />
+            <TextField id="cp-roadStreet" label="Road/Street" autoComplete="off" error={errors.roadStreet?.message} {...fieldProps} {...register("roadStreet")} />
             {/* Controlled: the options load after the form, so an uncontrolled select would lose the saved
                 value and keep the placeholder colour (owner screenshot 2026-10-16). */}
             <Controller
@@ -278,7 +278,6 @@ function CompanyProfileWorkspace({ access, saved, refetch }: { access: PartnerAc
               name="countryCode"
               render={({ field }) => (
                 <SelectField
-                  labelPosition="above"
                   id="cp-countryCode"
                   label="Country"
                   required
@@ -302,18 +301,8 @@ function CompanyProfileWorkspace({ access, saved, refetch }: { access: PartnerAc
                 />
               )}
             />
-            <TextField labelPosition="above"
-              id="cp-state"
-              label="State/Province"
-              required
-              autoComplete="address-level1"
-              disabled={!readOnly && !countryCode}
-              placeholder={countryCode ? undefined : "Choose a country first"}
-              error={countryCode ? errors.state?.message : undefined}
-              {...fieldProps}
-              {...register("state")}
-            />
-            <TextField labelPosition="above"
+            {/* UI revision 3: City and State look like dropdowns (chevron) but stay free text (owner 2026-10-17). */}
+            <TextField
               id="cp-city"
               label="City"
               required
@@ -321,26 +310,38 @@ function CompanyProfileWorkspace({ access, saved, refetch }: { access: PartnerAc
               disabled={!readOnly && !countryCode}
               placeholder={countryCode ? undefined : "Choose a country first"}
               error={countryCode ? errors.city?.message : undefined}
+              endIcon={<ChevronDown size={20} />}
               {...fieldProps}
               {...register("city")}
             />
-            <TextField labelPosition="above" id="cp-postcode" label="Postcode" required autoComplete="postal-code" error={errors.postcode?.message} {...fieldProps} {...register("postcode")} />
+            {/* DV-04: the design labels this "Stage/Province". */}
+            <TextField
+              id="cp-state"
+              label="State/Province"
+              required
+              autoComplete="address-level1"
+              disabled={!readOnly && !countryCode}
+              placeholder={countryCode ? undefined : "Choose a country first"}
+              error={countryCode ? errors.state?.message : undefined}
+              endIcon={<ChevronDown size={20} />}
+              {...fieldProps}
+              {...register("state")}
+            />
+            <TextField id="cp-postcode" label="Postcode" required autoComplete="postal-code" error={errors.postcode?.message} {...fieldProps} {...register("postcode")} />
           </div>
         </ProfileSection>
 
         <ProfileSection id="company-currency" title="Company Currency">
           <div className={fieldGrid}>
-            {/* DV-01: the design labels this "Contact Person Name"; it is the company currency. */}
             <Controller
               control={control}
               name="currencyCode"
               render={({ field }) => (
                 <SelectField
-                  labelPosition="above"
                   id="cp-currencyCode"
-                  label="Currency"
+                  label="Company Currency"
                   required
-                  placeholder="Select currency"
+                  placeholder="Select"
                   options={options.data?.currencies ?? []}
                   status={optionList.status}
                   onRetry={optionList.onRetry}
@@ -358,35 +359,12 @@ function CompanyProfileWorkspace({ access, saved, refetch }: { access: PartnerAc
         </ProfileSection>
 
         <ProfileSection id="company-bank" title="Company Bank Details">
-          <Controller
-            control={control}
-            name="bankDetails"
-            render={({ field }) => (
-              <RichTextField id="cp-bankDetails" labelledBy="company-bank-title" value={field.value} onChange={field.onChange} onBlur={field.onBlur} placeholder="Enter bank transfer details..." readOnly={readOnly} error={messageOf(errors.bankDetails)} />
-            )}
-          />
+          <PlainTextField id="cp-bankDetails" labelledBy="company-bank-title" placeholder="Enter bank transfer details..." error={errors.bankDetails?.message} {...fieldProps} {...register("bankDetails")} />
           <div className="mt-4">
             <Controller
               control={control}
               name="showBankDetailsOnInvoice"
-              render={({ field }) => <LabeledCheckbox id="cp-showBankDetails" label="Show bank details on Invoice preview" checked={field.value} onChange={field.onChange} readOnly={readOnly} inputRef={field.ref} />}
-            />
-          </div>
-        </ProfileSection>
-
-        <ProfileSection id="company-terms" title="Term and Condition">
-          <Controller
-            control={control}
-            name="terms"
-            render={({ field }) => (
-              <RichTextField id="cp-terms" labelledBy="company-terms-title" value={field.value} onChange={field.onChange} onBlur={field.onBlur} placeholder="Enter terms and conditions..." readOnly={readOnly} error={messageOf(errors.terms)} />
-            )}
-          />
-          <div className="mt-4">
-            <Controller
-              control={control}
-              name="showTermsOnInvoice"
-              render={({ field }) => <LabeledCheckbox id="cp-showTerms" label="Show terms and conditions on Invoice preview" checked={field.value} onChange={field.onChange} readOnly={readOnly} inputRef={field.ref} />}
+              render={({ field }) => <LabeledCheckbox id="cp-showBankDetails" label="Need to show on invoice" checked={field.value} onChange={field.onChange} readOnly={readOnly} inputRef={field.ref} />}
             />
           </div>
         </ProfileSection>

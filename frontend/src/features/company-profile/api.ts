@@ -1,12 +1,11 @@
-import type { JSONContent } from "@tiptap/react";
 import type { inferRouterClient } from "@trpc/client";
 import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
 import type { AppRouter } from "@gem-crm/backend-api-gateway/src/trpc/router";
 import type { ServerFieldError } from "@/lib/trpc-error";
-import type { CompanyProfileFormValues } from "./schema";
+import { normalizePlainText, type CompanyProfileFormValues } from "./schema";
 
 /**
- * company-profile SA revision 2 contract mapping (FE-CP-009): profile ↔ form values, logo REST
+ * company-profile SA revision 3 contract mapping (FE-CP-009): profile ↔ form values, logo REST
  * upload, and error messages. Server data stays in TanStack Query; nothing is cached here.
  */
 
@@ -29,15 +28,14 @@ export function toFormValues(profile: CompanyProfile): CompanyProfileFormValues 
     website: profile.website,
     address: profile.address,
     address2: profile.address2,
+    roadStreet: profile.roadStreet,
     countryCode: profile.countryCode,
     state: profile.state,
     city: profile.city,
     postcode: profile.postcode,
     currencyCode: profile.currencyCode,
-    bankDetails: (profile.bankDetails ?? null) as JSONContent | null,
+    bankDetails: profile.bankDetails,
     showBankDetailsOnInvoice: profile.showBankDetailsOnInvoice,
-    terms: (profile.terms ?? null) as JSONContent | null,
-    showTermsOnInvoice: profile.showTermsOnInvoice,
   };
 }
 
@@ -53,15 +51,14 @@ export function toSaveInput(values: CompanyProfileFormValues, expectedVersion: n
     website: values.website.trim(),
     address: values.address.trim(),
     address2: values.address2.trim(),
+    roadStreet: values.roadStreet.trim(),
     countryCode: values.countryCode,
     state: values.state.trim(),
     city: values.city.trim(),
     postcode: values.postcode.trim(),
     currencyCode: values.currencyCode,
-    bankDetails: values.bankDetails,
+    bankDetails: normalizePlainText(values.bankDetails),
     showBankDetailsOnInvoice: values.showBankDetailsOnInvoice,
-    terms: values.terms,
-    showTermsOnInvoice: values.showTermsOnInvoice,
     expectedVersion,
   };
 }
@@ -70,8 +67,8 @@ export function toSaveInput(values: CompanyProfileFormValues, expectedVersion: n
 export function formFieldFor(path: string): keyof CompanyProfileFormValues | null {
   const head = path.split(".")[0];
   const fields: readonly string[] = [
-    "name", "taxId", "contactName", "phone", "email", "website", "address", "address2",
-    "countryCode", "state", "city", "postcode", "currencyCode", "bankDetails", "terms",
+    "name", "taxId", "contactName", "phone", "email", "website", "address", "address2", "roadStreet",
+    "countryCode", "state", "city", "postcode", "currencyCode", "bankDetails",
   ];
   return fields.includes(head) ? (head as keyof CompanyProfileFormValues) : null;
 }
@@ -79,10 +76,6 @@ export function formFieldFor(path: string): keyof CompanyProfileFormValues | nul
 const fieldMessages: Record<string, string> = {
   unknown: "Choose a value from the list",
   too_long: "This text is too long",
-  unsafe_link: "Links must start with https://, http:// or mailto:",
-  invalid_rich_text: "This text contains formatting that isn't supported",
-  too_deep: "Lists are nested too deeply",
-  too_many_nodes: "This text is too long",
 };
 
 export function fieldErrorMessage(error: ServerFieldError): string {

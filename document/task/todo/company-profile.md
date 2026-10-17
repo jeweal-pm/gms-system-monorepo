@@ -1,8 +1,24 @@
 # Frontend TODO: company-profile
 
 - feature-id: `company-profile`
-- revision: 2
-- status: in-progress (UI approved; data wiring requires-sa)
+- revision: **3** (owner redesign 2026-10-17; revision 2 items below remain the base)
+- status: in-progress — UI revision 3 and SA revision 3 implemented (unit tests, typecheck, lint pass); browser check and security reviews pending (FE-CP-017)
+- sa-revision-3-approval: owner 2026-10-17 "อนุมัติ company-profile SA revision 3" ([decisions](../../apps/backend/partner/company-profile/decisions.md))
+- rev3-approval-evidence: owner 2026-10-17 "design หน้า company profile เปลี่ยน ช่วยแก้แบบ companyprofile ให้หน่อยเอาแบบในรูปนะ" + answers (Road/Street "เพิ่มจริง ทำ SA + backend"; City/State "ทำหน้าตาแบบ dropdown แต่ยังพิมพ์เองได้"; Bank "เปลี่ยนเป็นข้อความธรรมดา"; Terms "เอาออกจากหน้า เอาออกจาก schema ด้วย…"). Instruction to implement the supplied design = UI revision 3 approval; it does not approve SA revision 3.
+
+## Revision 3 items (2026-10-17)
+
+| Done | ID | Status | Owner | Task | Allowed files | Depends on | Verification |
+|---|---|---|---|---|---|---|---|
+| [ ] | FE-CP-013 | implemented, browser not run | frontend | R3-01/02/06/09: logo left column, section titles in the form column, notched labels, "Company Currency"/"Select", checkbox "Need to show on invoice" | page, `components/profile-section.tsx` | UI rev 3 | UT-CP-F32; typecheck/lint pass |
+| [ ] | FE-CP-014 | implemented, browser not run | frontend | R3-03: 200 px logo tile, uploading spinner state, `object-contain` | `components/logo-upload-tile.tsx` | UI rev 3 | UT-CP-F36…F38 |
+| [ ] | FE-CP-015 | implemented, browser not run | frontend | R3-04/05 (UI part): Address No.1/No.2 labels; City before State with chevron, free text (`TextField` `endIcon`) | page, `schema.ts` (field order), `components/ui/outlined-field.tsx` | UI rev 3 | UT-CP-F33…F35, F39 |
+| [ ] | FE-CP-016 | implemented, browser not run (Tiptap removed; lockfile updated in the frontend container) | frontend | Road/Street field (Road/Street │ Country row); Bank Details `<textarea>` (plain text ≤ 5,000); remove Terms section/fields; remove `rich-text-field.tsx` + Tiptap packages (via integration owner); update api/schema/tests | page, `api.ts`, `schema.ts`, `components/**`, `frontend/test/**`, `frontend/package.json` + lockfile (parent) | SA-CP-12…18 approved + BE-CP-011…014 | unit tests, typecheck, lint |
+| [x] | BE-CP-011 | done (2026-10-17): migration applied in dev; conversion dry-run verified | backend | Prisma + migration: add `road_street`; `bank_details` JSONB → TEXT with conversion (SA-CP-14); drop `terms`, `show_terms_on_invoice` | `backend-api-partner/prisma/**` | SA rev 3 | migrate in dev |
+| [x] | BE-CP-012 | done (2026-10-17): partner 253 tests pass, typecheck + lint pass | backend | Partner schemas/service/mapper: `roadStreet`, plain `bankDetails`, remove terms; delete `rich-text.ts` | partner `src/company-profile/**`, `test/company-profile/**` | BE-CP-011 | unit tests |
+| [x] | BE-CP-013 | done (2026-10-17): gateway 210 tests pass, typecheck + lint pass | backend | Gateway schemas/router: same contract; delete `src/trpc/rich-text.ts` | gateway `src/trpc/**`, `test/company-profile/**` | BE-CP-012 | unit tests |
+| [x] | BE-CP-014 | done: frontend integrated in the same session | backend → frontend | Handoff of the verified rev 3 contract | — | BE-CP-013 | — |
+| [ ] | FE-CP-017 | security done 2026-10-17 (source: HEAD `2bcf7b2` + same uncommitted working tree, no edits between the two reviews): **sec-auditor `clear`**; **security-auditor `advisory`** — no confirmed issue, hardening ticket [INV-20261017-001](../investigation/INV-20261017-001-company-profile-bank-details-migration-length-unit.md) (owner backend, pending owner review, does not block). Browser check pending | frontend → security | Browser check of rev 3; sec-auditor + security-auditor scoped review of the final rev 3 diff | none | FE-CP-016 | testing.md |
 - source: six owner-supplied screenshots (2026-10-16) in [source/](../../apps/frontend/company-profile/source/)
 - owner-request: 2026-10-16 "uxui ทำ spec Company profile ให้หน่อย" (request for the spec, not approval)
 - ui-spec: [ui-spec.md](../../apps/frontend/company-profile/ui-spec.md)
@@ -55,6 +71,8 @@ Nothing starts before the owner approves UI revision 1. FE-CP-001…008 and 011 
 
 | Revision | Date | Change | Affected IDs | Approval |
 |---|---|---|---|---|
+| SA 3 | 2026-10-17 | Draft: Road/Street, plain-text Bank Details, Terms removed, rich-text + Tiptap removed (SA-CP-12…18) | BE-CP-011…014, FE-CP-016 | **pending** — owner states "อนุมัติ company-profile SA revision 3" |
+| 3 | 2026-10-17 | Owner redesign S7–S9 (R3-01…09) | FE-CP-013…017 | owner 2026-10-17, see rev3-approval-evidence |
 | SA 2 | 2026-10-16 | SA revision 1 approved with the owner's change: logo as a file in the partner folder, overwritten on upload (SA-CP-05) | BE-CP-001, 004, 009 | owner 2026-10-16 ≈12:00 +07:00: "บันทึกลงใน folder ใน backend เลยเมื่ออัพรูปใหม่ไปจะไปทับรูปเก่า  logic นี้ แค่ module company profile เท่านั้น  อนุมัติ company-profile SA revision 1" |
 | 2 | 2026-10-16 | Owner answers with approval: libphonenumber-js for Phone (DEP-CP-02, package choice), logo 10 MB, grey = read-only / white + trash = edit, Print/Excel disabled. Approved together | FE-CP-004, 006, 007; DEP-CP-01/02 | owner, 2026-10-16 ≈11:00 +07:00: "Phone ให้ลง lib ที่นายแนะนำเลยเอาที่เขาใช้กันทั่วไป 10 MB โลโก้พื้นเทาคือโหมดอ่านอย่างเดียว ส่วนพื้นขาวที่มีปุ่มถังขยะคือโหมดแก้ไข ปุ่ม Print และ Excel ปิดไว้ก่อน / อนุมัติ company-profile revision 1" |
 | 1 | 2026-10-16 | Created from S1–S6 (ui-spec run inline by the parent) | FE-CP-001…012 | none |
