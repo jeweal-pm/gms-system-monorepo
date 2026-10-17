@@ -36,6 +36,29 @@ export function toggleKeys(keys: readonly string[], values: PermissionValues): P
   return next;
 }
 
+/**
+ * Matrix toggle with the VIEW rule (document/apps/backend/auth/user-permission/view-dependency.md):
+ * VD-01 turning on any other action also turns on that menu's VIEW; VD-02 turning off VIEW turns off
+ * the menu's other actions; VD-03 aggregates apply both per menu; VD-04 turning off another action
+ * leaves VIEW alone. `leaves` are the menus under the clicked row (they hold the applicable actions).
+ */
+export function toggleCells(keys: readonly string[], values: PermissionValues, leaves: readonly CatalogNode[]): PermissionValues {
+  const turnOn = aggregateState(keys, values) !== "checked";
+  const next = toggleKeys(keys, values);
+  const byId = new Map(leaves.map((leaf) => [leaf.id, leaf]));
+  for (const key of keys) {
+    const separator = key.lastIndexOf(":");
+    const leaf = byId.get(key.slice(0, separator));
+    const action = key.slice(separator + 1);
+    if (!leaf || !leaf.actions.includes("VIEW")) continue;
+    if (turnOn && action !== "VIEW") next[permissionKey(leaf.id, "VIEW")] = true;
+    if (!turnOn && action === "VIEW") {
+      for (const other of leaf.actions) if (other !== "VIEW") delete next[permissionKey(leaf.id, other)];
+    }
+  }
+  return next;
+}
+
 /** Number of checked cells that are applicable in the current catalog (stale keys are not counted). */
 export function countEnabled(nodes: readonly CatalogNode[], values: PermissionValues) {
   return applicableKeys(nodes).filter((key) => values[key]).length;

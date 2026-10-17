@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { GmsMark } from "./gms-mark";
-import { activeDisclosureIds, isNavItemActive, sidebarSections, sidebarToggleIcon, type NavLink } from "./navigation";
+import { activeDisclosureIds, isNavItemActive, sidebarSections, sidebarToggleIcon, visibleSections, type NavLink } from "./navigation";
 import { SidebarDisclosure, sidebarFocusRing, sidebarRow } from "./sidebar-disclosure";
 import { RailActionButton, type SidebarFocusRequest, type TakeSidebarFocusRequest } from "./sidebar-rail";
+import { useMenuAccess } from "./use-menu-access";
 
 function SidebarLink({ item, pathname, onNavigate }: Readonly<{ item: NavLink; pathname: string; onNavigate?: () => void }>) {
   const active = isNavItemActive(item, pathname);
@@ -41,6 +42,8 @@ export function Sidebar({
   const idPrefix = useId();
   const listRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  // Menus without VIEW are not shown at all (owner 2026-10-17).
+  const sections = visibleSections(sidebarSections, useMenuAccess());
   const [openIds, setOpenIds] = useState(() => new Set([...rememberedOpenIds, ...activeDisclosureIds(pathname)]));
   const [openedForPath, setOpenedForPath] = useState(pathname);
 
@@ -91,7 +94,7 @@ export function Sidebar({
       </Link>
       <nav aria-label="Main menu" className="flex min-h-0 flex-1 flex-col">
         <div ref={listRef} className="scrollbar-none flex min-h-0 flex-1 flex-col gap-[15px] overflow-y-auto">
-          {sidebarSections.map((section) => {
+          {sections.map((section) => {
             const headingId = section.title ? `${idPrefix}-section-${section.id}` : undefined;
             return (
               <div key={section.id} data-nav-section={section.id}>

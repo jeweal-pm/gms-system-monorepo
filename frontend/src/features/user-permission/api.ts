@@ -54,10 +54,18 @@ export type LocationOption = { id: string; label: string };
 
 type CatalogContractNode = CatalogOutput["nodes"][number];
 
+/**
+ * Section headings in sentence case for display (owner 2026-10-16): "SETUP" → "Setup",
+ * "PRE-SALE" → "Pre-Sale". The catalog contract keeps its own labels.
+ */
+export function sectionLabel(label: string): string {
+  return label.toLowerCase().replace(/(^|[\s-])(\p{L})/gu, (_match, separator: string, letter: string) => separator + letter.toUpperCase());
+}
+
 function toCatalogNode(node: CatalogContractNode): CatalogNode {
   return {
     id: node.key,
-    label: node.label,
+    label: node.kind === "section" ? sectionLabel(node.label) : node.label,
     kind: node.kind,
     actions: node.actions ?? [],
     children: (node.children ?? []).map(toCatalogNode),

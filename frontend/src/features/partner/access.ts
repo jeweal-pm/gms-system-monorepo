@@ -5,9 +5,9 @@
  * Extracted from customer (vendor FE-VEN-001); the menu key is an argument.
  */
 
-export type PartnerAction = "VIEW" | "ADD" | "EDIT" | "DELETE";
+export type PartnerAction = "VIEW" | "ADD" | "EDIT" | "DELETE" | "PRINT";
 export type PermissionMine = { isSuperAdmin: boolean; permissions: "ALL" | readonly string[] };
-export type PartnerAccess = { view: boolean; add: boolean; edit: boolean; delete: boolean };
+export type PartnerAccess = { view: boolean; add: boolean; edit: boolean; delete: boolean; print: boolean };
 
 export function can(mine: PermissionMine, menuKey: string, action: PartnerAction): boolean {
   if (mine.isSuperAdmin || mine.permissions === "ALL") return true;
@@ -20,5 +20,6 @@ export function partnerAccess(mine: PermissionMine, menuKey: string): PartnerAcc
     add: can(mine, menuKey, "ADD"),
     edit: can(mine, menuKey, "EDIT"),
     delete: can(mine, menuKey, "DELETE"),
+    print: can(mine, menuKey, "PRINT"),
   };
 }

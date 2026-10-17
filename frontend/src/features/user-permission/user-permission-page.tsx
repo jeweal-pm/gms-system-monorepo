@@ -291,7 +291,9 @@ function UserPermissionWorkspace() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-gms-page">
       <div className="relative flex min-h-0 flex-1">
-        <div className="min-w-0 flex-1 overflow-y-auto pb-6 pl-6 pr-10 pt-6 print:overflow-visible">
+        {/* The page stays put and only the permission table scrolls (owner 2026-10-17); the page itself
+            scrolls only when the window is too short for the table's minimum height. */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-y-auto pb-6 pl-6 pr-10 pt-6 print:block print:overflow-visible">
           <PageHeader
             formId={FORM_ID}
             mode={mode}
@@ -327,7 +329,7 @@ function UserPermissionWorkspace() {
               id={FORM_ID}
               noValidate
               onSubmit={onSubmit}
-              className="space-y-4"
+              className="flex min-h-0 flex-1 flex-col gap-4 print:block print:space-y-4"
               aria-label={mode === "create" ? "Create user" : mode === "edit" ? "Edit user" : "User details"}
             >
               {formError && (

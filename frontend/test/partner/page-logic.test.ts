@@ -28,7 +28,8 @@ describe("partnerTitle", () => {
   it("UT-ADR21-03c falls back to the entity name while the record loads or with no selection", () => {
     expect(partnerTitle(customer, "view", undefined)).toBe("Customer");
     expect(partnerTitle(vendor, "edit", "")).toBe("Vendor");
-    expect(partnerTitle(vendor, "none", "ignored")).toBe("Vendor");
+    // Owner 2026-10-17: VIEW-only users land on the (disabled) Add page.
+    expect(partnerTitle(vendor, "none", "ignored")).toBe("Add Vendor");
   });
 });
 
@@ -90,14 +91,14 @@ describe("drawer wording", () => {
 
 describe("permission helpers (UX only; gateway enforces)", () => {
   it("UT-PTN-P02 Super Admin and \"ALL\" may do everything", () => {
-    expect(partnerAccess({ isSuperAdmin: true, permissions: [] }, "vendor")).toEqual({ view: true, add: true, edit: true, delete: true });
-    expect(partnerAccess({ isSuperAdmin: false, permissions: "ALL" }, "customer")).toEqual({ view: true, add: true, edit: true, delete: true });
+    expect(partnerAccess({ isSuperAdmin: true, permissions: [] }, "vendor")).toEqual({ view: true, add: true, edit: true, delete: true, print: true });
+    expect(partnerAccess({ isSuperAdmin: false, permissions: "ALL" }, "customer")).toEqual({ view: true, add: true, edit: true, delete: true, print: true });
   });
 
   it("UT-PTN-P03 a permission list grants only the listed actions of that menu key", () => {
-    const mine = { isSuperAdmin: false, permissions: ["vendor:VIEW", "vendor:EDIT", "customer:DELETE"] };
-    expect(partnerAccess(mine, "vendor")).toEqual({ view: true, add: false, edit: true, delete: false });
-    expect(partnerAccess(mine, "customer")).toEqual({ view: false, add: false, edit: false, delete: true });
+    const mine = { isSuperAdmin: false, permissions: ["vendor:VIEW", "vendor:EDIT", "vendor:PRINT", "customer:DELETE"] };
+    expect(partnerAccess(mine, "vendor")).toEqual({ view: true, add: false, edit: true, delete: false, print: true });
+    expect(partnerAccess(mine, "customer")).toEqual({ view: false, add: false, edit: false, delete: true, print: false });
     expect(can({ isSuperAdmin: false, permissions: [] }, "customer", "VIEW")).toBe(false);
   });
 
