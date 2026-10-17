@@ -3,7 +3,7 @@
 import { ChevronDown } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import { PERMISSION_ACTIONS, type CatalogNode } from "../api";
-import { aggregateState, applicableKeys, toggleKeys, type PermissionValues } from "../permission-utils";
+import { aggregateState, applicableKeys, leafNodes, toggleCells, type PermissionValues } from "../permission-utils";
 import { cx, focusRing } from "@/components/ui/button";
 import { DisabledCheckbox, TriStateCheckbox } from "@/components/ui/checkbox";
 
@@ -22,13 +22,15 @@ type PermissionMatrixProps = {
 };
 
 const cellBorder = "border-b border-gms-border";
+/** The Select All row sticks right under the 42 px header row while the table scrolls (owner 2026-10-17). */
+const stickySelectAll = "sticky top-[42px] z-10 bg-gms-surface-muted";
 
 /**
  * C-13 PermissionMatrix v2 (rev2-01..03): 9 action columns, "Select All",
  * section headings, group rows with "N sub-menus" and a chevron, and leaf
  * rows. Section/group/Select All states are derived from the visible leaf
  * cells and are never sent as grants. Non-applicable cells render "—".
- * No implied rules between actions are applied (Q-UP-13). Row keys are kind-prefixed:
+ * Every action implies VIEW (view-dependency.md, toggleCells). Row keys are kind-prefixed:
  * section `purchase` and leaf `purchase` share a catalog key.
  */
 export function PermissionMatrix({ nodes, values, onChange, collapsed, onToggleGroup, forceExpand, lockedDescriptionId }: PermissionMatrixProps) {
@@ -46,7 +48,7 @@ export function PermissionMatrix({ nodes, values, onChange, collapsed, onToggleG
               <span className="sr-only">{`${name}: not applicable`}</span>
             </>
           ) : onChange ? (
-            <TriStateCheckbox label={name} state={state} onToggle={() => onChange(toggleKeys(keys, values))} />
+            <TriStateCheckbox label={name} state={state} onToggle={() => onChange(toggleCells(keys, values, leafNodes(scope)))} />
           ) : (
             <DisabledCheckbox label={name} state={state} describedBy={lockedDescriptionId} />
           )}
@@ -118,10 +120,9 @@ export function PermissionMatrix({ nodes, values, onChange, collapsed, onToggleG
   }
 
   return (
-    // Horizontal scroll only below xl, so the sticky header keeps working with page scroll on desktop.
-    // `-top-6` cancels the scroll area padding (pt-6) so the header sticks flush under the topbar
-    // with no gap (owner 2026-10-16).
-    <div className="overflow-x-auto xl:overflow-visible">
+    // The table is its own scroll area (both directions, owner 2026-10-17): the page stays still and the
+    // header row sticks to the top of the table.
+    <div className="min-h-0 flex-1 overflow-auto print:overflow-visible">
       <table className="w-full min-w-[960px] table-fixed border-separate border-spacing-0 text-gms-body text-gms-text">
         <colgroup>
           <col className="w-[31%]" />
@@ -129,11 +130,11 @@ export function PermissionMatrix({ nodes, values, onChange, collapsed, onToggleG
         </colgroup>
         <thead>
           <tr>
-            <th scope="col" className="sticky -top-6 z-10 h-[42px] border-b border-gms-border bg-gms-page pl-3 text-left text-gms-body font-medium uppercase">
+            <th scope="col" className="sticky top-0 z-10 h-[42px] border-b border-gms-border bg-gms-page pl-3 text-left text-gms-body font-medium uppercase">
               Menu
             </th>
             {PERMISSION_ACTIONS.map((action) => (
-              <th key={action} scope="col" className="sticky -top-6 z-10 h-[42px] border-b border-gms-border bg-gms-page text-center text-gms-body font-medium">
+              <th key={action} scope="col" className="sticky top-0 z-10 h-[42px] border-b border-gms-border bg-gms-page text-center text-gms-body font-medium">
                 {action}
               </th>
             ))}
@@ -141,8 +142,8 @@ export function PermissionMatrix({ nodes, values, onChange, collapsed, onToggleG
         </thead>
         <tbody>
           <tr className="bg-gms-surface-muted">
-            <th scope="row" className={cx("h-[42px] pl-[46px] text-left font-semibold", cellBorder)}>Select All</th>
-            {cells("Select All", nodes, cellBorder)}
+            <th scope="row" className={cx("h-[42px] pl-[46px] text-left font-semibold", cellBorder, stickySelectAll)}>Select All</th>
+            {cells("Select All", nodes, cx(cellBorder, stickySelectAll))}
           </tr>
           {nodes.map((node) => nodeRows(node))}
         </tbody>

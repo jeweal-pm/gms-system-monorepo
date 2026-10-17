@@ -2,6 +2,7 @@
 
 import { X } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
+import { useMenuAccess } from "@/features/home/use-menu-access";
 import { masterCodeDestinations } from "./setup-destinations";
 import { SetupTileLink } from "./setup-tile";
 
@@ -14,6 +15,7 @@ import { SetupTileLink } from "./setup-tile";
  */
 export function MasterCodeDialog({ open, onClose }: Readonly<{ open: boolean; onClose: (returnFocus: boolean) => void }>) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const canView = useMenuAccess();
   const gridRef = useRef<HTMLUListElement>(null);
   const titleId = useId();
 
@@ -52,9 +54,11 @@ export function MasterCodeDialog({ open, onClose }: Readonly<{ open: boolean; on
         </h2>
         <div className="relative min-h-0 w-full overflow-y-auto overscroll-contain rounded-gms-lg bg-gms-surface px-[27px] pt-[31px] pb-8 shadow-gms-overlay md:min-h-[473px]">
           <ul ref={gridRef} className="grid grid-cols-2 gap-y-6 @min-[480px]:grid-cols-3 @min-[640px]:grid-cols-4">
-            {masterCodeDestinations.map((destination) => (
+            {masterCodeDestinations.filter((destination) => canView(destination.permission)).map((destination) => (
               <li key={destination.id} className="flex justify-center">
-                <SetupTileLink variant="modal" href={destination.href} label={destination.label} icon={destination.icon} color={destination.color} onNavigate={() => onClose(false)} />
+                <SetupTileLink
+                  variant="modal"
+                  href={destination.id === "partner-master" && !canView(["vendor"]) ? "/setup/customer" : destination.href} label={destination.label} icon={destination.icon} color={destination.color} onNavigate={() => onClose(false)} />
               </li>
             ))}
           </ul>

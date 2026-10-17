@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { MasterCodeDialog } from "./master-code-dialog";
+import { useMenuAccess } from "@/features/home/use-menu-access";
 import { setupLandingTiles } from "./setup-destinations";
 import { SetupTileButton, SetupTileLink, SetupTileUnavailable } from "./setup-tile";
 
@@ -15,6 +16,7 @@ import { SetupTileButton, SetupTileLink, SetupTileUnavailable } from "./setup-ti
  */
 export function SetupLanding() {
   const router = useRouter();
+  const canView = useMenuAccess();
   const masterCodeRequested = useSearchParams().get("dialog") === "master-code";
   // AppShell mounts this only after the session check, so the parameter is read on the client.
   const [isMasterCodeOpen, setIsMasterCodeOpen] = useState(masterCodeRequested);
@@ -34,7 +36,7 @@ export function SetupLanding() {
     <div className="@container px-6 pt-10 pb-12 md:px-4">
       <h1 className="text-center text-gms-title font-semibold text-gms-text">Setup</h1>
       <ul className="mx-auto mt-12 grid w-fit grid-cols-[repeat(2,144px)] gap-x-8 gap-y-16 @min-[672px]:grid-cols-[repeat(4,144px)]">
-        {setupLandingTiles.map((tile) => (
+        {setupLandingTiles.filter((tile) => canView(tile.permission)).map((tile) => (
           <li key={tile.id}>
             {tile.kind === "link" ? (
               <SetupTileLink variant="landing" href={tile.href} label={tile.label} icon={tile.icon} color={tile.color} />

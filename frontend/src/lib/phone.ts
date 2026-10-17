@@ -1,26 +1,50 @@
+import { getCountries, getCountryCallingCode } from "libphonenumber-js";
+
 /**
  * Phone mapping between the form value (country + national number) and the
  * contract `Phone = {country, e164}` (api-contract.md, SA revision 1).
  *
- * The country list is still provisional (Q-UP-09; DEP-UP-01/02 are proposed,
- * not installed). US +1 is the default shown in S1-S3.
+ * Country list (owner 2026-10-17, option A): every country libphonenumber-js supports (245), with
+ * its calling code from the same library, so the list always matches phone validation. English
+ * names come from `Intl.DisplayNames`; flags are local SVGs from country-flag-icons (PhoneField).
+ * US +1 stays the default shown in S1-S3.
  */
-export const PHONE_COUNTRIES = [
-  { code: "US", dial: "+1", name: "United States" },
-  { code: "TH", dial: "+66", name: "Thailand" },
-] as const;
-
-export type PhoneCountry = (typeof PHONE_COUNTRIES)[number];
+export type PhoneCountry = { code: string; dial: string; name: string };
 export type PhoneValue = { country: string; number: string };
 export type ContractPhone = { country: string; e164: string };
 
-export const DEFAULT_PHONE_COUNTRY = PHONE_COUNTRIES[0].code;
+function countryName(names: Intl.DisplayNames | null, code: string): string {
+  try {
+    return names?.of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+function buildCountries(): PhoneCountry[] {
+  let names: Intl.DisplayNames | null = null;
+  try {
+    names = new Intl.DisplayNames(["en"], { type: "region" });
+  } catch {
+    // Older engines without DisplayNames: the ISO code is shown instead of the name.
+  }
+  return getCountries()
+    .map((code) => ({ code, dial: `+${getCountryCallingCode(code)}`, name: countryName(names, code) }))
+    .sort((a, b) => a.name.localeCompare(b.name, "en"));
+}
+
+/** Sorted by English name. */
+export const PHONE_COUNTRIES: readonly PhoneCountry[] = Object.freeze(buildCountries());
+
+export const DEFAULT_PHONE_COUNTRY = "US";
+
+const DEFAULT_COUNTRY: PhoneCountry = PHONE_COUNTRIES.find((entry) => entry.code === DEFAULT_PHONE_COUNTRY) ?? { code: "US", dial: "+1", name: "United States" };
 
 /** Same rule as the gateway `phoneSchema.e164`. */
 const E164_PATTERN = /^\+[1-9]\d{6,14}$/;
 
 export function phoneCountry(code: string): PhoneCountry {
-  return PHONE_COUNTRIES.find((entry) => entry.code === code) ?? PHONE_COUNTRIES[0];
+  return PHONE_COUNTRIES.find((entry) => entry.code === code) ?? DEFAULT_COUNTRY;
 }
 
 /**

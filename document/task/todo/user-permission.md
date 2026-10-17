@@ -76,6 +76,15 @@ license interaction. Details: [SA handoff](../../coordination/handoffs/user-perm
 
 Frontend follow-ups from SA rev 1 (apply after SA approval, with FE-UP-012): Username validates as email and is read-only on edit; password optional on edit (blank keeps current); Super Admin rows read-only; map `USER_LICENSE_*` / `USER_LIMIT_REACHED`; browser-side photo resize (canvas); Print = `window.print()`, Excel = CSV download. Other scopes: `ACCOUNT_INACTIVE` on the login form (frontend-auth); sidebar filtered by `permission.mine` (frontend-home).
 
+## Addendum 2026-10-17: every action needs VIEW ([view-dependency.md](../../apps/backend/auth/user-permission/view-dependency.md))
+
+Owner: "sa ช่วยคิด logic User and Permission เวลาติ้กหน่อยหากเลือก ADD or EDIT or DELETE or CANCEL or APPROVE or PRICE or PRINT or EXCEL ต้องได้รับสิทธิ์ VIEW … คิดเสร็จ ให้ frontend ทำต่อ".
+
+| Done | ID | Status | Owner | Task | Files | Verification |
+|---|---|---|---|---|---|---|
+| [x] | FE-UP-VD-01 | done 2026-10-17 | frontend | VD-01…VD-05: `toggleCells` for every matrix checkbox (leaf, group, section, Select All); hint under the Permissions header | `frontend/src/features/user-permission/{permission-utils.ts,components/permission-matrix.tsx,components/permissions-card.tsx}` | UT-UP-F10…F16 pass; typecheck/lint pass; browser not run |
+| [ ] | BE-UP-VD-06 | **proposed, needs owner approval** | backend | Auth create/update normalize grants (add `<menu>:VIEW` for any action); read-only report of existing grants without VIEW | `backend-api-auth/src/user-admin/**` + contract note | — |
+
 ## Approval and revisions
 
 | Revision | Date | Evidence | Decision |

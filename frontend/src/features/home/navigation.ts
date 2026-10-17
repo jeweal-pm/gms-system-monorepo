@@ -74,6 +74,11 @@ export type NavLink = {
   icon?: LucideIcon;
   activePrefix?: string;
   activeHrefs?: readonly string[];
+  /**
+   * Permission catalog keys; the link is shown when the user has VIEW on any of them (owner
+   * 2026-10-17). Undefined = no permission exists for it (Home, Approve, placeholders): always shown.
+   */
+  permission?: readonly string[];
 };
 /** A collapsible parent (disclosure button, no route) with link children. */
 export type NavDisclosure = { kind: "disclosure"; id: string; label: string; icon: LucideIcon; children: NavLink[] };
@@ -106,7 +111,42 @@ export function setupPlaceholderLink(slug: SetupPlaceholderSlug): { label: strin
   return { label: entry?.label ?? slug, href: moduleHref(slug) };
 }
 
-const link = (id: string, label: string, icon?: LucideIcon, href = moduleHref(id)): NavLink => ({ kind: "link", id, label, href, icon });
+/** Navigation id → permission catalog leaf key (catalog v2, ADR-0020) where the two differ. */
+const CATALOG_KEY_ALIASES: Readonly<Record<string, string>> = {
+  "memo-outstanding-from-vendor": "memo-outstanding-vendor",
+  "memo-outstanding-from-customer": "memo-outstanding-customer",
+  "barcode-printing": "barcode",
+  "os-payable": "outstanding-payable",
+  "os-receivable": "outstanding-receivable",
+  "sale-report-compare-with-costing": "sale-report-costing",
+  "certificate-master": "certificate-type",
+};
+
+/** Master Code sub-menus in the catalog (Setup › Master Code). */
+export const MASTER_CODE_MENU_KEYS = ["vendor", "customer", "stone-master", "location-master", "certificate-type", "labor-name", "sale-person"] as const;
+/** Every Setup leaf in the catalog; Setup is visible when any of them is. */
+export const SETUP_MENU_KEYS = ["company-profile", "user-and-permission", "notifications", ...MASTER_CODE_MENU_KEYS] as const;
+
+const CATALOG_LEAF_KEYS: ReadonlySet<string> = new Set([
+  "dashboard", ...SETUP_MENU_KEYS, "quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return",
+  "memo-outstanding-vendor", "memo-outstanding-customer", "purchase-order", "purchase", "purchase-outstanding", "load-to-stock",
+  "merge-split", "stock-transfer-location", "stock-adjustment", "barcode", "sale", "payable", "receivable", "outstanding-payable",
+  "outstanding-receivable", "stock-movement-primary", "stock-movement-consignment", "closing-stock-primary", "closing-stock-consignment",
+  "sale-report-costing", "sale-report-shareholder", "sale-report-commission",
+]);
+
+/** The catalog key that gates a navigation id, or undefined when the catalog has none. */
+export function menuKeyFor(id: string): string | undefined {
+  const key = CATALOG_KEY_ALIASES[id] ?? id;
+  return CATALOG_LEAF_KEYS.has(key) ? key : undefined;
+}
+
+function permissionFor(id: string): readonly string[] | undefined {
+  const key = menuKeyFor(id);
+  return key ? [key] : undefined;
+}
+
+const link = (id: string, label: string, icon?: LucideIcon, href = moduleHref(id)): NavLink => ({ kind: "link", id, label, href, icon, permission: permissionFor(id) });
 const disclosure = (id: string, label: string, icon: LucideIcon, children: NavLink[]): NavDisclosure => ({ kind: "disclosure", id, label, icon, children });
 
 const homeLink: NavLink = { kind: "link", id: "home", label: "Home", href: "/", icon: House };
@@ -120,6 +160,7 @@ const setupLink: NavLink = {
   icon: Settings,
   activePrefix: "/setup",
   activeHrefs: setupOwnedPlaceholders.map((item) => moduleHref(item.slug)),
+  permission: SETUP_MENU_KEYS,
 };
 const approveLink = link("approve", "Approve", FileCheckCorner);
 
@@ -230,6 +271,45 @@ const contextNavs: ContextNav[] = [setupContextNav];
 /** The context panel for the current route, or null when the route uses the normal sidebar. */
 export function contextNavFor(pathname: string): ContextNav | null {
   return contextNavs.find((nav) => nav.groups.some((group) => group.children.some((child) => pathname === child.href || pathname.startsWith(`${child.href}/`)))) ?? null;
+}
+
+/** True when the user may see an item gated by `permission` (see `NavLink.permission`). */
+export type CanView = (permission: readonly string[] | undefined) => boolean;
+
+/** Pure rule behind `useMenuAccess`: Super Admin / "ALL" see everything; others need `<key>:VIEW`. */
+export function canViewWith(mine: { isSuperAdmin: boolean; permissions: "ALL" | readonly string[] } | undefined, permission: readonly string[] | undefined): boolean {
+  if (!permission) return true;
+  if (!mine) return false;
+  if (mine.isSuperAdmin || mine.permissions === "ALL") return true;
+  const granted = mine.permissions;
+  return permission.some((key) => granted.includes(`${key}:VIEW`));
+}
+
+/** Sidebar sections without the items the user may not see; empty disclosures and sections drop out. */
+export function visibleSections(sections: readonly NavSection[], canView: CanView): NavSection[] {
+  return sections
+    .map((section) => ({
+      ...section,
+      items: section.items.flatMap((item): NavEntry[] => {
+        if (item.kind === "link") return canView(item.permission) ? [item] : [];
+        const children = item.children.filter((child) => canView(child.permission));
+        return children.length > 0 ? [{ ...item, children }] : [];
+      }),
+    }))
+    .filter((section) => section.items.length > 0);
+}
+
+/** Rail buttons for what is visible: links by permission, sections when they still have items. */
+export function visibleRailModules(modules: readonly RailModule[], sections: readonly NavSection[], canView: CanView): RailModule[] {
+  const sectionIds = new Set(sections.map((section) => section.id));
+  return modules.filter((module) => (module.kind === "link" ? canView(module.link.permission) : sectionIds.has(module.sectionId)));
+}
+
+/** Context panel groups without the children the user may not see. */
+export function visibleContextGroups(nav: ContextNav, canView: CanView): ContextNavGroup[] {
+  return nav.groups
+    .map((group) => ({ ...group, children: group.children.filter((child) => canView(child.permission)) }))
+    .filter((group) => group.children.length > 0);
 }
 
 /** ⇆ icon shared by the rail "Expand sidebar" and the sidebar "Collapse sidebar" toggles. */

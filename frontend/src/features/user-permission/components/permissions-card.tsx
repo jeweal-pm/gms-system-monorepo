@@ -52,7 +52,7 @@ export function PermissionsCard({ catalog, catalogStatus, errorMessage, onRetry,
   const ready = catalogStatus === "success" && catalog !== undefined;
 
   return (
-    <section aria-labelledby="permissions-title" className="rounded-gms-lg border border-gms-border bg-gms-surface">
+    <section aria-labelledby="permissions-title" className="flex min-h-[360px] flex-1 flex-col rounded-gms-lg border border-gms-border bg-gms-surface print:block">
       <header className="flex min-h-[62px] flex-wrap items-center gap-x-4 gap-y-3 border-b border-gms-border px-6 py-3">
         <h2 id="permissions-title" className="text-gms-heading font-medium text-gms-text">Permissions</h2>
         <label className="relative block w-full sm:w-[316px]">
@@ -85,6 +85,12 @@ export function PermissionsCard({ catalog, catalogStatus, errorMessage, onRetry,
         )}
       </header>
 
+      {!superAdminLocked && onChange && (
+        <p className="border-b border-gms-border px-6 py-2 text-gms-label text-gms-text-secondary">
+          Turning on any action also turns on View. Turning off View turns off the other actions of that menu.
+        </p>
+      )}
+
       {superAdminLocked && (
         <p id={LOCK_BANNER_ID} className="flex items-center gap-2 bg-gms-surface-sunken px-6 py-2.5 text-gms-body text-gms-text">
           <Lock size={16} aria-hidden className="shrink-0" />
@@ -92,7 +98,7 @@ export function PermissionsCard({ catalog, catalogStatus, errorMessage, onRetry,
         </p>
       )}
 
-      <div className="px-6 pb-6 pt-6">
+      <div className="flex min-h-0 flex-1 flex-col px-6 pb-6 pt-6 print:block">
         {catalogStatus === "pending" && (
           <div aria-busy="true" aria-label="Loading permissions" className="space-y-2">
             <div className="h-[42px] animate-pulse rounded-gms-sm bg-gms-page" />
