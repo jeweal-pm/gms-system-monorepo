@@ -7,6 +7,7 @@
     "start": "node dist/main.js",
     "typecheck": "prisma generate && tsc --noEmit",
     "lint": "eslint src",
+    "test": "vitest run",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
@@ -38,6 +39,7 @@
     "@types/node": "^24.10.0",
     "prisma": "7.10.0",
     "tsx": "^4.21.0",
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "vitest": "5.0.3"
   }
 }

@@ -18,6 +18,8 @@ type PermissionsCardProps = {
   onChange?: (values: PermissionValues) => void;
   /** Super Admin target: every cell checked and locked, with the lock banner. */
   superAdminLocked?: boolean;
+  /** DA-02: keys the signed-in user may hand out; null/undefined = all (Super Admin). */
+  grantable?: ReadonlySet<string> | null;
 };
 
 const LOCK_BANNER_ID = "permissions-super-admin-lock";
@@ -29,7 +31,7 @@ const linkClass = cx("rounded-gms-sm text-gms-body text-[var(--gms-blue)] hover:
  * filter, Expand All / Collapse All, live counter "{on} of {applicableCount}
  * permissions on" over the whole catalog (v2: 347), and the Super Admin banner.
  */
-export function PermissionsCard({ catalog, catalogStatus, errorMessage, onRetry, values, onChange, superAdminLocked = false }: PermissionsCardProps) {
+export function PermissionsCard({ catalog, catalogStatus, errorMessage, onRetry, values, onChange, superAdminLocked = false, grantable }: PermissionsCardProps) {
   const [query, setQuery] = useState("");
   const [section, setSection] = useState<string>(ALL_SECTIONS);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
@@ -125,6 +127,7 @@ export function PermissionsCard({ catalog, catalogStatus, errorMessage, onRetry,
               onToggleGroup={toggleGroup}
               forceExpand={searching}
               lockedDescriptionId={superAdminLocked ? LOCK_BANNER_ID : undefined}
+              grantable={grantable}
             />
           ))}
       </div>

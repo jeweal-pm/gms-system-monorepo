@@ -36,6 +36,11 @@ export function usePermissionCatalog() {
   return trpc.permission.catalog.useQuery(undefined, { select: toPermissionCatalog, staleTime: Infinity, retry: retryTransient });
 }
 
+/** user-photo.md PH-04: photo removal (upload is REST, see photo.ts). Never retried. */
+export function useRemovePhoto() {
+  return trpc.userAdmin.removePhoto.useMutation();
+}
+
 export function useLocationOptions() {
   return trpc.userAdmin.locationOptions.useQuery(undefined, { select: toLocationOptions, staleTime: 5 * 60_000, retry: retryTransient });
 }
