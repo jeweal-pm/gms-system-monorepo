@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef } from "react";
 import type { LucideIcon } from "lucide-react";
 import { GmsMark } from "./gms-mark";
-import { isNavItemActive, isNavSectionActive, railModules, sidebarSections, sidebarToggleIcon, type NavLink, type NavSection } from "./navigation";
+import { isNavItemActive, isNavSectionActive, railModules, sidebarSections, sidebarToggleIcon, visibleRailModules, visibleSections, type NavLink, type NavSection } from "./navigation";
+import { useMenuAccess } from "./use-menu-access";
 
 /** What should receive focus right after the layout switches (keeps keyboard users in place). */
 export type SidebarFocusRequest = { target: "toggle" } | { target: "section"; sectionId: string };
@@ -284,6 +285,10 @@ export function SidebarRail({
   onExpand: (request: SidebarFocusRequest) => void;
 }>) {
   const railRef = useRef<HTMLDivElement>(null);
+  // Same visibility as the expanded sidebar: no VIEW, no button (owner 2026-10-17).
+  const canView = useMenuAccess();
+  const sections = visibleSections(sidebarSections, canView);
+  const modules = visibleRailModules(railModules, sections, canView);
 
   useEffect(() => {
     if (takeFocusRequest()?.target === "toggle") railRef.current?.querySelector<HTMLElement>("[data-sidebar-toggle]")?.focus();
@@ -296,7 +301,7 @@ export function SidebarRail({
       </Link>
       <nav aria-label="Main menu" className="scrollbar-none min-h-0 flex-1 overflow-y-auto px-2 pt-[26px] pb-4">
         <ul className="flex flex-col gap-1.5">
-          {railModules.map((module) => {
+          {modules.map((module) => {
             if (module.kind === "link") {
               return (
                 <li key={module.id}>
@@ -306,7 +311,7 @@ export function SidebarRail({
             }
             // Q-NAV-02: a group button expands the sidebar, scrolls to its section and focuses the first item.
             const active = isNavSectionActive(module.sectionId, pathname);
-            const section = sidebarSections.find((entry) => entry.id === module.sectionId);
+            const section = sections.find((entry) => entry.id === module.sectionId);
             return (
               <li key={module.id}>
                 <RailActionButton

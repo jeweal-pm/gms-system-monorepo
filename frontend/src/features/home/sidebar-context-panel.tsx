@@ -3,8 +3,9 @@
 import { ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { useId } from "react";
-import { isNavItemActive, type ContextNav } from "./navigation";
+import { isNavItemActive, visibleContextGroups, type ContextNav } from "./navigation";
 import { sidebarFocusRing } from "./sidebar-disclosure";
+import { useMenuAccess } from "./use-menu-access";
 
 /**
  * Context panel (app-navigation revision 2, source 06-partner-master-context.png): shown next to the
@@ -15,13 +16,14 @@ import { sidebarFocusRing } from "./sidebar-disclosure";
  */
 export function SidebarContextPanel({ nav, pathname }: Readonly<{ nav: ContextNav; pathname: string }>) {
   const titleId = useId();
+  const groups = visibleContextGroups(nav, useMenuAccess());
   return (
     <nav aria-labelledby={titleId} className="flex h-full w-gms-sidebar shrink-0 flex-col border-r border-gms-border bg-gms-surface-muted px-[14px] py-4">
       <h2 id={titleId} className="shrink-0 px-1.5 pt-2.5 text-gms-heading font-semibold text-gms-text">
         {nav.title}
       </h2>
       <ul className="scrollbar-none mt-[26px] flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
-        {nav.groups.map((group) => {
+        {groups.map((group) => {
           const Icon = group.icon;
           return (
             <li key={group.id}>

@@ -15,7 +15,6 @@ import { PartnerPageHeader, type PartnerMode } from "@/features/partner/componen
 import {
   DetailLoadError,
   DrawerToggle,
-  EmptySelection,
   FormErrorBanner,
   FormSkeleton,
   PartnerAccessGuard,
@@ -368,7 +367,8 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
   }
 
   const readOnly = mode !== "create" && mode !== "edit";
-  const showForm = mode === "create" || ((mode === "edit" || mode === "view") && loaded);
+  // "none" = VIEW only and nothing selected: the empty Add form, read-only (owner 2026-10-17).
+  const showForm = mode === "create" || mode === "none" || ((mode === "edit" || mode === "view") && loaded);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-gms-page">
@@ -384,6 +384,7 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
             canAdd={access.add}
             canEdit={access.edit}
             canDelete={access.delete}
+            canPrint={access.print}
             gone={gone}
             submitting={submitting}
             deleting={deleteTarget !== null}
@@ -399,7 +400,6 @@ function VendorWorkspace({ access }: { access: PartnerAccess }) {
             }}
           />
 
-          {mode === "none" && <EmptySelection entity={VENDOR} />}
 
           {selectedId !== null && !loaded && detail.isError && (
             <DetailLoadError message={loadErrorMessage(detail.error, "this vendor")} onRetry={detailNotFound ? undefined : () => loadIntoForm(selectedId)} />
