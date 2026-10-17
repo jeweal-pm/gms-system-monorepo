@@ -31,15 +31,14 @@ const input = {
   website: "",
   address: "1 Road",
   address2: "",
+  roadStreet: "",
   countryCode: "TH",
   state: "Bangkok",
   city: "Bangkok",
   postcode: "10110",
   currencyCode: "THB",
-  bankDetails: null,
+  bankDetails: "",
   showBankDetailsOnInvoice: false,
-  terms: null,
-  showTermsOnInvoice: false,
   expectedVersion: null,
 };
 

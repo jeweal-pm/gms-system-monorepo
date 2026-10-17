@@ -1,5 +1,23 @@
 # SA decisions: company-profile (partner)
 
+## SA revision 3 — **approved** (owner 2026-10-17: "อนุมัติ company-profile SA revision 3"), implemented
+
+- Source: UI revision 3 ([ui-spec](../../../frontend/company-profile/ui-spec.md#revision-3-2026-10-17--overrides-the-sections-below) R3-04, R3-07, R3-08). Owner answers 2026-10-17: Road/Street "เพิ่มจริง ทำ SA + backend"; Bank Details "เปลี่ยนเป็นข้อความธรรมดา"; Terms "เอาออกจากหน้า เอาออกจาก schema ด้วย".
+- Implementation: migration `20261017100000_company_profile_rev3` (applied in dev 2026-10-17; conversion dry-run on a sample Tiptap document inside a rolled-back transaction gave `"Bank: KBank\n\nAcc 123"`).
+- Unchanged from SA 2: SA-CP-01, 02, 04…11 (service, single record, logo REST/file storage, permissions, versioning, options).
+
+| ID | Decision | Why / alternatives |
+|---|---|---|
+| SA-CP-12 | **New field `roadStreet`**: optional string ≤ 300 after trim (same rules as `address2`). Column `road_street VARCHAR(300) NOT NULL DEFAULT ''`. Added to `companyProfile.save` input, `get`/`save` output, partner `PUT/GET /internal/v1/company-profile` and the gateway/partner Zod schemas. Server field path `roadStreet` | R3-04. Default `''` keeps the existing row valid without a data step. |
+| SA-CP-13 | **`bankDetails` becomes plain text** (replaces SA-CP-03 for this field): string ≤ 5,000 characters, line breaks kept (`\r\n` → `\n`), trailing whitespace trimmed, `''` when empty. Column `bank_details` changes `JSONB` → `TEXT NOT NULL DEFAULT ''`. Rendered as text only (`white-space: pre-wrap`), never as HTML, so there is no XSS path and no sanitiser. `showBankDetailsOnInvoice` unchanged | R3-07. Alternative (rejected): keep JSON and render plain — the editor would still be needed to write it. |
+| SA-CP-14 | **Data conversion** in the same migration: each top-level block of the existing JSON becomes one line (its text nodes joined, `jsonb_path_query(block, 'strict $.**.text')`), lines joined with `\n`, truncated to 5,000. Formatting (bold, links, list markers) is lost | Only one row can exist (SA-CP-02); production is not deployed yet. Best-effort and one-way. |
+| SA-CP-15 | **Remove `terms` and `showTermsOnInvoice`**: drop columns `terms`, `show_terms_on_invoice`; remove them from every schema, DTO, mapper and test. **Existing terms text is deleted and cannot be recovered** after the migration | R3-08 (owner). Alternative: keep the columns unused — rejected, owner asked to remove them from the schema. |
+| SA-CP-16 | **Rich-text code removed**: `backend-api-partner/src/company-profile/rich-text.ts`, `backend-api-gateway/src/trpc/rich-text.ts` and their tests; error codes `unsafe_link`, `invalid_rich_text`, `too_deep`, `too_many_nodes` are no longer returned (frontend messages removed) | Nothing else uses them (code search 2026-10-17). |
+| SA-CP-17 | **Frontend dependency removal** (DEP-CP-01): `@tiptap/react`, `@tiptap/pm`, `@tiptap/starter-kit`, `@tiptap/extensions` 3.31.4 removed from `frontend/package.json` + lockfile (serialized by the integration owner); `rich-text-field.tsx` deleted; Bank Details uses a native `<textarea>` | No other user of Tiptap. Smaller bundle. |
+| SA-CP-18 | **Release**: gateway, partner and frontend change in one release (contract is breaking: `bankDetails` type, removed fields). Migration `20261017100000_company_profile_rev3` runs at partner start as today | Monorepo; a mixed old/new deployment would reject saves. |
+
+Backend TODO when approved: BE-CP-011…015 in the [central TODO](../../../../task/todo/company-profile.md). No container, network or storage change → no infra bundle.
+
 - Feature ID / SA revision: `company-profile` / SA 2 (**approved**: revision 1 + the owner's storage change, owner 2026-10-16 ≈12:00 +07:00: "บันทึกลงใน folder ใน backend เลยเมื่ออัพรูปใหม่ไปจะไปทับรูปเก่า  logic นี้ แค่ module company profile เท่านั้น  อนุมัติ company-profile SA revision 1")
 - Revision 2 change: SA-CP-05 (logo stored as a file in the partner service folder, overwritten on each upload, company profile module only); consequences in SA-CP-04/06, the database diagram and infra bundle [backend-api-partner/2](../../../../infra/services/backend-api-partner/2/security.md)
 - Source UI revision: 2 (approved 2026-10-16, [TODO](../../../../task/todo/company-profile.md))
