@@ -1,6 +1,8 @@
 import { HttpException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_PART_ORDER } from "../../src/stone-master/stone-code";
+// Static import is fine: vi.mock calls are hoisted above it (no top-level await; the tsconfig is CommonJS).
+import { StoneMasterService } from "../../src/stone-master/stone-master.service";
 
 /**
  * UT-SM-P10…P19: StoneMasterService rules against a mocked Prisma (references, size-in-shape, auto
@@ -69,7 +71,6 @@ vi.mock("../../src/database/prisma-client", () => {
   return { prisma: { ...tx, $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)) } };
 });
 
-const { StoneMasterService } = await import("../../src/stone-master/stone-master.service");
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const [NAME, SIZE, SHAPE, COLOR, CUT, CLARITY, GROUP] = [1, 2, 3, 4, 5, 6, 7].map(id);
