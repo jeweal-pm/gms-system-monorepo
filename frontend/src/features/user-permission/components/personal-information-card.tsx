@@ -5,7 +5,7 @@ import { Controller, useWatch, type UseFormReturn } from "react-hook-form";
 import type { LocationOption } from "../api";
 import { USERNAME_MAX, type UserFormValues } from "../schema";
 import { Card } from "@/components/ui/card";
-import { MultiSelect } from "./ui/multi-select";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { TextField } from "@/components/ui/outlined-field";
 import { PhoneField } from "@/components/ui/phone-field";
 import { Switch } from "@/components/ui/switch";

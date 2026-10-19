@@ -24,7 +24,8 @@ export type PartnerListQuery<TItem extends PartnerListItem> = {
 
 /** DOM id of an entity's drawer (the toggle's `aria-controls`). */
 export function partnerDrawerId(entity: PartnerEntity): string {
-  return `${lowerPlural(entity)}-drawer`;
+  // Spaces would split an aria-controls id list ("stone groups" → "stone-groups-drawer").
+  return `${lowerPlural(entity).replace(/\s+/g, "-")}-drawer`;
 }
 
 /** Fixed draft row title, e.g. "New customer" (customer FE-CUS-R3-001, vendor FE-VEN-R4-001). */
@@ -55,6 +56,13 @@ type PartnerDrawerProps<TItem extends PartnerListItem> = {
   onSelectDraft: () => void;
   onSelectItem: (item: TItem) => void;
   onClose: () => void;
+  /** Search placeholder (default "Search name or code name..."). */
+  searchPlaceholder?: string;
+  /**
+   * Row text (default: Code Name bold, then Name, ADR-0021 §4). Stone Master shows Name first and a
+   * composed second line (stone-master ui-spec "Row text").
+   */
+  rowText?: (item: TItem) => { primary: string; secondary: string };
 };
 
 const rowBase = "flex w-full items-start gap-3 rounded-gms-md border px-3 py-3 text-left transition-colors";
@@ -82,6 +90,8 @@ export function PartnerDrawer<TItem extends PartnerListItem>({
   onSelectDraft,
   onSelectItem,
   onClose,
+  searchPlaceholder = "Search name or code name...",
+  rowText,
 }: PartnerDrawerProps<TItem>) {
   const sentinelRef = useRef<HTMLLIElement>(null);
   const { hasNextPage, isFetchingNextPage, isError, fetchNextPage } = list;
@@ -132,7 +142,7 @@ export function PartnerDrawer<TItem extends PartnerListItem>({
             value={query}
             maxLength={maxSearchLength}
             onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Search name or code name..."
+            placeholder={searchPlaceholder}
             autoComplete="off"
             className="h-10 w-full rounded-gms-md border border-gms-border bg-gms-surface pl-11 pr-3 text-gms-body text-gms-text outline-none placeholder:text-gms-text-placeholder focus:border-gms-primary focus:ring-2 focus:ring-gms-primary/20"
           />
@@ -169,17 +179,18 @@ export function PartnerDrawer<TItem extends PartnerListItem>({
 
           {items.map((item) => {
             const selected = selectedId === item.id;
+            const text = rowText?.(item);
             return (
               <li key={item.id}>
                 <button type="button" aria-current={selected ? "true" : undefined} onClick={() => onSelectItem(item)} className={cx(rowBase, rowState(selected), focusRing)}>
                   <span aria-hidden className={cx("mt-2 h-2 w-2 shrink-0 rounded-full", item.active ? "bg-gms-status-active" : "bg-gms-text-placeholder")} />
                   <span className="min-w-0 flex-1">
                     {/* ADR-0021 §4: Code Name (bold) first, Name second. Legacy rows without a code fall back to a placeholder. */}
-                    <span className={cx("block truncate font-semibold", item.code ? "text-gms-text" : "text-gms-text-placeholder")}>
-                      {item.code || "No code name"}
+                    <span className={cx("block truncate font-semibold", text || item.code ? "text-gms-text" : "text-gms-text-placeholder")}>
+                      {text ? text.primary : item.code || "No code name"}
                       <span className="sr-only">{item.active ? ", active" : ", inactive"}</span>
                     </span>
-                    <span className="block truncate text-gms-body text-gms-text-secondary">{item.name}</span>
+                    <span className="block truncate text-gms-body text-gms-text-secondary">{text ? text.secondary : item.name}</span>
                   </span>
                   {!item.active && <Badge variant="inactive">Inactive</Badge>}
                 </button>

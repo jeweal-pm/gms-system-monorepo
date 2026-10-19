@@ -55,6 +55,8 @@ describe("callPartner with a raw body", () => {
     [415, { error: { code: "UNSUPPORTED_MEDIA_TYPE" } }, { code: "UNSUPPORTED_MEDIA_TYPE", domainCode: "UNSUPPORTED_MEDIA_TYPE" }],
     [413, { error: { code: "PAYLOAD_TOO_LARGE" } }, { code: "PAYLOAD_TOO_LARGE", domainCode: "PAYLOAD_TOO_LARGE" }],
     [409, { error: { code: "CONFLICT" } }, { code: "CONFLICT", domainCode: "CONFLICT" }],
+    // stone-master SA-SM-06 (UT-SM-G09): 422 keeps the upstream domain code.
+    [422, { error: { code: "STONE_MASTER_REFERENCE_INVALID" } }, { code: "UNPROCESSABLE_CONTENT", domainCode: "STONE_MASTER_REFERENCE_INVALID" }],
     [404, { error: { code: "COMPANY_PROFILE_NOT_FOUND" } }, { code: "NOT_FOUND", domainCode: "COMPANY_PROFILE_NOT_FOUND" }],
     [401, { error: { code: "UNAUTHORIZED" } }, { code: "SERVICE_UNAVAILABLE", domainCode: "PARTNER_UNAVAILABLE" }],
     [500, { error: { code: "INTERNAL_SERVER_ERROR" } }, { code: "INTERNAL_SERVER_ERROR", domainCode: "INTERNAL_SERVER_ERROR" }],

@@ -55,7 +55,14 @@ services:
     command: ["sh", "-c", "pnpm --filter @gem-crm/backend-api-partner db:generate && pnpm --filter @gem-crm/backend-api-partner db:migrate && exec pnpm --filter @gem-crm/backend-api-partner dev"]
     environment:
       NODE_ENV: development
-      NODE_OPTIONS: ""
+      # Dev only (stone-master, 2026-10-19): `nest start --watch` type-checks the larger generated
+      # Prisma client (schema "stone") and ran out of heap at the 512M base limit. Production compiles
+      # at image build and keeps the base 512M / --max-old-space-size=320.
+      NODE_OPTIONS: --max-old-space-size=768
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     read_only: false
     cap_drop: !reset []
     tmpfs: !reset []

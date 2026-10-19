@@ -120,7 +120,9 @@ function partnerHttpError(status: number, payload: unknown, route: string, start
     : status === 404 ? "NOT_FOUND"
       : status === 409 ? "CONFLICT"
         : status === 413 ? "PAYLOAD_TOO_LARGE"
-          : "INTERNAL_SERVER_ERROR";
+          // stone-master SA-SM-06: a missing or inactive reference (STONE_MASTER_REFERENCE_INVALID).
+          : status === 422 ? "UNPROCESSABLE_CONTENT"
+            : "INTERNAL_SERVER_ERROR";
   if (trpcCode === "INTERNAL_SERVER_ERROR") {
     logger.error({ event: "partner.error", route, status, durationMs: Date.now() - startedAt });
     return domainError("INTERNAL_SERVER_ERROR", "INTERNAL_SERVER_ERROR");
@@ -133,7 +135,7 @@ function partnerHttpError(status: number, payload: unknown, route: string, start
     ? (payload as { error?: { code?: unknown; fieldErrors?: unknown } }).error
     : undefined;
   const upstream = isDomainCode(error?.code) ? error.code : null;
-  const fallback = trpcCode === "BAD_REQUEST" ? "VALIDATION_ERROR" : trpcCode === "NOT_FOUND" ? notFoundCode : "CONFLICT";
+  const fallback = trpcCode === "BAD_REQUEST" || trpcCode === "UNPROCESSABLE_CONTENT" ? "VALIDATION_ERROR" : trpcCode === "NOT_FOUND" ? notFoundCode : "CONFLICT";
   const fieldErrors = trpcCode === "NOT_FOUND" ? null : sanitizeFieldErrors(error?.fieldErrors);
   return domainError(trpcCode, upstream ?? fallback, fieldErrors);
 }

@@ -1,4 +1,5 @@
-// backend-api-partner owns PostgreSQL schema "partner" only (ADR-0018, SA customer rev 1).
+// backend-api-partner owns PostgreSQL schemas "partner" (ADR-0018, SA customer rev 1) and "stone"
+// (stone master, ADR-0024; owner 2026-10-19).
 // Migrations live in partner._prisma_migrations (D-01). Raw CHECK constraints are added in the
 // migration SQL (database-diagram.md); Prisma does not diff CHECKs.
 
@@ -10,7 +11,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["partner"]
+  schemas  = ["partner", "stone"]
 }
 
 enum AddressType {
@@ -154,4 +155,191 @@ model CompanyProfile {
 
   @@map("company_profile")
   @@schema("partner")
+}
+
+// ---- Stone master (ADR-0024, SA stone-master rev 1; owner 2026-10-19: own PostgreSQL schema "stone") ----
+// Simple lookup tables share one shape (SA-SM-03). Codes are stored UPPERCASE, so a plain unique
+// index is case-insensitive (SA-SM-04). updatedAt is the optimistic version, written by the service.
+
+enum StoneCodeMode {
+  AUTO
+  MANUAL
+
+  @@map("stone_code_mode")
+  @@schema("stone")
+}
+
+model StoneGroup {
+  id         String      @id @default(uuid()) @db.Uuid
+  code       String      @unique(map: "stone_group_code_key") @db.VarChar(20)
+  name       String      @db.VarChar(120)
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime    @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy  String      @map("created_by") @db.VarChar(64)
+  updatedBy  String      @map("updated_by") @db.VarChar(64)
+  stoneNames StoneName[]
+
+  @@map("stone_group")
+  @@schema("stone")
+}
+
+model StoneSize {
+  id         String           @id @default(uuid()) @db.Uuid
+  code       String           @unique(map: "stone_size_code_key") @db.VarChar(20)
+  name       String           @db.VarChar(120)
+  active     Boolean          @default(true)
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime         @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy  String           @map("created_by") @db.VarChar(64)
+  updatedBy  String           @map("updated_by") @db.VarChar(64)
+  shapes     StoneShapeSize[]
+  stoneCodes StoneCode[]
+
+  @@map("stone_size")
+  @@schema("stone")
+}
+
+model StoneColor {
+  id         String      @id @default(uuid()) @db.Uuid
+  code       String      @unique(map: "stone_color_code_key") @db.VarChar(20)
+  name       String      @db.VarChar(120)
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime    @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy  String      @map("created_by") @db.VarChar(64)
+  updatedBy  String      @map("updated_by") @db.VarChar(64)
+  stoneCodes StoneCode[]
+
+  @@map("stone_color")
+  @@schema("stone")
+}
+
+model StoneCutting {
+  id         String      @id @default(uuid()) @db.Uuid
+  code       String      @unique(map: "stone_cutting_code_key") @db.VarChar(20)
+  name       String      @db.VarChar(120)
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime    @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy  String      @map("created_by") @db.VarChar(64)
+  updatedBy  String      @map("updated_by") @db.VarChar(64)
+  stoneCodes StoneCode[]
+
+  @@map("stone_cutting")
+  @@schema("stone")
+}
+
+model StoneClarity {
+  id         String      @id @default(uuid()) @db.Uuid
+  code       String      @unique(map: "stone_clarity_code_key") @db.VarChar(20)
+  name       String      @db.VarChar(120)
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime    @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy  String      @map("created_by") @db.VarChar(64)
+  updatedBy  String      @map("updated_by") @db.VarChar(64)
+  stoneCodes StoneCode[]
+
+  @@map("stone_clarity")
+  @@schema("stone")
+}
+
+model StoneQuality {
+  id         String      @id @default(uuid()) @db.Uuid
+  code       String      @unique(map: "stone_quality_code_key") @db.VarChar(20)
+  name       String      @db.VarChar(120)
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime    @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy  String      @map("created_by") @db.VarChar(64)
+  updatedBy  String      @map("updated_by") @db.VarChar(64)
+  stoneCodes StoneCode[]
+
+  @@map("stone_quality")
+  @@schema("stone")
+}
+
+model StoneName {
+  id         String      @id @default(uuid()) @db.Uuid
+  code       String      @unique(map: "stone_name_code_key") @db.VarChar(20)
+  name       String      @db.VarChar(120)
+  groupId    String      @map("group_id") @db.Uuid
+  hsn        String?     @db.VarChar(8)
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime    @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy  String      @map("created_by") @db.VarChar(64)
+  updatedBy  String      @map("updated_by") @db.VarChar(64)
+  group      StoneGroup  @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  stoneCodes StoneCode[]
+
+  @@index([groupId], map: "stone_name_group_id_idx")
+  @@map("stone_name")
+  @@schema("stone")
+}
+
+model StoneShape {
+  id         String           @id @default(uuid()) @db.Uuid
+  code       String           @unique(map: "stone_shape_code_key") @db.VarChar(20)
+  name       String           @db.VarChar(120)
+  active     Boolean          @default(true)
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime         @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy  String           @map("created_by") @db.VarChar(64)
+  updatedBy  String           @map("updated_by") @db.VarChar(64)
+  sizes      StoneShapeSize[]
+  stoneCodes StoneCode[]
+
+  @@map("stone_shape")
+  @@schema("stone")
+}
+
+model StoneShapeSize {
+  shapeId String     @map("shape_id") @db.Uuid
+  sizeId  String     @map("size_id") @db.Uuid
+  shape   StoneShape @relation(fields: [shapeId], references: [id], onDelete: Cascade)
+  size    StoneSize  @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+
+  @@id([shapeId, sizeId])
+  @@index([sizeId], map: "stone_shape_size_size_id_idx")
+  @@map("stone_shape_size")
+  @@schema("stone")
+}
+
+model StoneCode {
+  id          String        @id @default(uuid()) @db.Uuid
+  code        String        @unique(map: "stone_code_code_key") @db.VarChar(60)
+  mode        StoneCodeMode
+  stoneNameId String        @map("stone_name_id") @db.Uuid
+  sizeId      String?       @map("size_id") @db.Uuid
+  shapeId     String        @map("shape_id") @db.Uuid
+  colorId     String        @map("color_id") @db.Uuid
+  cuttingId   String?       @map("cutting_id") @db.Uuid
+  clarityId   String?       @map("clarity_id") @db.Uuid
+  qualityId   String?       @map("quality_id") @db.Uuid
+  /// Permutation of name,size,shape,color,cutting,clarity,quality (CHECK in the migration).
+  partOrder   String[]      @map("part_order")
+  active      Boolean       @default(true)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt   DateTime      @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy   String        @map("created_by") @db.VarChar(64)
+  updatedBy   String        @map("updated_by") @db.VarChar(64)
+  stoneName   StoneName     @relation(fields: [stoneNameId], references: [id], onDelete: Restrict)
+  size        StoneSize?    @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+  shape       StoneShape    @relation(fields: [shapeId], references: [id], onDelete: Restrict)
+  color       StoneColor    @relation(fields: [colorId], references: [id], onDelete: Restrict)
+  cutting     StoneCutting? @relation(fields: [cuttingId], references: [id], onDelete: Restrict)
+  clarity     StoneClarity? @relation(fields: [clarityId], references: [id], onDelete: Restrict)
+  quality     StoneQuality? @relation(fields: [qualityId], references: [id], onDelete: Restrict)
+
+  @@index([stoneNameId], map: "stone_code_stone_name_id_idx")
+  @@index([sizeId], map: "stone_code_size_id_idx")
+  @@index([shapeId], map: "stone_code_shape_id_idx")
+  @@index([colorId], map: "stone_code_color_id_idx")
+  @@index([cuttingId], map: "stone_code_cutting_id_idx")
+  @@index([clarityId], map: "stone_code_clarity_id_idx")
+  @@index([qualityId], map: "stone_code_quality_id_idx")
+  @@map("stone_code")
+  @@schema("stone")
 }

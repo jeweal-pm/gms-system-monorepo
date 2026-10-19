@@ -1,6 +1,8 @@
 import { HttpException } from "@nestjs/common";
 import type { Request } from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+// Static import is fine: vi.mock calls are hoisted above it (no top-level await).
+import { UserAdminService } from "../../src/user-admin/user-admin.service";
 
 /**
  * UT-DA-S01…S11: UserAdminService enforces delegated-admin.md DA-01…05; UT-PH-S01…S06: user photos
@@ -40,7 +42,6 @@ vi.mock("../../src/user-admin/photo-storage", async (importOriginal) => ({
   ...mocks.files,
 }));
 
-const { UserAdminService } = await import("../../src/user-admin/user-admin.service");
 type Service = InstanceType<typeof UserAdminService>;
 
 const ADMIN_ID = "00000000-0000-4000-8000-000000000001";

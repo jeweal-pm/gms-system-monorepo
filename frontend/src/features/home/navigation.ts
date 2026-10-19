@@ -29,6 +29,7 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
+import { STONE_MENU_KEY, STONE_PAGES, stonePageHref } from "@/features/stone-master/kinds";
 
 /**
  * Module catalog used by the Home shortcuts fallback and as the last fallback of the
@@ -48,7 +49,8 @@ export const navigationGroups: NavigationGroup[] = [
   { title: "Company", items: [{ label: "Company Profile", slug: "company-profile", href: "/setup/company-profile" }, { label: "Bank", slug: "bank" }] },
   // vendor FE-VEN-002: Vendor has a real page (Home shortcut fallback); `/modules/vendor` still renders.
   { title: "Partner Master", items: [{ label: "Vendor", slug: "vendor", href: "/setup/vendor" }, { label: "Customer", slug: "customer", href: "/setup/customer" }] },
-  { title: "Stone Master", items: ["Stone Group", "Stone", "Shape", "Size", "Color", "Cutting", "Quality", "Clarity"].map((label) => ({ label, slug: label.toLowerCase().replaceAll(" ", "-") })) },
+  // stone-master FE-SM-002: real pages under /setup/stone-master (the old `stone` slug is Stone Name).
+  { title: "Stone Master", items: STONE_PAGES.map((page) => ({ label: page.navLabel, slug: page.slug, href: stonePageHref(page.slug) })) },
   { title: "Purchase Order", items: [{ label: "Purchase Order", slug: "purchase-order" }, { label: "Purchase (PU)", slug: "purchase" }] },
   { title: "Memo", items: ["Memo In", "Memo Return", "Memo Out", "Memo Out Return"].map((label) => ({ label, slug: label.toLowerCase().replaceAll(" ", "-") })) },
   { title: "Inventory", items: ["Load", "Primary", "Consignment", "Movement", "Memo Outstanding"].map((label) => ({ label, slug: label.toLowerCase().replaceAll(" ", "-") })) },
@@ -251,8 +253,8 @@ export type ContextNav = { id: string; title: string; groups: ContextNavGroup[] 
 export const masterCodeDialogHref = "/setup?dialog=master-code";
 
 /** Setup › Partner master context (source 06): Partner master returns to Setup with Master Code open. */
-const setupContextNav: ContextNav = {
-  id: "setup",
+const partnerContextNav: ContextNav = {
+  id: "setup-partner",
   title: "Setup",
   groups: [
     {
@@ -266,7 +268,25 @@ const setupContextNav: ContextNav = {
   ],
 };
 
-const contextNavs: ContextNav[] = [setupContextNav];
+/**
+ * Setup › Stone Master context (stone-master FE-SM-002, S1 left). The Stone pages show only this group
+ * (owner 2026-10-19); every page needs `stone-master:VIEW` (Q-SM-04).
+ */
+const stoneContextNav: ContextNav = {
+  id: "setup-stone",
+  title: "Setup",
+  groups: [
+    {
+      id: "stone-master",
+      label: "Stone Master",
+      icon: Receipt,
+      href: masterCodeDialogHref,
+      children: STONE_PAGES.map((page) => ({ ...link(`stone-master-${page.slug}`, page.navLabel, undefined, stonePageHref(page.slug)), permission: [STONE_MENU_KEY] })),
+    },
+  ],
+};
+
+const contextNavs: ContextNav[] = [partnerContextNav, stoneContextNav];
 
 /** The context panel for the current route, or null when the route uses the normal sidebar. */
 export function contextNavFor(pathname: string): ContextNav | null {

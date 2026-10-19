@@ -1,0 +1,40 @@
+# SA decisions: stone-master (partner), SA revision 1 proposal
+
+- Date: 2026-10-19. Status: **approved** — owner 2026-10-19: "อนุมัติ stone-master UI rev 1 และ SA rev 1" (Q-SM-01…09 use the documented defaults)
+- Source: [UI revision 1](../../../frontend/stone-master/ui-spec.md) (pending-review) and the owner request quoted there ("frontend backend ช่วยทำ ui ทั้งหมดของ stone master และ api หน่อย"). The request to build the API does not approve this bundle.
+- ADR: [ADR-0024](../../../../adr/0024-stone-master-in-partner-service.md) (Proposed).
+- Open questions use the defaults in [open-questions](../../../frontend/stone-master/open-questions.md) (Q-SM-01…09) unless the owner answers otherwise.
+
+## Decisions (approve "SA stone-master rev 1 as written", or name an ID to change it)
+
+| ID | Decision | Why / alternatives |
+|---|---|---|
+| SA-SM-01 | **Owner: `backend-api-partner`**, new module `stone-master`, tables in their **own PostgreSQL schema `stone`** (revised after approval, owner 2026-10-19: "แยก shcema stone แทนได้มั้ย หรือนายมีความเห็นอื่นๆตอบแล้วทำงานต่อเลย"). Partner migrations create the schema (`CREATE SCHEMA IF NOT EXISTS "stone"`); the production partner DB role needs CREATE on the database, or a DBA creates the schema first. Gateway → partner with the existing service token and `x-actor-user-id` (ADR-0018). | Partner already hosts master data (vendor, customer, company profile, reference lists) with migrations and the gateway client. **No new container** (8 GB host). Rejected: a new `backend-api-master` service (+1 container, infra, token). |
+| SA-SM-02 | **Permissions:** one existing catalog leaf `stone-master` for all 9 pages (Q-SM-04). VIEW: list/get/options. ADD: create. EDIT: update. DELETE: delete. PRINT: frontend only. Enforced with `permittedProcedure("stone-master", …)`; partner trusts the gateway as it does for vendor. | No catalog change, no permission-matrix change. Per-page keys would add 8 catalog leaves (ADR-0020 catalog revision). |
+| SA-SM-03 | **Tables** (all with `id uuid`, `code varchar(20)`, `name varchar(120)`, `active bool default true`, `created_at`, `updated_at`, `created_by`, `updated_by`): `stone_group`, `stone_size`, `stone_color`, `stone_cutting`, `stone_clarity`, `stone_quality`. Plus `stone_name` (+ `group_id → stone_group RESTRICT`, `hsn varchar(8) null`), `stone_shape`, and `stone_shape_size (shape_id → stone_shape CASCADE, size_id → stone_size RESTRICT, PK both)`. | Separate tables give real foreign keys for every reference (delete-in-use, size-in-shape). One generic `lookup(kind,…)` table cannot enforce the kind of a reference without composite keys. |
+| SA-SM-04 | **Codes** (Q-SM-01/06): no running number. Trimmed and stored UPPERCASE, matching `^[A-Z0-9./-]{1,20}$`. **Unique per table on `upper(code)`** (unique index). Duplicates return `STONE_MASTER_CODE_TAKEN` (409, field `code`). Name is required, ≤ 120, not unique. HSN is optional, `^[0-9]{4,8}$` (Q-SM-07). | The design codes are mnemonic (DIA, RD, 1.0). |
+| SA-SM-05 | **Stone Code** table `stone_code`: `code varchar(60)` unique on upper(code); `mode` `AUTO`/`MANUAL`. Part FKs, all `RESTRICT`: `stone_name_id` NOT NULL, `size_id` null, `shape_id` NOT NULL, `color_id` NOT NULL, `cutting_id` null, `clarity_id` null, `quality_id` null. `part_order text[7]`, a permutation of `name,size,shape,color,cutting,clarity,quality` (CHECK), with that order as the default (Q-SM-03). Rules: `size_id` must be in `stone_shape_size` for `shape_id` (checked in the service under the transaction). AUTO: the server builds `code` from the codes of the set parts in `part_order` order and ignores any client value. **Format (owner 2026-10-19, "format stone code auto code คือ xx-xxxxxx คือ สองอันดับแรกคู่กัน แล้วค่อย - ที่เหลือปล่อยฟรีแบบไม่ต้อง -"):** the first two set parts joined together, then one "-", then the remaining parts joined without separators (RUB+1.0+RD+D+EX → `RUB1.0-RDDEX`); with two parts or fewer there is no "-". MANUAL: the client code is used (format `^[A-Z0-9./-]{1,60}$`). The code is a **snapshot**: later part-code changes do not cascade (Q-SM-05). | The server is the source of truth for Auto codes. A snapshot keeps printed codes stable. |
+| SA-SM-06 | **References:** create/update accept only **active** referenced rows, except a reference the record already had (it may stay inactive). Missing or inactive references return `STONE_MASTER_REFERENCE_INVALID` (422, field = the part). **Delete in use:** an FK violation returns `STONE_MASTER_IN_USE` (409); the record is not deleted (Q-SM-08). | Deactivate keeps history; delete only unused rows. |
+| SA-SM-07 | **List:** `GET /internal/v1/stone-master/{kind}?search&cursor&limit` (limit ≤ 50). Order: `upper(code)`, then `id` (keyset cursor, Q-SM-09). Search is a case-insensitive `contains` on code/name; Stone Name also matches HSN and group code; Stone Code also matches the stone name. Search ≤ 100 chars. The response includes `total` (unfiltered) and row display fields (group code/name, size count, stone name). | Same shape and bounds as vendor. |
+| SA-SM-08 | **Options:** `GET /internal/v1/stone-master/options?kinds=…&include=<ids>` returns active items per requested kind (≤ 1,000 each), `{id, code, name, active}`. Shapes add `sizeIds`. `include` (≤ 20 ids) adds the inactive items currently selected on the edited record. | One request fills every select on Stone Code. |
+| SA-SM-09 | **Concurrency:** update sends `expectedUpdatedAt`; a mismatch returns `STONE_MASTER_CHANGED` (409). Not found returns `STONE_MASTER_NOT_FOUND` (404). Same as vendor. | Two admins cannot silently overwrite each other. |
+| SA-SM-10 | **Gateway (tRPC)**: `stoneMaster.<kind>.list/get/create/update/delete` for kind ∈ group, stoneName, size, shape, color, cutting, clarity, quality, stoneCode; plus `stoneMaster.options`. Strict Zod inputs mirror SA-SM-04/05, the outputs are validated, and a router factory shares the simple kinds. Partner errors map to domain codes (no upstream text). | Typed contract for the frontend via `AppRouter`. |
+| SA-SM-11 | **Capacity:** expected < 5,000 rows per table. Lists are paged (≤ 50) and options ≤ 1,000 × requested kinds. Indexes: unique upper(code) per table, `stone_name(group_id)`, `stone_shape_size(size_id)`, and an index per `stone_code` FK. No cache, job or pool change. | Bounded memory/CPU on the shared host. |
+| SA-SM-12 | **Release:** one migration `…_stone_master` (new tables only; nothing existing changes). Gateway, partner and frontend ship together. No infra or devops change (no new container, volume, variable or port). | Additive and reversible (drop tables). |
+
+## API contract (summary)
+
+| Partner route | Gateway procedure | Body / output |
+|---|---|---|
+| `GET /internal/v1/stone-master/{kind}` | `stoneMaster.<kind>.list` | `{items, nextCursor, total}` |
+| `GET /internal/v1/stone-master/{kind}/{id}` | `.get` | record (see [data-fetching](../../../frontend/stone-master/data-fetching.md)) |
+| `POST /internal/v1/stone-master/{kind}` | `.create` | fields → `{id, updatedAt}` |
+| `PUT /internal/v1/stone-master/{kind}/{id}` | `.update` | `{expectedUpdatedAt, …fields}` → `{id, updatedAt}` |
+| `DELETE /internal/v1/stone-master/{kind}/{id}` | `.delete` | `{ok:true}` |
+| `GET /internal/v1/stone-master/options` | `stoneMaster.options` | `{group?, size?, shape?, color?, cutting?, clarity?, quality?, stoneName?}` |
+
+Path `{kind}` slugs: `group, stone-name, size, shape, color, cutting, clarity, quality, stone-code`. Errors use the partner envelope `{error:{code, message, fieldErrors?}}`.
+
+## Backend TODO when approved
+
+BE-SM-001…008 in the [central TODO](../../../../task/todo/stone-master.md). The tests listed there must pass before the frontend integrates, followed by the dual security review.

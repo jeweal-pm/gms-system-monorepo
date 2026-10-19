@@ -1,16 +1,13 @@
 # Latest frontend TODO
 
-- feature-id: `company-profile`
-- revision: 3
-- status: UI revision 3 and SA revision 3 approved 2026-10-17 and implemented (FE-CP-013…016, BE-CP-011…014); browser/manual verification and security reviews pending (FE-CP-017)
-- todo: [todo/company-profile.md](todo/company-profile.md)
-- source: owner-supplied screenshots S7–S9 (rev 3) and S1–S6 (rev 2) in [apps/frontend/company-profile/source/](../apps/frontend/company-profile/source/)
-- backend-bundles: SA revision 3 **approved** in [decisions.md](../apps/backend/partner/company-profile/decisions.md)
-- dependencies: Tiptap 3.31.4 **removed** (SA-CP-17); libphonenumber-js 1.13.14 installed ([dependencies.md](../apps/frontend/company-profile/dependencies.md))
-- updated-at: 2026-10-17
+- feature-id: `stone-master`
+- revision: 1
+- status: **approved** 2026-10-19 (UI rev 1 + SA rev 1); in progress
+- todo: [todo/stone-master.md](todo/stone-master.md)
+- source: owner images 2026-10-19 in [apps/frontend/stone-master/source/](../apps/frontend/stone-master/source/)
+- backend-bundles: SA revision 1 **proposal** in [decisions.md](../apps/backend/partner/stone-master/decisions.md); [ADR-0024](../adr/0024-stone-master-in-partner-service.md) Proposed
+- dependencies: none new ([dependencies.md](../apps/frontend/stone-master/dependencies.md))
+- updated-at: 2026-10-19
 
-Revision 3 approval evidence is recorded in the TODO. Revision 2 (approved 2026-10-16) remains the base for unchanged items.
-
-The previous pointer was `company-profile` revision 2; before that `app-navigation` revision 3 ([todo/app-navigation.md](todo/app-navigation.md)),
-`vendor` revision 2 ([todo/vendor.md](todo/vendor.md)) and `customer` revision 1 ([todo/customer.md](todo/customer.md)).
-Read the linked TODO for authoritative status; see [the delivery workflow](../workflow/ui-delivery.md).
+The previous pointer was `company-profile` revision 3 ([todo/company-profile.md](todo/company-profile.md)); before that `company-profile` revision 2, `app-navigation` revision 3, `vendor` revision 2 and `customer` revision 1.
+Read the linked TODO for the authoritative status; see [the delivery workflow](../workflow/ui-delivery.md).
