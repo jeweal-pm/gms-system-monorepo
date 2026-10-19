@@ -12,15 +12,21 @@ type LogoUploadTileProps = {
   savedUrl: string | null;
   onChange: (value: LogoChange) => void;
   readOnly: boolean;
-  /** The picked logo is being uploaded (Save in progress): grey tile with a spinner, not interactive. */
+  /** The picked logo is being uploaded (Save in progress): dimmed with a spinner, not interactive. */
   uploading?: boolean;
 };
 
 const tileSize = "size-50";
+/**
+ * The frame stays the 200 px square; the logo is scaled down to fit inside it whole, whatever its shape
+ * (owner 2026-10-19). The 12 px inset keeps the rounded corners from clipping the image's corners.
+ */
+const imageFrame = cx(tileSize, "flex items-center justify-center p-3");
+const imageClass = "block max-h-full max-w-full object-contain";
 
 /**
  * CP-07 Company Logo (UI revision 3; owner answers Q-CP-03/04): 200 px tile. Empty upload tile;
- * uploaded logo on a grey tile in view mode; grey with a spinner while uploading; on a white tile
+ * uploaded logo on a white tile in view mode (owner 2026-10-19; was grey); dimmed with a spinner while uploading; on a white tile
  * with a trash button in edit mode. JPEG/PNG up to 10 MB, checked when picked (the server checks
  * again). Replacing or removing revokes the old preview URL.
  */
@@ -70,12 +76,12 @@ export function LogoUploadTile({ id, value, savedUrl, onChange, readOnly, upload
     return (
       <div
         aria-busy={uploading || undefined}
-        className={cx(tileSize, "relative flex items-center justify-center overflow-hidden rounded-gms-lg bg-gms-checkbox-readonly outline-1 outline-offset-2 outline-gms-border outline-dashed")}
+        className={cx(imageFrame, "relative overflow-hidden rounded-gms-lg bg-gms-surface outline-1 outline-offset-2 outline-gms-border outline-dashed")}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- blob/same-origin logo of unknown size; next/image adds nothing here */}
-        <img src={src} alt="Company logo" className="size-full object-contain" />
+        <img src={src} alt="Company logo" className={imageClass} />
         {uploading && (
-          <span role="status" className="absolute inset-0 flex items-center justify-center">
+          <span role="status" className="absolute inset-0 flex items-center justify-center bg-black/30">
             <LoaderCircle size={32} strokeWidth={1.5} className="animate-spin text-gms-surface" aria-hidden />
             <span className="sr-only">Uploading logo</span>
           </span>
@@ -93,10 +99,10 @@ export function LogoUploadTile({ id, value, savedUrl, onChange, readOnly, upload
             onClick={() => inputRef.current?.click()}
             aria-label="Replace company logo, JPEG or PNG up to 10 MB"
             aria-describedby={error ? errorId : undefined}
-            className={cx("flex size-full items-center justify-center overflow-hidden rounded-gms-lg", focusRing)}
+            className={cx(imageFrame, "overflow-hidden rounded-gms-lg", focusRing)}
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- see above */}
-            <img src={src} alt="" className="size-full object-contain" />
+            <img src={src} alt="" className={imageClass} />
           </button>
           <button
             type="button"
