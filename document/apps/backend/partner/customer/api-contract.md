@@ -30,7 +30,7 @@ const addressBase = {
   address:     z.string().trim().min(1).max(500),
   countryCode: COUNTRY,
   state:       z.string().trim().min(1).max(100),          // free text (ADR-0018 §4)
-  city:        z.string().trim().min(1).max(100),          // free text
+  city:        z.string().trim().max(100),                 // free text, optional ("" when empty, owner 2026-10-19)
   postcode:    z.string().trim().min(1).max(20),
   isDefault:   z.boolean(),
 };

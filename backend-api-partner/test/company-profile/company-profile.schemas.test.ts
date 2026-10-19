@@ -49,6 +49,13 @@ describe("saveCompanyProfileBodySchema", () => {
     expect(issues({ ...validBody(), roadStreet: "a".repeat(301) }).map((issue) => issue.path)).toEqual(["roadStreet"]);
   });
 
+  it("UT-CP-P30 allows an empty City (owner 2026-10-19) and limits it to 100 characters", () => {
+    expect(issues({ ...validBody(), city: "  " })).toEqual([]);
+    expect(saveCompanyProfileBodySchema.parse({ ...validBody(), city: "  " }).city).toBe("");
+    expect(issues({ ...validBody(), city: "a".repeat(101) }).map((issue) => issue.path)).toEqual(["city"]);
+    expect(issues({ ...validBody(), state: "" }).map((issue) => issue.path)).toEqual(["state"]);
+  });
+
   it("UT-CP-P21 rejects unknown keys (strict)", () => {
     expect(issues({ ...validBody(), extra: 1 })).toEqual([{ path: "", code: "unrecognized_keys" }]);
   });

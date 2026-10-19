@@ -149,17 +149,16 @@ describe("addressSchema", () => {
     expect(issuesByPath(schema, validAddress())).toEqual({});
   });
 
-  it("UT-PTN-S11 requires Name, Address, Country and Postcode; State/City only after a Country is chosen", () => {
+  it("UT-PTN-S11 requires Name, Address, Country and Postcode; State only after a Country is chosen; City optional (owner 2026-10-19)", () => {
     expect(issuesByPath(schema, emptyAddress(false))).toEqual({
       name: "Name/Company Name is required",
       address: "Address is required",
       countryCode: "Country is required",
       postcode: "Postcode is required",
     });
-    expect(issuesByPath(schema, { ...emptyAddress(false), countryCode: "TH" })).toMatchObject({
-      state: "State/Province is required",
-      city: "City is required",
-    });
+    const withCountry = issuesByPath(schema, { ...emptyAddress(false), countryCode: "TH" });
+    expect(withCountry).toMatchObject({ state: "State/Province is required" });
+    expect(withCountry).not.toHaveProperty("city");
   });
 
   it("UT-PTN-S12 enforces the address length limits (Tax ID optional)", () => {

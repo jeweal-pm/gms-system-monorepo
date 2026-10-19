@@ -64,9 +64,10 @@ export function addressSchema(nameLabel: string) {
     checkText(ctx, value.taxId, "taxId", "Tax ID", 32, false);
     checkText(ctx, value.address, "address", "Address", 500, true);
     if (value.countryCode === "") ctx.addIssue({ code: "custom", path: ["countryCode"], message: "Country is required" });
-    // State/City are disabled until a Country is chosen; their required error appears only after that (form-guidelines.md).
+    // State is disabled until a Country is chosen; its required error appears only after that (form-guidelines.md).
     checkText(ctx, value.state, "state", "State/Province", 100, value.countryCode !== "");
-    checkText(ctx, value.city, "city", "City", 100, value.countryCode !== "");
+    // City is optional (owner 2026-10-19): some places have no city.
+    checkText(ctx, value.city, "city", "City", 100, false);
     checkText(ctx, value.postcode, "postcode", "Postcode", 20, true);
   });
 }

@@ -34,7 +34,8 @@ export const companyProfileFields = {
   roadStreet: text(300),
   countryCode: z.string().regex(/^[A-Z]{2}$/),
   state: required(100),
-  city: required(100),
+  // Optional (owner 2026-10-19): some places have no city; stored as "".
+  city: z.string().trim().max(100),
   postcode: required(20),
   currencyCode: z.string().regex(/^[A-Z]{3}$/),
   bankDetails: plainText(BANK_DETAILS_MAX_CHARS),

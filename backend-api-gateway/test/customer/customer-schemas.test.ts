@@ -23,6 +23,11 @@ describe("createCustomerInputSchema", () => {
     expect(parsed.shippingAddresses[0].city).toBe("Bangkok");
   });
 
+  it("UT-CUS-G13 allows an empty address City (owner 2026-10-19) but still requires State/Province", () => {
+    expect(errors(customerInput({ shippingAddresses: [address({ city: " " })] }))).toEqual([]);
+    expect(errors(customerInput({ shippingAddresses: [address({ state: "" })] })).map((error) => error.path)).toEqual(["shippingAddresses.0.state"]);
+  });
+
   it("UT-CUS-G02 is strict: unknown keys, id on create and taxId on a shipping address are rejected", () => {
     expect(errors(customerInput({ id: ID }))).toEqual([{ path: "(root)", code: "unrecognized_keys" }]);
     expect(errors(customerInput({ shippingAddresses: [address({ taxId: "1" })] }))).toEqual([{ path: "shippingAddresses.0", code: "unrecognized_keys" }]);
