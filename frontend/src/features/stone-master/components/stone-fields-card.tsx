@@ -11,6 +11,7 @@ import { optionLabel, PART_OPTION, sizeAfterShapeChange, sizesForShape, type Sto
 import type { StonePage } from "../kinds";
 import type { StoneFormValues } from "../schema";
 import { PART_FIELD, PART_LABEL, REQUIRED_PARTS, type PartKey } from "../stone-code";
+import { CopyCodeButton } from "./copy-code-button";
 import { PartOrderList } from "./part-order-list";
 
 export type OptionsState = { data: StoneOptions | undefined; status: "loading" | "error" | "ready"; onRetry: () => void };
@@ -41,7 +42,7 @@ function selectOptions(list: readonly StoneOption[] | undefined, current: string
 export function StoneFieldsCard({ page, form, readOnly, options, autoCode }: StoneFieldsCardProps) {
   const { control, register, setValue, getValues } = form;
   const { errors } = useFormState({ control });
-  const [mode, shapeId] = useWatch({ control, name: ["mode", "shapeId"] });
+  const [mode, shapeId, manualCode] = useWatch({ control, name: ["mode", "shapeId", "code"] });
   const status = options.status;
 
   const textFields = page.fields !== "stoneCode" && (
@@ -136,11 +137,15 @@ export function StoneFieldsCard({ page, form, readOnly, options, autoCode }: Sto
             )}
           />
           <div>
-            {mode === "AUTO" ? (
-              <TextField id={`${ID}-code`} label="Stone Code" required readOnly value={autoCode} placeholder={page.codePlaceholder} error={errors.code?.message} />
-            ) : (
-              <TextField id={`${ID}-code`} label="Stone Code" required autoComplete="off" placeholder={page.codePlaceholder} readOnly={readOnly} error={errors.code?.message} className="[&_input]:uppercase" {...register("code")} />
-            )}
+            {/* Copy button inside the field (owner 2026-10-19); the input keeps room for it on the right. */}
+            <div className="relative">
+              {mode === "AUTO" ? (
+                <TextField id={`${ID}-code`} label="Stone Code" required readOnly value={autoCode} placeholder={page.codePlaceholder} error={errors.code?.message} className="[&_input]:pr-12" />
+              ) : (
+                <TextField id={`${ID}-code`} label="Stone Code" required autoComplete="off" placeholder={page.codePlaceholder} readOnly={readOnly} error={errors.code?.message} className="[&_input]:pr-12 [&_input]:uppercase" {...register("code")} />
+              )}
+              <CopyCodeButton value={mode === "AUTO" ? autoCode : (manualCode ?? "").toUpperCase()} />
+            </div>
             <p className="mt-1 text-gms-label text-gms-text-secondary">
               {mode === "AUTO"
                 ? 'Auto Code: built from the parts below, in their order: the first two together, then "-", then the rest (e.g. RUB1.0-RDDEX). Choose Manual Code to type your own.'
