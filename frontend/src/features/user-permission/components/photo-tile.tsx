@@ -16,6 +16,12 @@ type PhotoTileProps = {
 };
 
 const tileSize = "h-[120px] w-[120px] shrink-0";
+/**
+ * Same as the company logo (owner 2026-10-19): the 120 px square frame stays, the photo is scaled down
+ * to fit inside it whole on a white tile. The 8 px inset keeps the rounded corners from clipping it.
+ */
+const imageFrame = "flex items-center justify-center p-2";
+const imageClass = "block max-h-full max-w-full object-contain";
 
 /**
  * C-08 Photo tile (FE-UP-013, user-photo.md): empty upload tile, saved photo in view mode, and in
@@ -69,9 +75,9 @@ export function PhotoTile({ value, savedUrl, onChange, readOnly, uploading = fal
 
   if (src && (readOnly || uploading)) {
     return (
-      <div aria-busy={uploading || undefined} className={cx(tileSize, "relative overflow-hidden rounded-gms-md bg-gms-checkbox-readonly shadow-gms-tile")}>
+      <div aria-busy={uploading || undefined} className={cx(tileSize, imageFrame, "relative overflow-hidden rounded-gms-md bg-gms-surface shadow-gms-tile")}>
         {/* eslint-disable-next-line @next/next/no-img-element -- blob/same-origin photo of unknown size; next/image adds nothing here */}
-        <img src={src} alt="User photo" className="size-full object-cover" />
+        <img src={src} alt="User photo" className={imageClass} />
         {uploading && (
           <span role="status" className="absolute inset-0 flex items-center justify-center bg-black/30">
             <LoaderCircle size={28} strokeWidth={1.5} className="animate-spin text-gms-surface" aria-hidden />
@@ -91,10 +97,10 @@ export function PhotoTile({ value, savedUrl, onChange, readOnly, uploading = fal
             onClick={() => inputRef.current?.click()}
             aria-label="Replace photo, JPEG or PNG up to 5 MB"
             aria-describedby={error ? errorId : undefined}
-            className={cx("size-full overflow-hidden rounded-gms-md", focusRing)}
+            className={cx("size-full overflow-hidden rounded-gms-md", imageFrame, focusRing)}
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- see above */}
-            <img src={src} alt="" className="size-full object-cover" />
+            <img src={src} alt="" className={imageClass} />
           </button>
           <button
             type="button"

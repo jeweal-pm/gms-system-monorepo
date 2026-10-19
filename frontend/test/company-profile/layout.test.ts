@@ -53,13 +53,22 @@ describe("LogoUploadTile", () => {
     expect(html).toContain("JPEG or PNG only");
   });
 
-  it("UT-CP-F37 shows a spinner over the grey tile while the picked logo uploads", () => {
+  it("UT-CP-F37 shows a spinner over the dimmed tile while the picked logo uploads", () => {
     const html = tile({ value: { kind: "new", file: new File([], "logo.png", { type: "image/png" }), previewUrl: "blob:logo" }, uploading: true });
     expect(html).toContain('aria-busy="true"');
     expect(html).toContain('role="status"');
     expect(html).toContain("Uploading logo");
-    expect(html).toContain("bg-gms-checkbox-readonly");
+    // White tile (owner 2026-10-19), dimmed while uploading so the white spinner shows.
+    expect(html).toContain("bg-black/30");
     expect(html).not.toContain("Remove company logo");
+  });
+
+  it("UT-CP-F37b view mode shows the saved logo whole on a white tile (owner 2026-10-19)", () => {
+    const html = tile({ savedUrl: "/api/v1/company-profile/logo?v=1", readOnly: true });
+    expect(html).toContain('alt="Company logo"');
+    expect(html).toContain("bg-gms-surface");
+    expect(html).not.toContain("bg-gms-checkbox-readonly");
+    expect(html).toContain("object-contain");
   });
 
   it("UT-CP-F38 shows the white tile with the trash button in edit mode, logo not cropped", () => {
