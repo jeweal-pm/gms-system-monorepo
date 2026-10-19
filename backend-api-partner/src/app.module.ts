@@ -9,6 +9,8 @@ import { CustomerService } from "./customer/customer.service";
 import { PrismaLifecycleService } from "./database/prisma-lifecycle.service";
 import { HealthController } from "./health/health.controller";
 import { ServiceTokenGuard } from "./internal-auth/service-token.guard";
+import { StoneMasterController } from "./stone-master/stone-master.controller";
+import { StoneMasterService } from "./stone-master/stone-master.service";
 import { VendorController } from "./vendor/vendor.controller";
 import { VendorService } from "./vendor/vendor.service";
 
@@ -30,12 +32,13 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
       },
     }),
   ],
-  controllers: [HealthController, CustomerController, VendorController, CompanyProfileController],
+  controllers: [HealthController, CustomerController, VendorController, CompanyProfileController, StoneMasterController],
   providers: [
     PrismaLifecycleService,
     CustomerService,
     VendorService,
     CompanyProfileService,
+    StoneMasterService,
     { provide: APP_GUARD, useClass: ServiceTokenGuard },
     { provide: APP_FILTER, useClass: EnvelopeExceptionFilter },
   ],

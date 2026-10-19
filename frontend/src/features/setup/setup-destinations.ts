@@ -1,5 +1,6 @@
 import { Banknote, Bell, CodeXml, Crown, Factory, FileBadge, FileCog, FileUser, MapPinned, Pickaxe, Settings, UserLock, UserRound, type LucideIcon } from "lucide-react";
 import { MASTER_CODE_MENU_KEYS, menuKeyFor, setupPlaceholderLink } from "@/features/home/navigation";
+import { DEFAULT_STONE_SLUG, STONE_MENU_KEY, stonePageHref } from "@/features/stone-master/kinds";
 
 /** Tile square colors (design-system tokens, owner design 2026-10-16). */
 export type SetupTileColor = "indigo" | "green" | "red" | "blue" | "stone" | "neutral";
@@ -43,7 +44,8 @@ export const masterCodeDestinations: SetupLinkDestination[] = [
   // Shown with VIEW on Vendor or Customer; the dialog opens Customer when only that one is allowed.
   { kind: "link", id: "partner-master", label: "Partner Master", href: "/setup/vendor", icon: FileUser, color: "neutral", permission: ["vendor", "customer"] },
   placeholder("currency", Banknote, "neutral"),
-  placeholder("stone-master", Crown, "neutral"),
+  // stone-master FE-SM-002: real pages (Stone Group first); `stone-master:VIEW` (Q-SM-04).
+  { kind: "link", id: "stone-master", label: "Stone Master", href: stonePageHref(DEFAULT_STONE_SLUG), icon: Crown, color: "neutral", permission: [STONE_MENU_KEY] },
   placeholder("location-master", MapPinned, "neutral"),
   placeholder("certificate-master", FileBadge, "neutral"),
   placeholder("labor-name", Pickaxe, "neutral"),

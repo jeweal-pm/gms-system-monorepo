@@ -170,7 +170,7 @@ export async function nextPartnerCode(table: keyof typeof LIST_TABLES, mapError:
   }
 }
 
-function prismaCode(error: unknown): string | undefined {
+export function prismaCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null) return undefined;
   const code = (error as { code?: unknown }).code;
   return typeof code === "string" && /^P\d{4}$/.test(code) ? code : undefined;

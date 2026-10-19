@@ -2,14 +2,17 @@
 
 import { Check, ChevronDown, X } from "lucide-react";
 import { useId, useState, type KeyboardEvent, type Ref } from "react";
-import type { LocationOption } from "../../api";
-import { cx } from "@/components/ui/button";
-import { FieldShell, fieldBoxClass } from "@/components/ui/outlined-field";
+import { cx } from "./button";
+import { FieldShell, fieldBoxClass } from "./outlined-field";
+
+export type MultiSelectOption = { id: string; label: string };
 
 type MultiSelectProps = {
   id: string;
   label: string;
-  options: readonly LocationOption[];
+  options: readonly MultiSelectOption[];
+  /** Trigger text while nothing is selected (user-permission: "Select location"; stone-master Shape: "+ Add size"). */
+  placeholder?: string;
   value: string[];
   onChange: (value: string[]) => void;
   onBlur: () => void;
@@ -26,7 +29,7 @@ type MultiSelectProps = {
  * Backspace removes the last chip. Chips outside the combobox have their own
  * remove buttons.
  */
-export function MultiSelect({ id, label, options, value, onChange, onBlur, error, required, readOnly, status = "ready", comboboxRef }: MultiSelectProps) {
+export function MultiSelect({ id, label, options, value, onChange, onBlur, error, required, readOnly, status = "ready", comboboxRef, placeholder = "Select location" }: MultiSelectProps) {
   const listId = useId();
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -138,7 +141,7 @@ export function MultiSelect({ id, label, options, value, onChange, onBlur, error
           }}
           className="flex h-full min-w-0 flex-1 items-center justify-end outline-none"
         >
-          {selected.length === 0 && <span className="mr-auto text-gms-text-placeholder">Select location</span>}
+          {selected.length === 0 && <span className="mr-auto text-gms-text-placeholder">{placeholder}</span>}
           <ChevronDown size={18} className={cx("shrink-0 text-gms-text-secondary transition-transform", open && "rotate-180")} aria-hidden />
         </div>
         <ul

@@ -25,6 +25,16 @@ import { describeError, domainError } from "./domain-error";
 import { callPartner, PARTNER_TIMEOUT_MS } from "./partner-client";
 import { listQueryString } from "./partner-schemas";
 import {
+  STONE_INPUTS,
+  STONE_OUTPUTS,
+  stoneDeleteOutputSchema,
+  stoneIdInputSchema,
+  stoneListInputSchema,
+  stoneMutationOutputSchema,
+  stoneOptionsInputSchema,
+  stoneOptionsOutputSchema,
+} from "./stone-master-schemas";
+import {
   catalogOutputSchema,
   createUserInputSchema,
   deleteOutputSchema,
@@ -191,6 +201,44 @@ export function shortcutGroupsFor(authz: SessionAuthz): HomeGroup[] {
     .filter((group) => group.items.length > 0);
 }
 
+/** stone-master SA revision 1 (ADR-0024, SA-SM-02/10): one catalog leaf for all 9 pages. */
+const STONE_MENU_KEY = "stone-master";
+const STONE_NOT_FOUND = "STONE_MASTER_NOT_FOUND";
+
+/** list/get/create/update/delete for one stone kind; partner path `/internal/v1/stone-master/<slug>`. */
+function stoneKindRouter<C extends z.ZodType, U extends z.ZodType<{ id: string }>, ListOut, DetailOut>(
+  slug: string,
+  inputs: { create: C; update: U },
+  outputs: { list: z.ZodType<ListOut>; detail: z.ZodType<DetailOut> },
+) {
+  const base = `/internal/v1/stone-master/${slug}`;
+  return t.router({
+    list: permittedProcedure(STONE_MENU_KEY, "VIEW").input(stoneListInputSchema).query(({ ctx, input }) => callPartner({
+      method: "GET", path: `${base}?${listQueryString(input)}`, route: `GET /stone-master/${slug}`, timeoutMs: PARTNER_TIMEOUT_MS.read,
+      actorId: ctx.session.user.id, responseSchema: outputs.list, notFoundCode: STONE_NOT_FOUND,
+    })),
+    get: permittedProcedure(STONE_MENU_KEY, "VIEW").input(stoneIdInputSchema).query(({ ctx, input }) => callPartner({
+      method: "GET", path: `${base}/${encodeURIComponent(input.id)}`, route: `GET /stone-master/${slug}/:id`, timeoutMs: PARTNER_TIMEOUT_MS.read,
+      actorId: ctx.session.user.id, responseSchema: outputs.detail, notFoundCode: STONE_NOT_FOUND,
+    })),
+    create: permittedProcedure(STONE_MENU_KEY, "ADD").input(inputs.create).mutation(({ ctx, input }) => callPartner({
+      method: "POST", path: base, route: `POST /stone-master/${slug}`, timeoutMs: PARTNER_TIMEOUT_MS.write,
+      actorId: ctx.session.user.id, responseSchema: stoneMutationOutputSchema, notFoundCode: STONE_NOT_FOUND, body: input,
+    })),
+    update: permittedProcedure(STONE_MENU_KEY, "EDIT").input(inputs.update).mutation(({ ctx, input }) => {
+      const { id, ...body } = input as { id: string } & Record<string, unknown>;
+      return callPartner({
+        method: "PUT", path: `${base}/${encodeURIComponent(id)}`, route: `PUT /stone-master/${slug}/:id`, timeoutMs: PARTNER_TIMEOUT_MS.write,
+        actorId: ctx.session.user.id, responseSchema: stoneMutationOutputSchema, notFoundCode: STONE_NOT_FOUND, body,
+      });
+    }),
+    delete: permittedProcedure(STONE_MENU_KEY, "DELETE").input(stoneIdInputSchema).mutation(({ ctx, input }) => callPartner({
+      method: "DELETE", path: `${base}/${encodeURIComponent(input.id)}`, route: `DELETE /stone-master/${slug}/:id`, timeoutMs: PARTNER_TIMEOUT_MS.write,
+      actorId: ctx.session.user.id, responseSchema: stoneDeleteOutputSchema, notFoundCode: STONE_NOT_FOUND,
+    })),
+  });
+}
+
 export const appRouter = t.router({
   system: t.router({ health: publicProcedure.query(() => ({ status: "ok" as const })) }),
   dashboard: t.router({ shortcutGroups: licensedProcedure.query(({ ctx }) => shortcutGroupsFor(ctx.authz)) }),
@@ -325,6 +373,26 @@ export const appRouter = t.router({
       method: "DELETE", path: `/internal/v1/vendors/${encodeURIComponent(input.id)}`, route: "DELETE /vendors/:id", timeoutMs: PARTNER_TIMEOUT_MS.write,
       actorId: ctx.session.user.id, responseSchema: vendorDeleteOutputSchema, notFoundCode: "VENDOR_NOT_FOUND",
     })),
+  }),
+  /** stone-master SA revision 1 (ADR-0024): gateway enforces `stone-master:*`; partner owns the data (schema `stone`). */
+  stoneMaster: t.router({
+    options: permittedProcedure(STONE_MENU_KEY, "VIEW").input(stoneOptionsInputSchema).query(({ ctx, input }) => {
+      const query = new URLSearchParams({ kinds: input.kinds.join(",") });
+      if (input.include.length > 0) query.set("include", input.include.join(","));
+      return callPartner({
+        method: "GET", path: `/internal/v1/stone-master/options?${query.toString()}`, route: "GET /stone-master/options", timeoutMs: PARTNER_TIMEOUT_MS.read,
+        actorId: ctx.session.user.id, responseSchema: stoneOptionsOutputSchema, notFoundCode: STONE_NOT_FOUND,
+      });
+    }),
+    group: stoneKindRouter("group", STONE_INPUTS.simple, STONE_OUTPUTS.simple),
+    size: stoneKindRouter("size", STONE_INPUTS.simple, STONE_OUTPUTS.simple),
+    color: stoneKindRouter("color", STONE_INPUTS.simple, STONE_OUTPUTS.simple),
+    cutting: stoneKindRouter("cutting", STONE_INPUTS.simple, STONE_OUTPUTS.simple),
+    clarity: stoneKindRouter("clarity", STONE_INPUTS.simple, STONE_OUTPUTS.simple),
+    quality: stoneKindRouter("quality", STONE_INPUTS.simple, STONE_OUTPUTS.simple),
+    stoneName: stoneKindRouter("stone-name", STONE_INPUTS.stoneName, STONE_OUTPUTS.stoneName),
+    shape: stoneKindRouter("shape", STONE_INPUTS.shape, STONE_OUTPUTS.shape),
+    stoneCode: stoneKindRouter("stone-code", STONE_INPUTS.stoneCode, STONE_OUTPUTS.stoneCode),
   }),
   /** company-profile SA revision 2 (ADR-0021): gateway enforces `company-profile:*`; partner owns the data. Logo bytes use REST. */
   companyProfile: t.router({
