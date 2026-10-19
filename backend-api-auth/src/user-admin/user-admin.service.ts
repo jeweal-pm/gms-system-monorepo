@@ -1,14 +1,17 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { HttpStatus, Injectable, Logger } from "@nestjs/common";
 import type { Request } from "express";
 import { fromNodeHeaders } from "better-auth/node";
 import * as argon2 from "argon2";
 import { auth, hashLoginIdentity } from "../auth/auth";
 import { prisma } from "../database/prisma-client";
+import type { Prisma } from "../generated/prisma/client";
 import { LicenseDomainError, LicenseService } from "../license/license.service";
 import { catalogResponse, isGrantInCatalog, MAX_GRANTS_PER_USER, parsePermissionKey, toPermissionKey, type PermissionActionValue } from "../permission/catalog";
-import { SUPER_ADMIN_ROLE } from "../permission/grants";
+import { loadSessionAuthz, SUPER_ADMIN_ROLE } from "../permission/grants";
+import { canUseUserAdmin, isManageableTarget, ungrantableKeys, type UserAdminAction, type UserAdminActor } from "./delegation";
 import { isKnownLocation, LOCATION_OPTIONS } from "./location-options";
+import { isPhotoType, PHOTO_MAX_BYTES, readPhotoFile, removePhotoFile, replacePhotoFile, signatureMatches } from "./photo-storage";
 import { parseUserSeatLimit, USER_LIST_CAP } from "./seat-limit";
 import { userAdminException, zodFieldErrors, type FieldError } from "./user-admin.errors";
 import { createUserInputSchema, updateUserInputSchema, userIdSchema } from "./user-admin.schemas";
@@ -17,7 +20,7 @@ import { ProvisioningError, UserProvisioningService } from "./user-provisioning.
 const USABLE_LICENSE_STATES = new Set(["VALID", "EXPIRING", "GRACE"]);
 const PHOTO_VERSION_LENGTH = 16;
 
-export type Actor = { id: string };
+export type Actor = UserAdminActor;
 
 @Injectable()
 export class UserAdminService {
@@ -34,10 +37,11 @@ export class UserAdminService {
   }
 
   /**
-   * Auth re-checks session, usable license and Super Admin on every user-admin call, because
-   * port 3101 is reachable inside the Compose network (authorization.md trust boundary).
+   * Auth re-checks session, usable license and `user-and-permission:<action>` (Super Admin passes)
+   * on every user-admin call, because port 3101 is reachable inside the Compose network
+   * (authorization.md trust boundary; delegated-admin.md DA-01).
    */
-  async requireSuperAdmin(request: Request): Promise<Actor> {
+  async requireAccess(request: Request, action: UserAdminAction): Promise<Actor> {
     const session = await this.requireSession(request);
     let state: string;
     try {
@@ -49,11 +53,13 @@ export class UserAdminService {
       if (state === "UNVERIFIABLE") throw userAdminException("LICENSE_UNVERIFIABLE", HttpStatus.SERVICE_UNAVAILABLE);
       throw userAdminException(state === "EXPIRED" ? "LICENSE_EXPIRED" : state === "REVOKED" ? "LICENSE_REVOKED" : "LICENSE_REQUIRED", HttpStatus.FORBIDDEN);
     }
-    if (session.user.role !== SUPER_ADMIN_ROLE) {
-      this.logger.log({ event: "user_admin.denied", actorId: session.user.id, msg: "Super Admin required" });
-      throw userAdminException("SUPER_ADMIN_REQUIRED", HttpStatus.FORBIDDEN);
+    const authz = await loadSessionAuthz(session.user.id, session.user.role ?? "");
+    const actor: Actor = { id: session.user.id, isSuperAdmin: authz.isSuperAdmin, permissions: authz.permissions };
+    if (!canUseUserAdmin(actor, action)) {
+      this.logger.log({ event: "user_admin.denied", actorId: actor.id, action, msg: "Permission required" });
+      throw userAdminException("PERMISSION_DENIED", HttpStatus.FORBIDDEN);
     }
-    return { id: session.user.id };
+    return actor;
   }
 
   catalog() {
@@ -88,7 +94,7 @@ export class UserAdminService {
     };
   }
 
-  async get(rawId: string) {
+  async get(actor: Actor, rawId: string) {
     const id = parseUserId(rawId);
     const user = await prisma.user.findUnique({
       where: { id },
@@ -102,6 +108,7 @@ export class UserAdminService {
     });
     if (!user) throw userAdminException("USER_NOT_FOUND", HttpStatus.NOT_FOUND);
     const isSuperAdmin = user.role === SUPER_ADMIN_ROLE;
+    const grants = catalogKeys(user.permissions);
     return {
       id: user.id,
       name: user.name,
@@ -112,12 +119,12 @@ export class UserAdminService {
       updatedAt: user.updatedAt.toISOString(),
       phone: user.phoneE164 && user.phoneCountry ? { country: user.phoneCountry, e164: user.phoneE164 } : null,
       locationKeys: user.locations.map((location) => location.locationKey),
-      permissions: isSuperAdmin
-        ? "ALL" as const
-        : user.permissions.filter((grant) => isGrantInCatalog(grant.menuKey, grant.action)).map((grant) => toPermissionKey(grant.menuKey, grant.action)).sort(),
+      permissions: isSuperAdmin ? "ALL" as const : grants,
       photoVersion: user.photo ? user.photo.sha256.slice(0, PHOTO_VERSION_LENGTH) : null,
       // SA rev 2: true = permissions, active, password and delete are locked (personal info stays editable).
       readOnly: isSuperAdmin,
+      // DA-03…05: false = this caller may not change or delete the user at all (always true for a Super Admin).
+      manageable: isManageableTarget(actor, { id: user.id, isSuperAdmin, permissions: grants }),
     };
   }
 
@@ -134,6 +141,7 @@ export class UserAdminService {
     const input = parsed.data;
 
     const grants = this.validateSets(actor, input.permissions, input.locationKeys);
+    this.assertGrantable(actor, input.permissions);
 
     let created: { id: string; updatedAt: Date };
     try {
@@ -196,10 +204,18 @@ export class UserAdminService {
     const grants = input.permissions !== undefined || input.locationKeys !== undefined
       ? this.validateSets(actor, input.permissions ?? [], input.locationKeys ?? [])
       : [];
+    if (input.permissions !== undefined) this.assertGrantable(actor, input.permissions);
 
-    // Cheap pre-check so a locked Super Admin request never pays for Argon2; re-checked under the row lock.
-    const current = await prisma.user.findUnique({ where: { id }, select: { role: true } });
+    // Cheap pre-check so a locked or unmanageable target never pays for Argon2; re-checked under the row lock.
+    const current = await prisma.user.findUnique({
+      where: { id },
+      select: { role: true, permissions: { select: { menuKey: true, action: true }, take: MAX_GRANTS_PER_USER } },
+    });
     if (!current) throw userAdminException("USER_NOT_FOUND", HttpStatus.NOT_FOUND);
+    if (!isManageableTarget(actor, { id, isSuperAdmin: current.role === SUPER_ADMIN_ROLE, permissions: catalogKeys(current.permissions) })) {
+      this.logger.warn({ event: "user_admin.update_denied", actorId: actor.id, targetId: id, msg: "User not manageable by this caller" });
+      throw userAdminException("USER_NOT_MANAGEABLE", HttpStatus.FORBIDDEN);
+    }
     if (current.role === SUPER_ADMIN_ROLE && (input.permissions !== undefined || input.password !== undefined || input.active === false)) {
       this.logger.warn({ event: "user_admin.update_denied", actorId: actor.id, targetId: id, msg: "Super Admin permissions, status and password are locked" });
       throw userAdminException("SUPER_ADMIN_LOCKED", HttpStatus.FORBIDDEN);
@@ -215,6 +231,10 @@ export class UserAdminService {
       if (input.username !== undefined && input.username !== target.username) return { kind: "USERNAME_IMMUTABLE" as const };
       if (input.expectedUpdatedAt !== undefined && Date.parse(input.expectedUpdatedAt) !== target.updatedAt.getTime()) return { kind: "USER_CHANGED" as const };
       const isSuperAdmin = target.role === SUPER_ADMIN_ROLE;
+      if (!actor.isSuperAdmin) {
+        const targetGrants = await transaction.userPermission.findMany({ where: { userId: id }, select: { menuKey: true, action: true }, take: MAX_GRANTS_PER_USER });
+        if (!isManageableTarget(actor, { id, isSuperAdmin, permissions: catalogKeys(targetGrants) })) return { kind: "USER_NOT_MANAGEABLE" as const };
+      }
       if (isSuperAdmin && (input.permissions !== undefined || passwordHash !== null || input.active === false)) {
         return { kind: "SUPER_ADMIN_LOCKED" as const };
       }
@@ -264,6 +284,9 @@ export class UserAdminService {
       case "SUPER_ADMIN_LOCKED":
         this.logger.warn({ event: "user_admin.update_denied", actorId: actor.id, targetId: id, msg: "Super Admin permissions, status and password are locked" });
         throw userAdminException("SUPER_ADMIN_LOCKED", HttpStatus.FORBIDDEN);
+      case "USER_NOT_MANAGEABLE":
+        this.logger.warn({ event: "user_admin.update_denied", actorId: actor.id, targetId: id, msg: "User not manageable by this caller" });
+        throw userAdminException("USER_NOT_MANAGEABLE", HttpStatus.FORBIDDEN);
     }
     this.logger.log({
       event: "user_admin.updated",
@@ -273,6 +296,77 @@ export class UserAdminService {
       msg: "User updated",
     });
     return { id, updatedAt: outcome.updatedAt.toISOString() };
+  }
+
+  getPhoto(rawId: string) {
+    return readUserPhoto(rawId);
+  }
+
+  /**
+   * PH-02/05/06: validate, then under the User row lock check the target (exists, manageable, not the
+   * caller), overwrite the file and upsert the metadata. `User.updatedAt` is untouched (PH-07).
+   */
+  async putPhoto(actor: Actor, rawId: string, contentType: string, data: Buffer) {
+    const id = parseUserId(rawId);
+    if (!isPhotoType(contentType)) throw userAdminException("PHOTO_TYPE_NOT_ALLOWED", HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+    if (data.length > PHOTO_MAX_BYTES) throw userAdminException("PHOTO_TOO_LARGE", HttpStatus.PAYLOAD_TOO_LARGE);
+    if (data.length === 0 || !signatureMatches(contentType, data)) throw userAdminException("PHOTO_TYPE_NOT_ALLOWED", HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+    const sha256 = createHash("sha256").update(data).digest("hex");
+    const outcome = await prisma.$transaction(async (transaction) => {
+      const denied = await this.lockPhotoTarget(transaction, actor, id);
+      if (denied) return denied;
+      await replacePhotoFile(id, data);
+      await transaction.userPhoto.upsert({
+        where: { userId: id },
+        create: { userId: id, contentType, sizeBytes: data.length, sha256 },
+        update: { contentType, sizeBytes: data.length, sha256 },
+      });
+      return "DONE" as const;
+    }, { timeout: 4_000 });
+    this.throwPhotoOutcome(outcome, actor, id);
+    this.logger.log({ event: "user_admin.photo_replaced", actorId: actor.id, targetId: id, sizeBytes: data.length, contentType, msg: "User photo replaced" });
+    return { photoVersion: sha256.slice(0, PHOTO_VERSION_LENGTH) };
+  }
+
+  async removePhoto(actor: Actor, rawId: string) {
+    const id = parseUserId(rawId);
+    const outcome = await prisma.$transaction(async (transaction) => {
+      const denied = await this.lockPhotoTarget(transaction, actor, id);
+      if (denied) return denied;
+      await removePhotoFile(id);
+      await transaction.userPhoto.deleteMany({ where: { userId: id } });
+      return "DONE" as const;
+    }, { timeout: 4_000 });
+    this.throwPhotoOutcome(outcome, actor, id);
+    this.logger.log({ event: "user_admin.photo_removed", actorId: actor.id, targetId: id, msg: "User photo removed" });
+    return { ok: true as const };
+  }
+
+  /** PH-06: the photo follows DA-03…05; the caller's own photo is not changed on this page (any caller). */
+  private async lockPhotoTarget(transaction: Prisma.TransactionClient, actor: Actor, id: string): Promise<"NOT_FOUND" | "NOT_MANAGEABLE" | null> {
+    const rows = await transaction.$queryRaw<Array<{ role: string }>>`SELECT "role" FROM "auth"."User" WHERE "id" = ${id} FOR UPDATE`;
+    const target = rows[0];
+    if (!target) return "NOT_FOUND";
+    if (id === actor.id) return "NOT_MANAGEABLE";
+    if (actor.isSuperAdmin) return null;
+    const grants = await transaction.userPermission.findMany({ where: { userId: id }, select: { menuKey: true, action: true }, take: MAX_GRANTS_PER_USER });
+    return isManageableTarget(actor, { id, isSuperAdmin: target.role === SUPER_ADMIN_ROLE, permissions: catalogKeys(grants) }) ? null : "NOT_MANAGEABLE";
+  }
+
+  private throwPhotoOutcome(outcome: "NOT_FOUND" | "NOT_MANAGEABLE" | "DONE", actor: Actor, id: string) {
+    if (outcome === "NOT_FOUND") throw userAdminException("USER_NOT_FOUND", HttpStatus.NOT_FOUND);
+    if (outcome === "NOT_MANAGEABLE") {
+      this.logger.warn({ event: "user_admin.photo_denied", actorId: actor.id, targetId: id, msg: "User not manageable by this caller" });
+      throw userAdminException("USER_NOT_MANAGEABLE", HttpStatus.FORBIDDEN);
+    }
+  }
+
+  /** DA-02: a non-Super-Admin may only grant permissions they hold themselves. */
+  private assertGrantable(actor: Actor, permissions: readonly string[]) {
+    const denied = ungrantableKeys(actor, permissions);
+    if (denied.length === 0) return;
+    this.logger.warn({ event: "user_admin.grant_denied", actorId: actor.id, count: denied.length, msg: "Grant outside the caller's own permissions rejected" });
+    throw userAdminException("PERMISSION_GRANT_NOT_ALLOWED", HttpStatus.FORBIDDEN, [{ path: "permissions", code: "not_allowed" }]);
   }
 
   /** Shared create/update validation for permission keys and location keys. */
@@ -305,6 +399,10 @@ export class UserAdminService {
       const rows = await transaction.$queryRaw<Array<{ role: string }>>`SELECT "role" FROM "auth"."User" WHERE "id" = ${id} FOR UPDATE`;
       const target = rows[0];
       if (!target) return "NOT_FOUND" as const;
+      if (!actor.isSuperAdmin) {
+        const targetGrants = await transaction.userPermission.findMany({ where: { userId: id }, select: { menuKey: true, action: true }, take: MAX_GRANTS_PER_USER });
+        if (!isManageableTarget(actor, { id, isSuperAdmin: target.role === SUPER_ADMIN_ROLE, permissions: catalogKeys(targetGrants) })) return "NOT_MANAGEABLE" as const;
+      }
       if (target.role !== "user" || id === actor.id) return "READ_ONLY" as const;
       // Cascades: Session, Account, LicenseCache, LicenseActivationLockout, UserPermission,
       // UserLocation, UserPhoto. LoginAttempt.user_id is set to NULL.
@@ -312,15 +410,36 @@ export class UserAdminService {
       return "DELETED" as const;
     });
     if (outcome === "NOT_FOUND") throw userAdminException("USER_NOT_FOUND", HttpStatus.NOT_FOUND);
+    if (outcome === "NOT_MANAGEABLE") {
+      this.logger.warn({ event: "user_admin.delete_denied", actorId: actor.id, targetId: id, msg: "User not manageable by this caller" });
+      throw userAdminException("USER_NOT_MANAGEABLE", HttpStatus.FORBIDDEN);
+    }
     if (outcome === "READ_ONLY") {
       this.logger.warn({ event: "user_admin.delete_denied", actorId: actor.id, targetId: id, msg: "Super Admin or self cannot be deleted" });
       throw userAdminException("SUPER_ADMIN_LOCKED", HttpStatus.FORBIDDEN);
     }
     // The license server is not called (QL1 stays external policy).
     this.licenseService.evictStatus(id);
+    // PH-02: the row cascade removed the photo metadata; the file goes after the commit (an orphan is harmless).
+    await removePhotoFile(id).catch(() => this.logger.warn({ event: "user_admin.photo_file_cleanup_failed", actorId: actor.id, targetId: id, msg: "Photo file not removed" }));
     this.logger.log({ event: "user_admin.deleted", actorId: actor.id, targetId: id, msg: "User deleted" });
     return { ok: true as const };
   }
+}
+
+/** user-photo.md PH-04…09: the photo bytes of one user, or PHOTO_NOT_FOUND. */
+export async function readUserPhoto(rawId: string) {
+  const id = parseUserId(rawId);
+  const row = await prisma.userPhoto.findUnique({ where: { userId: id }, select: { contentType: true, sha256: true } });
+  if (!row) throw userAdminException("PHOTO_NOT_FOUND", HttpStatus.NOT_FOUND);
+  const data = await readPhotoFile(id);
+  if (!data) throw userAdminException("PHOTO_NOT_FOUND", HttpStatus.NOT_FOUND);
+  return { data, contentType: row.contentType, version: row.sha256.slice(0, PHOTO_VERSION_LENGTH) };
+}
+
+/** Stored grants -> current-catalog keys, sorted (grants outside the catalog are ignored, as in loadSessionAuthz). */
+function catalogKeys(grants: readonly { menuKey: string; action: string }[]): string[] {
+  return grants.filter((grant) => isGrantInCatalog(grant.menuKey, grant.action)).map((grant) => toPermissionKey(grant.menuKey, grant.action)).sort();
 }
 
 function parseUserId(rawId: string) {

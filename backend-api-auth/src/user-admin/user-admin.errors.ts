@@ -7,7 +7,12 @@ const MAX_FIELD_ERRORS = 50;
 
 const messages: Record<string, string> = {
   UNAUTHORIZED: "Authentication required",
-  SUPER_ADMIN_REQUIRED: "Super Admin access is required",
+  PERMISSION_DENIED: "You don't have permission for this action",
+  PERMISSION_GRANT_NOT_ALLOWED: "You can only grant permissions you hold yourself",
+  USER_NOT_MANAGEABLE: "You can't change this user",
+  PHOTO_TOO_LARGE: "The photo must be 5 MB or smaller",
+  PHOTO_TYPE_NOT_ALLOWED: "The photo must be a JPEG or PNG image",
+  PHOTO_NOT_FOUND: "The user has no photo",
   SUPER_ADMIN_LOCKED: "Super Admin permissions, status and password cannot be changed here, and Super Admin or your own account cannot be deleted",
   VALIDATION_ERROR: "The request is invalid",
   PASSWORD_POLICY_VIOLATION: "The password does not meet the policy",

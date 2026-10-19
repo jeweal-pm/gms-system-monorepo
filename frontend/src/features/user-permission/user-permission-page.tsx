@@ -9,14 +9,17 @@ import { authClient } from "@/lib/auth-client";
 import { trpc } from "@/providers/app-providers";
 import { isCallerLicenseCode, readDomainError } from "@/lib/trpc-error";
 import { loadErrorMessage, mapSaveError, toCreateUserInput, toUpdateUserInput, type PermissionCatalog, type UserDetail, type UserSummary } from "./api";
+import { grantableOnly, userAdminAccess, type UserAdminAccess } from "./access";
 import { DeleteUserDialog } from "./components/delete-user-dialog";
+import { PhotoTile } from "./components/photo-tile";
+import { photoErrorMessage, photoUrl, PhotoUploadError, UNCHANGED_PHOTO, uploadUserPhoto, type PhotoChange } from "./photo";
 import { PageHeader, type PageMode } from "./components/page-header";
 import { PermissionsCard } from "./components/permissions-card";
 import { PersonalInformationCard } from "./components/personal-information-card";
 import { Button, cx, focusRing } from "@/components/ui/button";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import { USERS_DRAWER_ID, UsersDrawer } from "./components/users-drawer";
-import { useLocationOptions, usePermissionCatalog, usePermissionMine, useSaveUser, useUserDetail, useUserList } from "./hooks";
+import { useLocationOptions, usePermissionCatalog, usePermissionMine, useRemovePhoto, useSaveUser, useUserDetail, useUserList } from "./hooks";
 import { grantsFromValues, valuesFromGrants } from "./permission-utils";
 import { emptyUserForm, userFormSchema, type UserFormValues } from "./schema";
 
@@ -24,8 +27,9 @@ const FORM_ID = "user-permission-form";
 
 /**
  * Setup › User and permission, UI revision 2 (ADR-0020).
- * Super Admin only (owner answer Q-UP-20): `permission.mine` gates the page and
- * no `userAdmin.*` request is made for anyone else (FE-UP-014).
+ * Delegated admin (owner 2026-10-17, delegated-admin.md): anyone with `user-and-permission:VIEW`
+ * may open it; buttons are disabled per action, VIEW-only lands on a disabled Add page, and the
+ * matrix only lets you hand out permissions you hold. No `userAdmin.*` request is made without VIEW.
  */
 export function UserPermissionPage() {
   return (
@@ -74,7 +78,8 @@ function AccessGuard() {
     );
   }
 
-  if (!mine.data.isSuperAdmin) {
+  const access = userAdminAccess(mine.data);
+  if (!access.view) {
     return (
       <PageFrame>
         <section aria-labelledby="access-denied-title" className="flex flex-col items-start gap-3 rounded-gms-lg border border-gms-border bg-gms-surface p-8">
@@ -82,7 +87,7 @@ function AccessGuard() {
           <h1 id="access-denied-title" className="text-gms-title font-medium text-gms-text-heading">
             You don&apos;t have access to User and permission
           </h1>
-          <p className="text-gms-body text-gms-text-secondary">Only a Super Admin can manage users and permissions.</p>
+          <p className="text-gms-body text-gms-text-secondary">Ask an administrator for the User and Permission VIEW permission.</p>
           <Link href="/" className={cx("mt-2 rounded-gms-md border border-gms-border px-4 py-2 text-gms-body font-medium text-gms-text hover:bg-gms-surface-sunken", focusRing)}>
             Back to Home
           </Link>
@@ -91,7 +96,7 @@ function AccessGuard() {
     );
   }
 
-  return <UserPermissionWorkspace />;
+  return <UserPermissionWorkspace access={access} />;
 }
 
 /** Saved user -> form values. The password is never returned, so it starts empty. */
@@ -107,7 +112,7 @@ function formFromDetail(user: UserDetail, catalog: PermissionCatalog | undefined
   };
 }
 
-function UserPermissionWorkspace() {
+function UserPermissionWorkspace({ access }: { access: UserAdminAccess }) {
   const toast = useToast();
   const utils = trpc.useUtils();
   const session = authClient.useSession();
@@ -126,10 +131,17 @@ function UserPermissionWorkspace() {
   const locations = useLocationOptions();
   const detail = useUserDetail(selectedUserId);
   const { create, update, isPending: saving } = useSaveUser();
+  const removePhoto = useRemovePhoto();
+  const [photoChange, setPhotoChange] = useState<PhotoChange>(UNCHANGED_PHOTO);
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   const target = mode !== "create" && detail.data && detail.data.id === selectedUserId ? detail.data : null;
   const superAdminTarget = Boolean(target?.isSuperAdmin);
   const isSelf = target !== null && target.id === session.data?.user.id;
+  // DA-03…05: auth says whether this caller may change the open user at all.
+  const manageable = target?.manageable ?? true;
+  // VIEW-only (no ADD) sees the Add page with everything disabled (owner 2026-10-17).
+  const formMode: PageMode = mode === "create" && !access.add ? "view" : mode;
 
   // One form serves create and edit; RHF re-reads `resolver` on every render (react-hook-form 7.89).
   const resolver = useMemo(
@@ -156,8 +168,8 @@ function UserPermissionWorkspace() {
     if (mode === "view" && detail.data && detail.data.id === selectedUserId) reset(formFromDetail(detail.data, catalog.data));
   }, [mode, detail.data, selectedUserId, catalog.data, reset]);
 
-  // A Super Admin who lost the role mid-session: re-check access so the guard shows the denied state.
-  const lostAccess = [list.error, detail.error, locations.error].some((error) => readDomainError(error).domainCode === "SUPER_ADMIN_REQUIRED");
+  // Lost the VIEW permission mid-session: re-check access so the guard shows the denied state.
+  const lostAccess = [list.error, detail.error, locations.error].some((error) => readDomainError(error).domainCode === "PERMISSION_DENIED");
   useEffect(() => {
     if (lostAccess) void utils.permission.mine.invalidate();
   }, [lostAccess, utils]);
@@ -178,7 +190,36 @@ function UserPermissionWorkspace() {
     status: locations.isPending ? ("loading" as const) : locations.isError ? ("error" as const) : ("ready" as const),
   };
 
+  /** Drops a picked-but-unsaved photo (and its preview URL). */
+  function resetPhoto() {
+    setPhotoChange((current) => {
+      if (current.kind === "new") URL.revokeObjectURL(current.previewUrl);
+      return UNCHANGED_PHOTO;
+    });
+  }
+
+  /**
+   * PH-08: after the details are saved, upload or remove the photo for that user. A failure keeps the
+   * saved details and only reports the photo.
+   */
+  async function applyPhoto(userId: string) {
+    const change = photoChange;
+    if (change.kind === "unchanged") return;
+    setPhotoUploading(true);
+    try {
+      if (change.kind === "new") await uploadUserPhoto(userId, change.file);
+      else await removePhoto.mutateAsync({ id: userId });
+    } catch (cause) {
+      const code = cause instanceof PhotoUploadError ? cause.code : readDomainError(cause).domainCode;
+      toast.show("error", `Details saved, but the photo couldn't be updated: ${photoErrorMessage(code)}.`);
+    } finally {
+      setPhotoUploading(false);
+      resetPhoto();
+    }
+  }
+
   function startDraft(values: UserFormValues) {
+    resetPhoto();
     if (selectedUserId !== null) setPreviousUserId(selectedUserId);
     reset(values);
     setFormError(null);
@@ -188,12 +229,14 @@ function UserPermissionWorkspace() {
   }
 
   function selectUser(id: string) {
+    resetPhoto();
     setFormError(null);
     setSelectedUserId(id);
     setMode("view");
   }
 
   function cancel() {
+    resetPhoto();
     setFormError(null);
     if (mode === "edit") {
       setMode("view"); // the view effect restores the saved values
@@ -207,7 +250,7 @@ function UserPermissionWorkspace() {
   }
 
   function startEdit() {
-    if (!target) return;
+    if (!target || !access.edit || !manageable) return;
     setFormError(null);
     setMode("edit");
     setFocusRequest({ field: "name", seq: Date.now() });
@@ -217,7 +260,8 @@ function UserPermissionWorkspace() {
     const source = detail.data;
     if (!source || !catalog.data) return;
     // ADR-0020 §4: copy the details and permissions into a new draft; Username and Password are cleared.
-    startDraft({ ...formFromDetail(source, catalog.data), username: "", password: "", active: true });
+    const copied = formFromDetail(source, catalog.data);
+    startDraft({ ...copied, permissions: grantableOnly(copied.permissions, access.grantable), username: "", password: "", active: true });
     toast.show("success", `Duplicated from ${source.name}. Enter a username and password, then save.`);
   }
 
@@ -231,7 +275,7 @@ function UserPermissionWorkspace() {
   }
 
   const onSubmit = form.handleSubmit(async (values) => {
-    if (mode === "view" || saving) return;
+    if (formMode === "view" || saving) return;
     if (!catalog.data) {
       setFormError("The permission list hasn't loaded yet. Retry loading it, then save.");
       return;
@@ -242,6 +286,7 @@ function UserPermissionWorkspace() {
       if (mode === "create") {
         const result = await create(toCreateUserInput({ ...values, permissions }));
         if (result === null) return; // a save is already in flight
+        await applyPhoto(result.id);
         setPreviousUserId(null);
         reset(emptyUserForm()); // also clears the password
         selectUser(result.id);
@@ -250,6 +295,7 @@ function UserPermissionWorkspace() {
         if (!target) return;
         const result = await update(toUpdateUserInput(target, { ...values, permissions }));
         if (result === null) return;
+        await applyPhoto(target.id);
         form.setValue("password", "");
         setMode("view");
         void utils.userAdmin.get.invalidate({ id: target.id });
@@ -285,7 +331,9 @@ function UserPermissionWorkspace() {
     ? "Super Admin accounts can't be deleted"
     : isSelf
       ? "You can't delete your own account"
-      : null;
+      : !manageable
+        ? "This user has permissions you don't have"
+        : null;
   const showForm = mode === "create" || savedLoaded;
 
   return (
@@ -310,8 +358,12 @@ function UserPermissionWorkspace() {
             onCancel={cancel}
             onEdit={startEdit}
             onDelete={() => {
-              if (selectedSummary && deleteBlockedReason === null) setDeleteTarget(selectedSummary);
+              if (access.delete && selectedSummary && deleteBlockedReason === null) setDeleteTarget(selectedSummary);
             }}
+            canAdd={access.add}
+            canEdit={access.edit && manageable}
+            canDelete={access.delete}
+            canPrint={access.print}
           />
 
           {selectedUserId !== null && detail.isError ? (
@@ -330,7 +382,7 @@ function UserPermissionWorkspace() {
               noValidate
               onSubmit={onSubmit}
               className="flex min-h-0 flex-1 flex-col gap-4 print:block print:space-y-4"
-              aria-label={mode === "create" ? "Create user" : mode === "edit" ? "Edit user" : "User details"}
+              aria-label={formMode === "create" ? "Create user" : formMode === "edit" ? "Edit user" : "User details"}
             >
               {formError && (
                 <p role="alert" className="rounded-gms-md border border-gms-danger bg-gms-danger-subtle px-4 py-3 text-gms-body text-gms-danger">
@@ -338,12 +390,21 @@ function UserPermissionWorkspace() {
                 </p>
               )}
               <PersonalInformationCard
-                mode={mode}
+                mode={formMode}
                 form={form}
                 locations={locationsState}
                 superAdmin={superAdminTarget}
                 isSelf={isSelf}
-                onPhotoClick={() => toast.show("info", "Photo upload isn't available yet.")}
+                photo={
+                  <PhotoTile
+                    value={photoChange}
+                    savedUrl={target ? photoUrl(target.id, target.photoVersion) : null}
+                    onChange={setPhotoChange}
+                    // PH-06: your own photo is not changed on this page; unmanageable users stay read-only.
+                    readOnly={formMode === "view" || isSelf || !manageable}
+                    uploading={photoUploading}
+                  />
+                }
               />
               <Controller
                 control={form.control}
@@ -355,8 +416,9 @@ function UserPermissionWorkspace() {
                     errorMessage={catalog.isError ? loadErrorMessage(catalog.error, "the permission list") : undefined}
                     onRetry={() => void catalog.refetch()}
                     values={superAdminTarget ? valuesFromGrants("ALL", catalog.data?.nodes) : field.value}
-                    onChange={mode === "view" ? undefined : field.onChange}
+                    onChange={formMode === "view" ? undefined : field.onChange}
                     superAdminLocked={superAdminTarget}
+                    grantable={access.grantable}
                   />
                 )}
               />

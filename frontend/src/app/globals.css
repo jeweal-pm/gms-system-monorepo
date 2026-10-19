@@ -160,7 +160,7 @@ button, input, select, textarea { font: inherit; }
   }
   .gms-dialog[open]::backdrop {
     background-color: var(--color-gms-scrim);
-    backdrop-filter: blur(2px);
+    backdrop-filter: blur(1px);
   }
   @starting-style {
     .gms-dialog[open] {

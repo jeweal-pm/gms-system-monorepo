@@ -1,9 +1,11 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth-client";
+import { clearAccountCache } from "@/lib/session-cache";
 import { contextNavFor, type Breadcrumb } from "./navigation";
 import { Sidebar } from "./sidebar";
 import { SidebarContextPanel } from "./sidebar-context-panel";
@@ -24,6 +26,7 @@ const sidebarContainerId = "app-sidebar";
  */
 export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonly<{ children: React.ReactNode; breadcrumbs?: Breadcrumb[] }>) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const pathname = usePathname();
   const { data: session, isPending, refetch } = authClient.useSession();
   const [isSessionChecked, setIsSessionChecked] = useState(false);
@@ -57,6 +60,7 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
 
   async function handleSignOut() {
     await authClient.signOut();
+    clearAccountCache(queryClient);
     router.replace("/login");
     router.refresh();
   }

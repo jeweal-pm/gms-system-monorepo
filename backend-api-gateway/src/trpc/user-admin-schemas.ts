@@ -101,11 +101,19 @@ export const userDetailOutputSchema = userListItemSchema.extend({
   permissions: z.union([z.literal("ALL"), z.array(z.string()).max(MAX_GRANTS)]),
   photoVersion: z.string().nullable(),
   readOnly: z.boolean(),
+  /** delegated-admin.md DA-03…05: false = the caller may not change or delete this user. */
+  manageable: z.boolean(),
 });
 
 export const userMutationOutputSchema = z.object({ id: z.string(), updatedAt: z.string() });
 
 export const deleteOutputSchema = z.object({ ok: z.literal(true) });
+
+/** user-photo.md PH-05: JPEG or PNG, at most 5 MB. */
+export const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
+export const PHOTO_TYPES = ["image/jpeg", "image/png"] as const;
+/** PH-07: first 16 hex of the photo sha256 (same as `userAdmin.get` `photoVersion`). */
+export const photoUploadOutputSchema = z.object({ photoVersion: z.string().regex(/^[0-9a-f]{16}$/) });
 
 export const locationOptionsOutputSchema = z.object({
   items: z.array(z.object({ key: z.string(), label: z.string() })).max(50),

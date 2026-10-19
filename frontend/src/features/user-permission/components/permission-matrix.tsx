@@ -3,7 +3,7 @@
 import { ChevronDown } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import { PERMISSION_ACTIONS, type CatalogNode } from "../api";
-import { aggregateState, applicableKeys, leafNodes, toggleCells, type PermissionValues } from "../permission-utils";
+import { aggregateState, applicableKeys, editableKeys, leafNodes, toggleCells, type PermissionValues } from "../permission-utils";
 import { cx, focusRing } from "@/components/ui/button";
 import { DisabledCheckbox, TriStateCheckbox } from "@/components/ui/checkbox";
 
@@ -19,6 +19,8 @@ type PermissionMatrixProps = {
   forceExpand: boolean;
   /** ID of the Super Admin lock banner, linked to every locked cell. */
   lockedDescriptionId?: string;
+  /** DA-02: keys the signed-in user may change; other cells are disabled. Null/undefined = all. */
+  grantable?: ReadonlySet<string> | null;
 };
 
 const cellBorder = "border-b border-gms-border";
@@ -33,12 +35,13 @@ const stickySelectAll = "sticky top-[42px] z-10 bg-gms-surface-muted";
  * Every action implies VIEW (view-dependency.md, toggleCells). Row keys are kind-prefixed:
  * section `purchase` and leaf `purchase` share a catalog key.
  */
-export function PermissionMatrix({ nodes, values, onChange, collapsed, onToggleGroup, forceExpand, lockedDescriptionId }: PermissionMatrixProps) {
+export function PermissionMatrix({ nodes, values, onChange, collapsed, onToggleGroup, forceExpand, lockedDescriptionId, grantable }: PermissionMatrixProps) {
   /** One row of cells aggregating the leaves under `scope`. */
   function cells(label: string, scope: readonly CatalogNode[], className?: string) {
     return PERMISSION_ACTIONS.map((action) => {
       const keys = applicableKeys(scope, action);
       const state = aggregateState(keys, values);
+      const editable = editableKeys(keys, grantable);
       const name = `${label} ${action}`;
       return (
         <td key={action} className={cx("h-full text-center align-middle", className)}>
@@ -47,8 +50,12 @@ export function PermissionMatrix({ nodes, values, onChange, collapsed, onToggleG
               <span aria-hidden className="text-gms-text-placeholder">—</span>
               <span className="sr-only">{`${name}: not applicable`}</span>
             </>
-          ) : onChange ? (
-            <TriStateCheckbox label={name} state={state} onToggle={() => onChange(toggleCells(keys, values, leafNodes(scope)))} />
+          ) : onChange && editable.length > 0 ? (
+            <TriStateCheckbox
+              label={name}
+              state={aggregateState(editable, values) ?? state}
+              onToggle={() => onChange(toggleCells(editable, values, leafNodes(scope)))}
+            />
           ) : (
             <DisabledCheckbox label={name} state={state} describedBy={lockedDescriptionId} />
           )}

@@ -50,6 +50,10 @@ services:
       LICENSE_PUBLIC_KEYS_JSON: ${LICENSE_PUBLIC_KEYS_JSON:-}
       LICENSE_MOCK_KID: ${LICENSE_MOCK_KID:-}
       LICENSE_MOCK_PRIVATE_KEY_PKCS8_BASE64: ${LICENSE_MOCK_PRIVATE_KEY_PKCS8_BASE64:-}
+    # Infra bundle backend-api-auth/1 (user-photo SA PH-10): the only new writable path is the
+    # user photo folder (storage/user-photos/<userId>); photos survive container recreation.
+    volumes:
+      - auth-storage:/app/backend-api-auth/storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -161,6 +165,7 @@ services:
 volumes:
   postgres-data:
   partner-storage:
+  auth-storage:
 
 networks:
   partner-api:

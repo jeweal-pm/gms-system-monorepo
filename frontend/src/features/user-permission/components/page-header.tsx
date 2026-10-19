@@ -26,6 +26,11 @@ type PageHeaderProps = {
   onEdit: () => void;
   onDelete: () => void;
   deleteButtonRef?: Ref<HTMLButtonElement>;
+  /** `user-and-permission` actions (delegated-admin.md DA-01); a missing one only disables its button. */
+  canAdd: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  canPrint: boolean;
 };
 
 /**
@@ -50,8 +55,13 @@ export function PageHeader({
   onEdit,
   onDelete,
   deleteButtonRef,
+  canAdd,
+  canEdit,
+  canDelete,
+  canPrint,
 }: PageHeaderProps) {
-  const editing = mode !== "view";
+  // VIEW-only users land on a disabled Add page: "create" without ADD is not an editing state.
+  const editing = mode === "edit" || (mode === "create" && canAdd);
   const busy = saving || deleting;
   return (
     <div className="mb-4 space-y-3 print:hidden">
@@ -61,14 +71,14 @@ export function PageHeader({
           <span className="text-gms-body text-gms-text-secondary">{total === undefined ? "User List" : `User List ${total}`}</span>
         </div>
         <div className="flex items-center gap-1">
-          <IconButton label="Print saved user" onClick={onPrint} disabled={!savedLoaded || mode !== "view"}>
+          <IconButton label="Print saved user" onClick={onPrint} disabled={!canPrint || !savedLoaded || mode !== "view"}>
             <Printer size={18} aria-hidden />
           </IconButton>
           <IconButton label="Export to Excel" unavailableReason="Excel export isn't available yet">
             <FileSpreadsheet size={18} className="text-gms-excel" aria-hidden />
           </IconButton>
           <span className="w-3" aria-hidden />
-          <IconButton label="Duplicate user" onClick={onDuplicate} disabled={!savedLoaded || busy}>
+          <IconButton label="Duplicate user" onClick={onDuplicate} disabled={!canAdd || !savedLoaded || busy}>
             <CopyPlus size={18} aria-hidden />
           </IconButton>
           <IconButton label="Refresh" onClick={onRefresh} aria-busy={refreshing || undefined} disabled={busy}>
@@ -77,7 +87,7 @@ export function PageHeader({
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2.5">
-        <Button icon={<Plus size={18} aria-hidden />} onClick={onCreateUser} disabled={editing || busy} className="h-[38px] min-w-[132px]">
+        <Button icon={<Plus size={18} aria-hidden />} onClick={onCreateUser} disabled={!canAdd || editing || busy} className="h-[38px] min-w-[132px]">
           Create User
         </Button>
         <Button onClick={onCancel} disabled={!editing || saving} className="h-[38px] min-w-[100px]">
@@ -98,7 +108,7 @@ export function PageHeader({
           variant="primary"
           icon={<Pencil size={16} aria-hidden />}
           onClick={onEdit}
-          disabled={editing || !savedLoaded || busy}
+          disabled={!canEdit || editing || !savedLoaded || busy}
           className="h-[38px] min-w-[100px]"
         >
           Edit
@@ -108,7 +118,7 @@ export function PageHeader({
           variant="danger"
           icon={<Trash2 size={16} aria-hidden />}
           onClick={onDelete}
-          disabled={editing || !savedLoaded || busy || deleteBlockedReason !== null}
+          disabled={!canDelete || editing || !savedLoaded || busy || deleteBlockedReason !== null}
           title={!editing && deleteBlockedReason ? deleteBlockedReason : undefined}
           className="h-[38px] min-w-[100px]"
         >

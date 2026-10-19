@@ -46,6 +46,10 @@ export type UserDetail = UserSummary & {
   permissions: string[] | "ALL";
   /** Optimistic-concurrency token sent back as `expectedUpdatedAt`. */
   updatedAt: string;
+  /** delegated-admin.md DA-03…05: false = the signed-in user may not change or delete this user. */
+  manageable: boolean;
+  /** user-photo.md PH-07: sha256 prefix of the saved photo, or null when there is none. */
+  photoVersion: string | null;
 };
 
 export type LocationOption = { id: string; label: string };
@@ -95,6 +99,8 @@ export function toUserDetail(output: UserDetailOutput): UserDetail {
     locationIds: output.locationKeys,
     permissions: output.permissions,
     updatedAt: output.updatedAt,
+    manageable: output.manageable,
+    photoVersion: output.photoVersion,
   };
 }
 
@@ -249,8 +255,16 @@ export function mapSaveError(error: unknown, kind: "create" | "update", usage: U
       return { fieldErrors: [], formError: "This username has no issued license. Contact sales." };
     case "USER_LICENSE_UNVERIFIABLE":
       return { fieldErrors: [], formError: "Couldn't verify the license. Try again." };
-    case "SUPER_ADMIN_REQUIRED":
-      return { fieldErrors: [], formError: "Only a Super Admin can manage users.", recheckAccess: true };
+    case "PERMISSION_GRANT_NOT_ALLOWED":
+      return { fieldErrors: [], formError: "You can only give permissions that you have yourself. Nothing was saved." };
+    case "USER_NOT_MANAGEABLE":
+      return {
+        fieldErrors: [],
+        formError: "You can't change this user: they are a Super Admin, your own account, or have permissions you don't have. Nothing was saved.",
+        refetchDetail: true,
+      };
+    case "PERMISSION_DENIED":
+      return { fieldErrors: [], formError: "You don't have permission to do this. Nothing was saved.", recheckAccess: true };
     default:
       if (isCallerLicenseCode(domainCode)) return { fieldErrors: [], formError: "Your license doesn't allow this right now. Nothing was saved." };
       if (domainCode === "UNAUTHORIZED") return { fieldErrors: [], formError: "Your session has ended. Sign in again." };
@@ -272,8 +286,10 @@ export function mapDeleteError(error: unknown): DeleteErrorOutcome {
     case "SUPER_ADMIN_LOCKED":
     case "SUPER_ADMIN_READ_ONLY":
       return { kind: "dialog", message: "Super Admin accounts and your own account can't be deleted." };
-    case "SUPER_ADMIN_REQUIRED":
-      return { kind: "dialog", message: "Only a Super Admin can delete users.", recheckAccess: true };
+    case "USER_NOT_MANAGEABLE":
+      return { kind: "dialog", message: "You can't delete this user: they have permissions you don't have." };
+    case "PERMISSION_DENIED":
+      return { kind: "dialog", message: "You don't have permission to delete users.", recheckAccess: true };
     default:
       if (isCallerLicenseCode(domainCode)) return { kind: "dialog", message: "Your license doesn't allow this right now. Nothing was deleted." };
       if (domainCode === "UNAUTHORIZED") return { kind: "dialog", message: "Your session has ended. Sign in again." };
@@ -285,7 +301,7 @@ export function mapDeleteError(error: unknown): DeleteErrorOutcome {
 export function loadErrorMessage(error: unknown, subject: string): string {
   const { domainCode } = readDomainError(error);
   if (domainCode === "USER_NOT_FOUND") return "This user no longer exists. It may have been deleted.";
-  if (domainCode === "SUPER_ADMIN_REQUIRED") return `Only a Super Admin can view ${subject}.`;
+  if (domainCode === "PERMISSION_DENIED") return `You don't have permission to view ${subject}.`;
   if (isCallerLicenseCode(domainCode)) return `Your license doesn't allow loading ${subject} right now.`;
   if (domainCode === "UNAUTHORIZED") return "Your session has ended. Sign in again.";
   return `Couldn't load ${subject}.`;
