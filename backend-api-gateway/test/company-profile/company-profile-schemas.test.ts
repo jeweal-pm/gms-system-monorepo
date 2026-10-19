@@ -42,6 +42,11 @@ describe("saveCompanyProfileInputSchema", () => {
     expect(parsed.expectedVersion).toBe(3);
   });
 
+  it("UT-CP-G16 allows an empty City (owner 2026-10-19) but still requires State/Province", () => {
+    expect(saveCompanyProfileInputSchema.parse({ ...validInput(), city: " " }).city).toBe("");
+    expect(saveCompanyProfileInputSchema.safeParse({ ...validInput(), state: "" }).success).toBe(false);
+  });
+
   it("UT-CP-G11 rejects unknown keys and invalid fields before partner is called", () => {
     expect(saveCompanyProfileInputSchema.safeParse({ ...validInput(), role: "admin" }).success).toBe(false);
     const result = saveCompanyProfileInputSchema.safeParse({ ...validInput(), phone: { country: "TH", e164: "081" }, website: "ftp://x" });

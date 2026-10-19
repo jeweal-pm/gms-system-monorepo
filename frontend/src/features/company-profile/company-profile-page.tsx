@@ -1,11 +1,12 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ChevronDown, FileSpreadsheet, Pencil, Printer, RotateCw, Save } from "lucide-react";
+import { FileSpreadsheet, Pencil, Printer, RotateCw, Save } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Controller, useForm, useWatch, type FieldErrors } from "react-hook-form";
 import { Button, IconButton, cx } from "@/components/ui/button";
 import { LabeledCheckbox } from "@/components/ui/checkbox";
+import { ComboboxField } from "@/components/ui/combobox-field";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { TextField } from "@/components/ui/outlined-field";
 import { PhoneField } from "@/components/ui/phone-field";
@@ -14,8 +15,10 @@ import { ToastProvider, useToast } from "@/components/ui/toast";
 import type { PartnerAccess } from "@/features/partner/access";
 import { DiscardChangesDialog } from "@/features/partner/components/discard-changes-dialog";
 import { PartnerAccessGuard } from "@/features/partner/components/partner-page-parts";
+import { RegionField, type RegionValue } from "@/features/partner/components/region-field";
 import type { PartnerEntity } from "@/features/partner/entity";
 import { useUnsavedChangesPrompt } from "@/features/partner/hooks";
+import { useRegionData } from "@/lib/regions";
 import { readDomainError } from "@/lib/trpc-error";
 import { fieldErrorMessage, formFieldFor, logoErrorMessage, LogoUploadError, logoUrl, toFormValues, toSaveInput, uploadLogo, type CompanyProfile } from "./api";
 import { LogoUploadTile } from "./components/logo-upload-tile";
@@ -99,9 +102,15 @@ function CompanyProfileWorkspace({ access, saved, refetch }: { access: PartnerAc
     setError,
     reset,
     handleSubmit,
-    formState: { errors, isDirty },
+    formState: { errors, isDirty, isSubmitted },
   } = form;
-  const [countryCode, companyName] = useWatch({ control, name: ["countryCode", "name"] });
+  const [countryCode, companyName, state, city] = useWatch({ control, name: ["countryCode", "name", "state", "city"] });
+  const region = useRegionData(countryCode);
+  function setRegion(next: RegionValue) {
+    const opts = { shouldDirty: true, shouldValidate: isSubmitted };
+    if (next.state !== state) setValue("state", next.state, opts);
+    if (next.city !== city) setValue("city", next.city, opts);
+  }
 
   const readOnly = mode === "view" || !canEdit;
   const dirty = isDirty || logo.kind !== "unchanged";
@@ -271,62 +280,58 @@ function CompanyProfileWorkspace({ access, saved, refetch }: { access: PartnerAc
             <TextField id="cp-address" label="Address No.1" required autoComplete="address-line1" className="md:col-span-2" error={errors.address?.message} {...fieldProps} {...register("address")} />
             <TextField id="cp-address2" label="Address No.2" autoComplete="address-line2" className="md:col-span-2" error={errors.address2?.message} {...fieldProps} {...register("address2")} />
             <TextField id="cp-roadStreet" label="Road/Street" autoComplete="off" error={errors.roadStreet?.message} {...fieldProps} {...register("roadStreet")} />
-            {/* Controlled: the options load after the form, so an uncontrolled select would lose the saved
-                value and keep the placeholder colour (owner screenshot 2026-10-16). */}
+            {/* Searchable (owner 2026-10-19). Controlled: the options load after the form (owner screenshot 2026-10-16). */}
             <Controller
               control={control}
               name="countryCode"
               render={({ field }) => (
-                <SelectField
+                <ComboboxField
                   id="cp-countryCode"
                   label="Country"
                   required
-                  placeholder="Select country"
-                  autoComplete="country"
+                  placeholder="Search country"
                   options={options.data?.countries ?? []}
                   status={optionList.status}
                   onRetry={optionList.onRetry}
                   error={errors.countryCode?.message}
                   readOnly={readOnly}
                   ref={field.ref}
-                  name={field.name}
                   value={field.value}
                   onBlur={field.onBlur}
-                  onChange={(event) => {
-                    field.onChange(event.target.value);
+                  onChange={(code) => {
+                    field.onChange(code);
                     // State and City belong to the chosen country: clear them when it changes (partner DV-04).
-                    setValue("state", "", { shouldDirty: true });
-                    setValue("city", "", { shouldDirty: true });
+                    setRegion({ state: "", city: "" });
                   }}
                 />
               )}
             />
-            {/* UI revision 3: City and State look like dropdowns (chevron) but stay free text (owner 2026-10-17). */}
-            <TextField
-              id="cp-city"
-              label="City"
-              required
-              autoComplete="address-level2"
-              disabled={!readOnly && !countryCode}
-              placeholder={countryCode ? undefined : "Choose a country first"}
-              error={countryCode ? errors.city?.message : undefined}
-              endIcon={<ChevronDown size={20} />}
-              {...fieldProps}
-              {...register("city")}
-            />
-            {/* DV-04: the design labels this "Stage/Province". */}
-            <TextField
-              id="cp-state"
-              label="State/Province"
-              required
-              autoComplete="address-level1"
-              disabled={!readOnly && !countryCode}
-              placeholder={countryCode ? undefined : "Choose a country first"}
-              error={countryCode ? errors.state?.message : undefined}
-              endIcon={<ChevronDown size={20} />}
-              {...fieldProps}
-              {...register("state")}
-            />
+            {/* Owner 2026-10-19: State then City (optional), dropdowns from the country's list (a City fills its State);
+                countries without a list keep free text. DV-04: the design labels State "Stage/Province". */}
+            {(["state", "city"] as const).map((kind) => (
+              <Controller
+                key={kind}
+                control={control}
+                name={kind}
+                render={({ field }) => (
+                  <RegionField
+                    kind={kind}
+                    id={`cp-${kind}`}
+                    label={kind === "state" ? "State/Province" : "City"}
+                    required={kind === "state"}
+                    readOnly={readOnly}
+                    hasCountry={Boolean(countryCode)}
+                    region={region}
+                    value={{ state, city }}
+                    onChange={setRegion}
+                    onBlur={field.onBlur}
+                    autoComplete={kind === "state" ? "address-level1" : "address-level2"}
+                    error={errors[kind]?.message}
+                    ref={field.ref}
+                  />
+                )}
+              />
+            ))}
             <TextField id="cp-postcode" label="Postcode" required autoComplete="postal-code" error={errors.postcode?.message} {...fieldProps} {...register("postcode")} />
           </div>
         </ProfileSection>

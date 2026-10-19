@@ -71,12 +71,12 @@ describe("LogoUploadTile", () => {
 });
 
 describe("COMPANY_PROFILE_FIELD_ORDER", () => {
-  it("UT-CP-F39 follows the revision 3 page order (Road/Street, Country, City, State/Province; no terms)", () => {
+  it("UT-CP-F39 follows the revision 3 page order (Road/Street, Country, State/Province, City — owner 2026-10-19; no terms)", () => {
     const order: readonly string[] = COMPANY_PROFILE_FIELD_ORDER;
     expect(order.indexOf("address2")).toBeLessThan(order.indexOf("roadStreet"));
     expect(order.indexOf("roadStreet")).toBeLessThan(order.indexOf("countryCode"));
-    expect(order.indexOf("countryCode")).toBeLessThan(order.indexOf("city"));
-    expect(order.indexOf("city")).toBeLessThan(order.indexOf("state"));
+    expect(order.indexOf("countryCode")).toBeLessThan(order.indexOf("state"));
+    expect(order.indexOf("state")).toBeLessThan(order.indexOf("city"));
     expect(order).not.toContain("terms");
   });
 });

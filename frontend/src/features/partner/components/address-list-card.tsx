@@ -1,10 +1,11 @@
 "use client";
 
 import { Plus } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useFieldArray, useFormState, type FieldValues, type UseFormReturn } from "react-hook-form";
 import { cx, focusRing } from "@/components/ui/button";
 import { Card, CountBadge } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import type { AddressTypeConfig } from "../address-types";
 import type { OptionsState } from "../options";
 import {
@@ -34,7 +35,8 @@ type AddressListCardProps<TForm extends FieldValues & PartnerAddressValues> = {
 
 /**
  * Partner C-09 (customer FE-CUS-007 / FE-CUS-R3-002, vendor FE-VEN-006 / FE-VEN-R4-002): one address
- * type's list. 1–10 items, all always open (rev 3/4 removed the accordion); item #1 cannot be removed. Default handling follows `defaultRule`:
+ * type's list. 1–10 items, all always open (rev 3/4 removed the accordion). Any item can be removed
+ * except the default one and the last remaining one; removing asks for confirmation first (owner 2026-10-19). Default handling follows `defaultRule`:
  * - `exactlyOne` (customer P-01): ticking moves the default, it can't be unticked, removing it makes #1 the default.
  * - `atMostOne` (vendor Q-VEN-03): ticking moves the default, unticking leaves none, removing it leaves none.
  */
@@ -55,6 +57,8 @@ export function AddressListCard<TForm extends FieldValues & PartnerAddressValues
   const errorIndexes = addressIndexesWithErrors(errors as Record<string, unknown>, arrayName);
   const atLimit = fields.length >= ADDRESS_MAX;
   const limitHelpId = `${idPrefix}-${type.key}-limit`;
+  /** Index of the item waiting for the remove confirmation, or null. */
+  const [pendingRemove, setPendingRemove] = useState<number | null>(null);
 
   function changeDefault(index: number, checked: boolean) {
     if (!checked) {
@@ -69,13 +73,12 @@ export function AddressListCard<TForm extends FieldValues & PartnerAddressValues
   }
 
   function removeAt(index: number) {
-    if (index === 0) return;
-    // `exactlyOne`: removing the default makes #1 the default (P-01). Set it before removing so the array action is not stacked.
-    if (defaultRule === "exactlyOne" && getValues(`${arrayName}.${index}.isDefault`)) setValue(`${arrayName}.0.isDefault`, true, { shouldDirty: true });
-    const previousKey = fields[index - 1]?.fieldKey;
+    // The default address and the last remaining one cannot be removed (owner 2026-10-19).
+    if (fields.length <= 1 || getValues(`${arrayName}.${index}.isDefault`)) return;
+    // Focus moves to the previous card's first control (its default checkbox), or the next card's when #1 is removed.
+    const focusKey = (fields[index - 1] ?? fields[index + 1])?.fieldKey;
     remove(index);
-    // Focus moves to the previous card's first control (its default checkbox).
-    if (previousKey) defaultInputs.current.get(previousKey)?.focus();
+    if (focusKey) defaultInputs.current.get(focusKey)?.focus();
   }
 
   function add() {
@@ -107,7 +110,7 @@ export function AddressListCard<TForm extends FieldValues & PartnerAddressValues
             hasErrors={errorIndexes.includes(index)}
             readOnly={readOnly}
             options={options}
-            onRemove={index > 0 && !readOnly ? () => removeAt(index) : undefined}
+            onRemove={fields.length > 1 && !readOnly ? () => setPendingRemove(index) : undefined}
             onDefaultChange={(checked) => changeDefault(index, checked)}
             defaultInputRef={(element) => {
               if (element) defaultInputs.current.set(field.fieldKey, element);
@@ -138,6 +141,21 @@ export function AddressListCard<TForm extends FieldValues & PartnerAddressValues
           </div>
         )}
       </div>
+      <ConfirmDialog
+        open={pendingRemove !== null}
+        title={`Remove ${type.itemLabel.toLowerCase()} #${(pendingRemove ?? 0) + 1}?`}
+        body="This address will be removed from the form. The change is kept only when you save."
+        cancelLabel="Keep address"
+        confirmLabel="Remove"
+        pendingLabel="Removing..."
+        pending={false}
+        onCancel={() => setPendingRemove(null)}
+        onConfirm={() => {
+          const index = pendingRemove;
+          setPendingRemove(null);
+          if (index !== null) removeAt(index);
+        }}
+      />
     </Card>
   );
 }

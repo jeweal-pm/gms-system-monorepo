@@ -76,7 +76,7 @@ Design items **not** followed in revision 2 (ADR-0021 §3, §5): "Create User" �
 | DV-01 | Drawer title "Vendors" | "Customers" | ADR-0018 §5 (owner confirmed the design is wrong) |
 | DV-02 | Draft row "New user / superadmin@example.com" | Bold line = the Name being typed (fallback "New customer"); second line = the Code Name being typed (fallback "Not saved yet"); "Draft" badge | ADR-0018 §5 |
 | DV-03 | Search placeholder "Search name or username..." | "Search name or code name..." | ADR-0018 §2 (`customer.list` searches Name/Code Name) |
-| DV-04 | State/Province and City are dropdowns ("Choose a country first") | **Text inputs**, disabled with placeholder "Choose a country first" until a Country is chosen | ADR-0018 §4 |
+| DV-04 | State/Province and City are dropdowns ("Choose a country first") | **Closed (owner 2026-10-19):** dropdowns from the chosen country's static list `frontend/public/regions/<CC>.json`; picking a City fills its State/Province, picking a State/Province narrows the City list. Countries without a list, and states without listed cities, keep text inputs. Values are still stored as names (contract unchanged) | ADR-0018 §4 (amendment pending SA) |
 | DV-05 | Country looks like an empty plain input (no chevron) | Dropdown of ISO 3166-1 countries from `customer.options` | ADR-0018 §4 |
 | DV-06 | Shipping card button reads "Add another invoice address" | "Add another shipping address" | Design copy error; proposal (owner instruction for this spec) |
 | DV-07 | No Delete button | Delete button (danger) for a saved customer when the user has `customer:DELETE`, with a confirm dialog like Delete user | ADR-0018 §5, owner request |
@@ -199,7 +199,7 @@ Buttons the user is not permitted to use are **hidden** (proposal; the ADR allow
 | Remove address | Trash icon (items #2+) | Removes the item immediately (nothing is saved until Create/Save), renumbers, moves focus to the previous item's header; if it was the default, item #1 becomes the default. Accessible name "Remove invoice address #2". | ADR §3 |
 | Collapse/expand item | Chevron button | Local UI state; `aria-expanded`; values kept | S2 |
 | Set default | "Set as default address" | Checking moves the default to this item (the others uncheck). The checked default cannot be unchecked (`aria-disabled`, hint "One address must be the default"). The Default badge follows. | ADR §3; proposal for the checkbox semantics |
-| Choose Country | Country select | Enables State/Province and City (placeholder changes from "Choose a country first" to "Enter state or province" / "Enter city"). Changing Country keeps their text. | ADR §4, DV-04 |
+| Choose Country | Country select | Loads the country's State/Province and City lists and enables both. Changing Country clears them (owner 2026-10-19). | ADR §4, DV-04 |
 | Active | Switch | Form value; saved with Create/Save | ADR §3 |
 | Leave with unsaved changes | Refresh, another drawer row, the draft row, Duplicate, browser close/reload | ConfirmDialog "Discard unsaved changes?" ("Keep editing" / "Discard") for in-page actions; the native `beforeunload` prompt for close/reload. In-app link navigation is not intercepted (App Router has no supported route-change block). | ADR §5 (Refresh); extended by proposal |
 

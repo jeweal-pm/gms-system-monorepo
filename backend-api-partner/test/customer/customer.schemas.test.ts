@@ -22,6 +22,11 @@ describe("createCustomerBodySchema", () => {
     expect(parsed.invoiceAddresses[0]).toMatchObject({ name: "HQ", taxId: "0105" });
   });
 
+  it("UT-CUS-P13 allows an empty address City (owner 2026-10-19) but still requires State/Province", () => {
+    expect(paths(customerBody({ invoiceAddresses: [invoiceAddress({ city: "", isDefault: true })] }))).toEqual([]);
+    expect(paths(customerBody({ invoiceAddresses: [invoiceAddress({ state: "", isDefault: true })] }))).toEqual(["invoiceAddresses.0.state"]);
+  });
+
   it("UT-CUS-P02 rejects unknown keys at the root and in addresses (strict)", () => {
     expect(fieldErrors(createCustomerBodySchema, customerBody({ id: "x" }))).toEqual([{ path: "(root)", code: "unrecognized_keys" }]);
     expect(fieldErrors(createCustomerBodySchema, customerBody({ createdBy: "u" }))).toEqual([{ path: "(root)", code: "unrecognized_keys" }]);

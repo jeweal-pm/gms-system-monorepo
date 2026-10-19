@@ -34,7 +34,8 @@ export const addressBase = {
   address: z.string().trim().min(1).max(500),
   countryCode: z.string().regex(/^[A-Z]{2}$/),
   state: z.string().trim().min(1).max(100),
-  city: z.string().trim().min(1).max(100),
+  // Optional (owner 2026-10-19): some places have no city; stored as "".
+  city: z.string().trim().max(100),
   postcode: z.string().trim().min(1).max(20),
   isDefault: z.boolean(),
 };

@@ -78,7 +78,7 @@ These are the customer deviations (DV-01…DV-12 in the [customer spec](../custo
 | DV-01 | Drawer title "Vendors" | Keep "Vendors" (correct here) | VD-01 |
 | DV-02 | Draft row "New user / superadmin@example.com" | Bold line = the Name being typed (fallback "New vendor"); second line = the Code Name being typed (fallback "Not saved yet"); "Draft" badge | Customer DV-02 |
 | DV-03 | Search placeholder "Search name or username..." | "Search name or code name..." | Customer DV-03 |
-| DV-04 | State/Province and City are dropdowns ("Choose a country first") | Text inputs, disabled with placeholder "Choose a country first" until a Country is chosen | Customer DV-04 (ADR-0018 §4; no state/city data) |
+| DV-04 | State/Province and City are dropdowns ("Choose a country first") | **Closed (owner 2026-10-19):** dropdowns from the country's region list, as customer DV-04 | Customer DV-04 |
 | DV-05 | Country is a plain empty input | Country dropdown (ISO 3166-1) | Customer DV-05 |
 | DV-07 | No Delete button | Delete button (danger) for a saved vendor when the user has `vendor:DELETE`, with a confirm dialog | Customer DV-07 / Q-CUS-02 |
 | DV-08 | Breadcrumb "Breadcrumbs Item › Breadcrumbs Item › Vendor" | `Home › Setup › Vendor`; the existing `SetupTabs` bar with a new active "Vendor" tab | Customer DV-08 |
