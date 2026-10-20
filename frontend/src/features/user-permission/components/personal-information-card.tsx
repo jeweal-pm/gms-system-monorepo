@@ -73,6 +73,7 @@ export function PersonalInformationCard({ mode, form, locations, superAdmin, isS
         <div className={grid}>
           {mode === "create" ? (
             <TextField
+              key="username-edit"
               id="user-username"
               label="Username"
               required
@@ -86,12 +87,14 @@ export function PersonalInformationCard({ mode, form, locations, superAdmin, isS
               {...register("username")}
             />
           ) : (
-            // Not registered: the username is immutable after creation (ADR-0020 §1).
-            <TextField id="user-username" label="Username" required disabled value={username} readOnly />
+            // Not registered: the username is immutable after creation (ADR-0020 §1). Each branch has its
+            // own key: a controlled (value) and a registered (uncontrolled) input must not share one element.
+            <TextField key="username-fixed" id="user-username" label="Username" required disabled value={username ?? ""} readOnly />
           )}
 
           {mode === "view" || superAdmin ? (
             <TextField
+              key="password-fixed"
               id="user-password"
               label="Password"
               type="password"
@@ -102,6 +105,7 @@ export function PersonalInformationCard({ mode, form, locations, superAdmin, isS
             />
           ) : (
             <TextField
+              key="password-edit"
               id="user-password"
               label="Password"
               required={mode === "create"}
@@ -115,9 +119,9 @@ export function PersonalInformationCard({ mode, form, locations, superAdmin, isS
           <div className="hidden xl:block" aria-hidden />
 
           {readOnly ? (
-            <TextField id="user-name" label="Name" required disabled readOnly value={name} />
+            <TextField key="name-fixed" id="user-name" label="Name" required disabled readOnly value={name ?? ""} />
           ) : (
-            <TextField id="user-name" label="Name" required placeholder="Full name" autoComplete="off" maxLength={120} error={errors.name?.message} {...register("name")} />
+            <TextField key="name-edit" id="user-name" label="Name" required placeholder="Full name" autoComplete="off" maxLength={120} error={errors.name?.message} {...register("name")} />
           )}
           <Controller
             control={control}

@@ -140,9 +140,9 @@ export function StoneFieldsCard({ page, form, readOnly, options, autoCode }: Sto
             {/* Copy button inside the field (owner 2026-10-19); the input keeps room for it on the right. */}
             <div className="relative">
               {mode === "AUTO" ? (
-                <TextField id={`${ID}-code`} label="Stone Code" required readOnly value={autoCode} placeholder={page.codePlaceholder} error={errors.code?.message} className="[&_input]:pr-12" />
+                <TextField key="code-auto" id={`${ID}-code`} label="Stone Code" required readOnly value={autoCode} placeholder={page.codePlaceholder} error={errors.code?.message} className="[&_input]:pr-12" />
               ) : (
-                <TextField id={`${ID}-code`} label="Stone Code" required autoComplete="off" placeholder={page.codePlaceholder} readOnly={readOnly} error={errors.code?.message} className="[&_input]:pr-12 [&_input]:uppercase" {...register("code")} />
+                <TextField key="code-manual" id={`${ID}-code`} label="Stone Code" required autoComplete="off" placeholder={page.codePlaceholder} readOnly={readOnly} error={errors.code?.message} className="[&_input]:pr-12 [&_input]:uppercase" {...register("code")} />
               )}
               <CopyCodeButton value={mode === "AUTO" ? autoCode : (manualCode ?? "").toUpperCase()} />
             </div>
