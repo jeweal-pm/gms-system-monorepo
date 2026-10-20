@@ -15,7 +15,7 @@ Claim allowed paths from document/coordination/ownership.yaml. The parent integr
 serializes manifest/lockfile, composition-root, Prisma, and Docker changes. Install approved
 proposals during implementation and record actual versions. Changed design goes back to sa
 and owner review; permission for an earlier revision is not permission for a different flow.
-Respect the shared 8 GB RAM / 4 vCPU host budget. Verify affected services/contracts/migrations,
+Respect the shared 4 GB RAM / 2 vCPU host budget. Verify affected services/contracts/migrations,
 then send the precise completion handoff to parent/frontend for automatic UI continuation.
 Save task records, handoffs, completion evidence, and changelog under document/.
 

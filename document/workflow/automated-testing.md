@@ -37,7 +37,7 @@ typecheck, lint, build, contract or migration checks when relevant. Before hando
 full relevant package/service test suites so the changed items and their interactions pass.
 Use an isolated database and deterministic fixtures for tests that write data; never run
 destructive test setup against production. Bound concurrent test workers and database
-connections on the 8 GB RAM / 4 vCPU production-sized environment. Record exact commands,
+connections on the 4 GB RAM / 2 vCPU production-sized environment. Record exact commands,
 results, case IDs, commit/working-tree revision, and any environment limits in the feature
 testing document and central TODO. A handoff is complete only when the required tests pass.
 

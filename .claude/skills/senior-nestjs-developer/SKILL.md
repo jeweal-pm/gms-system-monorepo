@@ -42,7 +42,7 @@ and the completion report back to the ticket before marking it resolved.
 - Stay within the assigned scope in `document/coordination/ownership.yaml`; write a scoped
   handoff for integration-owned or other-domain changes. Use public interfaces, never query
   another service's tables directly.
-- Keep total production workload within **8 GB RAM / 4 vCPU**, preserving host headroom.
+- Keep total production workload within **4 GB RAM / 2 vCPU**, preserving host headroom.
   Bound connection pools, response sizes, worker concurrency, retries, and cache memory.
   Recalculate aggregate container limits when proposing a service or replica.
 

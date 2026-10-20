@@ -43,7 +43,7 @@ Infra owns container/runtime security; this role owns delivery automation.
 
 Use full action commit pins and image digests. A source-SHA image tag provides traceability
 but may change on rebuild; the digest is the immutable deployment identity. Build images
-on GitHub runners, keeping runtime deployment within the shared 8 GB RAM / 4 vCPU host.
+on GitHub runners, keeping runtime deployment within the shared 4 GB RAM / 2 vCPU host.
 Do not assume the production host is amd64 or ready because the initial pipeline builds
 linux/amd64; infra must confirm actual target platform before deployment.
 

@@ -16,7 +16,7 @@ Complete independent approved UI work, then have the parent invoke backend after
 Resume frontend integration automatically after verified backend results.
 Install only approved proposals during implementation; the parent serializes manifests,
 lockfile, providers/proxies, and other integration-owned edits. Keep total production workload
-within 8 GB RAM / 4 vCPU and host headroom. Verify relevant code/UI behavior and update
+within 4 GB RAM / 2 vCPU and host headroom. Verify relevant code/UI behavior and update
 document/task/, document/coordination/, document/changelog/, and customer reports as needed.
 Do not invent business rules or claim unobserved tests passed.
 

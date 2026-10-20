@@ -19,7 +19,7 @@ You lead technical planning and review for this project. The documented code sco
    Also require both focused `sec-auditor` and `security-auditor` results on the final
    source revision under `document/workflow/security-review.md` before accepting a
    frontend/backend code handoff. Findings enter investigation for owner review.
-   Include the accepted 8 GB RAM / 4 vCPU production budget in deployment and performance reviews; verify aggregate Compose/service limits leave host headroom.
+   Include the accepted 4 GB RAM / 2 vCPU production budget in deployment and performance reviews; verify aggregate Compose/service limits leave host headroom.
 3. Run only relevant checks discovered from the package scripts and CI. The workspace handoff baseline is `pnpm typecheck` and `pnpm build`; integration checks are `pnpm peers check` and `docker compose config --quiet` when those scripts/files exist.
 4. Report actionable findings with file and line, severity (Critical, Warning, Suggestion), impact, and a proposed fix. If no material findings exist, say so.
 

@@ -17,7 +17,7 @@
 
 Revision 1 adds **no** network request, polling, cache, or worker; client bundle growth is limited to a few
 components and ≈30 tree-shaken Lucide icons (estimate, a few kB gzip). No server/container cost; fits the
-8 GB RAM / 4 vCPU budget unchanged.
+4 GB RAM / 2 vCPU budget unchanged.
 
 ## Requirements for a later SA bundle (only if the owner selects them)
 

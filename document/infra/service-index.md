@@ -16,6 +16,12 @@ No infrastructure review or container reconfiguration was performed while creati
 | frontend | Node/Next.js; shared dev image | base + dev override | ADR-0004 Frontend | none | not-reviewed | none |
 | backend-api-partner | Node 24.11.0 bookworm-slim / NestJS + Prisma 7.10 (adapter-pg); shared dev image in dev | base + dev override | [ADR-0018](../adr/0018-customer-master-partner-service.md) rev 1 (sha256 `a967fe7d…5a05424`); [ADR-0021](../adr/0021-company-profile-in-partner-service.md) (storage) | [services/backend-api-partner/1/security.md](services/backend-api-partner/1/security.md); [2](services/backend-api-partner/2/security.md) (2026-10-16: named volume `partner-storage` for the company logo, approved scope) | implemented, dev-verified (production rollout not done) | BE-CUS-011 2026-10-14 (full hashes in bundle): `docker-compose.yml` 8408246a, `docker-compose.dev.yml` 8bc0e050, `.env.example` 13dcc664; S1–S4, P1–P6, N2–N4, BT-CUS-12 pass on local Docker 29.8.0 / Compose 5.5.1; not run: N5 (`f1_partner`), C1 load, BT-CUS-21 fresh volume, production host facts; deviation `deploy.resources.limits.pids` instead of `pids_limit`; research 2026-10-14, review-by 2027-01-14 |
 
+2026-10-19 capacity change ([ADR-0024](../adr/0024-production-host-4gb-2vcpu.md), owner-approved): host is now
+4 GB RAM / 2 vCPU; CPU/memory limits and Node heap caps of all five services were reduced in
+`docker-compose.yml` and dev-only limits added to `docker-compose.dev.yml` (table in [capacity.md](capacity.md)).
+Only `docker compose config` was run; production-image runtime/load checks are pending, so the rows above keep
+their status.
+
 Add one row per real service and profile-specific helper/job; relate revisions rather
 than overwriting history. New/missing rows, accepted ADR changes, image/platform updates,
 or material Compose/network/storage drift trigger research through the parent.

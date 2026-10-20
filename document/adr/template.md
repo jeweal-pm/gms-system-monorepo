@@ -25,7 +25,7 @@ Compare reuse of the current implementation with other meaningful options; expla
 ## Consequences and capacity
 
 Describe compatibility, migration/backfill/rollback, operational impact, and CPU/RAM, pool,
-cache, and concurrency bounds for the shared 8 GB RAM / 4 vCPU production host.
+cache, and concurrency bounds for the shared 4 GB RAM / 2 vCPU production host.
 
 ## Acceptance and approval
 

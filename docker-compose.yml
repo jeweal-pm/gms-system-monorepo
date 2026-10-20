@@ -1,3 +1,6 @@
+# Production host: 4 GB RAM / 2 vCPU (ADR-0024, owner 2026-10-19). Limits total 1.70 vCPU / 2944 MiB,
+# leaving ~1.1 GiB / 0.3 vCPU for the OS and Docker; see document/infra/capacity.md before changing them.
+# Node heaps are capped below each memory limit. docker-compose.dev.yml raises the limits for watch mode.
 services:
   postgres:
     image: postgres:18.6-alpine
@@ -5,8 +8,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "1.25"
-          memory: 2G
+          cpus: "0.6"
+          memory: 1G
     environment:
       POSTGRES_DB: f1_system
       POSTGRES_USER: f1_user
@@ -31,10 +34,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 1G
+          cpus: "0.3"
+          memory: 512M
     environment:
       NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=320
       PORT: 3101
       DATABASE_URL: postgresql://f1_user:f1_dev_password@postgres:5432/f1_system
       AUTH_SECRET: ${AUTH_SECRET:-local-development-secret-change-this-to-at-least-32-characters}
@@ -67,10 +71,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.5"
-          memory: 768M
+          cpus: "0.25"
+          memory: 384M
     environment:
       NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=256
       PORT: 4000
       AUTH_SERVICE_URL: http://backend-api-auth:3101
       CRM_API_KEY: ${CRM_API_KEY:-local-development-crm-key-change-before-deploy}
@@ -106,14 +111,14 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.35"
-          memory: 512M
+          cpus: "0.25"
+          memory: 384M
           # pids limit (bundle "pids_limit: 128"); Compose v5 rejects pids_limit next to deploy limits
           pids: 128
     environment:
       NODE_ENV: production
       PORT: 3201
-      NODE_OPTIONS: --max-old-space-size=320
+      NODE_OPTIONS: --max-old-space-size=256
       CHECKPOINT_DISABLE: "1"
       PRISMA_HIDE_UPDATE_MESSAGE: "1"
       PARTNER_DATABASE_URL: ${PARTNER_CONTAINER_DATABASE_URL:-postgresql://f1_user:f1_dev_password@postgres:5432/f1_system?schema=partner}
@@ -149,10 +154,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.6"
-          memory: 1280M
+          cpus: "0.3"
+          memory: 640M
     environment:
       NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=384
       PORT: 3000
       AUTH_SERVICE_URL: http://backend-api-auth:3101
       GATEWAY_URL: http://backend-api-gateway:4000

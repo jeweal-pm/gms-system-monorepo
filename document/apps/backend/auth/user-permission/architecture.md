@@ -105,8 +105,8 @@ This revision adds no new role value and keeps role non-editable.
 
 ## Capacity and rollout
 
-- **No container, worker, cache service, volume or replica.** Compose limits stay at 2.85 vCPU
-  / 5.0 GiB of the 8 GB / 4 vCPU host. Only one runtime env var is added to auth
+- **No container, worker, cache service, volume or replica.** Compose limits stayed at 2.85 vCPU
+  / 5.0 GiB of the then 8 GB / 4 vCPU host (now 1.70 vCPU / 2944 MiB of 4 GB / 2 vCPU, ADR-0024). Only one runtime env var is added to auth
   (`USER_SEAT_LIMIT`), through a parent-serialized Compose/`.env.example` edit.
 - DB: reuses the existing Prisma `pg` pool (default max 10 per process); no new pool. Each tRPC
   request adds one indexed query for grants (≤ 384 rows: 64 menus × 6 actions cap). The list

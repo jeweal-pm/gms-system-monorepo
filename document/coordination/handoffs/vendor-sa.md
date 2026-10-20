@@ -12,7 +12,7 @@
 - Integration-owned changes: none from SA; later backend touches `backend-api-partner/prisma/**` (parent-serialized) and `backend-api-gateway/src/trpc/**`.
 - Infra service bundle/revision, ADR/config drift, network/egress and secret-adapter prerequisites (when containers change): none expected; Vendor reuses `backend-api-partner` (infra bundle backend-api-partner/1). SA confirms (SA-VEN-07).
 - DevOps pipeline/source revision, Dockerfile/workspace dependencies, build/runtime variables, image platform and release/check requirements (when delivery changes): none expected.
-- Resource budget / capacity impact (8 GB RAM / 4 vCPU total): expected none beyond more rows in `partner`; same 50-row paging, 5-connection pool and 256 KB body limit. SA confirms.
+- Resource budget / capacity impact (4 GB RAM / 2 vCPU total): expected none beyond more rows in `partner`; same 50-row paging, 5-connection pool and 256 KB body limit. SA confirms.
 - Expected output and acceptance criteria: an SA bundle the owner can approve separately, answering SA-VEN-01…08.
 - Verification completed / not run: none (documents only).
 - Blocking item, if any: none for SA drafting; owner approval of the SA bundle blocks backend.

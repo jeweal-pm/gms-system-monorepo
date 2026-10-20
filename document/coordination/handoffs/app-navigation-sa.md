@@ -16,7 +16,7 @@
 - Integration-owned changes: none expected
 - Infra service bundle/revision, ADR/config drift, network/egress and secret-adapter prerequisites (when containers change): none expected; a push channel (SSE/WebSocket) for badges would be an architecture change → ADR + infra research
 - DevOps pipeline/source revision, …: none
-- Resource budget / capacity impact (8 GB RAM / 4 vCPU total): revision 1 adds none. A badge query must be one bounded aggregate per user with a short cache and a conservative refresh interval; no per-item fan-out or unbounded polling.
+- Resource budget / capacity impact (4 GB RAM / 2 vCPU total): revision 1 adds none. A badge query must be one bounded aggregate per user with a short cache and a conservative refresh interval; no per-item fan-out or unbounded polling.
 - Expected output and acceptance criteria: an SA bundle for the selected topic(s), presented for separate owner approval; backend TODO items added to [app-navigation.md](../../task/todo/app-navigation.md)
 - Verification completed / not run: none (not dispatched)
 - Blocking item, if any: owner answers to Q-NAV-06 / Q-NAV-11 requesting the features

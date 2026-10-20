@@ -38,8 +38,8 @@ behavior when the feature requires it.
 
 ## Capacity and checks
 
-Production has **8 GB RAM / 4 vCPU total**. Read Compose for actual aggregate limits
-(current baseline approximately 5.3 GB / 3 vCPU), preserve OS/Docker headroom, and bound
+Production has **4 GB RAM / 2 vCPU total**. Read Compose for actual aggregate limits
+(currently 1.70 vCPU / 2944 MiB, [infra/capacity.md](../../infra/capacity.md)), preserve OS/Docker headroom, and bound
 database pools, pagination/query sizes, concurrency, retries, caches, and worker count.
 New services, queues, caches, or replicas require a justified ADR and capacity proposal.
 

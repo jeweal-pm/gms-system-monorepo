@@ -52,7 +52,7 @@ dependency ledger; SA designs changed backend contracts before implementation. I
 approved packages serially through the parent integration owner. For new shared components,
 record tokens/variants and compare reuse with library costs.
 
-Production is **8 GB RAM / 4 vCPU total**, shared with services and PostgreSQL. Keep SSR,
+Production is **4 GB RAM / 2 vCPU total**, shared with services and PostgreSQL. Keep SSR,
 client bundles, query sizes, cache memory, and parallel/background work bounded. Prefer
 server pagination; virtualize lists only when the expected workload warrants it. Measure
 performance before claiming an improvement or adding memoization/caching infrastructure.

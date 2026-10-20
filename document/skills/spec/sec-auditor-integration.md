@@ -73,7 +73,7 @@ fact; do not run target builds/tests, install dependencies, contact live service
 borrow application credentials. The validator example below runs trusted upstream tooling
 against parent-owned audit records; it is not a general target-code execution runner.
 
-Production capacity is 8 GB RAM / 4 vCPU total. Inspect aggregate limits and host headroom
+Production capacity is 4 GB RAM / 2 vCPU total. Inspect aggregate limits and host headroom
 as evidence; documentation alone cannot establish deployment safety. Constrain audit
 runners, worker concurrency, scratch, processes, and wall time separately.
 

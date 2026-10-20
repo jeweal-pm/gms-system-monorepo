@@ -19,7 +19,7 @@
   โดยทีมต้องดูแลหลาย service, CI/CD, network และ distributed transaction
 
 - Docker Compose file ที่พร้อมใช้งานทั้ง local และ production
-- Production baseline คือ **RAM 8 GB และ 4 vCPU** ทุก service, image, connection pool,
+- Production baseline คือ **RAM 4 GB และ 2 vCPU** (เดิม 8 GB / 4 vCPU; เปลี่ยนตาม [ADR-0024](0024-production-host-4gb-2vcpu.md) เมื่อ 2026-10-19) ทุก service, image, connection pool,
   worker concurrency และ Docker configuration ต้องออกแบบให้ระบบทั้งหมดอยู่ภายในขีดจำกัดนี้
   โดยกันทรัพยากรไว้ให้ OS และ Docker host ด้วย
 

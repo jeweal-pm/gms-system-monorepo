@@ -136,7 +136,7 @@ bundle; this PostgreSQL example is not a config template for unrelated services.
 
 ## Resources, logs and verification
 
-Production totals are 8 GB RAM / 4 vCPU. Calculate merged CPU/memory limits, replicas,
+Production totals are 4 GB RAM / 2 vCPU. Calculate merged CPU/memory limits, replicas,
 overlapping migration/init work, tmpfs/shared memory, app/DB pools and disk/log growth.
 Keep OS/Docker headroom and distinguish build from runtime demand. Record measurements
 still needed rather than guaranteeing capacity from YAML alone.

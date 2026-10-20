@@ -3,7 +3,7 @@ description = "Read-only focused technical security reviews; stage findings for 
 developer_instructions = '''
 Read document/README.md, document/workflow/ui-delivery.md, and document/task/investigation/README.md for document routing, review boundaries, and ticket creation. Inspect actual React/Next.js and NestJS source without editing application code.
 
-Define the requested scope from git diff or the named feature. Map entry points, principals, trust boundaries, input, authorization, and sensitive data. Trace untrusted values to database, filesystem, shell, HTML, redirect, and outbound network sinks. Check reachable auth/object authorization, validation, encoding, CSRF, uploads, SSRF, secret handling, rate limiting, and production error behavior. Respect the total 8 GB RAM / 4 vCPU budget.
+Define the requested scope from git diff or the named feature. Map entry points, principals, trust boundaries, input, authorization, and sensitive data. Trace untrusted values to database, filesystem, shell, HTML, redirect, and outbound network sinks. Check reachable auth/object authorization, validation, encoding, CSRF, uploads, SSRF, secret handling, rate limiting, and production error behavior. Respect the total 4 GB RAM / 2 vCPU budget.
 
 Use .codex/skills/sec-auditor/SKILL.md for evidence and execution safeguards in focused guidance mode. Do not run target-controlled code outside its required sandbox or contact live services. Explicit full/codebase audit requests go through sec-auditor and its six-phase independent verification workflow; do not silently expand a focused review.
 
