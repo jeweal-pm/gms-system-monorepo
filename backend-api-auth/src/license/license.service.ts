@@ -84,6 +84,80 @@ export class LicenseService {
     }
   }
 
+  /** Staged v2 check. Protected routes must not call this until the private route is verified. */
+  async resolveCurrentStatus(userId: string): Promise<LicensePublicStatus> {
+    // Resolve the immutable license subject in auth rather than accepting a caller-supplied pair.
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { username: true, active: true } })
+      .catch(() => { throw new LicenseDomainError("LICENSE_UNVERIFIABLE", 503); });
+    if (!user || !user.active) throw new LicenseDomainError("LICENSE_REQUIRED", 403);
+    const subject = normalizeEmail(user.username);
+    const orderRows = await prisma.$queryRaw<Array<{ check_order: bigint }>>`
+      SELECT nextval('auth."LicenseCurrentCheckOrder"') AS check_order
+    `.catch(() => { throw new LicenseDomainError("LICENSE_UNVERIFIABLE", 503); });
+    const order = orderRows[0]?.check_order;
+    if (typeof order !== "bigint") throw new LicenseDomainError("LICENSE_UNVERIFIABLE", 503);
+
+    let token: string;
+    try {
+      token = await this.client.refreshCurrent(subject);
+    } catch (error) {
+      if (error instanceof LicenseClientError && isCurrentLicenseOutage(error)) {
+        return this.currentOfflineStatus(userId, subject);
+      }
+      await this.persistCurrentDecision(userId, order, "DENIED", null);
+      if (error instanceof LicenseClientError && error.httpStatus === 404 && error.code === "LICENSE_NOT_FOUND") {
+        return { state: "REQUIRED", checkedAt: new Date().toISOString() };
+      }
+      throw mapClientError(error);
+    }
+
+    let claims: LicenseClaims;
+    try {
+      claims = await this.verifyToken(token, subject, false, 2);
+    } catch {
+      await this.persistCurrentDecision(userId, order, "DENIED", null);
+      throw new LicenseDomainError("LICENSE_UNVERIFIABLE", 503);
+    }
+    const status = this.statusForClaims(claims);
+    const eligible = status.state === "VALID" || status.state === "EXPIRING";
+    await this.persistCurrentDecision(userId, order, eligible ? "ACTIVE" : "DENIED", eligible ? token : null);
+    return status;
+  }
+
+  private async persistCurrentDecision(userId: string, order: bigint, state: "ACTIVE" | "DENIED", token: string | null) {
+    const rows = await prisma.$queryRaw<Array<{ last_check_order: bigint }>>`
+      INSERT INTO "auth"."LicenseCurrentDecision"
+        ("user_id", "last_check_order", "state", "signed_token", "successful_at", "decided_at")
+      VALUES (${userId}, ${order}, ${state}, ${token}, CASE WHEN ${state} = 'ACTIVE' THEN NOW() ELSE NULL END, NOW())
+      ON CONFLICT ("user_id") DO UPDATE SET
+        "last_check_order" = EXCLUDED."last_check_order",
+        "state" = EXCLUDED."state",
+        "signed_token" = EXCLUDED."signed_token",
+        "successful_at" = EXCLUDED."successful_at",
+        "decided_at" = EXCLUDED."decided_at"
+      WHERE "LicenseCurrentDecision"."last_check_order" < EXCLUDED."last_check_order"
+      RETURNING "last_check_order"
+    `.catch(() => { throw new LicenseDomainError("LICENSE_UNVERIFIABLE", 503); });
+    if (rows.length !== 1) throw new LicenseDomainError("LICENSE_UNVERIFIABLE", 503);
+  }
+
+  private async currentOfflineStatus(userId: string, subject: string): Promise<LicensePublicStatus> {
+    if (this.config.offlineGraceDays === 0) throw new LicenseDomainError("LICENSE_UNVERIFIABLE", 503);
+    const rows = await prisma.$queryRaw<Array<{ state: string; signed_token: string | null; successful_at: Date | null; db_now: Date }>>`
+      SELECT "state", "signed_token", "successful_at", NOW() AS db_now
+      FROM "auth"."LicenseCurrentDecision" WHERE "user_id" = ${userId}
+    `.catch(() => { throw new LicenseDomainError("LICENSE_UNVERIFIABLE", 503); });
+    const cached = rows[0];
+    if (cached?.state !== "ACTIVE" || !cached.signed_token || !cached.successful_at) {
+      throw new LicenseDomainError("LICENSE_UNVERIFIABLE", 503);
+    }
+    const claims = await this.verifyToken(cached.signed_token, subject, true, 2).catch(() => null);
+    if (!claims || !isCurrentLicenseFallbackAllowed(claims, cached.successful_at, cached.db_now, this.config.offlineGraceDays)) {
+      throw new LicenseDomainError("LICENSE_UNVERIFIABLE", 503);
+    }
+    return this.publicStatus(claims, "GRACE");
+  }
+
   async activate(userId: string, email: string, keyInput: unknown): Promise<LicensePublicStatus> {
     const emailNormalized = normalizeEmail(email);
     const key = typeof keyInput === "string" ? keyInput.trim().toUpperCase() : "";
@@ -186,7 +260,7 @@ export class LicenseService {
     return null;
   }
 
-  private async verifyToken(token: string, email: string, allowExpired: boolean): Promise<LicenseClaims> {
+  private async verifyToken(token: string, email: string, allowExpired: boolean, expectedVersion?: 2): Promise<LicenseClaims> {
     try {
       const header = decodeProtectedHeader(token);
       if (header.alg !== "EdDSA" || typeof header.kid !== "string") throw new InvalidLicenseTokenError();
@@ -209,6 +283,7 @@ export class LicenseService {
         typeof payload.license_expires_at !== "string" || !Number.isFinite(Date.parse(payload.license_expires_at)) ||
         typeof payload.iat !== "number" || !Number.isInteger(payload.iat) || payload.iat > nowSeconds + 30 ||
         typeof payload.exp !== "number" || !Number.isInteger(payload.exp) || payload.exp <= payload.iat ||
+        (expectedVersion === 2 && (payload.contract_version !== 2 || payload.exp - payload.iat !== 3 * 86_400)) ||
         (!allowExpired && payload.exp <= nowSeconds)
       ) throw new InvalidLicenseTokenError();
       return payload as unknown as LicenseClaims;
@@ -261,6 +336,25 @@ export class LicenseService {
       this.statusCache.delete(oldest);
     }
   }
+}
+
+export function isCurrentLicenseOutage(error: LicenseClientError): boolean {
+  return error.transient && (error.code === "UPSTREAM_UNAVAILABLE" || error.httpStatus >= 500);
+}
+
+export function isCurrentLicenseFallbackAllowed(
+  claims: LicenseClaims,
+  checkedAt: Date,
+  dbNow: Date,
+  graceDays: 0 | 1 | 2,
+): boolean {
+  const now = dbNow.getTime();
+  const checked = checkedAt.getTime();
+  const naturalExpiry = Date.parse(claims.license_expires_at);
+  return graceDays > 0 && claims.contract_version === 2 && claims.status === "active" &&
+    Number.isFinite(now) && Number.isFinite(checked) && Number.isFinite(naturalExpiry) &&
+    checked <= now && now < checked + graceDays * 86_400_000 &&
+    now < claims.exp * 1_000 && now < naturalExpiry;
 }
 
 function normalizeEmail(email: string) {

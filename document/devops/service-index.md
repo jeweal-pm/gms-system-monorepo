@@ -54,3 +54,15 @@ Local verification 2026-10-14 (Windows, Docker 29.8.0, Compose v5.5.1):
 
 Not run: pnpm install/lint/build/typecheck, any image build, any GitHub Actions run. No
 GitHub variable, secret, environment or package setting was created or changed.
+
+## GMS target delivery (approved design, staged locally)
+
+The [GMS delivery proposal revision 1](gms-platform-migration-rev1.md) covers the future
+`gms` image namespace, target auth/master/inventory/worker build set, upstream Nginx/Redis
+images, test gate, release manifest and rollback. SA revision 1 was approved for
+nonblocked work on 2026-10-20; the current-workspace CI test gate is implemented
+locally and its four suites passed. Current CI and four-service image matrix
+remain authoritative until a remote run. Target source,
+Dockerfiles, image digests, registry settings, one-off migration commands and approved
+runtime profiles are not present or configured; no target images have been built or
+published. Do not replace the existing rows above until each approved service is real.

@@ -3,7 +3,15 @@ description = "Backend implementation from approved SA contracts, diagrams, ADRs
 developer_instructions = '''
 Read and apply `.codex/skills/senior-nestjs-developer/SKILL.md`,
 `document/apps/backend/architecture.md`, `document/workflow/ui-delivery.md`,
-and `document/workflow/automated-testing.md`.
+`document/workflow/automated-testing.md`, and `document/gms-platform-spec.md` v1.1,
+including Appendix F's backend mapping. Treat MUST rules as requirements for approved GMS
+work and document any SHOULD exception. Compare spec targets with accepted ADRs and actual
+source before editing: gateway/tRPC, backend-api-partner, Better Auth sessions, and current
+Prisma/Compose exist; Nginx direct API routing, api-master, inventory, worker, Redis,
+asymmetric JWTs, and fs/S3 profile abstractions are target architecture, not evidence of
+an installed service. Conflicts require revised SA bundle and owner approval, including
+service boundaries, data migration, permissions, package/capacity, rollout and rollback.
+Never silently replace an approved API, login flow, ownership or delete behavior.
 Read `document/workflow/security-review.md` before a code handoff.
 For UI-delivery work, verify the exact SA revision, source UI revision, and actual owner
 approval before code, migrations, or dependency installation. Read the complete owning
@@ -18,6 +26,27 @@ and owner review; permission for an earlier revision is not permission for a dif
 Respect the shared 4 GB RAM / 2 vCPU host budget. Verify affected services/contracts/migrations,
 then send the precise completion handoff to parent/frontend for automatic UI continuation.
 Save task records, handoffs, completion evidence, and changelog under document/.
+
+## GMS platform backend rules
+For an approved spec-target feature, enforce service-owned schemas and DB roles, API/read-only-view
+cross-service reads and no cross-schema writes/FKs. Use bounded pagination (max 200),
+numeric money/quantities, app UUIDv7 with PostgreSQL 16-compatible fallback, indexed
+filters, batched reads, timestamptz/UTC, and explicit Bangkok business dates. Inventory
+posts use append-only movements, one transaction, aggregated lines, ordered balance locks,
+negative-stock guard, and gap-free counter. Document creates/posts persist an
+Idempotency-Key and result atomically; retry returns the stored response, changed payload
+returns 409, and keys expire after 24 hours. Plan bounded SQL round trips.
+Keep application code portable across db-local and db-managed: separate app/reports/migration
+roles and URLs, DB_POOL_MAX, explicit TLS verify-full and CA for managed, pooler-safe
+transaction-only state, bounded startup retry, /healthz and /readyz. Migrations are
+versioned, backward compatible and run as approved one-off jobs, never on app startup.
+Heavy jobs move to an approved bounded worker queue; stream imports/exports and stored
+files. Use @gms/storage contract, own service prefix and stored_files metadata when the
+storage design is approved; authorize expiring URLs, keep issued documents immutable,
+soft-delete stored files and preserve existing approved company-logo behavior until revised.
+Keep current Better Auth/license/permission enforcement until an approved JWT transition.
+Produce structured sanitized request-ID logs and slow-query timing. Route container/env
+requirements to infra and image/release requirements to devops through the parent.
 
 ## Required automated testing
 For every added or changed module, function, or API, add or update unit and integration

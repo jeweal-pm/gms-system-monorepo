@@ -4,6 +4,15 @@ All project documentation and generated evidence live under `document/`.
 Start with [ADR-0001](adr/0001-record-architecture-decisions.md),
 [tech stack and dependencies](adr/tech-stack.md), and
 [the UI delivery workflow](workflow/ui-delivery.md).
+The [GMS platform engineering spec](gms-platform-spec.md) defines the target platform
+and role-specific design rules; reconcile architecture changes with accepted ADRs before
+implementation.
+The [GMS migration SA revision 1](reviews/sa/2026-10-20-gms-platform-migration-rev1.md)
+and [central migration TODO](task/todo/gms-platform-migration.md) were approved
+for nonblocked work on 2026-10-20. The separate [license-server contract
+revision 2](reviews/sa/2026-10-20-gms-license-contract-rev2.md) is owner-approved
+for customer-backend code. External implementation, integration and capacity
+verification remain open; the current protected routes and cutover remain unchanged.
 
 | Folder | Purpose |
 |---|---|
@@ -47,6 +56,7 @@ Use [infra delivery](workflow/infra-delivery.md) when ADR/service changes affect
 [the service index](infra/service-index.md) tracks research/configuration coverage.
 Use [DevOps delivery](workflow/devops-delivery.md) for GitHub CI/images and
 [GitHub configuration](devops/github-configuration.md) to set the named variables later.
+For local containers and Prisma Studio, use the [development guide](infra/local-development.md).
 
 Migrated on 2026-10-11: root `docs/changelog/` -> `document/changelog/`,
 `.ai/` -> `document/coordination/`, `user-check/` -> `document/testing/user-check/`,

@@ -5,12 +5,55 @@ description: Implement and debug this project's React/Next.js frontend from appr
 
 # Lead Frontend Engineer
 
-Read `document/workflow/ui-delivery.md`, `document/workflow/automated-testing.md`,
+Read `document/gms-platform-spec.md` (version 1.1, especially sections 1, 2.1, 3.2, 3.5,
+5–8, 10–12, 14 and Appendix F), `document/workflow/ui-delivery.md`, `document/workflow/automated-testing.md`,
 `document/apps/frontend/architecture.md`,
 `document/adr/tech-stack.md`, relevant accepted ADRs, package scripts, and neighboring
 feature code. Project documents belong under `document/`. Treat stale documentation as
 a discrepancy to resolve against accepted decisions and actual code, not permission to
 silently replace the approved architecture.
+
+## GMS platform target and current contracts
+
+Treat the GMS platform spec as the target for new approved architecture, with a total
+production baseline of **4 GB RAM / 2 vCPU**. Check the actual deployment profile, code,
+accepted ADRs, and tech-stack ledger before implementation. The current installation uses
+the approved gateway, tRPC/TanStack Query, Better Auth, and `backend-api-partner`; the spec
+targets Nginx-routed `/api/auth/`, `/api/master/`, `/api/inventory/`, no Node gateway, and a
+256 MB standalone frontend. Do not silently switch routing, service names, auth/session
+design, API transport, container limits, or dependencies. For existing features, follow
+their unchanged approved contracts. For a spec-driven change to these boundaries, identify
+the discrepancy and send a versioned architecture/API/capacity proposal through SA and the
+parent; implement only after the separate SA approval and prerequisite infra/backend work.
+
+For work approved against the new target architecture:
+
+- Keep browser API calls same-origin with relative `/api/...` URLs; reserve `/bff/` for Next
+  route handlers and `/healthz` for frontend health. Do not define Next routes under the
+  Nginx-owned `/api/auth`, `/api/master`, or `/api/inventory` prefixes. Server-side fetching
+  uses the appropriate `INTERNAL_API_URL_*` Docker-network endpoint and forwards the user's
+  credentials; never loop through the public domain or expose internal URLs to the browser.
+- Keep one customer-independent image. Never put per-customer domains, API endpoints,
+  feature flags, or secrets in build-time `NEXT_PUBLIC_*`; pass customer settings from
+  server runtime configuration as approved by the contract. Coordinate standalone image,
+  non-root execution, heap/container limits, `NEXT_TELEMETRY_DISABLED`, and immutable static
+  asset caching with infra/devops; do not claim the spec's 256 MB target meets the current
+  app's needs without load evidence.
+- Follow the approved auth contract using httpOnly, Secure, `SameSite=Lax` cookies and CSRF
+  protection for state-changing requests. Do not put credentials or tokens in localStorage.
+  Keep auth and permission decisions on the backend; document any transition from Better
+  Auth before changing cookie or token handling.
+- Paginate SSR and list views (backend maximum 200 rows); avoid unbounded client/server
+  caches, request waterfalls, and heavy computation in Next. Display job ID, queue/status,
+  progress, cancellation and result states when the approved API exposes them. Keep
+  PDF/Excel generation and long-running work in the API/worker flow, not the frontend.
+- For uploads, use the approved request-upload-target → direct upload → confirm flow; for
+  downloads, request a short-lived URL when clicked and navigate to it. Do not proxy file
+  bytes through Next. Support both filesystem and S3 profiles through the same UI contract.
+- In the default local-data profile, avoid runtime third-party fonts, analytics, CDN
+  scripts, and other data egress. Use locally hosted fonts and `images.unoptimized: true`
+  when images are resized at upload. Propagate request IDs when supported, and display business dates explicitly in
+  `Asia/Bangkok` with `th-TH` locale. Verify hydration is deterministic.
 
 ## Resolve the work
 

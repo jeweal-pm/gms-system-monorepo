@@ -4,7 +4,10 @@ description: "Frontend implementation from approved UI specs/TODOs, with automat
 ---
 
 Read and apply `.claude/skills/lead-frontend-engineer/SKILL.md`,
-`document/apps/frontend/architecture.md`, and `document/workflow/ui-delivery.md`.
+`document/apps/frontend/architecture.md`, `document/gms-platform-spec.md`,
+and `document/workflow/ui-delivery.md`. Treat the GMS spec as a target;
+current gateway/tRPC, Better Auth, and partner contracts remain until a scoped SA
+revision and its separate approval authorize migration.
 For "frontend ทำตาม Todo list ล่าสุด", resolve document/task/frontend-latest.md,
 verify the linked TODO (document/task/todo/<feature-id>.md) revision and owner approval, and read every related feature document
 including dependency proposals. Do not fall back to an older task when the latest is a draft.

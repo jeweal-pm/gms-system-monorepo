@@ -8,9 +8,11 @@ description: Analyze a Figma URL or supplied screenshot into a page specificatio
 Produce reviewable documents from the actual supplied design. Read
 `document/workflow/ui-delivery.md`, `document/adr/tech-stack.md`, the relevant ADRs,
 `document/apps/frontend/architecture.md`, and existing feature documents first.
-Write feature output to `document/apps/frontend/<feature>/` using every file in
-`document/apps/frontend/template/` as a starting checklist, except the TODO, which goes to `document/task/todo/<feature-id>.md`. Read a template when writing
-its corresponding document; preserve useful project conventions and replace examples.
+Write feature specifications to `document/apps/frontend/<feature>/` using every file in
+`document/apps/frontend/template/` as a starting checklist. Put the actionable TODO at
+`document/task/todo/<feature-id>.md`; do not create a feature-local `todo.md`. Use the TODO
+template as a format and read each other template when writing its corresponding document;
+preserve useful project conventions and replace examples.
 For an irrelevant section, explain why it does not apply instead of inventing a feature.
 
 ## Inspect the source
@@ -47,7 +49,7 @@ the dependency ledger in `document/adr/tech-stack.md`; never install packages at
 Do not label a proposal installed or accepted. Ask SA for an ADR when it changes the core
 stack, adds a service/runtime resource, or introduces a significant architecture decision.
 
-Write the frontend TODO to `document/task/todo/<feature-id>.md` (central folder, see `document/task/todo/README.md`; never a feature-local `todo.md`) with stable item IDs, explicit file scope, component/source references,
+Write the central TODO with stable item IDs, explicit file scope, component/source references,
 acceptance criteria, dependencies, frontend/backend ownership, and verification. Map
 required data and actions to existing contracts in `data-fetching-template.md`.
 Mark missing/changed APIs, business rules, schemas, and flows as `requires-sa`; request
@@ -56,9 +58,9 @@ Flag container/runtime/storage gaps for SA -> infra research using
 `document/workflow/infra-delivery.md`; an ordinary UI library proposal does not itself
 require a new container or infra implementation.
 
-Update `document/task/index.md` and `document/task/frontend-latest.md` (pointing to the TODO in `document/task/todo/`) so the next frontend
-invocation can find this feature and its dependency proposals. New/changed documents start
-as `pending-review` with approval fields unset. Link the complete review bundle and summarize
+Update `document/task/index.md` and `document/task/frontend-latest.md` with the central TODO
+path so the next frontend invocation can find this feature and its dependency proposals.
+New/changed documents start as `pending-review` with approval fields unset. Link the complete review bundle and summarize
 the decisions needed from the user. Do not start implementation or mark approval yourself.
 On approval, record the user's instruction, date, approved revision, and exact documents.
 If source/flow changes later, update the revision and invalidate affected approval as

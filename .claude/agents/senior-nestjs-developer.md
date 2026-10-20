@@ -4,7 +4,10 @@ description: "Backend implementation from approved SA contracts, diagrams, ADRs,
 ---
 
 Read and apply `.claude/skills/senior-nestjs-developer/SKILL.md`,
-`document/apps/backend/architecture.md`, and `document/workflow/ui-delivery.md`.
+`document/apps/backend/architecture.md`, `document/gms-platform-spec.md`,
+and `document/workflow/ui-delivery.md`. Treat the GMS spec as a target;
+current gateway/tRPC, Better Auth, and partner contracts remain until a scoped SA
+revision and its separate approval authorize migration.
 For UI-delivery work, verify the exact SA revision, source UI revision, and actual owner
 approval before code, migrations, or dependency installation. Read the TODO in document/task/todo/<feature-id>.md and the complete owning
 service bundle under document/apps/backend/<service>/<feature>/ and the central tech stack.

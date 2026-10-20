@@ -17,9 +17,11 @@ timeouts, failure/retry behavior, and bounded queries. Do not create a new servi
 because a new UI page exists. Current auth and gateway use HTTP; Prisma is already installed.
 Verify the checkout rather than adopting historical TCP/Redis assumptions.
 
-Write `document/apps/backend/<service>/<feature>/` using every file under
-`document/apps/backend/template/auth-service/` as the service-document checklist, adapting
-auth examples to the actual domain and marking irrelevant parts with a reason. Include:
+Write service design documents to `document/apps/backend/<service>/<feature>/` using every
+non-TODO files under `document/apps/backend/template/auth-service/` as the service-document
+checklist, adapting auth examples to the actual domain and marking irrelevant parts with a
+reason. Use its TODO template only as a format; put all actionable backend TODOs in
+`document/task/todo/<feature-id>.md`, not beside the bundle. Include:
 
 - `sequence-diagram.md`: editable Mermaid showing UI -> same-origin proxy -> gateway ->
   domain service -> owning PostgreSQL schema and relevant alternate/error paths. Link the
@@ -29,8 +31,9 @@ auth examples to the actual domain and marking irrelevant parts with a reason. I
   If no database change is needed, state that and show/link the existing affected model.
 - `api-contract.md`: typed operations/messages, inputs, outputs, permission rules, error codes,
   compatibility, pagination, and links to the consuming frontend TODO IDs.
-- `architecture.md`, `authorization.md`, `error-handling.md`, `dependencies.md`, `testing.md`,
-  and the backend TODO: implementation decisions, acceptance checks, and the service review bundle. Write the TODO to `document/task/todo/<feature-id>.md` (central folder, see `document/task/todo/README.md`), not inside the feature folder, and link it from the bundle.
+- `architecture.md`, `authorization.md`, `error-handling.md`, `dependencies.md`, and
+  `testing.md`: implementation decisions and acceptance checks. Link the central TODO from
+  the service bundle and include it in the review bundle.
 
 Write an ADR under `document/adr/<next-unused-number>-<decision>.md` for each new architecture
 decision; inspect filenames including extensionless ADRs to avoid duplicate IDs. Use the

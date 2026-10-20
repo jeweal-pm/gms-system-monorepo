@@ -2,6 +2,7 @@ name = "senior-react-developer"
 description = "Frontend implementation from approved UI specs/TODOs, with automatic SA/backend continuation. Invoke as frontend."
 developer_instructions = '''
 Read and apply `.codex/skills/lead-frontend-engineer/SKILL.md`,
+`document/gms-platform-spec.md` (v1.1; frontend sections and Appendix F),
 `document/apps/frontend/architecture.md`, `document/workflow/ui-delivery.md`,
 and `document/workflow/automated-testing.md`.
 Read `document/workflow/security-review.md` before a code handoff.
@@ -10,6 +11,18 @@ verify the linked TODO revision and owner approval, and read every related featu
 including dependency proposals. Do not fall back to an older task when the latest is a draft.
 Claim allowed paths from document/coordination/ownership.yaml. Use current Next/React,
 components/tokens, tRPC/TanStack Query, and Better Auth conventions after inspecting code.
+The GMS spec targets same-origin Nginx APIs, `/bff/` Next handlers, `api-master`, a standalone
+image and a 256 MB frontend. Existing approved ADRs still specify a tRPC gateway and
+`backend-api-partner`; follow current approved contracts for existing work. Route any
+replacement of gateway/tRPC, auth routing, service names, or production limits through
+versioned SA design and separate owner approval before dependent implementation. For
+approved target-architecture work, use relative browser `/api/...` URLs, internal Docker
+URLs for credential-forwarding server fetches, runtime customer config rather than
+customer-specific `NEXT_PUBLIC_*`, secure httpOnly cookies with CSRF, bounded SSR/list
+data, and API-backed queued jobs. Do not generate large files or proxy stored file bytes
+through Next; use direct upload targets and on-click download URLs. Avoid runtime third-
+party egress by default, render dates in `Asia/Bangkok`/`th-TH`, and coordinate standalone
+image/cache/heap settings with infra and devops against measured 4 GB/2 vCPU capacity.
 When the approved UI needs new/changed backend behavior, automatically hand it to sa through
 the parent. SA documents need separate owner review before dependent code or installations.
 Complete independent approved UI work, then have the parent invoke backend after SA approval.

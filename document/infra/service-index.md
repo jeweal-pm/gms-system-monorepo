@@ -33,3 +33,14 @@ The parent serializes writes to this shared index, integrating scoped service-bu
 updates from infra. Exact ADR file paths/content hashes are authoritative when legacy
 heading IDs disagree. For a researched row retain its review-by date and invalidation
 triggers; advisory/image-support evidence is refreshed before each new rollout/setup.
+
+## GMS target migration (approved design, research only)
+
+The [GMS target infra bundle revision 1](services/gms-target/1/security.md) researches the
+proposed Nginx, domain APIs, Redis/worker, database and storage profiles together.
+SA revision 1 was approved for nonblocked work on 2026-10-20; no target Compose or image has been
+configured, started or deployed. The `db-local + fs` design assumption is not a customer
+profile selection. Exact target image tags/digests, CPU allocation, production measurements,
+auth/license contract and migration approval remain pending. Research date: 2026-10-20;
+review-by: 2026-11-20 for the Nginx candidate, or sooner on an image, host, advisory, service contract or profile
+change. Existing service rows above remain the current inventory until an approved cutover.

@@ -105,3 +105,17 @@ questions in the central TODO. Implementation, migration and approved dependency
 may proceed under the central TODO. The owner approved the configured JWT issuer, audience,
 and error-envelope defaults. No license rebind endpoint is proposed or required by this
 revision; licensed account email is immutable and a new email requires a separate account/license.
+
+## GMS migration amendment (2026-10-20)
+
+The owner approved [SA revision 1](../reviews/sa/2026-10-20-gms-platform-migration-rev1.md)
+with [ADR-0026](0026-gms-access-tokens-and-live-authorization.md) and the
+[offline policy amendment](../spec/gms-license-offline-policy.md). For the staged
+GMS target, license freshness changes from the historical 24-hour refresh and
+seven-day grace to an online check on each protected request while reachable,
+with configurable transient-outage grace of 0–2 days (default 2) under the
+separately approved [three-day signed-token contract revision 2](../spec/gms-license-server-contract-rev2.md).
+The v2 customer client and policy are staged; this amendment does not alter the
+current protected routes until the external license-server implementation,
+capacity and cutover are verified. The one-email/one-license and no-transfer
+decisions above remain in force.

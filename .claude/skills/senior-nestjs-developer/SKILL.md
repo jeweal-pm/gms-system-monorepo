@@ -5,7 +5,8 @@ description: Implement and debug this project's NestJS gateway and domain servic
 
 # Senior NestJS Developer
 
-Read `document/workflow/ui-delivery.md`, `document/workflow/automated-testing.md`,
+Read `document/gms-platform-spec.md` (version and Appendix F backend mapping),
+`document/workflow/ui-delivery.md`, `document/workflow/automated-testing.md`,
 `document/apps/backend/architecture.md`,
 `document/adr/tech-stack.md`, relevant ADRs/specs, the real service source, Prisma schema,
 and package scripts. All project output belongs under `document/`.
@@ -46,6 +47,85 @@ and the completion report back to the ticket before marking it resolved.
   Bound connection pools, response sizes, worker concurrency, retries, and cache memory.
   Recalculate aggregate container limits when proposing a service or replica.
 
+## GMS platform design contract
+
+Treat `document/gms-platform-spec.md` as the engineering target for selected GMS work,
+especially sections 1–2, 3.5, 4–8, 10–13 and Appendices A, B, C, E, F. Its `MUST` rules
+apply to an approved implementation; a `SHOULD` exception needs a written reason. First
+compare the selected feature and accepted ADRs to the checkout. Today the checkout has
+`backend-api-gateway`/tRPC, `backend-api-partner`, Better Auth sessions, and existing
+Prisma/Compose contracts; the spec describes Nginx path routing without a Node gateway,
+`api-master`, independent JWT verification, an inventory service, worker, Redis, and
+portable storage profiles. Do not describe these target services as already installed or
+silently rename/remove a service, bypass gateway permissions, change authentication,
+replace an approved API, or alter existing record deletion semantics. Record the exact
+conflict and route a revisioned service/contract/schema/rollout proposal through SA and
+owner approval before dependent code. An approved migration must preserve current user
+flows and permission enforcement until the replacement is verified.
+
+- **Service and data boundaries:** use the approved owning schema, a separate application
+  DB role per service, and public API or an explicitly granted read-only view for cross-service
+  reads. Never write another service's schema or add cross-schema foreign keys. The spec's
+  target ownership is auth, master (general partners/contacts), and inventory (items, units,
+  locations, lots, stock); current `partner` and `stone` ownership remains governed by
+  accepted ADRs until revised. Design same-origin `/api/auth/`, `/api/master/`, and
+  `/api/inventory/` contracts with infra/frontend only after routing is approved.
+- **Bounded reads and portable data:** use `numeric` for quantities/money, app-generated
+  UUIDv7 with a PostgreSQL-compatible fallback, indexed filters and `pg_trgm` for indexed
+  substring search, batched related reads, and pagination capped at 200 rows. Use
+  `timestamptz`/UTC sessions; derive business periods in `Asia/Bangkok`, and verify explicit
+  Thai ICU collation when ordering matters. Target PostgreSQL 16-compatible SQL and the
+  spec's extension allowlist. Keep reads at no more than three round trips where the
+  approved contract permits. Never assume a managed database has local server settings.
+- **Stock and document writes:** for approved inventory work follow section 4.2 and
+  Appendix E. Keep movements append-only; aggregate duplicate lines by item/location/lot;
+  ensure unique balance rows with `NULLS NOT DISTINCT`; lock them in stable order; guard
+  against negative stock; insert movements and update balances atomically, rolling back on
+  failed lines. Allocate gap-free numbers per document type and Bangkok business period via
+  a counter in that same transaction, never `max + 1`. Every create/post document write
+  accepts `Idempotency-Key`, persists the key and result in the write transaction, returns
+  the prior result on retry, returns 409 for a different payload, and purges after 24 hours.
+  Plan bounded SQL round trips for up to 200 lines rather than a query per line.
+- **Database profiles and lifecycle:** design the same application code for `db-local` and
+  `db-managed`; configuration selects URLs and explicit TLS (`verify-full` plus provider CA
+  for managed, never disabled certificate verification). Use separate app, read-only reports,
+  and migration-owner URLs/roles; `DB_POOL_MAX` and idle timeout bound connections. Allow
+  up to two minutes of startup retry with exponential backoff, then fail for restart;
+  distinguish liveness `/healthz` from dependency readiness `/readyz`. Keep transaction-mode
+  pooler compatibility: transaction-local settings/locks, no session state or LISTEN/NOTIFY,
+  and no unsupported named prepared statements. Version backward-compatible migrations
+  (expand → migrate → contract) and run them in an authorized one-off job before the new
+  version, never in application startup. Provisioning, Compose and CA mounts go to infra;
+  deployment orchestration goes to devops. Do not run migrations against a live target
+  without its authorized rollout.
+- **Heavy work and performance:** anything over 2 seconds, 1,000 rows, 50 MB, an external
+  call, a generated batch file, or many stock locks belongs in an approved queue/off-hours
+  job. Plan BullMQ `fast`/`heavy` worker queues per section 5, deduplicated job IDs, bounded
+  per-user pending jobs, cancellation, progress/ETA, timeout and retry policy. Never add
+  Redis/BullMQ/workers before their ADR, capacity and dependency approvals. Stream large
+  exports/imports through cursors or `COPY`, staging and bounded batches; use streaming
+  ExcelJS, CSV BOM and formula-injection protection, and Thai-font PDF output. Check p95
+  targets and bounded query counts in section 6; do not claim compliance without measured
+  evidence on the 4 GB / 2 vCPU profile.
+- **Authentication, files and logs:** maintain approved Better Auth/session/license behavior
+  until SA approves the spec's short-lived asymmetric JWT and rotating refresh design.
+  Where adopted, each API verifies public-key tokens locally and enforces authorization;
+  never weaken existing permission checks. Use the approved `@gms/storage` interface in
+  Appendix A for stored files, service-scoped keys and `{schema}.stored_files` metadata
+  in Appendix B; default `fs` and optional S3 drivers must not leak driver details into
+  business code. Stream uploads/downloads, validate keys and content, bind short-lived
+  URLs to user permission, keep issued documents immutable, and soft-delete files before
+  deferred purge. Existing company-logo overwrite behavior in ADR-0021 is an explicit
+  exception until revised. Emit structured request-ID logs with user/route/status/duration,
+  sanitized errors and slow-query timing; keep credentials, tokens and personal data out
+  of logs. Include storage cleanup and restore consistency requirements in handoffs.
+
+Before implementing any spec rule that changes the current contract, put its service
+ownership, API, auth, data migration, storage profile, capacity, dependencies, test plan,
+and rollback in the SA bundle. Record proposed vs approved vs installed packages in
+`document/adr/tech-stack.md`; the parent serializes shared edits. Keep file/profile choices
+per customer explicit and preserve the default customer-controlled `db-local + fs` path.
+
 ## Verification and frontend continuation
 
 For new/changed container/image/network/storage requirements, have the parent invoke infra
@@ -76,6 +156,11 @@ gateway/domain service suites before handoff; all required tests must pass. Disc
 commands from scripts and also run applicable typecheck/lint/build, contract, and migration
 checks. If a runner is absent, follow the approved dependency process and leave delivery
 incomplete until coverage can be executed. Never report planned checks as passed.
+For approved GMS platform work, include focused stock concurrency/idempotency cases,
+PostgreSQL 16/18 and transaction-pooler portability checks, storage driver contract and
+path-traversal checks, streaming/Thai output checks, and measured load evidence where
+applicable (spec section 13). These expand the required unit/integration coverage; a
+planned CI matrix or nightly managed-DB check is not a local passing result.
 
 After tests pass, hand the final changed backend code, affected boundaries, test evidence,
 and source revision to both `sec-auditor` and `security-auditor` through the parent. Follow

@@ -12,9 +12,10 @@
     "db:migrate": "pnpm --workspace-concurrency=1 --filter @gem-crm/backend-api-auth --filter @gem-crm/backend-api-partner db:migrate",
     "infra:up": "docker compose up -d postgres",
     "infra:down": "docker compose down",
-    "docker:dev": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d",
-    "docker:dev:build": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build",
-    "docker:dev:install": "docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm --no-deps -e CI=true frontend pnpm install --frozen-lockfile --store-dir=/root/.local/share/pnpm/store && docker compose -f docker-compose.yml -f docker-compose.dev.yml restart backend-api-auth backend-api-gateway backend-api-partner frontend",
+    "docker:dev": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d && node docker/repair-dev-networks.cjs",
+    "docker:dev:build": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build && node docker/repair-dev-networks.cjs",
+    "docker:dev:install": "docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm --no-deps -e CI=true frontend pnpm install --frozen-lockfile --store-dir=/root/.local/share/pnpm/store && docker compose -f docker-compose.yml -f docker-compose.dev.yml restart backend-api-auth backend-api-gateway backend-api-partner frontend && node docker/repair-dev-networks.cjs",
+    "docker:dev:repair": "node docker/repair-dev-networks.cjs",
     "docker:dev:logs": "docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f",
     "docker:dev:down": "docker compose -f docker-compose.yml -f docker-compose.dev.yml down"
   },
