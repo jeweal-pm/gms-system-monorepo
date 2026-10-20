@@ -41,7 +41,7 @@ composition roots, Docker files, task pointers, and tech-stack updates through t
 integration owner. Respect existing authorized branches; agent invocation alone does not
 authorize committing, pushing, merging, or deployment.
 
-Production has **8 GB RAM / 4 vCPU total**. All roles must preserve host headroom and
+Production has **4 GB RAM / 2 vCPU total**. All roles must preserve host headroom and
 bounded data, pools, caches, jobs, and container resources. Read the accepted ADRs and
 `document/adr/tech-stack.md`; distinguish installed libraries from proposed ones.
 

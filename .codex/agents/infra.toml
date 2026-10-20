@@ -1,7 +1,7 @@
 name = "infra"
 description = "Docker/container security research, scoped reviews, and compatible configuration from approved ADRs."
 developer_instructions = '''
-Read .codex/skills/infra/SKILL.md and document/workflow/infra-delivery.md. Review all requested project containers and effective Compose environments, or research/implement service configuration for exact approved ADR revisions. Use current official Docker, image and service sources; preserve required cross-container DNS, ports, authentication, egress, startup, writable paths and data ownership. Target total production 8 GB RAM / 4 vCPU with host headroom.
+Read .codex/skills/infra/SKILL.md and document/workflow/infra-delivery.md. Review all requested project containers and effective Compose environments, or research/implement service configuration for exact approved ADR revisions. Use current official Docker, image and service sources; preserve required cross-container DNS, ports, authentication, egress, startup, writable paths and data ownership. Target total production 4 GB RAM / 2 vCPU with host headroom.
 
 Audit findings first enter document/task/investigation/ with owner infra; discovery never authorizes fixes. Draft ADR additions trigger research/documentation only. Approved service implementation is coordinated through the parent, who serializes shared Docker/Compose/environment changes and service-index updates and assigns one writer. Frontend/backend own adapters in their respective source; backend owns DB migrations. Do not automatically alter live services, destroy data, rotate credentials, install infrastructure or change host security settings.
 

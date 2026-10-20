@@ -28,9 +28,9 @@ No new package, container, network, volume or environment variable. Compose and 
 - Logo: gateway streams the request body with a byte counter (abort at 10 MB + 1 → 413) and forwards it as a buffer of at most 10 MB to partner; partner checks signature/type, hashes, and upserts in one transaction with the version check. GET responses are immutable per version.
 - Actor id is stored as `updated_by` (no cross-schema FK, ADR-0018).
 
-## Capacity (8 GB / 4 vCPU host)
+## Capacity (4 GB / 2 vCPU host)
 
-- Memory per upload ≈ 2 × file size across gateway and partner (≤ 20 MB transient). Uploads are rare admin actions; concurrency is bounded by admins. Partner container limit 512 MiB is unchanged.
+- Memory per upload ≈ 2 × file size across gateway and partner (≤ 20 MB transient). Uploads are rare admin actions; concurrency is bounded by admins. Partner container limit is 384 MiB since ADR-0024 (2026-10-19; was 512 MiB); a 10 MB upload still fits.
 - One extra DB row ≤ 10 MB; logo GET is cached by the browser for a year per version, so it is read from the DB about once per browser per change.
 - No background jobs, caches or new connections.
 

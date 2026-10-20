@@ -33,4 +33,4 @@ The owner selected these workflow decisions:
 The prompt `frontend ทำตาม Todo list ล่าสุด` uses the explicit latest-task pointer and exact
 revision/approval evidence. No page design or package is approved merely by creating this
 workflow. Service designs include editable sequence/ER diagrams, ADRs, contracts, backend
-TODOs, and the shared production capacity constraint of 8 GB RAM / 4 vCPU with host headroom.
+TODOs, and the shared production capacity constraint of 4 GB RAM / 2 vCPU with host headroom.

@@ -140,8 +140,8 @@ The parent serializes manifests and `pnpm-lock.yaml`. Update both feature depend
 and the ledger. A documentation proposal alone never proves installation. Do not add a real
 library for the illustrative Vendor sheet until that design is analyzed and approved.
 
-All work targets **8 GB RAM / 4 vCPU total**. Current aggregate limits are about **5.3 GB /
-3 vCPU**, leaving host headroom. Recalculate from Compose before changing limits/services.
+All work targets **4 GB RAM / 2 vCPU total**. Current aggregate limits are **1.70 vCPU /
+2944 MiB** ([infra/capacity.md](../infra/capacity.md)), leaving host headroom. Recalculate from Compose before changing limits/services.
 Bound queries, pagination, pools, caches, SSR work, and workers; verify resource estimates
 against measurements before claiming capacity guarantees.
 

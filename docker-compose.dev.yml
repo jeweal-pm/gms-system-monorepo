@@ -13,13 +13,23 @@ x-dev-volumes: &dev-volumes
   - dev-partner-node-modules:/app/backend-api-partner/node_modules
   - dev-partner-prisma:/app/backend-api-partner/src/generated/prisma
 
+# Watch mode (compilers, Next dev server) needs more than the production limits (ADR-0024):
+# a developer workstation, not the 4 GB / 2 vCPU host. Production heap caps are cleared.
+x-dev-limits: &dev-limits
+  resources:
+    limits:
+      cpus: "1"
+      memory: 1536M
+
 services:
   backend-api-auth:
     image: f1-system-dev:local
     build: *dev-build
     command: ["sh", "-c", "pnpm --filter @gem-crm/backend-api-auth db:generate && pnpm --filter @gem-crm/backend-api-auth db:migrate && pnpm --filter @gem-crm/backend-api-auth dev"]
+    deploy: *dev-limits
     environment:
       NODE_ENV: development
+      NODE_OPTIONS: ""
       LICENSE_MODE: ${LICENSE_MODE:-mock}
       LICENSE_API_URL: ${LICENSE_API_URL:-}
       LICENSE_INSTANCE_ID: ${LICENSE_INSTANCE_ID:-local-dev}
@@ -35,16 +45,20 @@ services:
     image: f1-system-dev:local
     build: *dev-build
     command: ["pnpm", "--filter", "@gem-crm/backend-api-gateway", "dev"]
+    deploy: *dev-limits
     environment:
       NODE_ENV: development
+      NODE_OPTIONS: ""
     volumes: *dev-volumes
 
   frontend:
     image: f1-system-dev:local
     build: *dev-build
     command: ["pnpm", "--filter", "frontend", "dev"]
+    deploy: *dev-limits
     environment:
       NODE_ENV: development
+      NODE_OPTIONS: ""
     volumes: *dev-volumes
 
   # Dev exception (infra bundle backend-api-partner/1): root dev image, bind mount + watch,
@@ -53,6 +67,12 @@ services:
     image: f1-system-dev:local
     build: *dev-build
     command: ["sh", "-c", "pnpm --filter @gem-crm/backend-api-partner db:generate && pnpm --filter @gem-crm/backend-api-partner db:migrate && exec pnpm --filter @gem-crm/backend-api-partner dev"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1536M
+          pids: 256
     environment:
       NODE_ENV: development
       NODE_OPTIONS: ""

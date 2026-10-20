@@ -19,7 +19,7 @@ and integration. Link authorization, API, sequence, database, and error document
 ## Capacity and rollout
 
 Estimate aggregate CPU/RAM, connections, query/pagination limits, concurrency, cache bounds,
-and Docker changes on 8 GB RAM / 4 vCPU with host headroom. Record migration/backfill/rollback,
+and Docker changes on 4 GB RAM / 2 vCPU with host headroom. Record migration/backfill/rollback,
 compatibility, measurement gaps, and proposed dependencies/ADRs.
 
 ## Container infrastructure

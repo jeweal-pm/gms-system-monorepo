@@ -69,7 +69,7 @@ reset a database, rotate live credentials, change host firewall/daemon settings 
 production merely to validate a configuration. Prepare the exact diff/rollback and use
 existing authorization; live operations need explicit deployment authorization.
 
-Target production **8 GB RAM / 4 vCPU total** with OS/Docker headroom. Recalculate actual
+Target production **4 GB RAM / 2 vCPU total** with OS/Docker headroom. Recalculate actual
 aggregate limits, replica/init-job overlap, memory/shared memory/tmpfs, DB pools and service
 concurrency. Bound logs, processes and disk growth. Separate build resources from runtime.
 

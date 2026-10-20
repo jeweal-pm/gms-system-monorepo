@@ -46,14 +46,14 @@
 | UI / E2E | ยังไม่มี browser automation; เพิ่ม Playwright เมื่อเริ่มทำ E2E suite |
 | Local dependencies | Docker Compose: PostgreSQL |
 | Production | Docker Compose เป็น baseline สำหรับเริ่มระบบ; แยก environment และ secret ก่อน deploy |
-| Production capacity | Host 8 GB RAM / 4 vCPU; Compose service limits รวม 2.85 vCPU / 5.0 GiB (หลังเอา Mailpit ออกตาม ADR-0015) เพื่อกัน headroom ให้ OS และ Docker |
+| Production capacity | Host 4 GB RAM / 2 vCPU ([ADR-0024](0024-production-host-4gb-2vcpu.md), 2026-10-19); Compose service limits รวม 1.70 vCPU / 2944 MiB เพื่อกัน headroom ~1.1 GiB ให้ OS และ Docker ([capacity](../infra/capacity.md)) |
 
 ## Dependency proposals and implementation status
 
 ใช้ร่วมกับ [UI delivery workflow](../workflow/ui-delivery.md) และ feature `dependencies.md`.
 ตรวจ `package.json` และ `pnpm-lock.yaml` ก่อนเลือก library; ตาราง stack ด้านบนคือ baseline
 ที่ติดตั้งอยู่ ไม่ใช่รายการเสนอใหม่. `ui-spec` และ `sa` เพิ่มรายการด้านล่างเมื่อมีดีไซน์/งานจริง
-พร้อมเหตุผล ลิงก์เอกสารทางการ ความเข้ากันได้ และต้นทุน bundle/runtime บน host 8 GB / 4 vCPU.
+พร้อมเหตุผล ลิงก์เอกสารทางการ ความเข้ากันได้ และต้นทุน bundle/runtime บน host 4 GB / 2 vCPU.
 
 | Package / workspace | Status | Purpose / feature / revision | Official evidence / alternatives | Bundle / host cost | ADR / review bundle | Owner approval evidence | Installed version |
 |---|---|---|---|---|---|---|---|
@@ -97,7 +97,7 @@ See [integration instructions](../skills/spec/sec-auditor-integration.md).
 ADR adds or changes containers. Its bundle is included in relevant SA approval; accepted
 scoped work can then configure shared files through the parent integration owner. It checks
 required inter-service traffic, secrets, permissions, writable volumes, isolation, backups
-and the total 8 GB RAM / 4 vCPU budget. Reviews first stage findings in investigation.
+and the total 4 GB RAM / 2 vCPU budget. Reviews first stage findings in investigation.
 It adds no application dependency or background watcher. See
 [infra delivery](../workflow/infra-delivery.md) and [service index](../infra/service-index.md).
 
@@ -108,7 +108,7 @@ packageManager and the frozen lockfile; CI runs existing lint/build/typecheck an
 Compose validation. A manual image workflow builds frontend/gateway/auth using pinned
 upstream actions; GHCR publication is off by default and gated by named configuration.
 No app package/test runner or production deployment is added. Build execution belongs on
-GitHub runners rather than the 8 GB RAM / 4 vCPU production host.
+GitHub runners rather than the 4 GB RAM / 2 vCPU production host.
 See [GitHub configuration](../devops/github-configuration.md) and
 [DevOps delivery](../workflow/devops-delivery.md).
 

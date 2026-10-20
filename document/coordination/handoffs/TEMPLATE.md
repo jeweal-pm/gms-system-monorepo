@@ -12,7 +12,7 @@
 - Integration-owned changes:
 - Infra service bundle/revision, ADR/config drift, network/egress and secret-adapter prerequisites (when containers change):
 - DevOps pipeline/source revision, Dockerfile/workspace dependencies, build/runtime variables, image platform and release/check requirements (when delivery changes):
-- Resource budget / capacity impact (8 GB RAM / 4 vCPU total):
+- Resource budget / capacity impact (4 GB RAM / 2 vCPU total):
 - Expected output and acceptance criteria:
 - Verification completed / not run:
 - Blocking item, if any:
