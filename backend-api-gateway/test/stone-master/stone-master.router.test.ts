@@ -38,7 +38,8 @@ const VERSION = "2026-10-19T00:00:00.000Z";
 const group = { code: "dia", name: "Diamond", active: true };
 const stoneCode = {
   mode: "AUTO" as const,
-  parts: { stoneNameId: ID, sizeId: null, shapeId: ID, colorId: ID, cuttingId: null, clarityId: null, qualityId: null },
+  // Size is set: in the default order it sits at #2, which is required (owner 2026-10-20).
+  parts: { stoneNameId: ID, sizeId: ID, shapeId: ID, colorId: ID, cuttingId: null, clarityId: null, qualityId: null },
   partOrder: ["name", "size", "shape", "color", "cutting", "clarity", "quality"] as ("name" | "size" | "shape" | "color" | "cutting" | "clarity" | "quality")[],
   active: true,
 };

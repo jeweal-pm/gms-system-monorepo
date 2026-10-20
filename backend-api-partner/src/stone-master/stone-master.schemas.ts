@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { expectedUpdatedAtSchema } from "../common/partner-schemas";
 import { OPTION_KINDS } from "./stone-master.kinds";
-import { isPermutation, PART_KEYS, STONE_CODE_PATTERN } from "./stone-code";
+import { isPermutation, PART_FIELD, PART_KEYS, REQUIRED_POSITIONS, STONE_CODE_PATTERN, type PartKey } from "./stone-code";
 
 /** SA-SM-04: trimmed, stored UPPERCASE, 1–20 of A–Z 0–9 . - / (so the unique index is case-insensitive). */
 export const codeSchema = z.string().trim().transform((value) => value.toUpperCase()).pipe(z.string().regex(/^[A-Z0-9./-]{1,20}$/));
@@ -20,10 +20,11 @@ const stoneNameFields = { ...simpleFields, groupId: uuid, hsn: hsnSchema };
 const shapeFields = { ...simpleFields, sizeIds: z.array(uuid).min(1).max(100) };
 
 const partsSchema = z.object({
-  stoneNameId: uuid,
+  // Owner 2026-10-20: every part is optional except the ones at positions #1 and #2 (stoneCodeRule).
+  stoneNameId: uuid.nullable(),
   sizeId: uuid.nullable(),
-  shapeId: uuid,
-  colorId: uuid,
+  shapeId: uuid.nullable(),
+  colorId: uuid.nullable(),
   cuttingId: uuid.nullable(),
   clarityId: uuid.nullable(),
   qualityId: uuid.nullable(),
@@ -47,7 +48,16 @@ function noDuplicateSizes(value: { sizeIds: string[] }, ctx: z.RefinementCtx) {
  * SA-SM-05: AUTO ignores any sent `code` (the server builds it); MANUAL requires a code of 1–60 of
  * A–Z 0–9 . - / (stored UPPERCASE).
  */
-function stoneCodeRule<T extends { mode: "AUTO" | "MANUAL"; code?: string }>(value: T, ctx: z.RefinementCtx) {
+function stoneCodeRule<T extends { mode: "AUTO" | "MANUAL"; code?: string; partOrder: PartKey[]; parts: Record<string, string | null> }>(value: T, ctx: z.RefinementCtx) {
+  // Owner 2026-10-20: the parts at positions #1 and #2 must be set.
+  let missing = false;
+  for (const part of value.partOrder.slice(0, REQUIRED_POSITIONS)) {
+    if (!value.parts[PART_FIELD[part]]) {
+      ctx.addIssue({ code: "custom", path: ["parts", PART_FIELD[part]], message: "required", params: { code: "required" } });
+      missing = true;
+    }
+  }
+  if (missing) return z.NEVER;
   if (value.mode === "AUTO") return { ...value, code: undefined };
   const code = (value.code ?? "").trim().toUpperCase();
   if (!STONE_CODE_PATTERN.test(code)) {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { FieldSet } from "./kinds";
-import { DEFAULT_PART_ORDER, PART_KEYS, type PartKey } from "./stone-code";
+import { DEFAULT_PART_ORDER, PART_FIELD, PART_KEYS, PART_LABEL, REQUIRED_POSITIONS, type PartKey } from "./stone-code";
 
 /**
  * One form shape for every Stone Master page (form-guidelines.md); each page validates only its
@@ -88,9 +88,11 @@ export function stoneFormIssues(fields: FieldSet, values: StoneFormValues): Issu
     else if (values.sizeIds.length > 100) issues.push({ path: "sizeIds", message: "Select at most 100 sizes" });
   }
   if (fields === "stoneCode") {
-    if (values.stoneNameId === "") issues.push({ path: "stoneNameId", message: "Select a name" });
-    if (values.shapeId === "") issues.push({ path: "shapeId", message: "Select a shape" });
-    if (values.colorId === "") issues.push({ path: "colorId", message: "Select a color" });
+    // Owner 2026-10-20: only the parts at #1 and #2 are required; the rest are optional.
+    for (const part of values.partOrder.slice(0, REQUIRED_POSITIONS)) {
+      const field = PART_FIELD[part];
+      if (values[field] === "") issues.push({ path: field, message: `Select a ${PART_LABEL[part].toLowerCase()} (positions #1 and #2 are required)` });
+    }
     if (values.mode === "MANUAL") {
       const code = values.code.trim();
       if (code === "") issues.push({ path: "code", message: "Stone Code is required" });

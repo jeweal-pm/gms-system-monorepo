@@ -108,7 +108,7 @@ async function referenceCode(tx: Tx, model: RefModel, id: string, path: string, 
   return row.code;
 }
 
-type StoredStoneCode = { stoneNameId: string; sizeId: string | null; shapeId: string; colorId: string; cuttingId: string | null; clarityId: string | null; qualityId: string | null };
+type StoredStoneCode = { stoneNameId: string | null; sizeId: string | null; shapeId: string | null; colorId: string | null; cuttingId: string | null; clarityId: string | null; qualityId: string | null };
 
 @Injectable()
 export class StoneMasterService {
@@ -310,15 +310,17 @@ export class StoneMasterService {
   private async resolveStoneCode(tx: Tx, body: StoneCodeInput, stored: StoredStoneCode | null): Promise<string> {
     const { parts } = body;
     const codes: Partial<Record<PartKey, string | null>> = {
-      name: await referenceCode(tx, "stoneName", parts.stoneNameId, "parts.stoneNameId", stored?.stoneNameId),
-      shape: await referenceCode(tx, "stoneShape", parts.shapeId, "parts.shapeId", stored?.shapeId),
-      color: await referenceCode(tx, "stoneColor", parts.colorId, "parts.colorId", stored?.colorId),
+      name: parts.stoneNameId ? await referenceCode(tx, "stoneName", parts.stoneNameId, "parts.stoneNameId", stored?.stoneNameId) : null,
+      shape: parts.shapeId ? await referenceCode(tx, "stoneShape", parts.shapeId, "parts.shapeId", stored?.shapeId) : null,
+      color: parts.colorId ? await referenceCode(tx, "stoneColor", parts.colorId, "parts.colorId", stored?.colorId) : null,
       size: parts.sizeId ? await referenceCode(tx, "stoneSize", parts.sizeId, "parts.sizeId", stored?.sizeId) : null,
       cutting: parts.cuttingId ? await referenceCode(tx, "stoneCutting", parts.cuttingId, "parts.cuttingId", stored?.cuttingId) : null,
       clarity: parts.clarityId ? await referenceCode(tx, "stoneClarity", parts.clarityId, "parts.clarityId", stored?.clarityId) : null,
       quality: parts.qualityId ? await referenceCode(tx, "stoneQuality", parts.qualityId, "parts.qualityId", stored?.qualityId) : null,
     };
     if (parts.sizeId) {
+      // A size is chosen from its shape's sizes, so it needs a shape (Q-SM-03).
+      if (!parts.shapeId) throw stoneReferenceInvalid("parts.sizeId");
       const unchangedPair = stored !== null && stored.sizeId === parts.sizeId && stored.shapeId === parts.shapeId;
       if (!unchangedPair) {
         const link = await tx.stoneShapeSize.findUnique({ where: { shapeId_sizeId: { shapeId: parts.shapeId, sizeId: parts.sizeId } } });

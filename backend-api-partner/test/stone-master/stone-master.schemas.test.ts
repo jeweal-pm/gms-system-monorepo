@@ -7,7 +7,8 @@ import { mapStoneError } from "../../src/stone-master/stone-master.errors";
 
 const ID = "11111111-1111-4111-8111-111111111111";
 const ID2 = "22222222-2222-4222-8222-222222222222";
-const parts = { stoneNameId: ID, sizeId: null, shapeId: ID, colorId: ID, cuttingId: null, clarityId: null, qualityId: null };
+// Size is set: in the default order it sits at #2, which is required (owner 2026-10-20).
+const parts = { stoneNameId: ID, sizeId: ID, shapeId: ID, colorId: ID, cuttingId: null, clarityId: null, qualityId: null };
 
 describe("simple body (SA-SM-04)", () => {
   it("UT-SM-P01 code is trimmed and uppercased; format and length enforced", () => {
@@ -52,6 +53,21 @@ describe("stone code (SA-SM-05)", () => {
     expect(BODY_SCHEMAS["stone-code"].create.parse({ ...base, mode: "MANUAL", code: " sap-blue-2mm " }).code).toBe("SAP-BLUE-2MM");
     expect(BODY_SCHEMAS["stone-code"].create.safeParse({ ...base, mode: "MANUAL", code: "" }).success).toBe(false);
     expect(BODY_SCHEMAS["stone-code"].create.safeParse({ ...base, mode: "MANUAL", code: "has space" }).success).toBe(false);
+  });
+
+  it("UT-SM-P06b the parts at #1 and #2 are required (owner 2026-10-20)", () => {
+    const order = ["name", "clarity", "shape", "color", "cutting", "size", "quality"];
+    const missing = BODY_SCHEMAS["stone-code"].create.safeParse({ mode: "AUTO", parts, partOrder: order, active: true });
+    expect(missing.success).toBe(false);
+    expect(missing.error?.issues[0]).toMatchObject({ path: ["parts", "clarityId"], params: { code: "required" } });
+    const ok = BODY_SCHEMAS["stone-code"].create.safeParse({ mode: "AUTO", parts: { ...parts, clarityId: ID }, partOrder: order, active: true });
+    expect(ok.success).toBe(true);
+  });
+
+  it("UT-SM-P06c only #1 and #2 are required: name, shape and color may be empty elsewhere (owner 2026-10-20)", () => {
+    const order = ["clarity", "quality", "name", "size", "shape", "color", "cutting"];
+    const onlyTop = { stoneNameId: null, sizeId: null, shapeId: null, colorId: null, cuttingId: null, clarityId: ID, qualityId: ID2 };
+    expect(BODY_SCHEMAS["stone-code"].create.safeParse({ mode: "AUTO", parts: onlyTop, partOrder: order, active: true }).success).toBe(true);
   });
 
   it("UT-SM-P06 part order must be a permutation of the seven keys", () => {

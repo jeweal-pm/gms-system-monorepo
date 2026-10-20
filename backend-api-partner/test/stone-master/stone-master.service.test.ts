@@ -150,6 +150,17 @@ describe("stone code", () => {
   });
 });
 
+describe("optional parts (owner 2026-10-20)", () => {
+  it("UT-SM-P20 only the top two parts set: the code uses them; a size without a shape is rejected", async () => {
+    const order = ["clarity", "cutting", "name", "size", "shape", "color", "quality"] as typeof DEFAULT_PART_ORDER[number][];
+    const empty = { stoneNameId: null, sizeId: null, shapeId: null, colorId: null, qualityId: null };
+    await new StoneMasterService().create("stone-code", "a", { mode: "AUTO", code: undefined, parts: { ...empty, cuttingId: CUT, clarityId: CLARITY }, partOrder: order, active: true });
+    expect(db.created[0].data).toMatchObject({ code: "VVS1EX", stoneNameId: null, shapeId: null });
+    expect(await failure(new StoneMasterService().create("stone-code", "a", { mode: "AUTO", code: undefined, parts: { ...empty, cuttingId: CUT, clarityId: CLARITY, sizeId: SIZE }, partOrder: order, active: true })))
+      .toMatchObject({ code: "STONE_MASTER_REFERENCE_INVALID", path: "parts.sizeId" });
+  });
+});
+
 describe("references and versions", () => {
   it("UT-SM-P15 stone name needs an active group; the stored inactive group may stay on update", async () => {
     db.refs.stoneGroup.set(GROUP, { code: "DIA", active: false });

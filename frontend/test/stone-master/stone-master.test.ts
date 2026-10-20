@@ -5,7 +5,7 @@ import { masterCodeDestinations } from "@/features/setup/setup-destinations";
 import { mapDeleteError, mapSaveError, referencedIds, rowText, sizeAfterShapeChange, sizesForShape, toDuplicateValues, toFormValues, toInput, type StoneDetail } from "@/features/stone-master/api";
 import { STONE_PAGES, stonePageBySlug, stonePageHref } from "@/features/stone-master/kinds";
 import { emptyStoneForm, stoneFormIssues } from "@/features/stone-master/schema";
-import { buildAutoCode, DEFAULT_PART_ORDER, moveItem } from "@/features/stone-master/stone-code";
+import { buildAutoCode, DEFAULT_PART_ORDER, isPartRequired, moveItem } from "@/features/stone-master/stone-code";
 import { gatewayError } from "../partner/helpers";
 
 /** UT-SM-01…09: Stone Master pages (stone-master UI revision 1, testing.md). */
@@ -45,9 +45,21 @@ describe("form rules (UT-SM-02)", () => {
     expect(paths("shape", { code: "RD", name: "Round" })).toEqual(["sizeIds"]);
   });
 
-  it("stone code required parts; manual code only in MANUAL mode", () => {
-    expect(paths("stoneCode", {})).toEqual(["stoneNameId", "shapeId", "colorId"]);
+  it("the parts at #1 and #2 are required wherever they are moved (owner 2026-10-20)", () => {
     const parts = { stoneNameId: ID, shapeId: ID, colorId: ID };
+    const order: ReturnType<typeof emptyStoneForm>["partOrder"] = ["name", "clarity", "shape", "color", "cutting", "size", "quality"];
+    expect(paths("stoneCode", { ...parts, partOrder: order })).toEqual(["clarityId"]);
+    expect(paths("stoneCode", { ...parts, partOrder: order, clarityId: ID })).toEqual([]);
+    expect(isPartRequired("clarity", order)).toBe(true);
+    expect(isPartRequired("size", order)).toBe(false);
+    expect(isPartRequired("color", order)).toBe(false);
+    expect(isPartRequired("name", order)).toBe(true);
+  });
+
+  it("stone code required parts; manual code only in MANUAL mode", () => {
+    // Owner 2026-10-20: only #1 and #2 are required; in the default order those are Name and Size.
+    expect(paths("stoneCode", {})).toEqual(["stoneNameId", "sizeId"]);
+    const parts = { stoneNameId: ID, sizeId: ID };
     expect(paths("stoneCode", { ...parts, mode: "AUTO", code: "" })).toEqual([]);
     expect(paths("stoneCode", { ...parts, mode: "MANUAL", code: "" })).toEqual(["code"]);
     expect(paths("stoneCode", { ...parts, mode: "MANUAL", code: "SAP-BLUE-2MM" })).toEqual([]);

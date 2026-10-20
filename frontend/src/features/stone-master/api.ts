@@ -10,10 +10,10 @@ import { emptyStoneForm, type StoneFormValues } from "./schema";
  */
 
 export type StoneParts = {
-  stoneNameId: string;
+  stoneNameId: string | null;
   sizeId: string | null;
-  shapeId: string;
-  colorId: string;
+  shapeId: string | null;
+  colorId: string | null;
   cuttingId: string | null;
   clarityId: string | null;
   qualityId: string | null;
@@ -42,7 +42,7 @@ export type StoneListItem = {
   group?: { code: string; name: string };
   sizeCount?: number;
   mode?: "AUTO" | "MANUAL";
-  stoneName?: { code: string; name: string };
+  stoneName?: { code: string; name: string } | null;
 };
 
 export type StoneOption = { id: string; code: string; name: string; active: boolean; sizeIds?: string[] };
@@ -107,10 +107,10 @@ export function toFormValues(fields: FieldSet, detail: StoneDetail): StoneFormVa
   if (fields === "shape") values.sizeIds = [...(detail.sizeIds ?? [])];
   if (fields === "stoneCode" && detail.parts) {
     values.mode = detail.mode ?? "AUTO";
-    values.stoneNameId = detail.parts.stoneNameId;
+    values.stoneNameId = detail.parts.stoneNameId ?? "";
     values.sizeId = detail.parts.sizeId ?? "";
-    values.shapeId = detail.parts.shapeId;
-    values.colorId = detail.parts.colorId;
+    values.shapeId = detail.parts.shapeId ?? "";
+    values.colorId = detail.parts.colorId ?? "";
     values.cuttingId = detail.parts.cuttingId ?? "";
     values.clarityId = detail.parts.clarityId ?? "";
     values.qualityId = detail.parts.qualityId ?? "";
@@ -136,10 +136,10 @@ export function toInput(fields: FieldSet, values: StoneFormValues): Record<strin
     mode: values.mode,
     ...(values.mode === "MANUAL" ? { code: values.code.trim().toUpperCase() } : {}),
     parts: {
-      stoneNameId: values.stoneNameId,
+      stoneNameId: orNull(values.stoneNameId),
       sizeId: orNull(values.sizeId),
-      shapeId: values.shapeId,
-      colorId: values.colorId,
+      shapeId: orNull(values.shapeId),
+      colorId: orNull(values.colorId),
       cuttingId: orNull(values.cuttingId),
       clarityId: orNull(values.clarityId),
       qualityId: orNull(values.qualityId),
@@ -160,7 +160,8 @@ export function rowText(fields: FieldSet, item: StoneListItem): { primary: strin
     return { primary: item.name, secondary: `${item.code} · ${count} size${count === 1 ? "" : "s"}` };
   }
   if (fields === "stoneCode") {
-    return { primary: item.code, secondary: `${item.stoneName?.name ?? ""} · ${item.mode === "MANUAL" ? "Manual code" : "Auto code"}` };
+    const mode = item.mode === "MANUAL" ? "Manual code" : "Auto code";
+    return { primary: item.code, secondary: item.stoneName ? `${item.stoneName.name} · ${mode}` : mode };
   }
   return { primary: item.name, secondary: item.code };
 }
@@ -219,7 +220,10 @@ export function mapSaveError(error: unknown, fields: FieldSet): SaveOutcome {
     case "VALIDATION_ERROR": {
       const mapped = fieldErrors.flatMap((entry): FieldError[] => {
         const name = (REFERENCE_FIELD[entry.path] ?? (["code", "name", "hsn"].includes(entry.path) ? entry.path : undefined)) as keyof StoneFormValues | undefined;
-        return name ? [{ name, message: entry.path === "code" && entry.code === "too_big" ? "The built code is longer than 60 characters" : "Check this field" }] : [];
+        const message = entry.path === "code" && entry.code === "too_big"
+          ? "The built code is longer than 60 characters"
+          : entry.code === "required" ? "This part is required" : "Check this field";
+        return name ? [{ name, message }] : [];
       });
       return { fieldErrors: mapped, formError: mapped.length < fieldErrors.length || fieldErrors.length === 0 ? "Some details couldn't be saved. Check the form and try again." : null };
     }

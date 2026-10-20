@@ -112,3 +112,19 @@ Both reviewers checked the same source: HEAD 79dfe91 plus the working tree, hash
   - Keyboard ArrowUp/ArrowDown and the screen-reader announcement are kept. `reducedMotion="user"` respects the OS setting.
   - Dev containers reinstalled with `pnpm docker:dev:install`; `pnpm install --frozen-lockfile` passes.
   - Checks: typecheck, lint 0 errors, 289 tests pass, and `/setup/stone-master/stone-code` returns 200 after restart. The browser drag was not checked by the agent.
+
+## 2026-10-20 Positions #1 and #2 required (superseded below)
+
+- Owner: "ให้สองอันดับแรก require หาก clarity อันดับ 6 เปลี่ยนเป็นอันดับ 2". Whatever part sits at #1 or #2 is required; name, shape and color stay required as before (they are NOT NULL in the DB). With the default order this makes **Size** required, because it sits at #2.
+- Enforced in partner (schema → `VALIDATION_ERROR`, field `parts.<id>`, code `required`), in the gateway (same rule, for parity) and in the frontend (red asterisk follows the position; the error reads "Select a … (positions #1 and #2 are required)"). SA-SM-05 updated.
+- Tests: partner 274 pass / 15 skipped, gateway 236 / 7, frontend 328; root typecheck passes.
+- Live check: 19/19, including the new `part at #2 missing → VALIDATION_ERROR parts.sizeId`. Test data removed; the owner's own records were not touched.
+
+## 2026-10-20 Only positions #1 and #2 required
+
+- Owner: "frontend ให้สองอันดับแรก require แต่อันดับอื่นๆไม่ require". Replaces the additive rule above: only the parts at #1 and #2 are required; every other part, name/shape/color included, is optional.
+- DB: migration `20261020090000_stone_code_optional_parts` drops NOT NULL from `stone.stone_code.stone_name_id`, `shape_id` and `color_id`. Applied in dev; `prisma migrate diff` shows no drift. Existing rows are unaffected.
+- Partner and gateway: those parts are nullable in input and output; a Size still needs a Shape (`STONE_MASTER_REFERENCE_INVALID` at `parts.sizeId`).
+- Frontend: the asterisk and the error follow positions #1/#2 only; the list shows just the mode when a code has no stone name. SA-SM-05 and form-guidelines updated.
+- Tests: new UT-SM-P06c and UT-SM-P20; partner 276 pass / 15 skipped, gateway 236 / 7, frontend 328; root typecheck passes; lint 0 errors.
+- Live check: 20/20, including saving a code with only Clarity + Cutting set (name/shape/color null → `TV…TEX…`). `/setup/stone-master/stone-code` returns 200. Test data removed. The browser was not checked by the agent.
