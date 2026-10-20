@@ -38,8 +38,9 @@ reservations, so idle containers leave CPU to busy ones; memory limits are the h
 Node heaps are capped at 60–65 % of each memory limit, so V8 collects garbage before the container
 reaches its limit; the rest covers native memory (Prisma engine, buffers, argon2/crypto).
 
-`docker-compose.dev.yml` gives watch mode its own limits (1 vCPU / 1536 MiB per Node container, pids 256
-for partner) and clears the heap caps: a developer workstation is not the production host.
+`docker-compose.dev.yml` gives watch mode its own limits (auth, gateway, frontend: 1 vCPU / 1536 MiB, heap cap
+cleared; partner: 1 GiB with `--max-old-space-size=768` as set on `dev` for stone-master): a developer
+workstation is not the production host.
 
 Unchanged: partner pool max 5 connections; PostgreSQL default `max_connections` (100) and
 `shared_buffers` (128 MB) fit in 1 GiB.

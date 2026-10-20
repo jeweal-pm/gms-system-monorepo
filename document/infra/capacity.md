@@ -14,7 +14,8 @@ the same change.
 | **Total** | **1.70 vCPU** | **2944 MiB** | |
 | Headroom (OS, Docker, page cache) | ≈ 0.30 vCPU | ≈ 1.1 GiB | |
 
-Dev watch mode (`docker-compose.dev.yml`): 1 vCPU / 1536 MiB per Node container, heap caps cleared.
+Dev watch mode (`docker-compose.dev.yml`): auth, gateway, frontend 1 vCPU / 1536 MiB with heap caps cleared;
+partner 1 GiB with `--max-old-space-size=768` (CPU and pids inherited from production).
 
 ## Measurements
 
