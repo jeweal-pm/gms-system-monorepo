@@ -49,4 +49,4 @@ completion reports: document/task/done/; changelog: document/changelog/.
 Audit findings first enter document/task/investigation/ for owner review. The parent owns
 shared audit records; audit workers use isolated scratch. Frontend/backend take only the
 user-selected ticket revision, and architecture changes keep the separate SA review.
-Production is 8 GB RAM / 4 vCPU total; all roles preserve OS/Docker headroom.
+Production is 4 GB RAM / 2 vCPU total; all roles preserve OS/Docker headroom.

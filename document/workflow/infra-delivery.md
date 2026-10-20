@@ -75,7 +75,7 @@ another config patch or false success. Stop after the selected criteria pass.
 - `document/infra/services/<service>/<revision>/security.md`: selected service bundle.
 - `document/task/investigation/`: review discoveries; `document/task/done/`: completed work.
 
-Production is one **8 GB RAM / 4 vCPU** host. Calculate merged deployment limits and
+Production is one **4 GB RAM / 2 vCPU** host. Calculate merged deployment limits and
 concurrent init jobs/replicas; retain OS/Docker headroom. A proposed additional service
 does not grant more host capacity. Runtime enforcement and capacity need measured evidence;
 static config is only one part of that evidence.

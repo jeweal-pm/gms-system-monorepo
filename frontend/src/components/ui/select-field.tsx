@@ -79,11 +79,12 @@ export function SelectField({
             </option>
           ) : (
             <>
-              <option value="" disabled>
+              <option value="" disabled className="bg-gms-surface">
                 {placeholder}
               </option>
               {options.map((option) => (
-                <option key={option.value} value={option.value} className="text-gms-text">
+                // The open list keeps a white background while the field itself is red (owner 2026-10-19).
+                <option key={option.value} value={option.value} className="bg-gms-surface text-gms-text">
                   {option.label}
                 </option>
               ))}

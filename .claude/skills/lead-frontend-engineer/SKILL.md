@@ -56,7 +56,7 @@ report; do not declare it resolved without the required evidence.
    Keep server/client boundaries and initial hydration deterministic. Authorization is
    enforced by backend. Use UI state locally; any new state library requires the ledger
    process. Bound bundles, SSR, pagination, caches, and concurrent work for the shared
-   production budget of **8 GB RAM / 4 vCPU**.
+   production budget of **4 GB RAM / 2 vCPU**.
 
 ## Verify and record
 

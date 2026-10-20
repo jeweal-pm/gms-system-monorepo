@@ -95,7 +95,7 @@ HTTP request per tRPC context; auth makes upstream calls only on first resolutio
 never on every protected procedure. The HTTP client makes at most one jittered retry, with a
 1.4-second per-attempt timeout and less than 3 seconds overall; the login latency budget needs
 measurement. Do not claim the spec's <5 ms guarantee until measured. No new DB
-pool is created. Host remains 8 GB RAM / 4 vCPU; verify existing container aggregate and
+pool is created. Host remains 4 GB RAM / 2 vCPU; verify existing container aggregate and
 request concurrency during implementation.
 
 ## Scope

@@ -104,6 +104,9 @@ No Compose change. Aggregate limits stay **3.2 vCPU / 5.5 GiB of 4 vCPU / 8 GB**
 auth 0.5/1 GiB, gateway 0.5/768 MiB, partner 0.35/512 MiB, frontend 0.6/1 280 MiB; checked in `docker-compose.yml`
 2026-10-15). Headroom ≈ 0.8 vCPU / 2.5 GB.
 
+> 2026-10-19: superseded by [ADR-0024](../../../../adr/0024-production-host-4gb-2vcpu.md) (4 GB / 2 vCPU host;
+> limits now 1.70 vCPU / 2944 MiB, [infra/capacity.md](../../../../infra/capacity.md)).
+
 - **PostgreSQL connections:** unchanged. Partner pool `max 5` is shared by customer and vendor (≈ 17 of 100 total).
   Vendor screens issue at most one list page + one `get` or one write at a time per user.
 - **Body limits:** partner 256 KB and gateway tRPC 1 MiB unchanged. Largest valid vendor input

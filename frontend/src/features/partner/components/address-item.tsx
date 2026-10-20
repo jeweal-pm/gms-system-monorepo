@@ -6,10 +6,12 @@ import { Controller, useFormState, useWatch, type FieldValues, type UseFormRetur
 import { cx, focusRing } from "@/components/ui/button";
 import { LabeledCheckbox } from "@/components/ui/checkbox";
 import { TextField } from "@/components/ui/outlined-field";
-import { SelectField } from "@/components/ui/select-field";
+import { ComboboxField } from "@/components/ui/combobox-field";
+import { useRegionData } from "@/lib/regions";
 import type { AddressTypeConfig } from "../address-types";
 import type { OptionsState } from "../options";
 import type { AddressFormValue, AddressArrayName, DefaultRule, PartnerAddressValues } from "../schema";
+import { RegionField, type RegionValue } from "./region-field";
 
 /**
  * Item body grid.
@@ -33,7 +35,7 @@ type AddressItemProps<TForm extends FieldValues & PartnerAddressValues> = {
   hasErrors: boolean;
   readOnly: boolean;
   options: OptionsState;
-  /** Absent when the item cannot be removed (item #1); the trash icon then renders disabled. */
+  /** Asks to remove the item (the list confirms first). Absent when it is the only item; the default item also renders the trash icon disabled. */
   onRemove?: () => void;
   onDefaultChange: (checked: boolean) => void;
   /** The "Set as default address" checkbox; the list focuses it after the next item is removed. */
@@ -62,12 +64,25 @@ function spans(layout: AddressLayout, withTaxId: boolean) {
 }
 
 /**
+ * Whether an address card's trash icon is enabled, and why not (owner 2026-10-19): any item can be
+ * removed except the default address and the last remaining one (the schema needs at least one);
+ * read-only view disables it without a hint.
+ */
+export function addressRemoval({ isOnly, isDefault, readOnly, itemLabel }: { isOnly: boolean; isDefault: boolean; readOnly: boolean; itemLabel: string }) {
+  if (readOnly) return { canRemove: false, hint: undefined };
+  const label = itemLabel.toLowerCase();
+  if (isDefault) return { canRemove: false, hint: `The default ${label} cannot be removed` };
+  if (isOnly) return { canRemove: false, hint: `At least one ${label} is required` };
+  return { canRemove: true, hint: undefined };
+}
+
+/**
  * Partner C-10 (customer FE-CUS-007 / rev 3 FE-CUS-R3-002, vendor FE-VEN-006 / rev 4 FE-VEN-R4-002):
  * one address card. Rev 3/4 design: the "#N" label sits outside the card on the left; the light gray,
  * rounded card has no collapse chevron and no "Default" badge. Its first row holds the
  * "Set as default address" checkbox (left) and the red trash icon (right); the field grid follows.
  * The frame turns red while any field has an error (DV-12). In read-only mode the checkbox and the
- * trash icon are shown disabled.
+ * trash icon are shown disabled; the trash icon is also disabled on the default address.
  */
 export function AddressItem<TForm extends FieldValues & PartnerAddressValues>({
   form,
@@ -83,22 +98,29 @@ export function AddressItem<TForm extends FieldValues & PartnerAddressValues>({
   onDefaultChange,
   defaultInputRef,
 }: AddressItemProps<TForm>) {
-  const { control, register } = form as unknown as UseFormReturn<AddressForm>;
+  const { control, register, setValue } = form as unknown as UseFormReturn<AddressForm>;
   const arrayName = type.arrayName;
   const base = `${arrayName}.${index}` as const;
-  const errors = useFormState({ control, name: base }).errors[arrayName]?.[index];
-  const [countryCode, isDefault] = useWatch({ control, name: [`${base}.countryCode`, `${base}.isDefault`] });
+  const { errors: formErrors, isSubmitted } = useFormState({ control, name: base });
+  const errors = formErrors[arrayName]?.[index];
+  const [countryCode, isDefault, state, city] = useWatch({ control, name: [`${base}.countryCode`, `${base}.isDefault`, `${base}.state`, `${base}.city`] });
   const hasCountry = countryCode !== "";
+  const region = useRegionData(countryCode);
+  function setRegion(next: RegionValue) {
+    const opts = { shouldDirty: true, shouldValidate: isSubmitted };
+    if (next.state !== state) setValue(`${base}.state`, next.state, opts);
+    if (next.city !== city) setValue(`${base}.city`, next.city, opts);
+  }
   const title = `${type.itemLabel} #${index + 1}`;
   const itemId = `${idPrefix}-${type.key}-${index}`;
   const section = type.autofillSection;
   const span = spans(layout, type.withTaxId);
-  const regionPlaceholder = (text: string) => (hasCountry ? text : "Choose a country first");
   // `exactlyOne` (customer): the current default cannot be unticked; ticking another one moves it.
   const locked = defaultRule === "exactlyOne" && isDefault;
   const removeLabel = `Remove ${type.itemLabel.toLowerCase()} #${index + 1}`;
-  const canRemove = Boolean(onRemove) && !readOnly;
-  const removeHint = readOnly ? undefined : index === 0 ? `The first ${type.itemLabel.toLowerCase()} cannot be removed` : undefined;
+  const removal = addressRemoval({ isOnly: !onRemove, isDefault, readOnly, itemLabel: type.itemLabel });
+  const canRemove = Boolean(onRemove) && removal.canRemove;
+  const removeHint = removal.hint;
 
   return (
     <div className="flex min-w-0 items-start gap-3 @min-[28rem]:gap-4">
@@ -158,12 +180,11 @@ export function AddressItem<TForm extends FieldValues & PartnerAddressValues>({
             control={control}
             name={`${base}.countryCode`}
             render={({ field }) => (
-              <SelectField
+              <ComboboxField
                 id={`${itemId}-country`}
                 label="Country"
                 required
-                placeholder="Select country"
-                autoComplete={`${section} country`}
+                placeholder="Search country"
                 options={options.countries}
                 status={options.status}
                 onRetry={options.onRetry}
@@ -171,38 +192,42 @@ export function AddressItem<TForm extends FieldValues & PartnerAddressValues>({
                 error={errors?.countryCode?.message}
                 className={span.half}
                 ref={field.ref}
-                name={field.name}
                 value={field.value}
-                onChange={(event) => field.onChange(event.target.value)}
+                onChange={(code) => {
+                  field.onChange(code);
+                  // State and City belong to the chosen country: clear them when it changes.
+                  setRegion({ state: "", city: "" });
+                }}
                 onBlur={field.onBlur}
               />
             )}
           />
-          {/* DV-04: free-text State/City, disabled (and skipped by Tab) until a Country is chosen. */}
-          <TextField
-            id={`${itemId}-state`}
-            label="State/Province"
-            required
-            disabled={!hasCountry && !readOnly}
-            placeholder={readOnly ? undefined : regionPlaceholder("Enter state or province")}
-            autoComplete={`${section} address-level1`}
-            readOnly={readOnly}
-            error={hasCountry ? errors?.state?.message : undefined}
-            className={span.half}
-            {...register(`${base}.state`)}
-          />
-          <TextField
-            id={`${itemId}-city`}
-            label="City"
-            required
-            disabled={!hasCountry && !readOnly}
-            placeholder={readOnly ? undefined : regionPlaceholder("Enter city")}
-            autoComplete={`${section} address-level2`}
-            readOnly={readOnly}
-            error={hasCountry ? errors?.city?.message : undefined}
-            className={span.half}
-            {...register(`${base}.city`)}
-          />
+          {/* DV-04 + owner 2026-10-19: State/City dropdowns from the country's list, disabled until a Country is chosen. */}
+          {(["state", "city"] as const).map((kind) => (
+            <Controller
+              key={kind}
+              control={control}
+              name={`${base}.${kind}`}
+              render={({ field }) => (
+                <RegionField
+                  kind={kind}
+                  id={`${itemId}-${kind}`}
+                  label={kind === "state" ? "State/Province" : "City"}
+                  required={kind === "state"}
+                  readOnly={readOnly}
+                  hasCountry={hasCountry}
+                  region={region}
+                  value={{ state, city }}
+                  onChange={setRegion}
+                  onBlur={field.onBlur}
+                  autoComplete={`${section} ${kind === "state" ? "address-level1" : "address-level2"}`}
+                  error={errors?.[kind]?.message}
+                  className={span.half}
+                  ref={field.ref}
+                />
+              )}
+            />
+          ))}
           <TextField
             id={`${itemId}-postcode`}
             label="Postcode"

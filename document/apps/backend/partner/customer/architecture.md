@@ -125,6 +125,9 @@ and a `customer` sub-router in `src/trpc/router.ts`.
 
 Headroom ≈ 0.8 vCPU / 2.5 GB for OS, Docker and page cache, as in ADR-0018.
 
+> 2026-10-19: the host is now 4 GB / 2 vCPU and these limits were reduced (partner 0.25 vCPU / 384 MiB);
+> see [ADR-0024](../../../../adr/0024-production-host-4gb-2vcpu.md) and [infra/capacity.md](../../../../infra/capacity.md).
+
 - **PostgreSQL connections:** auth pg pool (default max 10) + partner **max 5** + transient
   migration connections (≤ 2 at start) ≈ 17 of the default `max_connections` 100.
 - **Partner pool:** `max: 5`, `idleTimeoutMillis: 30 000`, `connectionTimeoutMillis: 2 000`.

@@ -91,7 +91,7 @@ missing, stay with static inspection and mark affected claims `needs_validation`
 Do not use application credentials, live endpoints, shared services, or install target
 dependencies to test a hypothesis. Keep application source read-only during audits.
 
-Production is **8 GB RAM / 4 vCPU total**. Assess aggregate container/workload limits,
+Production is **4 GB RAM / 2 vCPU total**. Assess aggregate container/workload limits,
 host headroom, pools, cache sizes, pagination and concurrency using actual evidence.
 Audit runners must also have explicit low resource bounds.
 

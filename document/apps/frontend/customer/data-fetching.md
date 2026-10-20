@@ -23,7 +23,7 @@ Shapes in the table follow the SA draft. Where the draft differs from what this 
 ## Rules
 
 - Use only the existing typed tRPC client and the QueryClient in `frontend/src/providers/app-providers.tsx`. The frontend never calls `backend-api-partner` directly (ADR-0018 §1: gateway only).
-- **Bounds (8 GB / 4 vCPU host):** list pages are 50 rows (ADR cap); no "load all"; at most one page request in flight; no polling. Search is debounced 300 ms and not sent for unchanged trimmed text. The options payload (~160 currencies + ~250 countries) is fetched once. A customer holds at most 20 addresses, so the request body stays far below the 256 KB route limit (ADR capacity).
+- **Bounds (4 GB / 2 vCPU host):** list pages are 50 rows (ADR cap); no "load all"; at most one page request in flight; no polling. Search is debounced 300 ms and not sent for unchanged trimmed text. The options payload (~160 currencies + ~250 countries) is fetched once. A customer holds at most 20 addresses, so the request body stays far below the 256 KB route limit (ADR capacity).
 - Reads retry at most twice, only for 5xx/network/`PARTNER_UNAVAILABLE` (reuse `retryTransient` from `frontend/src/lib/trpc-error.ts` after FE-CUS-001). **Mutations are never retried** (ADR §2: "ไม่ retry mutation").
 - Double submit: the primary button is disabled while a create/update is pending, and the submit handler ignores re-entry. Delete is disabled while pending.
 - No optimistic updates (the server enforces unique Code Name and the stale check).

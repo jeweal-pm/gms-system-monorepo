@@ -32,7 +32,7 @@ const CompanyProfileInput = z.object({
   address2: text(300),
   countryCode: z.string().regex(/^[A-Z]{2}$/),   // + membership in COUNTRY_CODES (partner)
   state: required(100),
-  city: required(100),
+  city: z.string().trim().max(100),                       // optional, "" when empty (owner 2026-10-19)
   postcode: required(20),
   currencyCode: z.string().regex(/^[A-Z]{3}$/),  // + membership in CURRENCY_CODES (partner)
   bankDetails: RichText,                          // plain-text length ≤ 5,000

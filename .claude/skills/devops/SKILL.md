@@ -44,7 +44,7 @@ publishing, pushing code, changing GitHub settings or deploying. Routine approve
 need no duplicate approval. Prepare concrete release/deploy/rollback plans before any
 required approval. No deploy job is ready until target, environment, infra-approved config,
 secrets, migrations/readiness, rollback and explicit deployment authorization are known.
-Build on GitHub runners, not on the production 8 GB RAM / 4 vCPU host; deploy immutable
+Build on GitHub runners, not on the production 4 GB RAM / 2 vCPU host; deploy immutable
 images/digests and retain runtime headroom. Do not invent an SSH target or run database
 migrations against an unspecified host.
 

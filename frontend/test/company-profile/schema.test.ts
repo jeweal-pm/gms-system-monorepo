@@ -47,7 +47,9 @@ describe("companyProfileSchema", () => {
 
   it("UT-CP-F03 requires every starred field", () => {
     const result = errors(emptyCompanyProfileForm);
-    expect(Object.keys(result)).toEqual(expect.arrayContaining(["name", "contactName", "phone", "email", "address", "countryCode", "state", "city", "postcode", "currencyCode"]));
+    expect(Object.keys(result)).toEqual(expect.arrayContaining(["name", "contactName", "phone", "email", "address", "countryCode", "state", "postcode", "currencyCode"]));
+    // City is optional (owner 2026-10-19).
+    expect(result).not.toHaveProperty("city");
     expect(result).not.toHaveProperty("taxId");
     expect(result).not.toHaveProperty("website");
     expect(result).not.toHaveProperty("address2");

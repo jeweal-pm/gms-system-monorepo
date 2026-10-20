@@ -48,7 +48,7 @@ Update the dependency ledger in `document/adr/tech-stack.md` and link it from bo
 and backend documents. Approval is not installation; backend/frontend installs only approved
 packages while implementing, with serialized integration-owner edits to manifests/lockfiles.
 
-Production is one host with 8 GB RAM / 4 vCPU total. Estimate aggregate container limits,
+Production is one host with 4 GB RAM / 2 vCPU total. Estimate aggregate container limits,
 PostgreSQL connection budget, concurrency, cache bounds, expected data size/pagination, and
 SSR/runtime cost, leaving OS/Docker headroom. Identify measurements still needed. Do not
 introduce Redis, workers, replicas, or containers without a justified capacity/ADR proposal.

@@ -42,7 +42,7 @@ including credential values. Shared bridge membership is not per-port access con
 
 - Service CPU/RAM/process/shm/log/disk limits, pools/concurrency/timeouts:
 - Aggregate merged limits including replicas and overlapping init jobs:
-- Remaining headroom on 8 GB RAM / 4 vCPU; unresolved measurements:
+- Remaining headroom on 4 GB RAM / 2 vCPU; unresolved measurements:
 
 ## Rollout and verification
 

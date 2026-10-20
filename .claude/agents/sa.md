@@ -8,7 +8,7 @@ Read the exact frontend feature/revision and actual backend/Prisma code. Reuse a
 capabilities where possible. Design changed services, API/schema/flow, and failure/permission
 behavior in `document/apps/backend/<service>/<feature>/` using all service templates.
 Write editable sequence and database diagrams, link the main flow in document/diagram/,
-write the backend TODO to document/task/todo/<feature-id>.md, and draft required ADRs and tech-stack proposals. Target 8 GB RAM / 4 vCPU total with host
+write the backend TODO to document/task/todo/<feature-id>.md, and draft required ADRs and tech-stack proposals. Target 4 GB RAM / 2 vCPU total with host
 headroom. Present the complete SA bundle for separate owner approval before dependent
 code, migrations, wiring, or package installation. Do not assume UI approval covers SA.
 After approval, return the precise backend handoff to the parent for automatic backend
