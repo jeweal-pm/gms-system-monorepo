@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 import { GmsMark } from "./gms-mark";
 import { activeDisclosureIds, isNavItemActive, sidebarSections, sidebarToggleIcon, visibleSections, type NavLink } from "./navigation";
-import { SidebarDisclosure, sidebarFocusRing, sidebarRow } from "./sidebar-disclosure";
+import { SIDEBAR_ICON_SIZE, SidebarDisclosure, sidebarFocusRing, sidebarRow } from "./sidebar-disclosure";
 import { RailActionButton, type SidebarFocusRequest, type TakeSidebarFocusRequest } from "./sidebar-rail";
 import { useMenuAccess } from "./use-menu-access";
 
@@ -13,7 +13,7 @@ function SidebarLink({ item, pathname, onNavigate }: Readonly<{ item: NavLink; p
   const Icon = item.icon;
   return (
     <Link href={item.href} aria-current={active ? "page" : undefined} onNavigate={onNavigate} className={`${sidebarRow} ${active ? "bg-gms-nav-active font-semibold" : ""}`}>
-      {Icon && <Icon aria-hidden size={18} strokeWidth={1.5} className="shrink-0" />}
+      {Icon && <Icon aria-hidden size={SIDEBAR_ICON_SIZE} strokeWidth={1.5} className="shrink-0" />}
       <span className="truncate">{item.label}</span>
     </Link>
   );

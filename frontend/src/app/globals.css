@@ -45,6 +45,15 @@
   --color-gms-warning-subtle: #ffe7b8;
   --color-gms-warning-text: #9a5b00;
   --color-gms-checkbox-readonly: #a9a9a9;
+  /* Toast (owner design 2026-10-20): dark card; each tone is a coloured disc on a tinted halo. */
+  --color-gms-toast: #002628;
+  --color-gms-toast-text: #fcfcfc;
+  --color-gms-toast-info: #2d3438;
+  --color-gms-toast-success: #01e17b;
+  --color-gms-toast-success-halo: #003830;
+  --color-gms-toast-error: #f04349;
+  --color-gms-toast-warning: #fdcd0f;
+  --color-gms-toast-alert-halo: #18292b;
   /* customer UI revision 1 (FE-CUS-016). Default badge colors are the owner's decision (Q-CUS-06, 2026-10-14). */
   --color-gms-success-subtle: #c1efd2;
   --color-gms-success-text: #22c55e;

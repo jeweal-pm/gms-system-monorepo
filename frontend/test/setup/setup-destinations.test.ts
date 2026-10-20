@@ -1,8 +1,39 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { moduleBreadcrumbs } from "@/features/home/navigation";
-import { setupLandingTiles } from "@/features/setup/setup-destinations";
+import { masterCodeDestinations, setupLandingTiles } from "@/features/setup/setup-destinations";
 
-/** UT-NAV-F01…F03: Setup landing tiles (owner design 2026-10-16). */
+/** UT-NAV-F01…F05: Setup landing tiles and Master Code modal tiles (owner design 2026-10-16). */
+
+describe("masterCodeDestinations", () => {
+  it("UT-NAV-F05 every tile uses its design icon; Labor Name is shown as Service Fee (owner 2026-10-20)", () => {
+    const tiles = masterCodeDestinations.map((tile) => {
+      const html = renderToStaticMarkup(createElement(tile.icon, { size: 26, strokeWidth: 1.5 }));
+      return [tile.id, tile.label, html.match(/data-icon="([^"]+)"/)?.[1], html.includes('viewBox="0 0 24 24"')];
+    });
+    expect(tiles).toEqual([
+      ["partner-master", "Partner Master", "partner-master", true],
+      ["currency", "Currency", "currency", true],
+      ["stone-master", "Stone Master", "stone-master", true],
+      ["location-master", "Location Master", "location-master", true],
+      ["certificate-master", "Certificate Master", "certificate-master", true],
+      ["labor-name", "Service Fee", "service-fee", true],
+      ["sale-person", "Sale Person", "sale-person", true],
+    ]);
+    expect(moduleBreadcrumbs("labor-name")?.label).toBe("Service Fee");
+  });
+
+  it("UT-NAV-F06 per-path stroke weights and the filled Service Fee shape are kept", () => {
+    const currency = masterCodeDestinations.find((tile) => tile.id === "currency");
+    const fee = masterCodeDestinations.find((tile) => tile.id === "labor-name");
+    const html = (tile: typeof currency) => (tile ? renderToStaticMarkup(createElement(tile.icon, { size: 24 })) : "");
+    expect(html(currency).match(/stroke-width="1.25"/g)).toHaveLength(2);
+    expect(html(fee)).toContain('fill="currentColor"');
+    expect(html(fee)).toContain('stroke="none"');
+    expect(html(fee)).not.toContain("#1C252E");
+  });
+});
 
 describe("setupLandingTiles", () => {
   it("UT-NAV-F01 lists the six tiles in the design order with their colors", () => {
@@ -27,5 +58,20 @@ describe("setupLandingTiles", () => {
 
   it("UT-NAV-F03 gives Stone Factory no destination", () => {
     expect(setupLandingTiles.find((entry) => entry.id === "stone-factory")).not.toHaveProperty("href");
+  });
+
+  it("UT-NAV-F04 User and Permission, Master Code and Document Setup use the design icons (owner 2026-10-20)", () => {
+    const render = (id: string) => {
+      const tile = setupLandingTiles.find((entry) => entry.id === id);
+      return tile ? renderToStaticMarkup(createElement(tile.icon, { size: 32, strokeWidth: 1.5 })) : "";
+    };
+    for (const id of ["user-permission", "master-code", "document-setup"]) {
+      const html = render(id);
+      expect(html).toContain(`data-icon="${id}"`);
+      expect(html).toContain('viewBox="0 0 32 32"');
+      expect(html).toContain('stroke="currentColor"');
+      expect(html).toContain('stroke-width="2"');
+      expect(html).not.toContain("#FCFCFC");
+    }
   });
 });

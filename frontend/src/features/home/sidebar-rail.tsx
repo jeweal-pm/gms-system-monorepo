@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef } from "react";
-import type { LucideIcon } from "lucide-react";
+import type { NavIcon } from "./nav-icons";
 import { GmsMark } from "./gms-mark";
 import { isNavItemActive, isNavSectionActive, railModules, sidebarSections, sidebarToggleIcon, visibleRailModules, visibleSections, type NavLink, type NavSection } from "./navigation";
 import { useMenuAccess } from "./use-menu-access";
@@ -200,11 +200,11 @@ function RailSectionMenu({ section, pathname }: Readonly<{ section: NavSection; 
 
 /* ---------- RailButton (N-06) ---------- */
 
-function RailIcon({ icon: Icon }: Readonly<{ icon: LucideIcon }>) {
+function RailIcon({ icon: Icon }: Readonly<{ icon: NavIcon }>) {
   return <Icon aria-hidden size={24} strokeWidth={1.5} className="shrink-0" />;
 }
 
-function RailLink({ href, label, icon, active }: Readonly<{ href: string; label: string; icon: LucideIcon; active: boolean }>) {
+function RailLink({ href, label, icon, active }: Readonly<{ href: string; label: string; icon: NavIcon; active: boolean }>) {
   const { anchorRef, hide, triggerProps, tooltip } = useRailTooltip(label);
   return (
     <>
@@ -228,7 +228,7 @@ function RailLink({ href, label, icon, active }: Readonly<{ href: string; label:
 
 type RailActionButtonProps = Readonly<{
   label: string;
-  icon: LucideIcon;
+  icon: NavIcon;
   onClick: () => void;
   active?: boolean;
   /** Extra screen-reader text after the label, e.g. "(current section)". */

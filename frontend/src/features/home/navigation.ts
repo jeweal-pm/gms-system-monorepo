@@ -1,35 +1,29 @@
+import { ArrowLeftRight, Boxes, ClipboardList, FileText, Receipt, ShoppingCart, StickyNotes, Wallet, type LucideIcon } from "lucide-react";
 import {
-  ArrowLeftRight,
-  Barcode,
-  Blend,
-  Boxes,
-  CalendarClock,
-  ChartColumn,
-  ClipboardClock,
-  ClipboardList,
-  FileChartColumn,
-  FileCheck,
-  FileCheckCorner,
-  FileClock,
-  FileDiff,
-  FileDown,
-  FileText,
-  FileUp,
-  House,
-  Receipt,
-  ReceiptText,
-  RefreshCcwDot,
-  RotateCcwSquare,
-  Settings,
-  ShoppingBag,
-  ShoppingBasket,
-  ShoppingCart,
-  StickyNotes,
-  UnfoldVertical,
-  Wallet,
-  type LucideIcon,
-} from "lucide-react";
-import { STONE_MENU_KEY, STONE_PAGES, stonePageHref } from "@/features/stone-master/kinds";
+  ApproveIcon,
+  BarcodeIcon,
+  BoxClockIcon,
+  ClosingStockIcon,
+  DashboardIcon,
+  FileOutstandingIcon,
+  HomeIcon,
+  MemoOutIcon,
+  MemoOutReturnIcon,
+  MemoReceiveIcon,
+  MemoReturnIcon,
+  PurchaseIcon,
+  PurchaseOrderIcon,
+  PurchaseOutstandingIcon,
+  QuotationIcon,
+  ReserveIcon,
+  SaleIcon,
+  SaleReportIcon,
+  SetupIcon,
+  SplitVerticalIcon,
+  StockTransferIcon,
+  type NavIcon,
+} from "./nav-icons";
+import { DEFAULT_STONE_SLUG, STONE_MENU_KEY, STONE_PAGES, stonePageHref } from "@/features/stone-master/kinds";
 
 /**
  * Module catalog used by the Home shortcuts fallback and as the last fallback of the
@@ -40,8 +34,20 @@ export type NavigationGroup = { title: string; items: NavigationItem[] };
 /** `href` overrides the default `/modules/<slug>` link when the item has a real page (customer FE-CUS-003). */
 export type NavigationItem = { label: string; slug: string; href?: string };
 
+/**
+ * Menu keys that have a real page. Home shortcuts come from the gateway with the menu key only
+ * (owner 2026-10-20: Home must open the real pages, not the `/modules` placeholders).
+ */
+export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
+  "company-profile": "/setup/company-profile",
+  "user-and-permission": "/setup/user-permission",
+  vendor: "/setup/vendor",
+  customer: "/setup/customer",
+  "stone-master": stonePageHref(DEFAULT_STONE_SLUG),
+};
+
 export function navigationHref(item: NavigationItem): string {
-  return item.href ?? `/modules/${item.slug}`;
+  return item.href ?? REAL_PAGE_HREFS[item.slug] ?? `/modules/${item.slug}`;
 }
 
 export const navigationGroups: NavigationGroup[] = [
@@ -73,7 +79,7 @@ export type NavLink = {
   id: string;
   label: string;
   href: string;
-  icon?: LucideIcon;
+  icon?: NavIcon;
   activePrefix?: string;
   activeHrefs?: readonly string[];
   /**
@@ -83,12 +89,12 @@ export type NavLink = {
   permission?: readonly string[];
 };
 /** A collapsible parent (disclosure button, no route) with link children. */
-export type NavDisclosure = { kind: "disclosure"; id: string; label: string; icon: LucideIcon; children: NavLink[] };
+export type NavDisclosure = { kind: "disclosure"; id: string; label: string; icon: NavIcon; children: NavLink[] };
 export type NavEntry = NavLink | NavDisclosure;
 /** A sidebar section; `title` renders the small grey group label (untitled = top section). */
 export type NavSection = { id: string; title?: string; items: NavEntry[] };
 /** Collapsed-rail button: a route, or a group that expands the sidebar at `sectionId` (Q-NAV-02). */
-export type RailModule = { id: string; label: string; icon: LucideIcon } & ({ kind: "link"; link: NavLink } | { kind: "section"; sectionId: string });
+export type RailModule = { id: string; label: string; icon: NavIcon } & ({ kind: "link"; link: NavLink } | { kind: "section"; sectionId: string });
 
 /**
  * Setup-owned placeholder destinations (Setup landing tiles and the Master Code modal, Q-NAV-05).
@@ -101,7 +107,8 @@ export const setupOwnedPlaceholders = [
   { slug: "stone-master", label: "Stone Master", masterCode: true },
   { slug: "location-master", label: "Location Master", masterCode: true },
   { slug: "certificate-master", label: "Certificate Master", masterCode: true },
-  { slug: "labor-name", label: "Labor Name", masterCode: true },
+  // Owner 2026-10-20: shown as "Service Fee"; the slug and permission key stay `labor-name`.
+  { slug: "labor-name", label: "Service Fee", masterCode: true },
   { slug: "sale-person", label: "Sale Person", masterCode: true },
 ] as const;
 
@@ -148,38 +155,41 @@ function permissionFor(id: string): readonly string[] | undefined {
   return key ? [key] : undefined;
 }
 
-const link = (id: string, label: string, icon?: LucideIcon, href = moduleHref(id)): NavLink => ({ kind: "link", id, label, href, icon, permission: permissionFor(id) });
-const disclosure = (id: string, label: string, icon: LucideIcon, children: NavLink[]): NavDisclosure => ({ kind: "disclosure", id, label, icon, children });
+const link = (id: string, label: string, icon?: NavIcon, href = moduleHref(id)): NavLink => ({ kind: "link", id, label, href, icon, permission: permissionFor(id) });
+const disclosure = (id: string, label: string, icon: NavIcon, children: NavLink[]): NavDisclosure => ({ kind: "disclosure", id, label, icon, children });
 
-const homeLink: NavLink = { kind: "link", id: "home", label: "Home", href: "/", icon: House };
-const dashboardLink = link("dashboard", "Dashboard", ChartColumn);
+const homeLink: NavLink = { kind: "link", id: "home", label: "Home", href: "/", icon: HomeIcon };
+const dashboardLink = link("dashboard", "Dashboard", DashboardIcon);
 /** D-02: Setup opens the `/setup` landing and stays active on `/setup/*` and its placeholders. */
 const setupLink: NavLink = {
   kind: "link",
   id: "setup",
   label: "Setup",
   href: "/setup",
-  icon: Settings,
+  icon: SetupIcon,
   activePrefix: "/setup",
   activeHrefs: setupOwnedPlaceholders.map((item) => moduleHref(item.slug)),
   permission: SETUP_MENU_KEYS,
 };
-const approveLink = link("approve", "Approve", FileCheckCorner);
+const approveLink = link("approve", "Approve", ApproveIcon);
 
-/** Sidebar order, labels and icons from S3/S2; Account and Report groups are the Q-NAV-01 defaults. */
+/**
+ * Sidebar order, labels and icons from S3/S2; Account and Report groups are the Q-NAV-01 defaults.
+ * Icons: the owner's design SVGs (nav-icons.tsx, 2026-10-20).
+ */
 export const sidebarSections: NavSection[] = [
   { id: "main", items: [homeLink, dashboardLink, setupLink, approveLink] },
-  { id: "pre-sale", title: "Pre-Sale", items: [link("quotation", "Quotation", Receipt), link("reserve", "Reserve", FileCheck)] },
+  { id: "pre-sale", title: "Pre-Sale", items: [link("quotation", "Quotation", QuotationIcon), link("reserve", "Reserve", ReserveIcon)] },
   {
     id: "memo",
     title: "Memo",
     items: [
-      link("memo-receive", "Memo Receive", FileDown),
-      link("memo-return", "Memo Return", RotateCcwSquare),
-      link("memo-out", "Memo Out", FileUp),
-      link("memo-out-return", "Memo Out Return", RefreshCcwDot),
+      link("memo-receive", "Memo Receive", MemoReceiveIcon),
+      link("memo-return", "Memo Return", MemoReturnIcon),
+      link("memo-out", "Memo Out", MemoOutIcon),
+      link("memo-out-return", "Memo Out Return", MemoOutReturnIcon),
       // DV-03: the design text "From Vender" is spelled "From Vendor".
-      disclosure("memo-outstanding", "Memo Outstanding", FileClock, [
+      disclosure("memo-outstanding", "Memo Outstanding", FileOutstandingIcon, [
         link("memo-outstanding-from-vendor", "From Vendor"),
         link("memo-outstanding-from-customer", "From Customer"),
       ]),
@@ -189,38 +199,38 @@ export const sidebarSections: NavSection[] = [
     id: "purchase-order",
     title: "Purchase Order",
     items: [
-      link("purchase-order", "Purchase Order (PO)", ReceiptText),
-      link("purchase", "Purchase (PU)", ShoppingBasket),
-      link("purchase-outstanding", "Purchase Outstanding", ClipboardClock),
+      link("purchase-order", "Purchase Order (PO)", PurchaseOrderIcon),
+      link("purchase", "Purchase (PU)", PurchaseIcon),
+      link("purchase-outstanding", "Purchase Outstanding", PurchaseOutstandingIcon),
     ],
   },
   {
     id: "inventory",
     title: "Inventory",
     items: [
-      link("load-to-stock", "Load to Stock", CalendarClock),
-      link("merge-split", "Merge/Split", UnfoldVertical),
-      link("stock-transfer-location", "Stock Transfer Location", Blend),
-      link("stock-adjustment", "Stock Adjustment", FileDiff),
-      link("barcode-printing", "Barcode Printing", Barcode),
+      link("load-to-stock", "Load to Stock", BoxClockIcon),
+      link("merge-split", "Merge/Split", SplitVerticalIcon),
+      link("stock-transfer-location", "Stock Transfer Location", StockTransferIcon),
+      link("stock-adjustment", "Stock Adjustment", FileOutstandingIcon),
+      link("barcode-printing", "Barcode Printing", BarcodeIcon),
     ],
   },
-  { id: "sale", title: "Sale", items: [link("sale", "Sale", ShoppingBag)] },
+  { id: "sale", title: "Sale", items: [link("sale", "Sale", SaleIcon)] },
   {
     id: "account",
     title: "Account",
-    items: [disclosure("account-outstanding", "Account Outstanding", FileClock, [link("os-payable", "O/S Payable"), link("os-receivable", "O/S Receivable")])],
+    items: [disclosure("account-outstanding", "Account Outstanding", FileOutstandingIcon, [link("os-payable", "O/S Payable"), link("os-receivable", "O/S Receivable")])],
   },
   {
     id: "report",
     title: "Report",
     items: [
-      disclosure("stock-movement", "Stock Movement", FileChartColumn, [
+      disclosure("stock-movement", "Stock Movement", FileOutstandingIcon, [
         link("stock-movement-primary", "Primary Stock"),
         link("stock-movement-consignment", "Consignment Stock"),
       ]),
-      disclosure("closing-stock", "Closing Stock", Blend, [link("closing-stock-primary", "Primary Stock"), link("closing-stock-consignment", "Consignment Stock")]),
-      disclosure("sale-report", "Sale Report", ReceiptText, [
+      disclosure("closing-stock", "Closing Stock", ClosingStockIcon, [link("closing-stock-primary", "Primary Stock"), link("closing-stock-consignment", "Consignment Stock")]),
+      disclosure("sale-report", "Sale Report", SaleReportIcon, [
         link("sale-report-compare-with-costing", "Compare With Costing"),
         link("sale-report-shareholder", "Shareholder Report"),
         link("sale-report-commission", "Commission Report"),
@@ -231,21 +241,21 @@ export const sidebarSections: NavSection[] = [
 
 /** Collapsed rail (S1) in the expanded order; Report's clipboard-list glyph moves to the end (DV-04). */
 export const railModules: RailModule[] = [
-  { id: "home", label: "Home", icon: House, kind: "link", link: homeLink },
-  { id: "dashboard", label: "Dashboard", icon: ChartColumn, kind: "link", link: dashboardLink },
-  { id: "setup", label: "Setup", icon: Settings, kind: "link", link: setupLink },
-  { id: "approve", label: "Approve", icon: FileCheckCorner, kind: "link", link: approveLink },
+  { id: "home", label: "Home", icon: HomeIcon, kind: "link", link: homeLink },
+  { id: "dashboard", label: "Dashboard", icon: DashboardIcon, kind: "link", link: dashboardLink },
+  { id: "setup", label: "Setup", icon: SetupIcon, kind: "link", link: setupLink },
+  { id: "approve", label: "Approve", icon: ApproveIcon, kind: "link", link: approveLink },
   { id: "pre-sale", label: "Pre-Sale", icon: ShoppingCart, kind: "section", sectionId: "pre-sale" },
   { id: "memo", label: "Memo", icon: StickyNotes, kind: "section", sectionId: "memo" },
   { id: "purchase-order", label: "Purchase Order", icon: FileText, kind: "section", sectionId: "purchase-order" },
   { id: "inventory", label: "Inventory", icon: Boxes, kind: "section", sectionId: "inventory" },
-  { id: "sale", label: "Sale", icon: ShoppingBag, kind: "section", sectionId: "sale" },
+  { id: "sale", label: "Sale", icon: SaleIcon, kind: "section", sectionId: "sale" },
   { id: "account", label: "Account", icon: Wallet, kind: "section", sectionId: "account" },
   { id: "report", label: "Report", icon: ClipboardList, kind: "section", sectionId: "report" },
 ];
 
 /** A context-panel group: a link row (`href`) with its child pages listed below it. */
-export type ContextNavGroup = { id: string; label: string; icon: LucideIcon; href: string; children: NavLink[] };
+export type ContextNavGroup = { id: string; label: string; icon: NavIcon; href: string; children: NavLink[] };
 /** Context panel shown beside the rail on the pages of its groups (app-navigation revision 2). */
 export type ContextNav = { id: string; title: string; groups: ContextNavGroup[] };
 
