@@ -137,7 +137,7 @@ export const shortcutGroups: HomeGroup[] = [
       { label: "Stone Master", slug: "stone-master" },
       { label: "Location Master", slug: "location-master" },
       { label: "Certificate Type", slug: "certificate-type" },
-      { label: "Labor Name", slug: "labor-name" },
+      { label: "Service Fee", slug: "labor-name" },
       { label: "Sale Person", slug: "sale-person" },
     ],
   },

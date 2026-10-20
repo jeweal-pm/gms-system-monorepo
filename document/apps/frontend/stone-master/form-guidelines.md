@@ -12,8 +12,8 @@ Validation runs in the browser (Zod, `onBlur`, re-validated on change) and again
 | Sizes Available\* | Shape | 1–100 active sizes, no duplicates | "Select at least one size" |
 | Mode | Stone Code | `AUTO` (default) or `MANUAL` | — |
 | Stone Code\* | Stone Code | Auto: built, read-only, must not be empty. Manual: required, trimmed, 1–60 of `A–Z a–z 0–9 . - /`, stored UPPERCASE. Unique (case-insensitive, server) | "Choose the parts to build the code" / "Stone Code is required" / "This stone code is already used" |
-| Name\*, Shape\*, Color\* | Stone Code | Required, active option | "Select a {part}" |
-| Size, Cutting, Clarity, Quality | Stone Code | Optional; Size must be one of the chosen Shape's sizes | "This size isn't available for the chosen shape" |
+| Parts at #1 and #2\* | Stone Code | Required, active option; the red asterisk follows the position in Part order (owner 2026-10-20) | "Select a {part} (positions #1 and #2 are required)" |
+| Parts at #3–#7 | Stone Code | Optional (Name, Shape and Color included); Size needs a Shape and must be one of its sizes | "This size isn't available for the chosen shape" |
 | Part order | Stone Code | A permutation of the 7 part keys | (not user-facing) |
 
 - **Inputs:**

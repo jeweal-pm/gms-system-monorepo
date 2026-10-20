@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { Ref } from "react";
-import type { LucideIcon } from "lucide-react";
+import type { IconComponent } from "@/components/ui/design-icon";
 import type { SetupTileColor } from "./setup-destinations";
 
 const tileColorClass: Record<SetupTileColor, string> = {
@@ -16,7 +16,7 @@ const tileColorClass: Record<SetupTileColor, string> = {
 
 type TileContentProps = {
   label: string;
-  icon: LucideIcon;
+  icon: IconComponent;
   color: SetupTileColor;
   /** `landing`: shadow + 32 px icon (S3). `modal`: no shadow, 26 px icon (S4). */
   variant: "landing" | "modal";

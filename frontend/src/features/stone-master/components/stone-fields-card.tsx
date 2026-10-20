@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { optionLabel, PART_OPTION, sizeAfterShapeChange, sizesForShape, type StoneOption, type StoneOptions } from "../api";
 import type { StonePage } from "../kinds";
 import type { StoneFormValues } from "../schema";
-import { PART_FIELD, PART_LABEL, REQUIRED_PARTS, type PartKey } from "../stone-code";
+import { isPartRequired, PART_FIELD, PART_LABEL, type PartKey } from "../stone-code";
 import { CopyCodeButton } from "./copy-code-button";
 import { PartOrderList } from "./part-order-list";
 
@@ -42,7 +42,7 @@ function selectOptions(list: readonly StoneOption[] | undefined, current: string
 export function StoneFieldsCard({ page, form, readOnly, options, autoCode }: StoneFieldsCardProps) {
   const { control, register, setValue, getValues } = form;
   const { errors } = useFormState({ control });
-  const [mode, shapeId, manualCode] = useWatch({ control, name: ["mode", "shapeId", "code"] });
+  const [mode, shapeId, manualCode, partOrder] = useWatch({ control, name: ["mode", "shapeId", "code", "partOrder"] });
   const status = options.status;
 
   const textFields = page.fields !== "stoneCode" && (
@@ -66,7 +66,7 @@ export function StoneFieldsCard({ page, form, readOnly, options, autoCode }: Sto
             <SelectField
               id={`${ID}-${part}`}
               label={PART_LABEL[part]}
-              required={REQUIRED_PARTS.has(part)}
+              required={isPartRequired(part, partOrder ?? [])}
               placeholder={part === "size" && !shapeId ? "Choose a shape first" : "Select"}
               options={selectOptions(source, input.value)}
               status={status}

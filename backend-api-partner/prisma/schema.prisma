@@ -311,10 +311,11 @@ model StoneCode {
   id          String        @id @default(uuid()) @db.Uuid
   code        String        @unique(map: "stone_code_code_key") @db.VarChar(60)
   mode        StoneCodeMode
-  stoneNameId String        @map("stone_name_id") @db.Uuid
+  /// Owner 2026-10-20: only the parts at positions #1 and #2 are required, so every part is nullable.
+  stoneNameId String?       @map("stone_name_id") @db.Uuid
   sizeId      String?       @map("size_id") @db.Uuid
-  shapeId     String        @map("shape_id") @db.Uuid
-  colorId     String        @map("color_id") @db.Uuid
+  shapeId     String?       @map("shape_id") @db.Uuid
+  colorId     String?       @map("color_id") @db.Uuid
   cuttingId   String?       @map("cutting_id") @db.Uuid
   clarityId   String?       @map("clarity_id") @db.Uuid
   qualityId   String?       @map("quality_id") @db.Uuid
@@ -325,10 +326,10 @@ model StoneCode {
   updatedAt   DateTime      @default(now()) @map("updated_at") @db.Timestamp(3)
   createdBy   String        @map("created_by") @db.VarChar(64)
   updatedBy   String        @map("updated_by") @db.VarChar(64)
-  stoneName   StoneName     @relation(fields: [stoneNameId], references: [id], onDelete: Restrict)
+  stoneName   StoneName?    @relation(fields: [stoneNameId], references: [id], onDelete: Restrict)
   size        StoneSize?    @relation(fields: [sizeId], references: [id], onDelete: Restrict)
-  shape       StoneShape    @relation(fields: [shapeId], references: [id], onDelete: Restrict)
-  color       StoneColor    @relation(fields: [colorId], references: [id], onDelete: Restrict)
+  shape       StoneShape?   @relation(fields: [shapeId], references: [id], onDelete: Restrict)
+  color       StoneColor?   @relation(fields: [colorId], references: [id], onDelete: Restrict)
   cutting     StoneCutting? @relation(fields: [cuttingId], references: [id], onDelete: Restrict)
   clarity     StoneClarity? @relation(fields: [clarityId], references: [id], onDelete: Restrict)
   quality     StoneQuality? @relation(fields: [qualityId], references: [id], onDelete: Restrict)

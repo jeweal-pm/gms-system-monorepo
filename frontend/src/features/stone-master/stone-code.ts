@@ -6,7 +6,14 @@ export const PART_KEYS = ["name", "size", "shape", "color", "cutting", "clarity"
 export type PartKey = (typeof PART_KEYS)[number];
 
 export const DEFAULT_PART_ORDER: readonly PartKey[] = PART_KEYS;
-export const REQUIRED_PARTS: ReadonlySet<PartKey> = new Set(["name", "shape", "color"]);
+/** Only the parts at positions #1 and #2 are required (owner 2026-10-20: the "xx" of "xx-xxxxxx"). */
+export const REQUIRED_POSITIONS = 2;
+
+/** Required = the part sits at #1 or #2; every other part is optional. */
+export function isPartRequired(part: PartKey, order: readonly PartKey[]): boolean {
+  const index = order.indexOf(part);
+  return index >= 0 && index < REQUIRED_POSITIONS;
+}
 
 export const PART_LABEL: Readonly<Record<PartKey, string>> = {
   name: "Name",

@@ -26,10 +26,11 @@ const stoneCodeFields = {
   /** MANUAL: 1–60 of A–Z 0–9 . - / (checked by partner); AUTO: ignored, the server builds it. */
   code: z.string().trim().max(60).optional(),
   parts: z.object({
-    stoneNameId: uuid,
+    // Owner 2026-10-20: only the parts at #1 and #2 are required (topPartsRequired).
+    stoneNameId: uuid.nullable(),
     sizeId: uuid.nullable(),
-    shapeId: uuid,
-    colorId: uuid,
+    shapeId: uuid.nullable(),
+    colorId: uuid.nullable(),
     cuttingId: uuid.nullable(),
     clarityId: uuid.nullable(),
     qualityId: uuid.nullable(),
@@ -38,6 +39,15 @@ const stoneCodeFields = {
     .refine((order) => new Set(order).size === STONE_PART_KEYS.length, { message: "not_permutation" }),
   active: z.boolean(),
 };
+
+const PART_FIELD = { name: "stoneNameId", size: "sizeId", shape: "shapeId", color: "colorId", cutting: "cuttingId", clarity: "clarityId", quality: "qualityId" } as const;
+
+/** Owner 2026-10-20: the parts at positions #1 and #2 are required (partner enforces the same rule). */
+function topPartsRequired(value: { partOrder: (keyof typeof PART_FIELD)[]; parts: Record<string, string | null> }, ctx: z.RefinementCtx) {
+  for (const part of value.partOrder.slice(0, 2)) {
+    if (!value.parts[PART_FIELD[part]]) ctx.addIssue({ code: "custom", path: ["parts", PART_FIELD[part]], message: "required" });
+  }
+}
 
 const idField = { id: uuid };
 const withUpdate = <T extends z.ZodRawShape>(fields: T) => z.object({ ...idField, expectedUpdatedAt, ...fields }).strict();
@@ -52,7 +62,10 @@ export const STONE_INPUTS = {
     create: z.object(shapeFields).strict().refine((value) => new Set(value.sizeIds).size === value.sizeIds.length, { message: "duplicate", path: ["sizeIds"] }),
     update: withUpdate(shapeFields).refine((value) => new Set(value.sizeIds).size === value.sizeIds.length, { message: "duplicate", path: ["sizeIds"] }),
   },
-  stoneCode: { create: z.object(stoneCodeFields).strict(), update: withUpdate(stoneCodeFields) },
+  stoneCode: {
+    create: z.object(stoneCodeFields).strict().superRefine(topPartsRequired),
+    update: withUpdate(stoneCodeFields).superRefine(topPartsRequired),
+  },
 } as const;
 
 export const stoneOptionsInputSchema = z.object({
@@ -81,13 +94,13 @@ export const STONE_OUTPUTS = {
     detail: z.object({ ...simpleRow, sizeIds: z.array(z.string()).max(100), ...timestamps }),
   },
   stoneCode: {
-    list: listOf(z.object({ id: z.string(), code: z.string(), mode: z.enum(["AUTO", "MANUAL"]), active: z.boolean(), stoneName: z.object({ code: z.string(), name: z.string() }) })),
+    list: listOf(z.object({ id: z.string(), code: z.string(), mode: z.enum(["AUTO", "MANUAL"]), active: z.boolean(), stoneName: z.object({ code: z.string(), name: z.string() }).nullable() })),
     detail: z.object({
       id: z.string(),
       code: z.string(),
       mode: z.enum(["AUTO", "MANUAL"]),
       parts: z.object({
-        stoneNameId: z.string(), sizeId: z.string().nullable(), shapeId: z.string(), colorId: z.string(),
+        stoneNameId: z.string().nullable(), sizeId: z.string().nullable(), shapeId: z.string().nullable(), colorId: z.string().nullable(),
         cuttingId: z.string().nullable(), clarityId: z.string().nullable(), qualityId: z.string().nullable(),
       }),
       partOrder: z.array(z.enum(STONE_PART_KEYS)).length(STONE_PART_KEYS.length),

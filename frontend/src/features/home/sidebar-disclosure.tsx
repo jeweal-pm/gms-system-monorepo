@@ -6,6 +6,8 @@ import { isNavItemActive, type NavDisclosure, type NavLink } from "./navigation"
 
 export const sidebarFocusRing = "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gms-primary";
 /** Shared row look of `SidebarLink` and the disclosure parent: 36 px, padding 10, gap 8, 15 px label. */
+/** Sidebar row icons render at the design size, 16 × 16 px (owner 2026-10-20). */
+export const SIDEBAR_ICON_SIZE = 16;
 export const sidebarRow = `flex h-9 w-full items-center gap-2 rounded-gms-md px-2.5 text-left text-gms-body leading-5 text-gms-text transition-colors hover:bg-gms-nav-active ${sidebarFocusRing}`;
 
 /** Sub-item (N-04): no icon, label aligned with the parent label (36 px inset), 14 px secondary text. */
@@ -45,7 +47,7 @@ export function SidebarDisclosure({
       {/* The chevron sits 3 px from the right edge (S3: ≈10 px) and the label may run up to it, so the
           longest labels ("Account Outstanding" ≈150 px on Windows rendering) are not truncated. */}
       <button type="button" aria-expanded={open} aria-controls={listId} onClick={onToggle} className={`${sidebarRow} relative pr-[21px]`}>
-        <Icon aria-hidden size={18} strokeWidth={1.5} className="shrink-0" />
+        <Icon aria-hidden size={SIDEBAR_ICON_SIZE} strokeWidth={1.5} className="shrink-0" />
         <span className="min-w-0 flex-1 truncate">{item.label}</span>
         <Chevron aria-hidden size={20} strokeWidth={1.5} className="absolute top-1/2 right-[3px] -translate-y-1/2" />
       </button>

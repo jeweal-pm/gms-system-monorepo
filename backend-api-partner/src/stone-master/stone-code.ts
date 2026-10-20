@@ -11,6 +11,23 @@ export const DEFAULT_PART_ORDER: readonly PartKey[] = PART_KEYS;
 export const STONE_CODE_MAX = 60;
 export const STONE_CODE_PATTERN = /^[A-Z0-9./-]{1,60}$/;
 
+/** Request field holding each part's id. */
+export const PART_FIELD = {
+  name: "stoneNameId",
+  size: "sizeId",
+  shape: "shapeId",
+  color: "colorId",
+  cutting: "cuttingId",
+  clarity: "clarityId",
+  quality: "qualityId",
+} as const satisfies Record<PartKey, string>;
+
+/**
+ * Only the parts at positions #1 and #2 are required (owner 2026-10-20: they form the "xx" of the
+ * "xx-xxxxxx" code); every other part, name/shape/color included, is optional.
+ */
+export const REQUIRED_POSITIONS = 2;
+
 export function isPermutation(order: readonly string[]): boolean {
   return order.length === PART_KEYS.length && PART_KEYS.every((key) => order.includes(key));
 }
