@@ -31,8 +31,22 @@ export function isCallerLicenseCode(code: string | null): boolean {
 
 /** Reads: retry up to twice only for transient failures (no 4xx retries). Mutations are never retried. */
 export function retryTransient(failureCount: number, error: unknown): boolean {
+  return retryTransientUpTo(failureCount, error, 2);
+}
+
+/** Read-only requests that sit behind a service restarting may retry longer, with a fixed bound. */
+export function retryServiceRead(failureCount: number, error: unknown): boolean {
+  return retryTransientUpTo(failureCount, error, 12);
+}
+
+/** Back off to one request every eight seconds while a local API finishes starting. */
+export function serviceRestartRetryDelay(attemptIndex: number): number {
+  return Math.min(1_000 * 2 ** attemptIndex, 8_000);
+}
+
+function retryTransientUpTo(failureCount: number, error: unknown, maxRetries: number): boolean {
   const { httpStatus, domainCode } = readDomainError(error);
   if (domainCode === "UNAUTHORIZED" || isCallerLicenseCode(domainCode)) return false;
   if (httpStatus !== null && httpStatus < 500) return false;
-  return failureCount < 2;
+  return failureCount < maxRetries;
 }

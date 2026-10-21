@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { createStorage } from "@gms/storage";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /** UT-PH-U01…U05: immutable GMS key, reads, legacy fallback/archive, validation helpers. */
@@ -25,19 +26,37 @@ afterAll(async () => {
 });
 
 describe("auth user-photo GMS storage adapter", () => {
-  it("UT-PH-U01 creates unique service-scoped immutable keys and reads both object versions", async () => {
+  it("UT-PH-U01 creates unique module-scoped immutable keys and reads both object versions", async () => {
     const first = await storage.putPhotoObject("user-1", "image/jpeg", JPEG);
     const second = await storage.putPhotoObject("user-1", "image/png", PNG);
-    expect(first.key).toMatch(/^auth\/user-photo\/\d{4}\/\d{2}\/[0-9a-f-]{36}\.jpg$/);
-    expect(second.key).toMatch(/^auth\/user-photo\/\d{4}\/\d{2}\/[0-9a-f-]{36}\.png$/);
+    expect(first.key).toMatch(/^user-photo\/[0-9a-f-]{36}\.jpg$/);
+    expect(second.key).toMatch(/^user-photo\/[0-9a-f-]{36}\.png$/);
     expect(first.key).not.toBe(second.key);
     expect(await storage.readPhotoObject(first.key)).toEqual(JPEG);
     expect(await storage.readPhotoObject(second.key)).toEqual(PNG);
     expect(first.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it("UT-PH-U07 continues reading a historical service-prefixed photo", async () => {
+    const legacyKey = "auth/user-photo/2026/10/legacy.png";
+    const driver = createStorage(path.join(root, "gms"), { writePrefixes: ["user-photo", "auth"], readPrefixes: ["user-photo", "auth"] });
+    await driver.put("files", legacyKey, PNG, { contentType: "image/png" });
+    await expect(storage.readPhotoObject(legacyKey)).resolves.toEqual(PNG);
+  });
+
+  it("UT-PH-U08 lets the photo module supply a safe filename", async () => {
+    const stored = await storage.putPhotoObject("user-1", "image/png", PNG, "profile-picture-v2.png");
+    expect(stored.key).toBe("user-photo/profile-picture-v2.png");
+    await expect(storage.readPhotoObject(stored.key)).resolves.toEqual(PNG);
+  });
+
+  it("UT-PH-U09 rejects a supplied filename with a mismatched image extension", async () => {
+    await expect(storage.putPhotoObject("user-1", "image/png", PNG, "profile-picture.jpg"))
+      .rejects.toThrow("filename extension does not match");
+  });
+
   it("UT-PH-U02 returns null for a missing object", async () => {
-    await expect(storage.readPhotoObject("auth/user-photo/2026/10/00000000-0000-7000-8000-000000000001.jpg"))
+    await expect(storage.readPhotoObject("user-photo/00000000-0000-7000-8000-000000000001.jpg"))
       .resolves.toBeNull();
   });
 
@@ -59,7 +78,7 @@ describe("auth user-photo GMS storage adapter", () => {
   });
 
   it("UT-PH-U05 rejects keys owned by another service", async () => {
-    await expect(storage.readPhotoObject("partner/user-photo/2026/10/00000000-0000-7000-8000-000000000001.jpg"))
+    await expect(storage.readPhotoObject("company-profile/00000000-0000-7000-8000-000000000001.jpg"))
       .rejects.toThrow("outside the auth user-photo prefix");
   });
 

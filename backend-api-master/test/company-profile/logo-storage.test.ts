@@ -22,7 +22,7 @@ beforeAll(async () => {
   process.env.GMS_STORAGE_ROOT = workDir;
   vi.resetModules();
   logoStorage = await import("../../src/company-profile/logo-storage");
-  driver = createStorage(workDir, "partner");
+  driver = createStorage(workDir, { writePrefixes: ["company-profile", "partner"], readPrefixes: ["company-profile", "partner"] });
 });
 
 afterAll(async () => {
@@ -33,14 +33,31 @@ afterAll(async () => {
 
 describe("logo file storage", () => {
   it("UT-CP-P30 returns null for a missing immutable key", async () => {
-    expect(await logoStorage.readLogoFile("partner/company-profile/2026/10/missing.png")).toBeNull();
+    expect(await logoStorage.readLogoFile("company-profile/missing.png")).toBeNull();
   });
 
   it("UT-CP-P31 writes and reads a logo through the files storage contract", async () => {
     const stored = await logoStorage.storeLogoFile(png, "image/png");
     expect(stored).toMatchObject({ sizeBytes: png.length, sha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
-    expect(stored.key).toMatch(/^partner\/company-profile\/\d{4}\/\d{2}\/[0-9a-f-]+\.png$/);
+    expect(stored.key).toMatch(/^company-profile\/[0-9a-f-]+\.png$/);
     expect(await logoStorage.readLogoFile(stored.key)).toEqual(png);
+  });
+
+  it("UT-CP-P36 continues reading a historical service-prefixed logo", async () => {
+    const legacyKey = "partner/company-profile/2026/10/legacy.png";
+    await driver.put("files", legacyKey, png, { contentType: "image/png" });
+    await expect(logoStorage.readLogoFile(legacyKey)).resolves.toEqual(png);
+  });
+
+  it("UT-CP-P37 lets the company-profile module supply a safe filename", async () => {
+    const stored = await logoStorage.storeLogoFile(png, "image/png", "brand-mark-v2.png");
+    expect(stored.key).toBe("company-profile/brand-mark-v2.png");
+    await expect(logoStorage.readLogoFile(stored.key)).resolves.toEqual(png);
+  });
+
+  it("UT-CP-P38 rejects a supplied filename with a mismatched image extension", async () => {
+    await expect(logoStorage.storeLogoFile(png, "image/png", "brand-mark.jpg"))
+      .rejects.toThrow("filename extension does not match");
   });
 
   it("UT-CP-P32 replaces the current pointer with a fresh key while retaining both byte objects", async () => {

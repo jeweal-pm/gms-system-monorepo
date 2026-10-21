@@ -97,7 +97,7 @@ beforeAll(async () => {
   vi.resetModules();
   const loaded = await import("../../src/company-profile/company-profile.service");
   service = new loaded.CompanyProfileService();
-  driver = createStorage(root, "partner");
+  driver = createStorage(root, { writePrefixes: ["company-profile", "partner"], readPrefixes: ["company-profile", "partner"] });
 });
 
 afterAll(async () => {

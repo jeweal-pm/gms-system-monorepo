@@ -36,16 +36,27 @@ export interface StorageDriver {
   list(bucket: BucketName, prefix: string, limit?: number): Promise<ObjectInfo[]>;
 }
 
-export interface KeyParts {
-  service: string;
-  entity: string;
-  date?: Date;
-  ext: string;
+export type KeyParts = { module: string } & (
+  | { filename: string; ext?: never }
+  | { filename?: never; ext: string }
+);
+
+export interface StorageScope {
+  /** New objects may be written only beneath assigned module folders. */
+  writePrefixes: readonly string[];
+  /** Historical service folders are read-only compatibility paths. */
+  readPrefixes: readonly string[];
 }
 
 const KEY_PART = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const EXTENSION = /^[a-z0-9]{1,12}$/;
+const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
+const BUCKETS = new Set<BucketName>(["files", "public", "documents", "exports"]);
+
+function assertBucket(bucket: string): asserts bucket is BucketName {
+  if (!BUCKETS.has(bucket as BucketName)) throw new Error("Invalid storage bucket");
+}
 
 export function assertSafeKey(key: string): void {
   if (
@@ -61,14 +72,15 @@ export function assertSafeKey(key: string): void {
 }
 
 export function buildKey(parts: KeyParts): string {
-  if (!KEY_PART.test(parts.service) || !KEY_PART.test(parts.entity) || !EXTENSION.test(parts.ext)) {
+  if (!KEY_PART.test(parts.module)) {
     throw new Error("Invalid storage key part");
   }
-  const date = parts.date ?? new Date();
-  if (Number.isNaN(date.getTime())) throw new Error("Invalid storage key date");
-  const yyyy = String(date.getUTCFullYear());
-  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const key = `${parts.service}/${parts.entity}/${yyyy}/${mm}/${uuidV7()}.${parts.ext}`;
+  if ("ext" in parts && parts.ext !== undefined && !EXTENSION.test(parts.ext)) throw new Error("Invalid storage key part");
+  const filename = "filename" in parts && parts.filename !== undefined
+    ? parts.filename
+    : `${uuidV7()}.${parts.ext}`;
+  if (!FILE_NAME.test(filename) || filename.endsWith(".")) throw new Error("Invalid storage filename");
+  const key = `${parts.module}/${filename}`;
   assertSafeKey(key);
   return key;
 }
@@ -89,6 +101,7 @@ export function uuidV7(now = Date.now()): string {
 }
 
 function objectPath(root: string, bucket: BucketName, key: string): string {
+  assertBucket(bucket);
   assertSafeKey(key);
   const resolved = path.resolve(root, bucket, ...key.split("/"));
   const expectedRoot = path.resolve(root, bucket) + path.sep;
@@ -113,18 +126,25 @@ async function rejectSymlinkPath(root: string, target: string): Promise<void> {
 }
 
 export function createStorage(
-  root = process.env.GMS_STORAGE_ROOT ?? "/srv/gms/storage",
-  servicePrefix = process.env.GMS_STORAGE_SERVICE,
+  root: string,
+  scope: StorageScope,
 ): StorageDriver {
-  if (!servicePrefix || !KEY_PART.test(servicePrefix)) throw new Error("GMS_STORAGE_SERVICE must name the owning service");
+  const allPrefixes = [...scope.writePrefixes, ...scope.readPrefixes];
+  const isValidPrefix = (prefix: string) => prefix.split("/").every((part) => KEY_PART.test(part));
+  if (scope.writePrefixes.length === 0 || allPrefixes.some((prefix) => !isValidPrefix(prefix))) {
+    throw new Error("GMS_STORAGE_MODULES must list valid read and write prefixes");
+  }
   const absoluteRoot = path.resolve(root);
-  const assertOwnedKey = (key: string) => {
+  const assertAllowedKey = (key: string, mode: "read" | "write") => {
     assertSafeKey(key);
-    if (!key.startsWith(`${servicePrefix}/`)) throw new Error("Storage key is outside the service prefix");
+    const prefixes = mode === "write" ? scope.writePrefixes : allPrefixes;
+    if (!prefixes.some((prefix) => key === prefix || key.startsWith(`${prefix}/`))) {
+      throw new Error(`Storage key is outside the allowed ${mode} prefixes`);
+    }
   };
 
   const putStream = async (bucket: BucketName, key: string, body: Readable, options: PutOptions): Promise<StoredObject> => {
-    assertOwnedKey(key);
+    assertAllowedKey(key, "write");
     const target = objectPath(absoluteRoot, bucket, key);
     await mkdir(path.dirname(target), { recursive: true, mode: 0o750 });
     await rejectSymlinkPath(absoluteRoot, target);
@@ -179,7 +199,7 @@ export function createStorage(
     putStream,
 
     async get(bucket, key) {
-      assertOwnedKey(key);
+      assertAllowedKey(key, "read");
       const target = objectPath(absoluteRoot, bucket, key);
       await rejectSymlinkPath(absoluteRoot, target);
       const info = await lstat(target);
@@ -188,7 +208,7 @@ export function createStorage(
     },
 
     async head(bucket, key, contentType = "application/octet-stream") {
-      assertOwnedKey(key);
+      assertAllowedKey(key, "read");
       const target = objectPath(absoluteRoot, bucket, key);
       await rejectSymlinkPath(absoluteRoot, target);
       try {
@@ -202,7 +222,7 @@ export function createStorage(
     },
 
     async delete(bucket, key) {
-      assertOwnedKey(key);
+      assertAllowedKey(key, "write");
       if (bucket === "files" || bucket === "public") {
         throw new Error("User-uploaded objects are permanently retained");
       }
@@ -214,7 +234,7 @@ export function createStorage(
     },
 
     async list(bucket, prefix, limit = 100) {
-      assertOwnedKey(prefix);
+      assertAllowedKey(prefix, "read");
       assertSafeKey(prefix);
       if (!Number.isInteger(limit) || limit < 1 || limit > 200) throw new Error("Invalid list limit");
       const target = objectPath(absoluteRoot, bucket, prefix);

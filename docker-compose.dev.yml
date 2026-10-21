@@ -69,7 +69,16 @@ services:
     read_only: false
     cap_drop: !reset []
     tmpfs: !reset []
-    volumes: *dev-volumes
+    volumes: !override
+      - .:/app
+      - dev-root-node-modules:/app/node_modules
+      - dev-frontend-node-modules:/app/frontend/node_modules
+      - dev-auth-node-modules:/app/backend-api-auth/node_modules
+      - dev-frontend-next:/app/frontend/.next
+      - dev-auth-prisma:/app/backend-api-auth/src/generated/prisma
+      - dev-partner-node-modules:/app/backend-api-master/node_modules
+      - dev-partner-prisma:/app/backend-api-master/src/generated/prisma
+      - ./storage:/app/backend-api-master/storage
 
 volumes:
   dev-root-node-modules:

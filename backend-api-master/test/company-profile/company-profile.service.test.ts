@@ -70,7 +70,7 @@ vi.mock("../../src/company-profile/logo-storage", async (importOriginal) => {
   return {
     ...actual,
     storeLogoFile: files.store.mockImplementation(async (data: Buffer, contentType: string) => {
-      const key = `partner/company-profile/2026/10/${String(db.storedFiles.length + 1).padStart(8, "0")}.${contentType === "image/png" ? "png" : "jpg"}`;
+      const key = `company-profile/${String(db.storedFiles.length + 1).padStart(8, "0")}.${contentType === "image/png" ? "png" : "jpg"}`;
       files.objects.set(key, data);
       const { createHash } = await import("node:crypto");
       return { key, sizeBytes: data.length, sha256: createHash("sha256").update(data).digest("hex") };

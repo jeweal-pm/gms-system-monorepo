@@ -11,7 +11,7 @@ export const PHOTO_TYPES = ["image/jpeg", "image/png"] as const;
 // Production supplies the shared `/srv/gms/storage` root through GMS_STORAGE_ROOT.
 const STORAGE_ROOT = process.env.GMS_STORAGE_ROOT ?? path.resolve(process.cwd(), "storage");
 const LEGACY_STORAGE_DIR = path.resolve(process.cwd(), "storage", "user-photos");
-const storage = createStorage(STORAGE_ROOT, "auth");
+const storage = createStorage(STORAGE_ROOT, { writePrefixes: ["user-photo"], readPrefixes: ["user-photo", "auth/user-photo"] });
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 export type PhotoObject = Pick<StoredObject, "key" | "size" | "sha256">;
@@ -29,16 +29,20 @@ function legacyPhotoFile(userId: string): string {
  * Write a new immutable user-photo object. Each request gets a distinct key; the storage
  * driver's `files` bucket refuses physical deletion, so replacement cannot destroy history.
  */
-export async function putPhotoObject(userId: string, contentType: string, data: Buffer): Promise<PhotoObject> {
+export async function putPhotoObject(userId: string, contentType: string, data: Buffer, filename?: string): Promise<PhotoObject> {
   if (!SAFE_ID.test(userId)) throw new Error("Unsafe user id for a photo file");
-  const key = buildKey({ service: "auth", entity: "user-photo", ext: extensionFor(contentType) });
+  const extension = extensionFor(contentType);
+  if (filename && !filename.toLowerCase().endsWith(`.${extension}`)) throw new Error("Photo filename extension does not match its content type");
+  const key = buildKey(filename
+    ? { module: "user-photo", filename }
+    : { module: "user-photo", ext: extension });
   const stored = await storage.put("files", key, data, { contentType, contentLength: data.length });
   return { key: stored.key, size: stored.size, sha256: stored.sha256 };
 }
 
 /** Read a new GMS object with a strict bound matching the existing photo upload limit. */
 export async function readPhotoObject(key: string): Promise<Buffer | null> {
-  if (!key.startsWith("auth/user-photo/")) throw new Error("Stored photo key is outside the auth user-photo prefix");
+  if (!key.startsWith("user-photo/") && !key.startsWith("auth/user-photo/")) throw new Error("Stored photo key is outside the auth user-photo prefix");
   const info = await storage.head("files", key, "application/octet-stream");
   if (!info) return null;
   if (info.size < 1 || info.size > PHOTO_MAX_BYTES) throw new Error("Stored user photo exceeds the supported size");

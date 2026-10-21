@@ -10,7 +10,7 @@ export function storageRoot(): string {
   return process.env.GMS_STORAGE_ROOT ?? path.resolve(process.cwd(), "storage");
 }
 
-const storage = createStorage(storageRoot(), "partner");
+const storage = createStorage(storageRoot(), { writePrefixes: ["company-profile"], readPrefixes: ["company-profile", "partner/company-profile"] });
 
 export interface StoredLogo {
   key: string;
@@ -22,10 +22,13 @@ export interface StoredLogo {
  * Uploads each logo under a fresh immutable key. Previously published user uploads must never be
  * overwritten or physically deleted; database metadata controls which version is currently shown.
  */
-export async function storeLogoFile(data: Buffer, contentType: LogoContentType): Promise<StoredLogo> {
+export async function storeLogoFile(data: Buffer, contentType: LogoContentType, filename?: string): Promise<StoredLogo> {
   const sha256 = createHash("sha256").update(data).digest("hex");
   const extension = contentType === "image/png" ? "png" : "jpg";
-  const key = buildKey({ service: "partner", entity: "company-profile", ext: extension });
+  if (filename && !filename.toLowerCase().endsWith(`.${extension}`)) throw new Error("Company logo filename extension does not match its content type");
+  const key = buildKey(filename
+    ? { module: "company-profile", filename }
+    : { module: "company-profile", ext: extension });
   const stored = await storage.put("files", key, data, {
     contentType,
     contentLength: data.length,

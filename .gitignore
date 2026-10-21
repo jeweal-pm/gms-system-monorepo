@@ -18,3 +18,4 @@ document/testing/user-check/chrome-*/
 # company-profile logo file written by api-master in dev (preserved partner-storage volume)
 backend-api-master/storage/
 backend-api-auth/storage/
+/storage/

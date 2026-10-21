@@ -386,7 +386,8 @@ Selected by `STORAGE_DRIVER`:
 
 Key formats (identical across drivers, ASCII only; display names live in metadata):
 
-- uploads: `{service}/{entity}/{yyyy}/{mm}/{uuid}.{ext}`
+- user-uploaded images/files: `{module}/{filename}` (for example `company-profile/<filename>` or `user-photo/<filename>`); each module selects a safe basename or uses a UUIDv7 filename; legacy service-prefixed keys remain readable during migration
+- system-managed uploads that are not user-uploaded assets: `{service}/{entity}/{yyyy}/{mm}/{uuid}.{ext}`
 - documents: `{service}/{docType}/{yyyy}/{mm}/{docNo}-{uuid}.pdf`
 - exports: `{service}/{reportType}/{yyyy}/{mm}/{dd}/{jobId}.{ext}`
 

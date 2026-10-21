@@ -33,3 +33,23 @@ Every changed page, component, module and function receives current unit/integra
 - The stopped `f1-system-backend-api-gateway-1` orphan is absent after Compose reconciliation. Local GMS services are frontend, auth, api-master, PostgreSQL and Nginx. Nginx routes directly to auth/master tRPC; there is no gateway container or service in the active Compose profile.
 - Runtime checks through `http://localhost:8080`: login 200, auth session 200, Nginx health 200, unsupported photo POST 405 before body parsing, anonymous photo/logo reads 401, and legacy `/internal/*` 404.
 - This confirms local development ingress only. Production GMS profile, feature parity, capacity and deployment remain open.
+
+## Auth/master tRPC client context isolation regression (2026-10-21)
+
+- Root cause: `@trpc/react-query`'s default React context is shared across `createTRPCReact()` instances. The nested `masterTrpc.Provider` therefore replaced the context read by auth hooks, sending `permission.mine` and `dashboard.shortcutGroups` to `/api/master/trpc` despite those hooks using `authTrpc`.
+- Fix: auth and master clients now receive separate React contexts. No API contract, Nginx route, or permission rule changed.
+- `GP-FT-07` unit: auth and master context instances are distinct. `GP-FT-08` integration: render both nested providers and assert both consumers retain separate clients. Both pass in `test/lib/trpc-client-context.test.ts`.
+- Verification: `pnpm --filter frontend exec vitest run --maxWorkers=1` passed **367/367 across 34 files**; `pnpm --filter frontend typecheck` passed; targeted ESLint on the two clients and regression test passed. `git diff --check` passed.
+- Local runtime: generated `.next` cache was cleared without deleting its volume or data, frontend restarted without an image build, and the fresh served client bundle contains the per-client context fix. After reloading the user's Chrome tab, `/` rendered the Shortcuts page with `1 groups · 1 shortcuts`, and `/modules/dashboard` rendered normally; no browser console errors were captured. This confirms the affected UI flow after the fix, though a post-fix Network-panel status capture was not available.
+- Both scoped security reviews checked the same source fingerprint `6c3557ca6586f83dca0c4c93327617e2b0cb40939e3246e8224d220f95fdebef`: `sec-auditor` **clear** and `security-auditor` **clear**. Neither found an actionable issue. Both reviews were static and did not inspect the live browser/runtime.
+
+## Corrective ledger: Company Profile recovery and host storage (2026-10-21)
+
+- Work ID: `company-profile` / `gms-file-storage-migration`; direct user instruction on 2026-10-21 authorizes both corrections. Pass 1 of 3.
+- Root-cause fingerprint: API restarts caused initial upstream connection refusals; recreating api-master with `--no-deps` also left it detached from `auth-master`, making its per-request authorization/license check unavailable. Host storage mount and data were intact.
+- Owner and allowed paths: frontend Company Profile query/recovery helpers and tests; parent/infra shared Compose, ignore rules and service index; Company Profile/storage verification records. No authz/API/schema/permission change.
+- Acceptance: bounded read retries recover Company Profile after transient 5xx; existing logo files are copied byte-for-byte to host `storage/files/` and the local API uses that bind mount; old named volume remains intact; no file is deleted.
+- Verification plan: focused retry-policy unit tests; relevant full frontend suite, typecheck and lint; merged Compose validation; check source/host SHA-256 parity; reload signed-in Company Profile in browser and verify the profile/logo load. No new upload or DB mutation is needed.
+
+- Verification: targeted tRPC retry/fetch tests 10/10, full frontend suite 374/374, typecheck and targeted ESLint passed. Runtime: Compose `up` without `--no-deps` recreated api-master with `auth-master`, `master-web`, and `partner-db`; health returned healthy. Browser refreshes loaded Company Profile, `get-session` returned 200, and authenticated `companyProfile.get` returned 200 through Nginx on three refreshes. Three stored logo objects are present under host `storage/files/partner/company-profile/`; the old named volume is retained. No upload or deletion was performed.
+- Scoped code review on final retry helper/test hashes: sec-auditor clear; security-auditor advisory only that untyped errors without a decoded HTTP status may use the bounded retry path. No confirmed vulnerability or actionable finding; the observed authenticated browser requests returned 200. Review scope was limited to the two changed files.

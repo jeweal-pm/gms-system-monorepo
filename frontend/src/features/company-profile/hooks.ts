@@ -1,7 +1,7 @@
 "use client";
 
 import { toSelectOptions } from "@/features/partner/options";
-import { retryTransient } from "@/lib/trpc-error";
+import { retryServiceRead, serviceRestartRetryDelay } from "@/lib/trpc-error";
 import { masterTrpc } from "@/lib/master-trpc";
 
 /**
@@ -11,11 +11,20 @@ import { masterTrpc } from "@/lib/master-trpc";
  */
 
 export function useCompanyProfile() {
-  return masterTrpc.companyProfile.get.useQuery(undefined, { staleTime: 30_000, retry: retryTransient });
+  return masterTrpc.companyProfile.get.useQuery(undefined, {
+    staleTime: 30_000,
+    retry: retryServiceRead,
+    retryDelay: serviceRestartRetryDelay,
+  });
 }
 
 export function useCompanyProfileOptions() {
-  return masterTrpc.companyProfile.options.useQuery(undefined, { select: toSelectOptions, staleTime: Infinity, retry: retryTransient });
+  return masterTrpc.companyProfile.options.useQuery(undefined, {
+    select: toSelectOptions,
+    staleTime: Infinity,
+    retry: retryServiceRead,
+    retryDelay: serviceRestartRetryDelay,
+  });
 }
 
 export function useSaveCompanyProfile() {

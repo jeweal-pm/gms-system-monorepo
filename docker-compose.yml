@@ -92,12 +92,14 @@ services:
       NODE_OPTIONS: --max-old-space-size=256
       CHECKPOINT_DISABLE: "1"
       PRISMA_HIDE_UPDATE_MESSAGE: "1"
+      GMS_STORAGE_ROOT: /app/backend-api-master/storage
       PARTNER_DATABASE_URL: ${PARTNER_CONTAINER_DATABASE_URL:-postgresql://f1_user:f1_dev_password@postgres:5432/f1_system?schema=partner}
       PARTNER_SERVICE_TOKEN: ${PARTNER_SERVICE_TOKEN:?PARTNER_SERVICE_TOKEN must be set (see .env.example)}
-    # Company profile persistence: the only writable path is the
-    # company logo folder; the root filesystem stays read-only.
+    # User uploads live on the persistent host filesystem, outside the container layer.
     volumes:
-      - partner-storage:/app/backend-api-master/storage
+      - type: bind
+        source: ${GMS_STORAGE_HOST_PATH:-/srv/gms/storage}
+        target: /app/backend-api-master/storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -137,6 +139,7 @@ services:
 
 volumes:
   postgres-data:
+  # Retained unchanged as a rollback/source volume while the existing files are copied to host storage.
   partner-storage:
   auth-storage:
 

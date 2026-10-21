@@ -25,9 +25,9 @@ const mocks = vi.hoisted(() => {
     tx,
     getSession: vi.fn(),
     files: {
-      putPhotoObject: vi.fn(async (_id: string, _type: string, data: Buffer) => ({ key: "auth/user-photo/2026/10/immutable.jpg", size: data.length, sha256: "a".repeat(64) })),
+      putPhotoObject: vi.fn(async (_id: string, _type: string, data: Buffer) => ({ key: "user-photo/immutable.jpg", size: data.length, sha256: "a".repeat(64) })),
       readPhotoObject: vi.fn(), readLegacyPhotoFile: vi.fn(),
-      archiveLegacyPhotoFile: vi.fn(async (_id: string, data: Buffer) => ({ key: "auth/user-photo/2026/10/legacy.jpg", size: data.length, sha256: "b".repeat(64) })),
+      archiveLegacyPhotoFile: vi.fn(async (_id: string, data: Buffer) => ({ key: "user-photo/legacy.jpg", size: data.length, sha256: "b".repeat(64) })),
     },
     prisma: {
       user: { findUnique: vi.fn(), findMany: vi.fn() },
@@ -235,10 +235,10 @@ describe("user photo (PH)", () => {
     expect(result.photoVersion).toMatch(/^[0-9a-f]{16}$/);
     expect(mocks.files.putPhotoObject).toHaveBeenCalledWith(TARGET_ID, "image/jpeg", JPEG);
     expect(mocks.tx.storedFile.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
-      bucket: "files", objectKey: "auth/user-photo/2026/10/immutable.jpg", status: "ready", purgeAfter: null,
+      bucket: "files", objectKey: "user-photo/immutable.jpg", status: "ready", purgeAfter: null,
     }) }));
     expect(mocks.tx.userPhoto.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { userId: TARGET_ID }, create: expect.objectContaining({ storageKey: "auth/user-photo/2026/10/immutable.jpg" }),
+      where: { userId: TARGET_ID }, create: expect.objectContaining({ storageKey: "user-photo/immutable.jpg" }),
     }));
     expect(mocks.tx.user.update).not.toHaveBeenCalled();
   });
@@ -249,12 +249,12 @@ describe("user photo (PH)", () => {
     const actor = await subject.requireAccess(request, "EDIT");
     mocks.tx.$queryRaw.mockResolvedValue([{ role: "user" }]);
     mocks.tx.userPhoto.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
-      storageKey: "auth/user-photo/2026/10/immutable.jpg", contentType: "image/jpeg", sizeBytes: JPEG.length, sha256: "a".repeat(64),
+      storageKey: "user-photo/immutable.jpg", contentType: "image/jpeg", sizeBytes: JPEG.length, sha256: "a".repeat(64),
     });
     await subject.putPhoto(actor, TARGET_ID, "image/jpeg", JPEG);
     await subject.putPhoto(actor, TARGET_ID, "image/png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
     expect(mocks.tx.storedFile.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { bucket: "files", objectKey: "auth/user-photo/2026/10/immutable.jpg", status: "ready" },
+      where: { bucket: "files", objectKey: "user-photo/immutable.jpg", status: "ready" },
       data: expect.objectContaining({ status: "deleted", purgeAfter: null }),
     }));
     expect(mocks.tx.storedFile.create).toHaveBeenCalledTimes(2);
@@ -284,11 +284,11 @@ describe("user photo (PH)", () => {
     mocks.tx.$queryRaw.mockResolvedValue([{ role: "user" }]);
     mocks.tx.userPermission.findMany.mockResolvedValue(grantRows(["vendor:VIEW"]));
     mocks.tx.userPhoto.findUnique.mockResolvedValue({
-      storageKey: "auth/user-photo/2026/10/immutable.jpg", contentType: "image/jpeg", sizeBytes: JPEG.length, sha256: "a".repeat(64),
+      storageKey: "user-photo/immutable.jpg", contentType: "image/jpeg", sizeBytes: JPEG.length, sha256: "a".repeat(64),
     });
     await expect(subject.removePhoto(actor, TARGET_ID)).resolves.toEqual({ ok: true });
     expect(mocks.tx.storedFile.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { bucket: "files", objectKey: "auth/user-photo/2026/10/immutable.jpg", status: "ready" },
+      where: { bucket: "files", objectKey: "user-photo/immutable.jpg", status: "ready" },
       data: expect.objectContaining({ status: "deleted", purgeAfter: null }),
     }));
     expect(mocks.tx.userPhoto.deleteMany).toHaveBeenCalledWith({ where: { userId: TARGET_ID } });
@@ -301,7 +301,7 @@ describe("user photo (PH)", () => {
     const subject = service();
     mocks.prisma.userPhoto.findUnique.mockResolvedValue(null);
     expect(await failure(subject.getPhoto(TARGET_ID))).toEqual({ status: 404, code: "PHOTO_NOT_FOUND" });
-    mocks.prisma.userPhoto.findUnique.mockResolvedValue({ contentType: "image/jpeg", sha256: "a".repeat(64), storageKey: "auth/user-photo/2026/10/missing.jpg" });
+    mocks.prisma.userPhoto.findUnique.mockResolvedValue({ contentType: "image/jpeg", sha256: "a".repeat(64), storageKey: "user-photo/missing.jpg" });
     mocks.prisma.storedFile.findUnique.mockResolvedValue({ sourceType: "auth.user-photo", sourceId: TARGET_ID, status: "ready" });
     mocks.files.readPhotoObject.mockResolvedValue(null);
     expect(await failure(subject.getPhoto(TARGET_ID))).toEqual({ status: 404, code: "PHOTO_NOT_FOUND" });
@@ -311,7 +311,7 @@ describe("user photo (PH)", () => {
 
   it("UT-PH-S07 refuses a ready object whose retained metadata is owned by another user", async () => {
     mocks.prisma.userPhoto.findUnique.mockResolvedValue({
-      contentType: "image/jpeg", sha256: "a".repeat(64), storageKey: "auth/user-photo/2026/10/other.jpg",
+      contentType: "image/jpeg", sha256: "a".repeat(64), storageKey: "user-photo/other.jpg",
     });
     mocks.prisma.storedFile.findUnique.mockResolvedValue({ sourceType: "auth.user-photo", sourceId: ADMIN_ID, status: "ready" });
     expect(await failure(service().getPhoto(TARGET_ID))).toEqual({ status: 404, code: "PHOTO_NOT_FOUND" });
@@ -328,7 +328,7 @@ describe("user photo (PH)", () => {
     await subject.removePhoto(actor, TARGET_ID);
     expect(mocks.files.archiveLegacyPhotoFile).toHaveBeenCalledWith(TARGET_ID, JPEG, "image/jpeg");
     expect(mocks.tx.storedFile.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
-      objectKey: "auth/user-photo/2026/10/legacy.jpg", status: "deleted", deletedAt: expect.any(Date), purgeAfter: null,
+      objectKey: "user-photo/legacy.jpg", status: "deleted", deletedAt: expect.any(Date), purgeAfter: null,
     }) }));
   });
 
@@ -338,11 +338,11 @@ describe("user photo (PH)", () => {
     const actor = await subject.requireAccess(request, "DELETE");
     mocks.tx.$queryRaw.mockResolvedValue([{ role: "user" }]);
     mocks.tx.userPhoto.findUnique.mockResolvedValue({
-      storageKey: "auth/user-photo/2026/10/immutable.jpg", contentType: "image/jpeg", sizeBytes: JPEG.length, sha256: "a".repeat(64),
+      storageKey: "user-photo/immutable.jpg", contentType: "image/jpeg", sizeBytes: JPEG.length, sha256: "a".repeat(64),
     });
     await subject.delete(actor, TARGET_ID);
     expect(mocks.tx.storedFile.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { bucket: "files", objectKey: "auth/user-photo/2026/10/immutable.jpg", status: "ready" },
+      where: { bucket: "files", objectKey: "user-photo/immutable.jpg", status: "ready" },
       data: expect.objectContaining({ status: "deleted", purgeAfter: null }),
     }));
   });

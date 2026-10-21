@@ -3,6 +3,7 @@
 **Current implementation remains the approved named-volume behavior below.** Proposed [GMS file-storage SA revision 3](../../../../reviews/sa/2026-10-21-gms-file-storage-rev3.md) would migrate photos to `@gms/storage` under the platform-wide indefinite upload-retention policy; it is pending approval and does not change this contract yet.
 
 - Date: 2026-10-17. Status: **approved 2026-10-17** (owner: "อนุมัติ PH"; Q-PH-1 = 5 MB and Q-PH-2 = tile only, both defaults) and **implemented**. See the [changelog](../../../../changelog/2026-10-17-user-photo.md).
+- Storage layout update (owner, 2026-10-21): new photo objects use `files/user-photo/<filename>`. The module may select a safe basename or use the UUIDv7 default; the adapter continues to read only the exact legacy prefix `auth/user-photo/...`. Historical files remain retained.
 - Owner request (verbatim): "ช่วยจัดการรูปภาพหน้า user permission หน่อย โดยใช้หลักการ file storage"
 - Replaces the deferred items BE-UP-009/012 and unblocks FE-UP-013 ([central TODO](../../../../task/todo/user-permission.md)). Same pattern as the approved company logo (company-profile SA-CP-04…06), applied to the auth service.
 - Today: table `auth."UserPhoto"` exists and stores the image bytes in the database (`data BYTEA`). It has **0 rows** (checked 2026-10-17), and no API reads or writes it. `hasPhoto` is always `false` and `photoVersion` is always `null`.

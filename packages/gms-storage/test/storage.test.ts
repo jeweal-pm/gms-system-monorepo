@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { assertSafeKey, buildKey, createStorage, uuidV7 } from "../src/index";
+import { assertSafeKey, buildKey, createStorage, uuidV7, type BucketName } from "../src/index";
 
 async function makeRoot(): Promise<string> {
   return mkdtemp(path.join(os.tmpdir(), "gms-storage-test-"));
@@ -17,10 +17,15 @@ async function readAll(stream: Readable): Promise<Buffer> {
 }
 
 describe("storage key validation (unit)", () => {
-  it("GMS-ST-UNIT-01 builds service-scoped keys with a UTC month and UUIDv7", () => {
-    const key = buildKey({ service: "auth", entity: "user-123", date: new Date("2026-10-21T23:59:00Z"), ext: "png" });
-    expect(key).toMatch(/^auth\/user-123\/2026\/10\/[0-9a-f-]{36}\.png$/);
+  it("GMS-ST-UNIT-01 builds flat module-scoped keys with UUIDv7 filenames", () => {
+    const key = buildKey({ module: "company-profile", ext: "png" });
+    expect(key).toMatch(/^company-profile\/[0-9a-f-]{36}\.png$/);
     expect(uuidV7()).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+
+  it("GMS-ST-UNIT-04 accepts a module-selected safe filename", () => {
+    expect(buildKey({ module: "company-profile", filename: "brand-logo-v2.png" }))
+      .toBe("company-profile/brand-logo-v2.png");
   });
 
   it.each(["", "../secret", "/absolute", "auth\\user", "auth//file", "auth/./file", "auth/../../x", "bad space"]) (
@@ -28,10 +33,12 @@ describe("storage key validation (unit)", () => {
     (key) => expect(() => assertSafeKey(key)).toThrow("Unsafe storage key"),
   );
 
-  it("GMS-ST-UNIT-03 rejects invalid service, entity, extension, and date parts", () => {
-    expect(() => buildKey({ service: "../auth", entity: "user", ext: "png" })).toThrow("Invalid storage key part");
-    expect(() => buildKey({ service: "auth", entity: "user", ext: "png/other" })).toThrow("Invalid storage key part");
-    expect(() => buildKey({ service: "auth", entity: "user", date: new Date("invalid"), ext: "png" })).toThrow("Invalid storage key date");
+  it("GMS-ST-UNIT-03 rejects invalid module names and extensions", () => {
+    expect(() => buildKey({ module: "../auth", ext: "png" })).toThrow("Invalid storage key part");
+    expect(() => buildKey({ module: "company profile", ext: "png" })).toThrow("Invalid storage key part");
+    expect(() => buildKey({ module: "company-profile", ext: "png/other" })).toThrow("Invalid storage key part");
+    expect(() => buildKey({ module: "company-profile", filename: "../outside.png" })).toThrow("Invalid storage filename");
+    expect(() => buildKey({ module: "company-profile", filename: "logo.png\\\\other" })).toThrow("Invalid storage filename");
   });
 });
 
@@ -41,7 +48,7 @@ describe("filesystem storage driver (integration)", () => {
 
   beforeEach(async () => {
     root = await makeRoot();
-    storage = createStorage(root, "auth");
+    storage = createStorage(root, { writePrefixes: ["user-photo"], readPrefixes: ["user-photo", "auth/user-photo"] });
   });
 
   afterEach(async () => {
@@ -50,7 +57,7 @@ describe("filesystem storage driver (integration)", () => {
   });
 
   it("GMS-ST-INT-01 streams, hashes, stores, reads, and heads an object", async () => {
-    const key = "auth/user-123/2026/10/photo.png";
+    const key = "user-photo/photo.png";
     const body = Buffer.from("first chunk: ✨ second chunk");
     const sha256 = createHash("sha256").update(body).digest("hex");
     const result = await storage.putStream("files", key, Readable.from([body.subarray(0, 12), body.subarray(12)]), {
@@ -70,17 +77,31 @@ describe("filesystem storage driver (integration)", () => {
     await expect(readFile(path.join(root, "escaped.txt"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("GMS-ST-INT-11 prevents a service from crossing another service's key prefix", async () => {
-    await expect(storage.put("files", "partner/company-profile/2026/10/logo.png", Buffer.from("no"), { contentType: "image/png" }))
-      .rejects.toThrow("outside the service prefix");
-    await expect(storage.get("files", "partner/company-profile/2026/10/logo.png"))
-      .rejects.toThrow("outside the service prefix");
-    await expect(storage.list("files", "partner/company-profile"))
-      .rejects.toThrow("outside the service prefix");
+  it("GMS-ST-INT-11 prevents writes outside the configured module and legacy prefixes", async () => {
+    await expect(storage.put("files", "company-profile/logo.png", Buffer.from("no"), { contentType: "image/png" }))
+      .rejects.toThrow("outside the allowed write prefixes");
+    await expect(storage.get("files", "company-profile/logo.png"))
+      .rejects.toThrow("outside the allowed read prefixes");
+    await expect(storage.list("files", "company-profile"))
+      .rejects.toThrow("outside the allowed read prefixes");
+    const legacy = "auth/user-photo/2026/10/old.png";
+    const legacyPath = path.join(root, "files", ...legacy.split("/"));
+    await mkdir(path.dirname(legacyPath), { recursive: true });
+    await writeFile(legacyPath, "legacy bytes");
+    await expect(readAll(await storage.get("files", legacy))).resolves.toEqual(Buffer.from("legacy bytes"));
+    await expect(storage.put("files", legacy, Buffer.from("no"), { contentType: "image/png" }))
+      .rejects.toThrow("outside the allowed write prefixes");
+    await expect(storage.get("files", "auth/admin-keys/old.pem")).rejects.toThrow("outside the allowed read prefixes");
+  });
+
+  it("GMS-ST-INT-13 rejects an invalid runtime bucket before path construction", async () => {
+    await expect(storage.head("files/../../outside" as BucketName, "user-photo/attack.png"))
+      .rejects.toThrow("Invalid storage bucket");
+    await expect(readFile(path.join(root, "outside", "user-photo", "attack.png"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("GMS-ST-INT-12 never overwrites an immutable object key", async () => {
-    const key = "auth/user-123/2026/10/immutable.png";
+    const key = "user-photo/immutable.png";
     const original = Buffer.from("original upload");
     await storage.put("files", key, original, { contentType: "image/png" });
     await expect(storage.put("files", key, Buffer.from("replacement"), { contentType: "image/png" }))
@@ -93,16 +114,16 @@ describe("filesystem storage driver (integration)", () => {
     { caseId: "GMS-ST-INT-04", options: { contentType: "image/png", sha256: "0".repeat(64) } },
     { caseId: "GMS-ST-INT-05", options: { contentType: "image/png", sha256: "not-a-sha256" } },
   ])("$caseId leaves no published object or upload temporary file on validation failure", async ({ options }) => {
-    const key = "auth/user-123/2026/10/invalid.png";
+    const key = "user-photo/invalid.png";
     await expect(storage.putStream("files", key, Readable.from([Buffer.from("image bytes")]), options)).rejects.toThrow(/mismatch/i);
     await expect(storage.head("files", key)).resolves.toBeNull();
-    const targetDirectory = path.join(root, "files", "auth", "user-123", "2026", "10");
+    const targetDirectory = path.join(root, "files", "user-photo");
     await expect(readdir(targetDirectory)).resolves.toEqual([]);
   });
 
   it("GMS-ST-INT-06 rejects symlink reads/writes and does not list linked files", async (context) => {
     const outside = path.join(root, "outside");
-    const bucketDirectory = path.join(root, "files", "auth");
+    const bucketDirectory = path.join(root, "files", "user-photo");
     await mkdir(bucketDirectory, { recursive: true });
     await mkdir(outside, { recursive: true });
     await writeFile(path.join(outside, "secret.png"), "outside secret");
@@ -115,28 +136,28 @@ describe("filesystem storage driver (integration)", () => {
       throw error;
     }
 
-    await expect(storage.get("files", "auth/linked/secret.png")).rejects.toThrow(/symbolic link/i);
-    await expect(storage.put("files", "auth/linked/created.png", Buffer.from("no"), { contentType: "image/png" })).rejects.toThrow(/symbolic link/i);
-    await expect(storage.list("files", "auth/linked")).rejects.toThrow(/symbolic link/i);
+    await expect(storage.get("files", "user-photo/linked/secret.png")).rejects.toThrow(/symbolic link/i);
+    await expect(storage.put("files", "user-photo/linked/created.png", Buffer.from("no"), { contentType: "image/png" })).rejects.toThrow(/symbolic link/i);
+    await expect(storage.list("files", "user-photo/linked")).rejects.toThrow(/symbolic link/i);
     await expect(readFile(path.join(outside, "created.png"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("GMS-ST-INT-07 safely lists only regular files under the requested prefix with a bounded limit", async () => {
     for (const name of ["a.png", "b.png", "c.png"]) {
-      await storage.put("files", `auth/user-123/2026/10/${name}`, Buffer.from(name), { contentType: "image/png" });
+      await storage.put("files", `user-photo/${name}`, Buffer.from(name), { contentType: "image/png" });
     }
-    await storage.put("files", "auth/partner-company-9/2026/10/logo.png", Buffer.from("logo"), { contentType: "image/png" });
+    await storage.put("files", "user-photo/company-9.png", Buffer.from("logo"), { contentType: "image/png" });
 
-    await expect(storage.list("files", "auth/user-123/2026/10", 2)).resolves.toHaveLength(2);
-    await expect(storage.list("files", "auth/user-123/2026/10")).resolves.toEqual(
-      expect.arrayContaining([expect.objectContaining({ key: "auth/user-123/2026/10/a.png" })]),
+    await expect(storage.list("files", "user-photo", 2)).resolves.toHaveLength(2);
+    await expect(storage.list("files", "user-photo")).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: "user-photo/a.png" })]),
     );
     await expect(storage.list("files", "../partner")).rejects.toThrow("Unsafe storage key");
-    await expect(storage.list("files", "auth/user-123", 201)).rejects.toThrow("Invalid list limit");
+    await expect(storage.list("files", "user-photo", 201)).rejects.toThrow("Invalid list limit");
   });
 
   it.each(["files", "public"] as const)("GMS-ST-INT-08 permanently retains user-uploaded objects in %s, even on delete request", async (bucket) => {
-    const key = "auth/catalog-item-7/2026/10/image.webp";
+    const key = "user-photo/image.webp";
     const bytes = Buffer.from("uploaded image");
     await storage.put(bucket, key, bytes, { contentType: "image/webp" });
 
@@ -147,10 +168,10 @@ describe("filesystem storage driver (integration)", () => {
 
   it("GMS-ST-INT-09 permits explicit deletion only in system-generated buckets", async () => {
     for (const bucket of ["documents", "exports"] as const) {
-      const key = "system/report-1/2026/10/report.pdf";
-      await storage.put(bucket, `auth/${key}`, Buffer.from("generated report"), { contentType: "application/pdf" });
-      await storage.delete(bucket, `auth/${key}`);
-      await expect(storage.head(bucket, `auth/${key}`)).resolves.toBeNull();
+      const key = "user-photo/report.pdf";
+      await storage.put(bucket, key, Buffer.from("generated report"), { contentType: "application/pdf" });
+      await storage.delete(bucket, key);
+      await expect(storage.head(bucket, key)).resolves.toBeNull();
     }
   });
 
@@ -161,9 +182,9 @@ describe("filesystem storage driver (integration)", () => {
         this.destroy(new Error("simulated source failure"));
       },
     });
-    const key = "auth/user-123/2026/10/interrupted.png";
+    const key = "user-photo/interrupted.png";
     await expect(storage.putStream("files", key, failedBody, { contentType: "image/png" })).rejects.toThrow("simulated source failure");
     await expect(storage.head("files", key)).resolves.toBeNull();
-    await expect(readdir(path.join(root, "files", "auth", "user-123", "2026", "10"))).resolves.toEqual([]);
+    await expect(readdir(path.join(root, "files", "user-photo"))).resolves.toEqual([]);
   });
 });

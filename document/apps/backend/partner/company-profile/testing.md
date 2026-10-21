@@ -62,4 +62,20 @@ Owner request: "frontend backend ทำ unit test case ส่วนของ com
 | typecheck / lint (both, now including `test/**/*.ts`) | pass / pass |
 | Mutation check | JPEG signature reduced to its first byte → first run **not caught**; added two signature cases (UT-CP-P35), rerun → caught (1 failed), source restored, suite green |
 
+## GMS host storage location (2026-10-21)
+
+- Local dev now bind-mounts host `C:\dev\f1-system\storage` at `/app/backend-api-master/storage`; uploaded logo keys are under `storage/files/partner/company-profile/YYYY/MM/<uuid>.<ext>` on the host, outside the container writable layer.
+- Before the mount change, all four existing files (three immutable logo objects and the legacy logo) were copied from the retained `partner-storage` named volume. Source and host SHA-256 values match; the old volume remains untouched for rollback. No uploaded bytes were deleted.
+- The production host path is `/srv/gms/storage` per infra revision 3; production host ownership, capacity, backup and cutover checks remain gated under GF-06…08. This local check is not production deployment evidence.
+
 Not covered by these unit tests (recorded, not claimed): HTTP/DB integration with an isolated test database (the BT-CP live run above covers it manually; automated integration needs a test DB and was not requested), gateway VIEW-only/partner-down against real services, builds.
+
+- Runtime verification (2026-10-21): API health returned 200; the signed-in Company Profile page and existing logo rendered through Nginx. pi-master bind source is host C:\dev\f1-system\storage; retained named volume was not removed and no file bytes were deleted.
+
+## Flat module storage layout (owner instruction, 2026-10-21; superseded filename detail below)
+
+New company-logo objects use a module-selected filename under `storage/files/company-profile/` (UUIDv7 plus validated extension by default). Existing `partner/company-profile/YYYY/MM/<uuid>.<ext>` objects remain readable and permanently retained; the application does not move or delete them. At this stage of implementation, logo storage/service tests passed 38/38 and auth photo tests passed 27/27. Runtime container reload/upload was not part of this change, so the existing logo remains at its previous key until a later upload creates a new flat-key version.
+
+## Owner follow-up: module-selected filenames (2026-10-21)
+
+Current code writes new company logos to `storage/files/company-profile/<filename>`; a module may provide a safe basename with the content-matching extension or omit it to use UUIDv7. Auth photo storage uses the same option under `storage/files/user-photo/`. Final tests passed: company-profile 40/40 and auth photo 29/29. Both security reviewers returned advisory with no newly confirmed vulnerability. Historical objects remain at their original immutable paths; no runtime reload or upload was performed.
