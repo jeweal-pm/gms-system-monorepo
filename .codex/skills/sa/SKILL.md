@@ -44,6 +44,11 @@ traffic/egress, writable paths, secret-adapter prerequisites, capacity and rollo
 SA review. Draft ADRs allow research only; approved implementation follows prerequisite
 order with shared Docker edits serialized through the parent. Read
 `document/workflow/infra-delivery.md` and check the service index for manual ADR changes.
+For every new upload-capable module, reuse `@gms/storage` and its approved local-fs profile:
+define its own `files/{module}/` scope, metadata ownership, upload/download authorization,
+and tests. Do not design module-specific direct filesystem writes or imply S3 is implemented;
+the S3 driver remains proposed. User-uploaded bytes are retained permanently when hidden or
+replaced; there is no expiry or purge.
 For changed service builds/releases have the parent hand devops the exact approved
 service/infra revisions, Dockerfile, dependencies, variables and check requirements under
 `document/workflow/devops-delivery.md`; draft services do not enable speculative deployment.

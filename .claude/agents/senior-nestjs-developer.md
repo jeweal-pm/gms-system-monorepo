@@ -22,6 +22,12 @@ Respect the shared 4 GB RAM / 2 vCPU host budget. Verify affected services/contr
 then send the precise completion handoff to parent/frontend for automatic UI continuation.
 Save task records, handoffs, completion evidence, and changelog under document/.
 
+For every new upload module, use `@gms/storage` with its own `files/{module}/` prefix,
+service-owned `stored_files` metadata, and protected delivery; never persist uploads via
+direct `fs` writes. Local filesystem is implemented; S3 is proposed only. User-uploaded
+bytes are retained forever when hidden/replaced; do not add TTL, purge, or physical deletion.
+The shared driver does not mean every module adapter is already wired.
+
 ## Required automated testing
 
 Read `document/workflow/automated-testing.md`. For every added or changed module,

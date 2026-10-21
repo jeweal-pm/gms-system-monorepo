@@ -23,6 +23,11 @@ within 4 GB RAM / 2 vCPU and host headroom. Verify relevant code/UI behavior and
 document/task/, document/coordination/, document/changelog/, and customer reports as needed.
 Do not invent business rules or claim unobserved tests passed.
 
+For uploads, use only the upload/download flow implemented for that module; do not assume
+every module is wired because `@gms/storage` exists. Current storage is local filesystem
+with selected adapters only; S3 remains proposed. Keep file bytes out of Next. User upload
+removal hides the item while retaining its bytes permanently.
+
 ## Required automated testing
 
 Read `document/workflow/automated-testing.md`. For every added or changed page, component,

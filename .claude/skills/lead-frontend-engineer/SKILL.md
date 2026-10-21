@@ -49,9 +49,11 @@ For work approved against the new target architecture:
   caches, request waterfalls, and heavy computation in Next. Display job ID, queue/status,
   progress, cancellation and result states when the approved API exposes them. Keep
   PDF/Excel generation and long-running work in the API/worker flow, not the frontend.
-- For uploads, use the approved request-upload-target → direct upload → confirm flow; for
-  downloads, request a short-lived URL when clicked and navigate to it. Do not proxy file
-  bytes through Next. Support both filesystem and S3 profiles through the same UI contract.
+- For uploads, use only the flow implemented and approved for the selected module; do not
+  assume every module is wired because `@gms/storage` exists. The current profile is local
+  filesystem with selected adapters only; S3 is proposed, not implemented. Keep file bytes
+  out of Next and use the module's authorized protected-delivery contract. Removing a user
+  upload hides it while retaining bytes forever.
 - In the default local-data profile, avoid runtime third-party fonts, analytics, CDN
   scripts, and other data egress. Use locally hosted fonts and `images.unoptimized: true`
   when images are resized at upload. Propagate request IDs when supported, and display business dates explicitly in

@@ -103,7 +103,10 @@ approved bundle:
 - `fs`: persistent host bind mounts under `/srv/gms/storage` shared read-write with
   relevant APIs/worker and read-only with Nginx. Use disk-backed `.tmp` rather than
   RAM-backed tmpfs for file work. Enforce bucket/prefix ownership, backup/retention and
-  free-disk guard through the approved app/operations handoff.
+  free-disk guard through the approved app/operations handoff. This is the implemented
+  local profile today; only selected module adapters are wired. New upload modules need
+  their own `files/{module}/` scope and authorized delivery path. User-upload bytes are
+  retained indefinitely; do not configure purge.
 - `s3-cloud` or `s3-garage`: keep bucket credentials least-privileged and scoped.
   Distinguish internal and public S3 endpoints. Garage v2.x, when selected, is private
   behind Nginx, has `replication_factor = 1` and therefore needs backups; include

@@ -21,7 +21,10 @@ approved target-architecture work, use relative browser `/api/...` URLs, interna
 URLs for credential-forwarding server fetches, runtime customer config rather than
 customer-specific `NEXT_PUBLIC_*`, secure httpOnly cookies with CSRF, bounded SSR/list
 data, and API-backed queued jobs. Do not generate large files or proxy stored file bytes
-through Next; use direct upload targets and on-click download URLs. Avoid runtime third-
+through Next; use only the upload/download API implemented for that module. The shared
+storage driver does not mean every module is wired; local filesystem is current and S3 is
+proposed only. User upload removal hides the object while bytes remain retained forever.
+Avoid runtime third-
 party egress by default, render dates in `Asia/Bangkok`/`th-TH`, and coordinate standalone
 image/cache/heap settings with infra and devops against measured 4 GB/2 vCPU capacity.
 When the approved UI needs new/changed backend behavior, automatically hand it to sa through

@@ -41,9 +41,10 @@ roles and URLs, DB_POOL_MAX, explicit TLS verify-full and CA for managed, pooler
 transaction-only state, bounded startup retry, /healthz and /readyz. Migrations are
 versioned, backward compatible and run as approved one-off jobs, never on app startup.
 Heavy jobs move to an approved bounded worker queue; stream imports/exports and stored
-files. Use @gms/storage contract, own service prefix and stored_files metadata when the
-storage design is approved; authorize expiring URLs, keep issued documents immutable,
-soft-delete stored files and preserve existing approved company-logo behavior until revised.
+files. Every new upload module must use @gms/storage, its own `files/{module}/` prefix,
+service-owned `stored_files` metadata, and protected delivery; never persist files through
+direct `fs` writes. Local filesystem is the implemented profile; S3 remains proposed.
+User-uploaded bytes are retained forever when hidden or replaced; no TTL/purge/delete.
 Keep current Better Auth/license/permission enforcement until an approved JWT transition.
 Produce structured sanitized request-ID logs and slow-query timing. Route container/env
 requirements to infra and image/release requirements to devops through the parent.

@@ -7,6 +7,8 @@ Read .claude/skills/infra/SKILL.md, document/gms-platform-spec.md and document/w
 
 Audit findings first enter document/task/investigation/ with owner infra; discovery never authorizes fixes. Draft ADR additions trigger research/documentation only. Approved service implementation is coordinated through the parent, who serializes shared Docker/Compose/environment changes and service-index updates and assigns one writer. Frontend/backend own adapters in their respective source; backend owns DB migrations. Do not automatically alter live services, destroy data, rotate credentials, install infrastructure or change host security settings.
 
+The current storage profile is local filesystem with selected module adapters only; do not assume every module is wired or S3 is implemented. New upload modules use `@gms/storage` with scoped `files/{module}/` ownership and permanent user-upload retention.
+
 Write service research/configuration/rollout/check evidence under document/infra/ and maintain its explicit service index. Creation of this role is not a daemon/watcher. Static inspection is not runtime verification; run tests only when authorized and do not expose resolved secrets. Return actual status and next prerequisite, never an unverified security guarantee.
 
 ## Corrective-work stop conditions

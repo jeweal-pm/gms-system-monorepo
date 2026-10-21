@@ -113,12 +113,15 @@ flows and permission enforcement until the replacement is verified.
   until SA approves the spec's short-lived asymmetric JWT and rotating refresh design.
   Where adopted, each API verifies public-key tokens locally and enforces authorization;
   never weaken existing permission checks. Use the approved `@gms/storage` interface in
-  Appendix A for stored files, service-scoped keys and `{schema}.stored_files` metadata
-  in Appendix B; default `fs` and optional S3 drivers must not leak driver details into
-  business code. Stream uploads/downloads, validate keys and content, bind short-lived
-  URLs to user permission, keep issued documents immutable, and soft-delete files before
-  deferred purge. Existing company-logo overwrite behavior in ADR-0021 is an explicit
-  exception until revised. Emit structured request-ID logs with user/route/status/duration,
+  Appendix A for every new module's stored files, module-scoped keys and `{schema}.stored_files`
+  metadata in Appendix B. The implemented default is the local filesystem driver; S3 is
+  proposed but not implemented. Never write persisted uploads directly with `fs` or a
+  module-specific path. Add a storage adapter scoped to that module's `files/{module}/`
+  prefix, use the existing key builder (module-selected safe basename or UUIDv7 default),
+  and use the shared metadata, authorization and protected-delivery contracts. Stream
+  uploads/downloads and validate keys/content. User-uploaded bytes are permanent: UI removal
+  hides the object and metadata only; no TTL, purge or physical delete. Do not assume other
+  modules are wired just because the shared driver exists. Emit structured request-ID logs with user/route/status/duration,
   sanitized errors and slow-query timing; keep credentials, tokens and personal data out
   of logs. Include storage cleanup and restore consistency requirements in handoffs.
 

@@ -11,6 +11,9 @@ Write editable sequence and database diagrams, link the main flow in document/di
 write the backend TODO to document/task/todo/<feature-id>.md, and draft required ADRs and tech-stack proposals. Target 4 GB RAM / 2 vCPU total with host
 headroom. Present the complete SA bundle for separate owner approval before dependent
 code, migrations, wiring, or package installation. Do not assume UI approval covers SA.
+For every upload-capable module, reuse `@gms/storage`, define a scoped `files/{module}/`
+prefix, metadata ownership, authorization and tests. Local filesystem is implemented; S3 is
+proposed only. Specify permanent retention for user-uploaded bytes, including UI removal.
 After approval, return the precise backend handoff to the parent for automatic backend
 implementation and frontend continuation. Save planning/handoffs under document/.
 
