@@ -32,6 +32,38 @@ const noop = () => {};
 const grid = "grid min-w-0 flex-1 grid-cols-1 items-start gap-x-4 gap-y-5 md:grid-cols-2 xl:grid-cols-3";
 
 /**
+ * The Active switch, shared by the card and the compact sticky summary. It cannot be turned off for a
+ * Super Admin or the signed-in user; `showHint` explains why (the compact summary has no room for it).
+ */
+export function ActiveSwitch({ id, form, readOnly, superAdmin, isSelf, showHint = true }: {
+  id: string;
+  form: UseFormReturn<UserFormValues>;
+  readOnly: boolean;
+  superAdmin: boolean;
+  isSelf: boolean;
+  showHint?: boolean;
+}) {
+  const locked = superAdmin || isSelf;
+  return (
+    <Controller
+      control={form.control}
+      name="active"
+      render={({ field }) => (
+        <Switch
+          id={id}
+          label="Active"
+          checked={field.value}
+          onChange={field.onChange}
+          readOnly={readOnly}
+          disabled={!readOnly && locked}
+          hint={showHint && !readOnly && locked ? (superAdmin ? "Super Admin is always active" : "You can't deactivate your own account") : undefined}
+        />
+      )}
+    />
+  );
+}
+
+/**
  * C-06..C-12 Personal Information card, UI revision 2 (rev2-02/03).
  * Username is editable only on create (sign-in name, immutable afterwards).
  * Password is optional on edit (blank = unchanged) and locked for a Super
@@ -46,25 +78,8 @@ export function PersonalInformationCard({ mode, form, locations, superAdmin, isS
   } = form;
   const [username, name] = useWatch({ control, name: ["username", "name"] });
   const readOnly = mode === "view";
-  const activeLocked = superAdmin || isSelf;
 
-  const activeSwitch = (
-    <Controller
-      control={control}
-      name="active"
-      render={({ field }) => (
-        <Switch
-          id="user-active"
-          label="Active"
-          checked={field.value}
-          onChange={field.onChange}
-          readOnly={readOnly}
-          disabled={!readOnly && activeLocked}
-          hint={!readOnly && activeLocked ? (superAdmin ? "Super Admin is always active" : "You can't deactivate your own account") : undefined}
-        />
-      )}
-    />
-  );
+  const activeSwitch = <ActiveSwitch id="user-active" form={form} readOnly={readOnly} superAdmin={superAdmin} isSelf={isSelf} />;
 
   return (
     <Card title="Personal Information" titleId="personal-information-title" titleClassName="text-gms-heading font-medium text-gms-text" trailing={activeSwitch}>

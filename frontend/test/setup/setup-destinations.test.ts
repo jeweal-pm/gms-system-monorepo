@@ -60,12 +60,12 @@ describe("setupLandingTiles", () => {
     expect(setupLandingTiles.find((entry) => entry.id === "stone-factory")).not.toHaveProperty("href");
   });
 
-  it("UT-NAV-F04 User and Permission, Master Code and Document Setup use the design icons (owner 2026-10-20)", () => {
+  it("UT-NAV-F04 every tile but Stone Factory uses its design icon (owner 2026-10-20/21)", () => {
     const render = (id: string) => {
       const tile = setupLandingTiles.find((entry) => entry.id === id);
       return tile ? renderToStaticMarkup(createElement(tile.icon, { size: 32, strokeWidth: 1.5 })) : "";
     };
-    for (const id of ["user-permission", "master-code", "document-setup"]) {
+    for (const id of ["company-profile", "user-permission", "notifications", "master-code", "document-setup"]) {
       const html = render(id);
       expect(html).toContain(`data-icon="${id}"`);
       expect(html).toContain('viewBox="0 0 32 32"');
