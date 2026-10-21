@@ -1,18 +1,22 @@
 "use client";
 
 // Primitive เฉพาะ feature นี้ — ถ้าโปรเจกต์มี design system กลางอยู่แล้ว ให้เปลี่ยนไปใช้ของกลางแทน
-import { ChevronDown, X } from "lucide-react";
-import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from "react";
+import { Check, ChevronDown, X } from "lucide-react";
+import {
+  forwardRef,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type InputHTMLAttributes,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
+import { useController, useFormContext, type FieldValues, type Path } from "react-hook-form";
+import { sanitizeDecimal } from "../lib/number";
 
 export const cx = (...classes: (string | false | null | undefined)[]) => classes.filter(Boolean).join(" ");
-
-/* Tokens (จาก Figma) */
-export const tone = {
-  text: "text-[#1C252E]",
-  muted: "text-[#6B7480]",
-  subtle: "text-[#95A0A9]",
-  border: "border-[#E3E6EA]",
-};
 
 type ButtonVariant = "primary" | "secondary" | "dark" | "danger" | "danger-outline" | "ghost";
 
@@ -75,7 +79,7 @@ export function Field({
 }) {
   return (
     <label className={cx("relative block", className)}>
-      <span className="absolute -top-2 left-3 z-10 bg-white px-1 text-xs font-medium text-[#1C252E]">
+      <span className="absolute -top-2 left-3 z-10 bg-[linear-gradient(to_bottom,transparent_8px,white_8px)] px-1 text-xs font-medium text-[#1C252E]">
         {label}
         {required && <span className="text-[#E5484D]"> *</span>}
       </span>
@@ -86,7 +90,7 @@ export function Field({
 }
 
 const controlClass =
-  "h-12 w-full rounded-lg border border-[#E3E6EA] bg-white px-4 text-[15px] text-[#1C252E] outline-none placeholder:text-[#A9B1B9] focus:border-[#0E5E63] focus:ring-2 focus:ring-[#0E5E63]/15 disabled:bg-[#F6F7F8] disabled:text-[#6B7480] read-only:bg-[#F6F7F8]";
+  "h-12 w-full rounded-lg border border-[#E3E6EA] bg-white px-4 text-[15px] text-[#1C252E] outline-none placeholder:text-[#A9B1B9] focus:border-[#1C252E] disabled:cursor-not-allowed disabled:bg-[#F6F7F8] disabled:text-[#6B7480] read-only:bg-[#F6F7F8]";
 
 export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { compact?: boolean }>(
   function TextInput({ className, compact, ...props }, ref) {
@@ -94,44 +98,190 @@ export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLIn
   },
 );
 
-export const SelectInput = forwardRef<
-  HTMLSelectElement,
-  SelectHTMLAttributes<HTMLSelectElement> & { options: { value: string; label: string }[]; placeholder?: string; compact?: boolean }
->(function SelectInput({ options, placeholder = "Select", className, compact, ...props }, ref) {
-  return (
-    <div className="relative">
-      <select
-        ref={ref}
-        className={cx(controlClass, "appearance-none pr-10", compact && "h-10 px-3 text-sm", className)}
-        {...props}
-      >
-        <option value="">{placeholder}</option>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-      <ChevronDown className="pointer-events-none absolute top-1/2 right-4 size-4 -translate-y-1/2 text-[#1C252E]" />
-    </div>
-  );
-});
-
-export const Checkbox = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { label?: ReactNode }>(
-  function Checkbox({ label, className, ...props }, ref) {
+/**
+ * ช่องตัวเลข: กรองตัวอักษรออกก่อนส่งให้ react-hook-form (ห้ามกรอกตัวอักษร)
+ * @param decimals จำนวนทศนิยมสูงสุด (0 = จำนวนเต็ม)
+ */
+export const NumberInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { compact?: boolean; decimals?: number }>(
+  function NumberInput({ decimals = 2, onChange, className, ...props }, ref) {
     return (
-      <label className={cx("inline-flex cursor-pointer items-center gap-3 text-[15px] text-[#1C252E]", className)}>
-        <input
-          ref={ref}
-          type="checkbox"
-          className="size-5 cursor-pointer rounded border-[#D5DADF] accent-[#0E5E63] disabled:cursor-not-allowed"
-          {...props}
-        />
-        {label}
-      </label>
+      <TextInput
+        ref={ref}
+        inputMode={decimals === 0 ? "numeric" : "decimal"}
+        autoComplete="off"
+        className={cx("text-right tabular-nums", className)}
+        onChange={(e) => {
+          const clean = sanitizeDecimal(e.target.value, decimals);
+          if (clean !== e.target.value) e.target.value = clean;
+          onChange?.(e);
+        }}
+        {...props}
+      />
     );
   },
 );
+
+/** กล่องสีเทาแสดงค่าอย่างเดียว (กรอกไม่ได้) */
+export function ReadonlyBox({ value, placeholder = "—", compact }: { value?: string; placeholder?: string; compact?: boolean }) {
+  return (
+    <div
+      aria-readonly
+      className={cx(
+        "flex w-full cursor-not-allowed items-center rounded-lg border border-[#E3E6EA] bg-[#F3F4F5] px-4 text-[15px]",
+        compact ? "h-10 px-3 text-sm" : "h-12",
+        value ? "text-[#1C252E]" : "text-[#A9B1B9]",
+      )}
+    >
+      <span className="truncate">{value || placeholder}</span>
+    </div>
+  );
+}
+
+export type Option = { value: string; label: string };
+
+/** Dropdown แบบ custom (ตามดีไซน์) — keyboard: ↑ ↓ Enter Esc */
+export function SelectMenu({
+  value,
+  onChange,
+  options,
+  placeholder = "Select",
+  disabled,
+  compact,
+  invalid,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: readonly Option[];
+  placeholder?: string;
+  disabled?: boolean;
+  compact?: boolean;
+  invalid?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
+  const selected = options.find((o) => o.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const openMenu = () => {
+    setActive(Math.max(0, options.findIndex((o) => o.value === value)));
+    setOpen(true);
+  };
+  const choose = (index: number) => {
+    const option = options[index];
+    if (option) onChange(option.value);
+    setOpen(false);
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === "Escape") return setOpen(false);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!open) return openMenu();
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      setActive((i) => (i + step + options.length) % options.length);
+    }
+    if ((e.key === "Enter" || e.key === " ") && open) {
+      e.preventDefault();
+      choose(active);
+    }
+  };
+
+  return (
+    <div ref={rootRef} className={cx("relative", className)}>
+      <button
+        type="button"
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-haspopup="listbox"
+        disabled={disabled}
+        onClick={() => (open ? setOpen(false) : openMenu())}
+        onKeyDown={onKeyDown}
+        className={cx(
+          controlClass,
+          "flex items-center justify-between gap-2 text-left",
+          compact && "h-10 px-3 text-sm",
+          open && "border-[#1C252E]",
+          invalid && "border-[#E5484D]",
+        )}
+      >
+        <span className={cx("truncate", !selected && "text-[#A9B1B9]")}>{selected?.label ?? placeholder}</span>
+        <ChevronDown className={cx("size-4 shrink-0 transition-transform", open && "rotate-180", disabled && "text-[#B5BCC3]")} />
+      </button>
+      {open && (
+        <ul
+          id={listId}
+          role="listbox"
+          // อยู่ใน <label> ของ Field: กันไม่ให้ label ส่ง click กลับไปเปิด dropdown ซ้ำ
+          onClick={(e) => e.preventDefault()}
+          className="absolute right-0 left-0 z-30 mt-2 max-h-64 overflow-y-auto rounded-xl border border-[#EEF0F2] bg-white py-2 shadow-[0_12px_32px_rgba(28,37,46,0.14)]"
+        >
+          {options.length === 0 && <li className="px-5 py-2.5 text-sm text-[#A9B1B9]">No options</li>}
+          {options.map((o, i) => (
+            <li
+              key={o.value}
+              role="option"
+              aria-selected={o.value === value}
+              onMouseEnter={() => setActive(i)}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => choose(i)}
+              className={cx(
+                "flex cursor-pointer items-center justify-between gap-2 px-5 py-2.5 text-[15px] text-[#1C252E]",
+                i === active && "bg-[#F6F7F8]",
+                o.value === value && "font-medium",
+              )}
+            >
+              <span className="truncate">{o.label}</span>
+              {o.value === value && <Check className="size-4 shrink-0 text-[#0E5E63]" />}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** SelectMenu ที่ผูกกับ react-hook-form ผ่าน name */
+export function FormSelect<T extends FieldValues = FieldValues>({
+  name,
+  onValueChange,
+  ...props
+}: Omit<Parameters<typeof SelectMenu>[0], "value" | "onChange"> & { name: Path<T>; onValueChange?: (value: string) => void }) {
+  const { control } = useFormContext<T>();
+  const { field, fieldState } = useController({ control, name });
+  return (
+    <SelectMenu
+      {...props}
+      invalid={props.invalid ?? Boolean(fieldState.error)}
+      value={(field.value as string | undefined) ?? ""}
+      onChange={(v) => {
+        field.onChange(v);
+        onValueChange?.(v);
+      }}
+    />
+  );
+}
+
+export function Checkbox({ label, className, ...props }: InputHTMLAttributes<HTMLInputElement> & { label?: ReactNode }) {
+  return (
+    <label className={cx("inline-flex cursor-pointer items-center gap-3 text-[15px] text-[#1C252E]", className)}>
+      <input type="checkbox" className="size-5 cursor-pointer rounded border-[#D5DADF] accent-[#0E5E63] disabled:cursor-not-allowed" {...props} />
+      {label}
+    </label>
+  );
+}
 
 export function Badge({ children, variant = "neutral" }: { children: ReactNode; variant?: "neutral" | "lot" }) {
   return (

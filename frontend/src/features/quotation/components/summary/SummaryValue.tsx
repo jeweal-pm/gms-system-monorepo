@@ -5,18 +5,17 @@ import { useState, type ReactNode } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import type { QuotationTotals } from "../../lib/calculate";
 import { formatMoney } from "../../lib/format";
-import { serviceChargeTypes, taxCodes } from "../../mock/masters";
+import { serviceChargeTypes } from "../../mock/masters";
 import type { QuotationFormValues } from "../../schema";
-import { Checkbox, cx, SelectInput, TextInput } from "../ui";
+import { Checkbox, cx, NumberInput, TextInput } from "../ui";
 
-const numberInput = "h-10 text-right";
+const numberInput = "h-10";
 
 export function SummaryValue({ totals, currency }: { totals: QuotationTotals; currency: string }) {
   const { register, control, setValue } = useFormContext<QuotationFormValues>();
   const discount = useWatch({ control, name: "discount" });
   const tax = useWatch({ control, name: "tax" });
   const labor = useWatch({ control, name: "labor" });
-  const taxLabel = taxCodes.find((t) => t.value === tax.code)?.label ?? "";
 
   return (
     <div className="text-[15px] text-[#1C252E]">
@@ -42,7 +41,7 @@ export function SummaryValue({ totals, currency }: { totals: QuotationTotals; cu
                 </button>
               ))}
             </div>
-            <TextInput compact inputMode="decimal" placeholder="0.00" className={numberInput} {...register("discount.value")} />
+            <NumberInput compact placeholder="0.00" className={numberInput} {...register("discount.value")} />
             <span className="w-8 text-sm text-[#6B7480]">{discount.type === "PERCENT" ? "%" : currency}</span>
           </div>
         )}
@@ -60,8 +59,9 @@ export function SummaryValue({ totals, currency }: { totals: QuotationTotals; cu
         />
         <div className="flex items-center justify-between gap-4 py-2">
           <Checkbox label="Tax" {...register("tax.enabled")} />
-          <div className="w-44">
-            <SelectInput compact placeholder="Tax" disabled={!tax.enabled} options={taxCodes} {...register("tax.code")} />
+          <div className="flex w-36 items-center gap-2">
+            <NumberInput compact placeholder="0" disabled={!tax.enabled} aria-label="Tax rate (%)" className={numberInput} {...register("tax.rate")} />
+            <span className="text-sm text-[#6B7480]">%</span>
           </div>
         </div>
         {tax.enabled && (
@@ -69,7 +69,7 @@ export function SummaryValue({ totals, currency }: { totals: QuotationTotals; cu
             <Checkbox label="Include tax in price" className="py-2" {...register("tax.includeInPrice")} />
             <div className="mt-2 ml-8 space-y-2 rounded-xl bg-[#F6F7F8] px-4 py-3 text-sm">
               <Row compact label="Price before tax" value={formatMoney(totals.priceBeforeTax)} />
-              <Row compact label={`Tax ${taxLabel.replace(/^VAT\s*/, "")}`} value={formatMoney(totals.taxAmount)} />
+              <Row compact label={`Tax ${tax.rate || 0}%`} value={formatMoney(totals.taxAmount)} />
               <div className="border-t border-dashed border-[#D5DADF] pt-2">
                 <Row compact label={<span className="font-medium">Total amount</span>} value={formatMoney(totals.totalWithTax)} />
               </div>
@@ -99,15 +99,22 @@ export function SummaryValue({ totals, currency }: { totals: QuotationTotals; cu
                   </label>
                   {active ? (
                     <>
-                      <TextInput compact inputMode="decimal" placeholder="0" className={numberInput} {...register("labor.qty")} />
+                      <NumberInput
+                        key={`qty-${basis}`}
+                        compact
+                        decimals={basis === "PCS" ? 0 : 3}
+                        placeholder={basis === "PCS" ? "0" : "0.00"}
+                        className={numberInput}
+                        {...register("labor.qty")}
+                      />
                       <span className="shrink-0 text-[#6B7480]">{basis === "PCS" ? "pcs ×" : "cts ×"}</span>
-                      <TextInput compact inputMode="decimal" placeholder="0.00" className={numberInput} {...register("labor.rate")} />
+                      <NumberInput compact placeholder="0.00" className={numberInput} {...register("labor.rate")} />
                     </>
                   ) : (
                     <>
-                      <TextInput compact disabled placeholder={basis === "PCS" ? "0" : "0.00"} className={numberInput} />
+                      <NumberInput compact disabled placeholder={basis === "PCS" ? "0" : "0.00"} className={numberInput} />
                       <span className="shrink-0 text-[#6B7480]">{basis === "PCS" ? "pcs ×" : "cts ×"}</span>
-                      <TextInput compact disabled placeholder="0.00" className={numberInput} />
+                      <NumberInput compact disabled placeholder="0.00" className={numberInput} />
                     </>
                   )}
                   <span className="w-9 shrink-0 text-[#6B7480]">{currency}</span>
@@ -196,7 +203,7 @@ function ServiceCharges({ totalLabel }: { totalLabel: string }) {
                 {serviceChargeTypes.find((c) => c.value === f.chargeId)?.label ?? f.chargeId}
               </span>
               <div className="w-36">
-                <TextInput compact inputMode="decimal" placeholder="0.00" className={numberInput} {...register(`serviceCharges.${i}.amount`)} />
+                <NumberInput compact placeholder="0.00" className={numberInput} {...register(`serviceCharges.${i}.amount`)} />
               </div>
               <button type="button" aria-label="Remove charge" onClick={() => remove(i)} className="text-[#6B7480]">
                 <CircleX className="size-5" />

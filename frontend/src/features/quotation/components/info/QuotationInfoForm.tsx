@@ -3,7 +3,7 @@
 import { useFormContext, useWatch } from "react-hook-form";
 import { currencies, customers } from "../../mock/masters";
 import type { QuotationFormValues } from "../../schema";
-import { Field, SelectInput, TextInput } from "../ui";
+import { Field, FormSelect, TextInput } from "../ui";
 
 export function QuotationInfoForm() {
   const {
@@ -36,29 +36,23 @@ export function QuotationInfoForm() {
         <TextInput type="date" {...register("docDate")} />
       </Field>
       <Field label="Customer" required error={errors.customerId?.message}>
-        <SelectInput
-          options={customers}
-          {...register("customerId", { onChange: (e) => onCustomerChange(e.target.value) })}
-        />
+        <FormSelect<QuotationFormValues> name="customerId" options={customers} onValueChange={onCustomerChange} />
       </Field>
       <Field label="Shipping Address" required error={errors.shippingAddressId?.message}>
-        <SelectInput options={shippingOptions} {...register("shippingAddressId")} />
+        <FormSelect<QuotationFormValues> name="shippingAddressId" options={shippingOptions} />
       </Field>
       <Field label="Invoice Address" required error={errors.invoiceAddressId?.message}>
-        <SelectInput options={invoiceOptions} {...register("invoiceAddressId")} />
+        <FormSelect<QuotationFormValues> name="invoiceAddressId" options={invoiceOptions} />
       </Field>
 
       <Field label="Due Date" required error={errors.dueDate?.message}>
         <TextInput type="date" {...register("dueDate")} />
       </Field>
       <Field label="Currency" required error={errors.currency?.message}>
-        <SelectInput
-          options={currencies}
-          {...register("currency", { onChange: (e) => onCurrencyChange(e.target.value) })}
-        />
+        <FormSelect<QuotationFormValues> name="currency" options={currencies} onValueChange={onCurrencyChange} />
       </Field>
       <Field label="Exchange Rate">
-        <TextInput readOnly placeholder="Exchange Rate" {...register("exchangeRate")} />
+        <TextInput readOnly tabIndex={-1} placeholder="Exchange Rate" {...register("exchangeRate")} />
       </Field>
       <Field label="Ref.">
         <TextInput maxLength={50} {...register("ref")} />

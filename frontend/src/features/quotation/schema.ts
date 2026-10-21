@@ -67,7 +67,8 @@ export const quotationSchema = z
     }),
     tax: z.object({
       enabled: z.boolean(),
-      code: z.string(),
+      /** อัตราภาษีเป็น % เช่น "7" */
+      rate: decimalString,
       includeInPrice: z.boolean(),
     }),
     serviceCharges: z.array(serviceChargeSchema),
