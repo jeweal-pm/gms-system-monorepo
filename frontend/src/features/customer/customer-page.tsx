@@ -4,7 +4,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useForm, useWatch, type FieldErrors, type Path } from "react-hook-form";
+import { cx } from "@/components/ui/button";
 import { ToastProvider, useToast } from "@/components/ui/toast";
+import { DRAWER_PUSH_CLASS, useDrawerState } from "@/lib/drawer-layout";
 import type { PartnerAccess } from "@/features/partner/access";
 import { invoiceAddressType, shippingAddressType } from "@/features/partner/address-types";
 import { AddressListCard } from "@/features/partner/components/address-list-card";
@@ -19,7 +21,6 @@ import {
   FormSkeleton,
   PartnerAccessGuard,
   printDateFormatter,
-  useDrawerPreference,
 } from "@/features/partner/components/partner-page-parts";
 import { PartnerPrintView } from "@/features/partner/components/partner-print-view";
 import type { PartnerEntity } from "@/features/partner/entity";
@@ -44,7 +45,6 @@ import {
 import { CUSTOMER_ADDRESS_ARRAYS, customerFormSchema, emptyCustomerForm, type CustomerFormValues } from "./schema";
 
 const FORM_ID = "customer-form";
-const DRAWER_STORAGE_KEY = "gms.customer.drawerOpen";
 /** Permission menu key `customer` (FE-CUS-004); wording for the shared Partner Master components. */
 const CUSTOMER: PartnerEntity = { key: "customer", singular: "Customer", plural: "Customers" };
 const DRAWER_ID = partnerDrawerId(CUSTOMER);
@@ -79,7 +79,7 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
   const [editing, setEditing] = useState(false);
   /** The saved customer open before Create Customer / Duplicate, restored by Cancel (ADR-0021 §3). */
   const [previousId, setPreviousId] = useState<string | null>(null);
-  const drawer = useDrawerPreference(DRAWER_STORAGE_KEY);
+  const drawer = useDrawerState();
   const drawerOpen = drawer.open;
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [pendingDiscard, setPendingDiscard] = useState<(() => void) | null>(null);
@@ -375,7 +375,8 @@ function CustomerWorkspace({ access }: { access: PartnerAccess }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-gms-page">
       <div className="relative flex min-h-0 flex-1">
-        <div className="relative min-w-0 flex-1 overflow-y-auto p-4 sm:pb-6 sm:pl-6 sm:pr-10 sm:pt-6">
+        {/* On a PC the open drawer pushes the content; on a tablet it overlays (owner 2026-10-21, was overlay-only). */}
+        <div className={cx("relative min-w-0 flex-1 overflow-y-auto p-4 sm:pb-6 sm:pl-6 sm:pr-10 sm:pt-6", drawerOpen && DRAWER_PUSH_CLASS)}>
           <PartnerPageHeader
             entity={CUSTOMER}
             formId={FORM_ID}

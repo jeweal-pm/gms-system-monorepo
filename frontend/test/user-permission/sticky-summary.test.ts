@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { PermissionMatrix } from "@/features/user-permission/components/permission-matrix";
 import { locationSummary, PersonalSummaryBar, SUMMARY_BAR_HEIGHT } from "@/features/user-permission/components/personal-summary-bar";
 import { emptyUserForm, type UserFormValues } from "@/features/user-permission/schema";
+import { DRAWER_PUSH_CLASS, PC_LAYOUT_QUERY } from "@/lib/drawer-layout";
 import { isScrolledPast } from "@/features/user-permission/use-scrolled-past";
 
 /** UT-UP-STICKY-01…05: the page scrolls and a compact Personal Information summary sticks (owner 2026-10-21). */
@@ -59,19 +60,34 @@ describe("PersonalSummaryBar", () => {
 });
 
 describe("PermissionMatrix", () => {
-  it("UT-UP-STICKY-04 the table is not height-limited; its header sticks below the 96 px summary only when it fits", () => {
+  it("UT-UP-STICKY-04 the table is not height-limited and its header and Select All always stick below the summary", () => {
     const html = renderToStaticMarkup(createElement(PermissionMatrix, { nodes: [], values: {}, collapsed: new Set<string>(), onToggleGroup: () => {}, forceExpand: false }));
-    expect(html).not.toContain("overflow-auto");
-    expect(html).toContain("@min-[880px]:overflow-visible");
-    expect(html).toContain("min-w-[880px]");
-    expect(html).toContain("z-20 @min-[880px]:sticky @min-[880px]:top-[95px]");
+    // No scrolling wrapper: it would capture the sticky rows (owner 2026-10-21).
+    expect(html).not.toMatch(/overflow-(x-)?auto/);
+    expect(html).toContain("min-w-[640px]");
+    expect(html).toContain("@max-[720px]:w-[24%]");
     // Each layer overlaps the one above by 1 px, so zoom rounding leaves no seam.
-    expect(html).toContain("z-10 bg-gms-surface-muted @min-[880px]:sticky @min-[880px]:top-[136px]");
-    // Narrower than the table, the rows are not sticky (no offset inside the sideways-scrolling wrapper).
-    expect(html).not.toMatch(/class="[^"]*(?<!:)sticky /);
+    expect(html).toContain("sticky top-[95px] z-20");
+    expect(html).toContain("sticky top-[136px] z-10");
+    expect(html).toContain("text-gms-label @min-[880px]:text-gms-body");
   });
 
   it("UT-UP-STICKY-05 summary height + its 24 px gap equals the table's sticky offset", () => {
     expect(24 + SUMMARY_BAR_HEIGHT).toBe(96);
+  });
+});
+
+describe("Users drawer layout", () => {
+  it("UT-UP-STICKY-06 on a PC the open drawer pushes the content; on a touch tablet it overlays", () => {
+    expect(DRAWER_PUSH_CLASS).toBe("pointer-fine:min-[1366px]:pr-[360px]! min-[1440px]:pr-[360px]!");
+  });
+});
+
+describe("Users drawer default", () => {
+  it("UT-UP-STICKY-07 open by default on a PC, closed on an iPad in landscape (same rule as the push layout)", () => {
+    expect(PC_LAYOUT_QUERY).toBe("(min-width: 1440px), (pointer: fine) and (min-width: 1366px)");
+    // The push class and the default-open query describe the same screens.
+    expect(DRAWER_PUSH_CLASS).toContain("min-[1440px]:");
+    expect(DRAWER_PUSH_CLASS).toContain("pointer-fine:min-[1366px]:");
   });
 });
