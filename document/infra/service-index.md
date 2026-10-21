@@ -44,3 +44,17 @@ profile selection. Exact target image tags/digests, CPU allocation, production m
 auth/license contract and migration approval remain pending. Research date: 2026-10-20;
 review-by: 2026-11-20 for the Nginx candidate, or sooner on an image, host, advisory, service contract or profile
 change. Existing service rows above remain the current inventory until an approved cutover.
+
+## Local GMS ingress preview (stage A)
+
+`docker-compose.gms.dev.yml` and `docker/nginx/gms-dev.conf` add the approved local-only
+ingress preview on `127.0.0.1:8080`, using the researched Nginx unprivileged image pinned
+to the Linux/amd64 manifest. It routes `/api/auth/*` directly to the current auth service,
+keeps remaining app traffic through Next.js for rollback/parity, and rejects `/internal/*`
+and `/_storage/*`; it does not claim master route cutover. Verified 2026-10-21: merged
+Compose config valid, `nginx -t` passed, Nginx health 200, `/login` 200 (1.03 seconds after
+the initial compile), `/api/auth/get-session` 200, existing `system.health` tRPC 200,
+`/internal/v1/customers` 404; Postgres and partner are healthy.
+The full-stack preview runs on the development workstation with watch-mode limits and is
+not measured against the production 4 GB/2 vCPU host. Stage B/C service replacement and
+production profile/capacity remain open in GP-AUTH/GP-MASTER/GP-INF/GP-CUT.

@@ -13,3 +13,9 @@
 | GP-MT-06 | Backfill row count/checksum/index parity and old route rollback | PG16/18 migrations + staging verification |
 
 Record actual command/evidence per changed module, function and API before handoff. Parent routes final code through sec-auditor and security-auditor; status **pending, not run**. A repeated integration data connection failure follows the three-pass investigation rule.
+
+## Customer/vendor router slice (2026-10-21)
+
+- Added a domain tRPC router for current customer/vendor services with bounded list input, strict UUID/body validation, exact menu/action grants, current authorization/license fail-closed checks, CSRF requirement for mutations, and sanitized domain-error mapping. It is intentionally not mounted because the verified JWT/current-authorization/license/CSRF adapter is not implemented; GP-MASTER-01/02 remain open.
+- `pnpm --filter @gem-crm/backend-api-partner test -- --maxWorkers=1`: **282 passed / 15 skipped**. Typecheck, lint, build, and `git diff --check` passed. No HTTP integration or live auth context test was run for this unmounted slice.
+- Source manifest: HEAD `d2ac3f3` plus SHA-256 `21c830e4f1c92567fccd049fdb9ddd090696f7a1d15cceea931efcd71493575a`; focused parent fallback security reviews are linked above in the auth verification document. The clear verdict is limited to the staged router and authorization guard and does not approve mounting it.
