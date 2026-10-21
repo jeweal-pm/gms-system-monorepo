@@ -4,13 +4,15 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useForm, useWatch, type FieldErrors, type Path } from "react-hook-form";
+import { cx } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import type { PartnerAccess } from "@/features/partner/access";
 import { DiscardChangesDialog } from "@/features/partner/components/discard-changes-dialog";
 import { PartnerDrawer, partnerDrawerId, type PartnerListQuery } from "@/features/partner/components/partner-drawer";
 import { PartnerPageHeader, type PartnerMode } from "@/features/partner/components/partner-page-header";
-import { DetailLoadError, DrawerToggle, FormErrorBanner, PartnerAccessGuard, printDateFormatter, useDrawerPreference } from "@/features/partner/components/partner-page-parts";
+import { DetailLoadError, DrawerToggle, FormErrorBanner, PartnerAccessGuard, printDateFormatter } from "@/features/partner/components/partner-page-parts";
+import { DRAWER_PUSH_CLASS, useDrawerState } from "@/lib/drawer-layout";
 import { useDebouncedSearch, useUnsavedChangesPrompt } from "@/features/partner/hooks";
 import {
   isNotFound,
@@ -62,7 +64,7 @@ function StoneWorkspace({ page, access }: { page: StonePage; access: PartnerAcce
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [previousId, setPreviousId] = useState<string | null>(null);
-  const drawer = useDrawerPreference(`gms.stone-master.${page.slug}.drawerOpen`);
+  const drawer = useDrawerState();
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteError, setDeleteError] = useState<string | undefined>();
   const [pendingDiscard, setPendingDiscard] = useState<(() => void) | null>(null);
@@ -366,7 +368,8 @@ function StoneWorkspace({ page, access }: { page: StonePage; access: PartnerAcce
   return (
     <div className="flex h-full min-h-0 flex-col bg-gms-page">
       <div className="relative flex min-h-0 flex-1">
-        <div className="relative flex min-w-0 flex-1 flex-col overflow-y-auto p-4 sm:pb-6 sm:pl-6 sm:pr-10 sm:pt-6 print:hidden">
+        {/* On a PC the open drawer pushes the content; on a tablet it overlays (owner 2026-10-21). */}
+        <div className={cx("relative flex min-w-0 flex-1 flex-col overflow-y-auto p-4 sm:pb-6 sm:pl-6 sm:pr-10 sm:pt-6 print:hidden", drawer.open && DRAWER_PUSH_CLASS)}>
           <PartnerPageHeader
             entity={entity}
             formId={FORM_ID}
