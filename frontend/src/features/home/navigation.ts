@@ -44,6 +44,7 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   vendor: "/setup/vendor",
   customer: "/setup/customer",
   "stone-master": stonePageHref(DEFAULT_STONE_SLUG),
+  quotation: "/pre-sale/quotation",
 };
 
 export function navigationHref(item: NavigationItem): string {
@@ -179,7 +180,15 @@ const approveLink = link("approve", "Approve", ApproveIcon);
  */
 export const sidebarSections: NavSection[] = [
   { id: "main", items: [homeLink, dashboardLink, setupLink, approveLink] },
-  { id: "pre-sale", title: "Pre-Sale", items: [link("quotation", "Quotation", QuotationIcon), link("reserve", "Reserve", ReserveIcon)] },
+  {
+    id: "pre-sale",
+    title: "Pre-Sale",
+    items: [
+      // quotation (draft ADR-0001, mock data): real page; stays active on /pre-sale/quotation/[id].
+      { ...link("quotation", "Quotation", QuotationIcon, REAL_PAGE_HREFS.quotation), activePrefix: REAL_PAGE_HREFS.quotation },
+      link("reserve", "Reserve", ReserveIcon),
+    ],
+  },
   {
     id: "memo",
     title: "Memo",
