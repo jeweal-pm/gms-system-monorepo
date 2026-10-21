@@ -9,11 +9,12 @@ describe("navigationHref", () => {
     expect(navigationHref({ label: "Vendor", slug: "vendor" })).toBe("/setup/vendor");
     expect(navigationHref({ label: "Customer", slug: "customer" })).toBe("/setup/customer");
     expect(navigationHref({ label: "User and Permission", slug: "user-and-permission" })).toBe("/setup/user-permission");
+    expect(navigationHref({ label: "Quotation", slug: "quotation" })).toBe("/pre-sale/quotation");
   });
 
   it("UT-HOME-02 an explicit href wins; menus without a page keep their placeholder", () => {
     expect(navigationHref({ label: "Vendor", slug: "vendor", href: "/somewhere" })).toBe("/somewhere");
-    expect(navigationHref({ label: "Quotation", slug: "quotation" })).toBe("/modules/quotation");
+    expect(navigationHref({ label: "Reserve", slug: "reserve" })).toBe("/modules/reserve");
     expect(navigationHref({ label: "Service Fee", slug: "labor-name" })).toBe("/modules/labor-name");
   });
 });
