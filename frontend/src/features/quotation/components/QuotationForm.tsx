@@ -9,7 +9,6 @@ import { FormProvider, useFieldArray, useForm, useWatch } from "react-hook-form"
 import { deleteQuotation, previewDocNo, saveQuotation } from "../api";
 import { calculateTotals } from "../lib/calculate";
 import { emptyLine, emptyQuotation, newKey } from "../lib/defaults";
-import { taxCodes } from "../mock/masters";
 import type { StockItem } from "../mock/stock";
 import { isFilledLine, quotationSchema, type QuotationFormValues, type QuotationLine } from "../schema";
 import { QuotationHeader } from "./header/QuotationHeader";
@@ -48,8 +47,7 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
 
   const values = useWatch({ control }) as QuotationFormValues;
   const lines = useMemo(() => values.lines ?? [], [values.lines]);
-  const taxRate = taxCodes.find((t) => t.value === values.tax?.code)?.rate ?? "0";
-  const totals = useMemo(() => calculateTotals(values, taxRate), [values, taxRate]);
+  const totals = useMemo(() => calculateTotals(values), [values]);
 
   const readOnly = mode === "view";
   const status = values.status ?? "DRAFT";
@@ -175,8 +173,9 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
 
   return (
     <FormProvider {...form}>
-      <div className="relative flex min-h-full bg-white">
-        <div className="min-w-0 flex-1">
+      {/* AppShell <main> เป็นตัว scroll: ฝั่งซ้าย scroll เอง, editor panel สูงเต็มจอไม่ถูกตัด */}
+      <div className="relative flex h-full bg-white">
+        <div className="min-w-0 flex-1 overflow-y-auto">
           <QuotationHeader
             docNo={docNo}
             isPreview={!saved?.docNo}
@@ -223,8 +222,10 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
                 )}
               </div>
 
-              <fieldset disabled={readOnly} className="flex items-start gap-4">
+              <div className="flex items-start gap-4">
+                {/* อยู่นอก fieldset เพื่อให้เลื่อนดูรูปได้ใน view mode */}
                 <ItemPhotoBox index={selectedIndex} readOnly={readOnly} />
+                <fieldset disabled={readOnly} className="min-w-0 flex-1">
                 <ItemTable
                   lines={lines}
                   currency={values.currency ?? ""}
@@ -245,7 +246,8 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
                   onRowAction={onRowAction}
                   onAddRow={addRow}
                 />
-              </fieldset>
+                </fieldset>
+              </div>
             </div>
 
             {editorIndex === null && <RailButtons active={railPanel} onChange={setRailPanel} />}
@@ -261,7 +263,7 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
         </div>
 
         {editorIndex !== null && (
-          <div className="sticky top-0 h-screen">
+          <div className="h-full">
             <ItemEditorPanel
               index={editorIndex}
               total={lines.length}
@@ -276,7 +278,7 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
         )}
 
         {railPanel && editorIndex === null && (
-          <fieldset disabled={readOnly && railPanel === "summary"} className="fixed top-24 right-16 bottom-6 z-30 w-[440px]">
+          <fieldset disabled={readOnly && railPanel === "summary"} className="absolute top-4 right-16 bottom-4 z-30 w-[440px]">
             <RailPanelView panel={railPanel} totals={totals} currency={values.currency ?? ""} onClose={() => setRailPanel(null)} />
           </fieldset>
         )}

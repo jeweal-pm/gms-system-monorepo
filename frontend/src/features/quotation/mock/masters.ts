@@ -65,11 +65,6 @@ export const cuttings = unique("cutting");
 export const qualities = unique("quality");
 export const cerTypes: Option[] = ["GIA", "GRS", "AIGS", "GIT", "SSEF"].map((v) => ({ value: v, label: v }));
 
-export const taxCodes: (Option & { rate: string })[] = [
-  { value: "VAT7", label: "VAT 7%", rate: "0.07" },
-  { value: "VAT0", label: "VAT 0%", rate: "0" },
-];
-
 export const serviceChargeTypes: Option[] = [
   { value: "SHIPPING", label: "Shipping" },
   { value: "HANDLING", label: "Handling fee" },
