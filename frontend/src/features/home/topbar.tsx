@@ -144,7 +144,7 @@ export function Topbar({
         aria-label="Open main menu"
         aria-expanded={isNavigationOpen}
         aria-controls="mobile-navigation"
-        className={`${topbarIconButton} -ml-1.5 md:hidden`}
+        className={`${topbarIconButton} -ml-1.5 lg:hidden`}
       >
         <Menu aria-hidden size={20} strokeWidth={1.5} />
       </button>

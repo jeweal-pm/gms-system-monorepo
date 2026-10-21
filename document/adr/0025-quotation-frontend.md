@@ -143,7 +143,7 @@ discountAmount       = PERCENT ? subtotal × value / 100 : value
 totalAfterDiscount   = subtotal − discountAmount
 -- tax.includeInPrice = false
 priceBeforeTax       = totalAfterDiscount
-taxAmount            = tax.enabled ? priceBeforeTax × rate : 0
+taxAmount            = tax.enabled ? priceBeforeTax × (tax.rate ÷ 100) : 0      -- tax.rate กรอกเองเป็น %
 -- tax.includeInPrice = true (ราคารวม VAT แล้ว → ถอด VAT ออก)
 priceBeforeTax       = totalAfterDiscount ÷ (1 + rate)
 taxAmount            = totalAfterDiscount − priceBeforeTax
@@ -238,3 +238,13 @@ grandTotal           = priceBeforeTax + taxAmount + serviceCharges + laborAmount
 3. From Stock modal (mock) + photo box + item note
 4. Right rail (Daybook / Summary panel) + mode view/edit + status stepper
 5. เชื่อม backend (ADR แยก)
+
+---
+
+## 7. Revision 2026-10-21 (feedback จาก owner)
+
+- **Photo:** viewer เลื่อนดูทีละรูป (1…4) พร้อมตัวนับ `Photo · n / N`, thumbnail และมงกุฎสำหรับตั้งรูปหลัก (รูปหลัก = `photos[0]`) เลื่อนดูได้แม้อยู่ใน view mode
+- **Select:** ใช้ dropdown แบบ custom (`SelectMenu` / `FormSelect`) แทน native `<select>`
+- **Tax:** เปลี่ยนจาก dropdown เป็นช่องกรอก % (`tax.rate`, ค่าเริ่มต้น 7)
+- **Stock ID / Location:** กล่องสีเทา กรอกไม่ได้ แสดงค่าเมื่อมาจาก From Stock เท่านั้น ส่วน Lot กรอกได้ในแถว manual
+- **ช่องตัวเลข** (ราคา, จำนวน, น้ำหนัก, %, ค่าบริการ, ค่าแรง): กรองตัวอักษรออก (`sanitizeDecimal`) เหลือตัวเลขและจุดทศนิยมจุดเดียว

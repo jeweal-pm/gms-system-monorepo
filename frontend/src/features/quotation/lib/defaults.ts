@@ -46,7 +46,7 @@ export function emptyQuotation(): QuotationFormValues {
     ref: "",
     lines: Array.from({ length: DEFAULT_EMPTY_ROWS }, emptyLine),
     discount: { enabled: false, type: "PERCENT", value: "" },
-    tax: { enabled: false, code: "VAT7", includeInPrice: false },
+    tax: { enabled: false, rate: "7", includeInPrice: false },
     serviceCharges: [],
     labor: { enabled: false, work: "", basis: "PCS", qty: "", rate: "" },
     documentNote: "",

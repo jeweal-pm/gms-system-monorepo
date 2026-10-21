@@ -22,11 +22,8 @@ export function lineAmount(line: Pick<QuotationLine, "priceUnit" | "pcs" | "weig
 
 type CalcInput = Pick<QuotationFormValues, "lines" | "discount" | "tax" | "serviceCharges" | "labor">;
 
-/**
- * Pure calculation ของใบเสนอราคา (FE ใช้ preview; ภายหลัง backend ใช้สูตรเดียวกัน)
- * @param taxRate อัตราภาษีเป็นสัดส่วน เช่น "0.07"
- */
-export function calculateTotals(values: CalcInput, taxRate: string): QuotationTotals {
+/** Pure calculation ของใบเสนอราคา (FE ใช้ preview; ภายหลัง backend ใช้สูตรเดียวกัน) */
+export function calculateTotals(values: CalcInput): QuotationTotals {
   const lines = values.lines.filter(isFilledLine);
 
   const totalPcs = add(...lines.map((l) => dec(l.pcs)));
@@ -44,7 +41,7 @@ export function calculateTotals(values: CalcInput, taxRate: string): QuotationTo
   let priceBeforeTax = totalAfterDiscount;
   let taxAmount = ZERO;
   if (values.tax.enabled) {
-    const rate = dec(taxRate);
+    const rate = div(dec(values.tax.rate), dec(100));
     if (values.tax.includeInPrice) {
       priceBeforeTax = round(div(totalAfterDiscount, add(dec(1), rate)));
       taxAmount = sub(totalAfterDiscount, priceBeforeTax);

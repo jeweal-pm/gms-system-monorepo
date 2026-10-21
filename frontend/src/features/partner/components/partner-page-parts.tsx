@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight, ShieldAlert, Users } from "lucide-react";
 import Link from "next/link";
-import { useState, useSyncExternalStore, type ReactNode, type Ref } from "react";
+import type { ReactNode, Ref } from "react";
 import { Button, cx, focusRing } from "@/components/ui/button";
 import { isCallerLicenseCode, readDomainError } from "@/lib/trpc-error";
 import { partnerAccess, type PartnerAccess } from "../access";
@@ -14,8 +14,6 @@ import { usePermissionMine } from "../hooks";
  * page). The state machine wiring stays in each entity's `<entity>-page.tsx`.
  */
 
-/** The drawer always overlays the content (owner 2026-10-16); below this width it starts closed. */
-const PUSH_LAYOUT_QUERY = "(min-width: 1280px)";
 
 export const printDateFormatter = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Bangkok", dateStyle: "medium", timeStyle: "short" });
 
@@ -82,39 +80,6 @@ export function PartnerAccessGuard({ entity, children }: { entity: PartnerEntity
   }
 
   return <>{children(access)}</>;
-}
-
-const subscribeNever = () => () => {};
-
-/**
- * Drawer open state: the user's choice in this visit, else the remembered state (localStorage,
- * convenience only), else open on wide screens (≥ 1280 px) only. The server snapshot is "open"
- * (deterministic hydration).
- */
-export function useDrawerPreference(storageKey: string): { open: boolean; setOpen: (open: boolean) => void } {
-  const [choice, setChoice] = useState<boolean | null>(null);
-  const preferred = useSyncExternalStore(
-    subscribeNever,
-    () => {
-      try {
-        const stored = window.localStorage.getItem(storageKey);
-        if (stored !== null) return stored === "true";
-      } catch {
-        // Private mode or blocked storage.
-      }
-      return window.matchMedia(PUSH_LAYOUT_QUERY).matches;
-    },
-    () => true,
-  );
-  const setOpen = (open: boolean) => {
-    setChoice(open);
-    try {
-      window.localStorage.setItem(storageKey, String(open));
-    } catch {
-      // Convenience only (private mode or blocked storage).
-    }
-  };
-  return { open: choice ?? preferred, setOpen };
 }
 
 /** 24×40 tab that shows / hides the list drawer. */

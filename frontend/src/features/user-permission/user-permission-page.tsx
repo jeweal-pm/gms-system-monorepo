@@ -20,6 +20,7 @@ import { PersonalSummaryBar, SUMMARY_BAR_HEIGHT } from "./components/personal-su
 import { Button, cx, focusRing } from "@/components/ui/button";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import { USERS_DRAWER_ID, UsersDrawer } from "./components/users-drawer";
+import { DRAWER_PUSH_CLASS, useDrawerState } from "@/lib/drawer-layout";
 import { useLocationOptions, usePermissionCatalog, usePermissionMine, useRemovePhoto, useSaveUser, useUserDetail, useUserList } from "./hooks";
 import { countEnabled, grantsFromValues, valuesFromGrants } from "./permission-utils";
 import { emptyUserForm, userFormSchema, type UserFormValues } from "./schema";
@@ -126,7 +127,9 @@ function UserPermissionWorkspace({ access }: { access: UserAdminAccess }) {
   const session = authClient.useSession();
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [mode, setMode] = useState<PageMode>("create");
-  const [drawerOpen, setDrawerOpen] = useState(true);
+  // Open by default on a PC, closed on an iPad in landscape (owner 2026-10-21); the user's toggle wins.
+  const drawer = useDrawerState();
+  const drawerOpen = drawer.open;
   const [deleteTarget, setDeleteTarget] = useState<UserSummary | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [focusRequest, setFocusRequest] = useState<{ field: "username" | "name"; seq: number } | null>(null);
@@ -330,7 +333,7 @@ function UserPermissionWorkspace({ access }: { access: UserAdminAccess }) {
   });
 
   function closeDrawer() {
-    setDrawerOpen(false);
+    drawer.setOpen(false);
     toggleRef.current?.focus();
   }
 
@@ -360,11 +363,12 @@ function UserPermissionWorkspace({ access }: { access: UserAdminAccess }) {
     <div className="flex h-full min-h-0 flex-col bg-gms-page">
       <div className="relative flex min-h-0 flex-1">
         {/* The whole page scrolls; the table is not height-limited (owner 2026-10-21, replaces 2026-10-17). */}
-        {/* From 1600 px the open drawer sits beside the content instead of covering it (design 2026-10-21); below, the
-            drawer overlays as before so the form keeps its width. */}
+        {/* Owner 2026-10-21: on a PC (1440 px+, or 1366 px+ with a mouse/trackpad) the open drawer pushes the content aside; on
+            a touch tablet such as an iPad in landscape it overlays the content. Pointer type, not width, tells them
+            apart: an iPad Pro is as wide as a laptop. */}
         <div
           ref={scrollRef}
-          className={cx("flex min-w-0 flex-1 flex-col overflow-y-auto pb-6 pl-6 pr-10 pt-6 print:block print:overflow-visible", drawerOpen && "min-[1600px]:pr-[360px]")}
+          className={cx("flex min-w-0 flex-1 flex-col overflow-y-auto pb-6 pl-6 pr-10 pt-6 print:block print:overflow-visible", drawerOpen && DRAWER_PUSH_CLASS)}
         >
           <PageHeader
             formId={FORM_ID}
@@ -477,7 +481,7 @@ function UserPermissionWorkspace({ access }: { access: UserAdminAccess }) {
           aria-expanded={drawerOpen}
           aria-controls={USERS_DRAWER_ID}
           aria-label={drawerOpen ? "Hide users panel" : "Show users panel"}
-          onClick={() => setDrawerOpen((open) => !open)}
+          onClick={() => drawer.setOpen(!drawerOpen)}
           className={cx(
             "absolute top-4 z-40 flex h-10 w-6 items-center justify-center rounded-l-gms-sm bg-gms-primary-strong text-gms-on-primary print:hidden",
             drawerOpen ? "max-sm:hidden sm:right-80" : "right-0",

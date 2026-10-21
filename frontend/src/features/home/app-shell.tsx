@@ -90,10 +90,12 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
         Skip to content
       </a>
       {/* Only one of sidebar / rail is rendered, so landmarks and focus order stay single. The width
-          animates 150 ms after a user toggle only (not on the hydration switch), none with reduced motion. */}
+          animates 150 ms after a user toggle only (not on the hydration switch), none with reduced motion.
+          Shown from `lg` (1024 px; owner 2026-10-21): portrait tablets such as an iPad mini (768 px) get the
+          whole width and open the menu as a drawer, like phones. */}
       <aside
         id={sidebarContainerId}
-        className={`hidden h-screen shrink-0 overflow-hidden md:block ${
+        className={`hidden h-screen shrink-0 overflow-hidden lg:block ${
           showRail ? (contextNav ? "w-[calc(var(--spacing-gms-rail)+var(--spacing-gms-sidebar))]" : "w-gms-rail") : "w-gms-sidebar"
         } ${
           animateSidebarWidth ? "transition-[width] duration-150 ease-out motion-reduce:transition-none" : ""
@@ -132,7 +134,7 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
 }
 
 /**
- * Below `md` the sidebar opens as a modal drawer from the topbar menu button (FE-NAV-004): always the
+ * Below `lg` the sidebar opens as a modal drawer from the topbar menu button (FE-NAV-004): always the
  * expanded sidebar, no collapse toggle or rail; the focus trap skips links inside closed disclosures.
  */
 function MobileNavigation({ pathname, onClose }: Readonly<{ pathname: string; onClose: (returnFocus: boolean) => void }>) {
@@ -164,7 +166,7 @@ function MobileNavigation({ pathname, onClose }: Readonly<{ pathname: string; on
   }
 
   return (
-    <div className="fixed inset-0 z-40 md:hidden">
+    <div className="fixed inset-0 z-40 lg:hidden">
       <div aria-hidden className="absolute inset-0 bg-black/30" onClick={() => onClose(false)} />
       <div
         ref={panelRef}
@@ -187,7 +189,7 @@ function MobileNavigation({ pathname, onClose }: Readonly<{ pathname: string; on
 function AppShellSkeleton() {
   return (
     <div className="flex h-screen overflow-hidden bg-gms-surface" aria-busy="true" aria-label="Loading application">
-      <aside className="hidden w-gms-sidebar shrink-0 flex-col gap-[15px] border-r border-gms-border bg-gms-surface-muted px-[14px] py-4 md:flex">
+      <aside className="hidden w-gms-sidebar shrink-0 flex-col gap-[15px] border-r border-gms-border bg-gms-surface-muted px-[14px] py-4 lg:flex">
         <div className="h-9 w-[131px] animate-pulse rounded-gms-sm bg-gms-surface-sunken" />
         <div className="mt-4 space-y-4 px-2.5">
           {Array.from({ length: 14 }, (_, index) => (
