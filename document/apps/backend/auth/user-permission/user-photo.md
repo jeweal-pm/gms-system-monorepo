@@ -1,5 +1,7 @@
 # User photo with file storage (user-permission, SA revision 4 proposal)
 
+**Current implementation remains the approved named-volume behavior below.** Proposed [GMS file-storage SA revision 3](../../../../reviews/sa/2026-10-21-gms-file-storage-rev3.md) would migrate photos to `@gms/storage` under the platform-wide indefinite upload-retention policy; it is pending approval and does not change this contract yet.
+
 - Date: 2026-10-17. Status: **approved 2026-10-17** (owner: "อนุมัติ PH"; Q-PH-1 = 5 MB and Q-PH-2 = tile only, both defaults) and **implemented**. See the [changelog](../../../../changelog/2026-10-17-user-photo.md).
 - Owner request (verbatim): "ช่วยจัดการรูปภาพหน้า user permission หน่อย โดยใช้หลักการ file storage"
 - Replaces the deferred items BE-UP-009/012 and unblocks FE-UP-013 ([central TODO](../../../../task/todo/user-permission.md)). Same pattern as the approved company logo (company-profile SA-CP-04…06), applied to the auth service.

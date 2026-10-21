@@ -103,7 +103,9 @@ describe("GP-LIC-04 ordered v2 service boundary", () => {
     await expect(license.resolveCurrentStatus("user-1")).rejects.toMatchObject({ httpStatus: 503 });
     const proof = await token();
     mocks.offlineRow = { state: "ACTIVE", signed_token: proof, successful_at: new Date(Date.now() - 86_400_000), db_now: new Date() };
-    expect((await license.resolveCurrentStatus("user-1")).state).toBe("GRACE");
+    const grace = await license.resolveCurrentStatus("user-1");
+    expect(grace.state).toBe("GRACE");
+    expect(grace.fallbackUntil).toBe(new Date(mocks.offlineRow.successful_at!.getTime() + 2 * 86_400_000).toISOString());
     mocks.offlineRow = { ...mocks.offlineRow, state: "DENIED", signed_token: null, successful_at: null };
     await expect(license.resolveCurrentStatus("user-1")).rejects.toMatchObject({ code: "LICENSE_UNVERIFIABLE" });
   });

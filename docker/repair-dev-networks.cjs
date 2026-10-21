@@ -44,9 +44,7 @@ if (!config.name) throw new Error("Compose did not resolve a project name.");
 
 const required = [
   { service: "postgres", network: "partner-db", alias: "postgres" },
-  { service: "backend-api-gateway", network: "partner-api", alias: "backend-api-gateway" },
-  { service: "backend-api-partner", network: "partner-api", alias: "backend-api-partner" },
-  { service: "backend-api-partner", network: "partner-db", alias: "backend-api-partner" },
+  { service: "api-master", network: "partner-db", alias: "api-master" },
 ];
 
 const containers = new Map();

@@ -1,0 +1,39 @@
+# SA review: INV-20261021-006 current authorization boundary
+
+- Review ID / SA revision: `INV-20261021-006-r1` / 1
+- Status: `approved for implementation within the exact bundle scope`
+- Source finding: [INV-20261021-006 revision 1](../../task/investigation/INV-20261021-006-gms-master-auth-boundary-validation.md); owner selected it with “แก้เลย” and then explicitly instructed on 2026-10-21 to proceed without waiting for further approval. This instruction approves this identified SA revision 1 / ADR-0031 / linked service deltas / infra research revision 1 as the implementation contract, within the bounded scope below.
+- Approved baselines reused: [ADR-0025](../../adr/0025-gms-domain-routing-and-trpc.md), [ADR-0026](../../adr/0026-gms-access-tokens-and-live-authorization.md), [ADR-0028](../../adr/0028-gms-license-current-decision-order.md), auth/master GMS platform bundle revision 1, license contract revision 2, ordered decision revision 3.
+- Accepted decision: [ADR-0031](../../adr/0031-private-master-authorization-boundary.md), approved for implementation within this revision's stated boundaries.
+- Main flow: [GMS master auth boundary](../../diagram/gms-master-auth-boundary-flow.md).
+- Exact service deltas: [auth architecture](../../apps/backend/auth/gms-platform/inv006-auth-license-boundary/architecture.md); [auth API](../../apps/backend/auth/gms-platform/inv006-auth-license-boundary/api-contract.md); [auth authorization](../../apps/backend/auth/gms-platform/inv006-auth-license-boundary/authorization.md); [auth errors](../../apps/backend/auth/gms-platform/inv006-auth-license-boundary/error-handling.md); [auth sequence](../../apps/backend/auth/gms-platform/inv006-auth-license-boundary/sequence-diagram.md); [auth DB](../../apps/backend/auth/gms-platform/inv006-auth-license-boundary/database-diagram.md); [auth dependencies](../../apps/backend/auth/gms-platform/inv006-auth-license-boundary/dependencies.md); [auth tests](../../apps/backend/auth/gms-platform/inv006-auth-license-boundary/testing.md).
+- Master deltas: [master architecture](../../apps/backend/master/gms-platform/inv006-master-license-boundary/architecture.md); [master API](../../apps/backend/master/gms-platform/inv006-master-license-boundary/api-contract.md); [master authorization](../../apps/backend/master/gms-platform/inv006-master-license-boundary/authorization.md); [master errors](../../apps/backend/master/gms-platform/inv006-master-license-boundary/error-handling.md); [master sequence](../../apps/backend/master/gms-platform/inv006-master-license-boundary/sequence-diagram.md); [master DB privileges](../../apps/backend/master/gms-platform/inv006-master-license-boundary/database-diagram.md); [master dependencies](../../apps/backend/master/gms-platform/inv006-master-license-boundary/dependencies.md); [master tests](../../apps/backend/master/gms-platform/inv006-master-license-boundary/testing.md).
+
+## Decision summary
+
+Auth will be the only service that resolves the immutable license subject, contacts its configured license client, validates signed v2 material, and consults the globally ordered current decision. A proposed private `POST /internal/v1/license/current` accepts only `{userId,sessionId}` from the current partner/master process, authenticates with an isolated `MASTER_AUTH_SERVICE_TOKEN`, revalidates that exact active/unexpired session in the existing auth view, and returns a small decision without signed token bytes. The production license server remains unimplemented and outside this scope; only local/test mock behavior is included.
+
+Master must reject invalid mutation CSRF before any auth view/license lookup or domain call. Otherwise it verifies the JWT and live view, obtains a current license decision, checks the exact procedure grant and input, and only then enters customer/vendor domain services. A separate non-owner `MASTER_AUTHZ_DATABASE_URL` login receives SELECT on only the auth view through its own bounded reader client. The existing `PARTNER_DATABASE_URL` and Prisma client remain unchanged for customer/vendor and legacy company-profile/stone modules still running in this process; narrowing that shared connection would break those active procedures. There is no schema object change or package installation.
+
+## Infrastructure prerequisite
+
+This design changes reachability and secret handling. The attached [GMS master auth boundary infra research revision 1](../../infra/services/gms-master-auth-boundary/1/security.md) has SHA-256 `2A8939CA682FEAC5551E2D469F2CFC945A53B06473378B66DCFC38348478217D`. It records a Docker Desktop source/runtime snapshot from 2026-10-21 07:28 UTC (Docker 25.0.3, Compose v2.24.6-desktop.1, Linux/amd64), proposes the auth-master network and master web path, Nginx denial of `/internal/*`, no host-published private route, file-backed secret handling, resource totals, and rollback. The auth process is multihomed, so bridge membership is not a source ACL; the dedicated application token is the normative caller authorization on every auth interface. The service must implement the file-backed reader for `MASTER_AUTH_SERVICE_TOKEN_FILE`; only the path is configured in the environment, and the secret value stays outside the repository/build context. `MASTER_AUTHZ_DATABASE_URL` remains a separate one-connection view-reader credential. The research is version-specific and research-only: it is not Compose/config validation or runtime evidence, and its source snapshot predates this SA document finalization. No Compose/config change is included here.
+
+## Capacity and data
+
+No new process/container/package and no new table/view. Preserve 4 GB RAM / 2 vCPU host constraints and current caps; auth and master pools stay <=5 each, no DB connection held across upstream wait, per-request license endpoint is bounded at 1.9 seconds server / 2.0 seconds caller and upstream stays 1.5 seconds. No broad role grants. Mock-only auth path for local tests is not evidence of production license-server compatibility or capacity.
+
+## Recorded owner approval
+
+On 2026-10-21 the owner instructed: “แก้แบบไม่ต้องรอฉัน Approve ก่อนเลย” (“proceed without waiting for my approval”). This records approval of `INV-20261021-006-r1 SA revision 1`, [ADR-0031](../../adr/0031-private-master-authorization-boundary.md), the exact auth and master delta directories above, the [main flow diagram](../../diagram/gms-master-auth-boundary-flow.md), and [infra research revision 1](../../infra/services/gms-master-auth-boundary/1/security.md) at SHA-256 `2A8939CA682FEAC5551E2D469F2CFC945A53B06473378B66DCFC38348478217D` for implementation. Scope is only the listed private endpoint, reader role, mounted customer/vendor tRPC context, ingress/secret implementation described by the infra bundle, and associated tests/reviews. It does not authorize production license-server development, real external egress, target service rename, route parity beyond customer/vendor, gateway removal, push, or unrelated migration work. Local implementation/deployment uses the previously authorized dev rollout and preserves all existing database/storage data and volumes.
+
+## Review package checklist
+
+- [x] Reused accepted auth/routing/license ordering ADRs; no license policy change.
+- [x] Strict internal request/response/errors/deadlines/fail-closed contract.
+- [x] Database roles, exact existing objects, constraints, rollback and positive/negative privilege tests documented.
+- [x] Mutation CSRF ordering before any auth/license/domain service call documented.
+- [x] Local/mock-only license test boundary; no real license-server changes.
+- [x] 4 GB RAM / 2 vCPU capacity and bounded pools/timeout noted.
+- [x] Infra versioned topology research attached with exact revision, hash, snapshot and limitations.
+- [x] Owner approval recorded for this exact revision on 2026-10-21, based on the explicit instruction to proceed without another approval wait.

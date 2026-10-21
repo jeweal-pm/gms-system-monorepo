@@ -5,10 +5,10 @@ priority, and scope. This applies to `sec-auditor`, focused `security-auditor`, 
 `compliance-auditor` findings, and infra container reviews. Review mode never edits the
 audited config/source; infra configuration implementation is a separate selected task.
 
-Frontend/backend final code is reviewed by both auditors under the
-[security review gate](../../workflow/security-review.md). Reviewers record clean or
-advisory results against the final source revision in the feature verification document.
-Actionable findings enter this queue; a clean scoped review creates no ticket.
+Use one focused review for security-sensitive code changes as described in the
+[security review workflow](../../workflow/security-review.md). Record the result in the
+existing feature verification document. Actionable findings enter this queue once; a clean
+scoped review creates no ticket.
 
 Frontend/backend also record an unresolved integration data-connection test here after
 the shared three-pass correction limit, or earlier when progress/verification is
@@ -28,14 +28,16 @@ the dependent TODO and preserve its blocked/needs-validation status.
    validation gaps; start `pending-review`. Only confirmed vulnerabilities receive severity.
    For integration blockers, record the exact failed cases, data boundary, three-pass
    history or earlier stop reason, and missing prerequisite; start `needs-validation`.
-3. Present ticket links for user review. An instruction to fix an identified ticket revision
-   is approval for that scope; record the actual instruction. Audit discovery itself is
-   never approval. Priority is the owner's decision.
+3. Present the canonical ticket once. Approval of its exact revision authorizes immediate
+   implementation. A direct user instruction to fix the issue also records selection and
+   approval; do not request a second selection. Audit discovery without user direction is
+   not approval. Priority is the owner's decision.
 4. `frontend แก้ investigation INV-...`, `backend แก้ investigation INV-...`,
    `infra แก้ investigation INV-...`, or `devops แก้ investigation INV-...` selects
    that role's ticket. If the revision is ambiguous, resolve it before edits. Never select by mtime
-   or drain the entire queue automatically. SA approval remains necessary for changed
-   service contracts, schema, flow, or dependencies.
+   or drain the entire queue automatically. Do not duplicate the ticket or add a review
+   document for the same cause. SA approval remains necessary only for contract/schema/flow/
+   dependency changes outside an already-approved design.
 5. Mark `in-progress` when the assigned implementation begins. Record the fix, verification,
    and linked `document/task/done/` report. Mark `resolved` only when the stated criteria
    and category-specific verification are met. Preserve the original evidence/revisions.

@@ -15,4 +15,5 @@ document
 test-results
 playwright-report
 .pnpm-store
-backend-api-partner/storage
+backend-api-master/storage
+backend-api-auth/storage

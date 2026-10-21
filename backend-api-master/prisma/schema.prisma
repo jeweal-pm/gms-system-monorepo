@@ -1,0 +1,374 @@
+// api-master currently owns PostgreSQL schemas "partner" (ADR-0018, SA customer rev 1) and "stone"
+// (stone master, ADR-0024; owner 2026-10-19).
+// Migrations live in partner._prisma_migrations (D-01). Raw CHECK constraints are added in the
+// migration SQL (database-diagram.md); Prisma does not diff CHECKs.
+
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["partner", "stone"]
+}
+
+enum AddressType {
+  INVOICE
+  SHIPPING
+
+  @@map("address_type")
+  @@schema("partner")
+}
+
+model Customer {
+  id           String            @id @default(uuid()) @db.Uuid
+  name         String            @db.VarChar(200)
+  nameKey      String            @map("name_key") @db.VarChar(200)
+  /// ADR-0021: required; rows without a code were backfilled with the running number (C001 …).
+  code         String            @db.VarChar(120)
+  codeKey      String            @unique(map: "customer_code_key_key") @map("code_key") @db.VarChar(120)
+  currencyCode String            @map("currency_code") @db.Char(3)
+  active       Boolean           @default(true)
+  firstName    String            @map("first_name") @db.VarChar(100)
+  middleName   String?           @map("middle_name") @db.VarChar(100)
+  lastName     String?           @map("last_name") @db.VarChar(100)
+  phoneE164    String?           @map("phone_e164") @db.VarChar(16)
+  phoneCountry String?           @map("phone_country") @db.Char(2)
+  email        String            @db.VarChar(254)
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamp(3)
+  /// Optimistic version; written explicitly by the service (D-05), not @updatedAt.
+  updatedAt    DateTime          @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy    String            @map("created_by") @db.VarChar(64)
+  updatedBy    String            @map("updated_by") @db.VarChar(64)
+  addresses    CustomerAddress[]
+
+  @@index([nameKey, id], map: "customer_name_key_id_idx")
+  @@index([active, nameKey, id], map: "customer_active_name_key_id_idx")
+  @@map("customer")
+  @@schema("partner")
+}
+
+model CustomerAddress {
+  id          String      @id @default(uuid()) @db.Uuid
+  customerId  String      @map("customer_id") @db.Uuid
+  type        AddressType
+  position    Int         @db.SmallInt
+  name        String      @db.VarChar(200)
+  taxId       String?     @map("tax_id") @db.VarChar(32)
+  address     String      @db.VarChar(500)
+  countryCode String      @map("country_code") @db.Char(2)
+  state       String      @db.VarChar(100)
+  city        String      @db.VarChar(100)
+  postcode    String      @db.VarChar(20)
+  isDefault   Boolean     @default(false) @map("is_default")
+  customer    Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, type, position], map: "customer_address_position_key")
+  @@unique([customerId, type], where: { isDefault: true }, map: "customer_address_one_default_key")
+  @@map("customer_address")
+  @@schema("partner")
+}
+
+// vendor SA revision 1 / ADR-0019: invoice addresses only (no `type` column), no relation to customer.
+model Vendor {
+  id           String          @id @default(uuid()) @db.Uuid
+  name         String          @db.VarChar(200)
+  nameKey      String          @map("name_key") @db.VarChar(200)
+  /// ADR-0021: required; rows without a code were backfilled with the running number (V001 …).
+  code         String          @db.VarChar(120)
+  codeKey      String          @unique(map: "vendor_code_key_key") @map("code_key") @db.VarChar(120)
+  currencyCode String          @map("currency_code") @db.Char(3)
+  active       Boolean         @default(true)
+  firstName    String          @map("first_name") @db.VarChar(100)
+  middleName   String?         @map("middle_name") @db.VarChar(100)
+  lastName     String?         @map("last_name") @db.VarChar(100)
+  phoneE164    String?         @map("phone_e164") @db.VarChar(16)
+  phoneCountry String?         @map("phone_country") @db.Char(2)
+  email        String          @db.VarChar(254)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamp(3)
+  /// Optimistic version; written explicitly by the service (customer D-05), not @updatedAt.
+  updatedAt    DateTime        @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy    String          @map("created_by") @db.VarChar(64)
+  updatedBy    String          @map("updated_by") @db.VarChar(64)
+  addresses    VendorAddress[]
+
+  @@index([nameKey, id], map: "vendor_name_key_id_idx")
+  @@index([active, nameKey, id], map: "vendor_active_name_key_id_idx")
+  @@map("vendor")
+  @@schema("partner")
+}
+
+/// Invoice addresses only (ADR-0019 §3); no `type` column.
+model VendorAddress {
+  id          String  @id @default(uuid()) @db.Uuid
+  vendorId    String  @map("vendor_id") @db.Uuid
+  position    Int     @db.SmallInt
+  name        String  @db.VarChar(200)
+  taxId       String? @map("tax_id") @db.VarChar(32)
+  address     String  @db.VarChar(500)
+  countryCode String  @map("country_code") @db.Char(2)
+  state       String  @db.VarChar(100)
+  city        String  @db.VarChar(100)
+  postcode    String  @db.VarChar(20)
+  isDefault   Boolean @default(false) @map("is_default")
+  vendor      Vendor  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorId, position], map: "vendor_address_position_key")
+  /// Zero or one default per vendor (D-V03); a partial UNIQUE index allows zero rows.
+  @@unique([vendorId], where: { isDefault: true }, map: "vendor_address_one_default_key")
+  @@map("vendor_address")
+  @@schema("partner")
+}
+
+/// Company Profile (company-profile SA revision 2, ADR-0021): exactly one row, id = 1 (CHECK in the
+/// migration). The logo bytes are a file (`storage/company-profile/logo`); only metadata lives here.
+model CompanyProfile {
+  id                       Int       @id @default(1) @db.SmallInt
+  name                     String    @db.VarChar(200)
+  taxId                    String    @default("") @map("tax_id") @db.VarChar(50)
+  contactName              String    @map("contact_name") @db.VarChar(200)
+  phoneCountry             String    @map("phone_country") @db.Char(2)
+  phoneE164                String    @map("phone_e164") @db.VarChar(16)
+  email                    String    @db.VarChar(254)
+  website                  String    @default("") @db.VarChar(300)
+  address                  String    @db.VarChar(300)
+  address2                 String    @default("") @db.VarChar(300)
+  roadStreet               String    @default("") @map("road_street") @db.VarChar(300)
+  countryCode              String    @map("country_code") @db.Char(2)
+  state                    String    @db.VarChar(100)
+  city                     String    @db.VarChar(100)
+  postcode                 String    @db.VarChar(20)
+  currencyCode             String    @map("currency_code") @db.Char(3)
+  /// Plain text (SA-CP-13), "" = empty; rendered as text, never HTML.
+  bankDetails              String    @default("") @map("bank_details")
+  showBankDetailsOnInvoice Boolean   @default(false) @map("show_bank_details_on_invoice")
+  logoContentType          String?   @map("logo_content_type") @db.VarChar(16)
+  logoSizeBytes            Int?      @map("logo_size_bytes")
+  logoSha256               String?   @map("logo_sha256") @db.Char(64)
+  logoUpdatedAt            DateTime? @map("logo_updated_at") @db.Timestamp(3)
+  logoStorageKey           String?   @map("logo_storage_key") @db.VarChar(512)
+  /// Optimistic version (SA-CP-08): +1 on every save and logo change.
+  version                  Int       @default(1)
+  updatedBy                String    @map("updated_by") @db.VarChar(64)
+  updatedAt                DateTime  @default(now()) @map("updated_at") @db.Timestamp(3)
+
+  @@map("company_profile")
+  @@schema("partner")
+}
+
+/// User-upload metadata tombstones are independent of CompanyProfile and cannot cascade away.
+model StoredFile {
+  id          String    @id @db.Uuid
+  kind        String    @db.VarChar(32)
+  bucket      String    @db.VarChar(16)
+  objectKey   String    @map("object_key") @db.VarChar(512)
+  filename    String    @db.VarChar(255)
+  contentType String    @map("content_type") @db.VarChar(255)
+  sizeBytes   BigInt    @map("size_bytes")
+  sha256      String    @db.Char(64)
+  status      String    @db.VarChar(16)
+  sourceType  String    @map("source_type") @db.VarChar(64)
+  sourceId    String    @map("source_id") @db.VarChar(128)
+  createdBy   String?   @map("created_by") @db.VarChar(64)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  readyAt     DateTime? @map("ready_at") @db.Timestamptz(6)
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(6)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+  purgeAfter  DateTime? @map("purge_after") @db.Timestamptz(6)
+
+  @@index([sourceType, sourceId], map: "stored_files_source_idx")
+  @@unique([bucket, objectKey], map: "stored_files_bucket_object_key_key")
+  @@index([createdBy, createdAt(sort: Desc)], map: "stored_files_user_idx")
+  @@map("stored_files")
+  @@schema("partner")
+}
+
+// ---- Stone master (ADR-0024, SA stone-master rev 1; owner 2026-10-19: own PostgreSQL schema "stone") ----
+// Simple lookup tables share one shape (SA-SM-03). Codes are stored UPPERCASE, so a plain unique
+// index is case-insensitive (SA-SM-04). updatedAt is the optimistic version, written by the service.
+
+enum StoneCodeMode {
+  AUTO
+  MANUAL
+
+  @@map("stone_code_mode")
+  @@schema("stone")
+}
+
+model StoneGroup {
+  id         String      @id @default(uuid()) @db.Uuid
+  code       String      @unique(map: "stone_group_code_key") @db.VarChar(20)
+  name       String      @db.VarChar(120)
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime    @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy  String      @map("created_by") @db.VarChar(64)
+  updatedBy  String      @map("updated_by") @db.VarChar(64)
+  stoneNames StoneName[]
+
+  @@map("stone_group")
+  @@schema("stone")
+}
+
+model StoneSize {
+  id         String           @id @default(uuid()) @db.Uuid
+  code       String           @unique(map: "stone_size_code_key") @db.VarChar(20)
+  name       String           @db.VarChar(120)
+  active     Boolean          @default(true)
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime         @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy  String           @map("created_by") @db.VarChar(64)
+  updatedBy  String           @map("updated_by") @db.VarChar(64)
+  shapes     StoneShapeSize[]
+  stoneCodes StoneCode[]
+
+  @@map("stone_size")
+  @@schema("stone")
+}
+
+model StoneColor {
+  id         String      @id @default(uuid()) @db.Uuid
+  code       String      @unique(map: "stone_color_code_key") @db.VarChar(20)
+  name       String      @db.VarChar(120)
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime    @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy  String      @map("created_by") @db.VarChar(64)
+  updatedBy  String      @map("updated_by") @db.VarChar(64)
+  stoneCodes StoneCode[]
+
+  @@map("stone_color")
+  @@schema("stone")
+}
+
+model StoneCutting {
+  id         String      @id @default(uuid()) @db.Uuid
+  code       String      @unique(map: "stone_cutting_code_key") @db.VarChar(20)
+  name       String      @db.VarChar(120)
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime    @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy  String      @map("created_by") @db.VarChar(64)
+  updatedBy  String      @map("updated_by") @db.VarChar(64)
+  stoneCodes StoneCode[]
+
+  @@map("stone_cutting")
+  @@schema("stone")
+}
+
+model StoneClarity {
+  id         String      @id @default(uuid()) @db.Uuid
+  code       String      @unique(map: "stone_clarity_code_key") @db.VarChar(20)
+  name       String      @db.VarChar(120)
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime    @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy  String      @map("created_by") @db.VarChar(64)
+  updatedBy  String      @map("updated_by") @db.VarChar(64)
+  stoneCodes StoneCode[]
+
+  @@map("stone_clarity")
+  @@schema("stone")
+}
+
+model StoneQuality {
+  id         String      @id @default(uuid()) @db.Uuid
+  code       String      @unique(map: "stone_quality_code_key") @db.VarChar(20)
+  name       String      @db.VarChar(120)
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime    @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy  String      @map("created_by") @db.VarChar(64)
+  updatedBy  String      @map("updated_by") @db.VarChar(64)
+  stoneCodes StoneCode[]
+
+  @@map("stone_quality")
+  @@schema("stone")
+}
+
+model StoneName {
+  id         String      @id @default(uuid()) @db.Uuid
+  code       String      @unique(map: "stone_name_code_key") @db.VarChar(20)
+  name       String      @db.VarChar(120)
+  groupId    String      @map("group_id") @db.Uuid
+  hsn        String?     @db.VarChar(8)
+  active     Boolean     @default(true)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime    @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy  String      @map("created_by") @db.VarChar(64)
+  updatedBy  String      @map("updated_by") @db.VarChar(64)
+  group      StoneGroup  @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  stoneCodes StoneCode[]
+
+  @@index([groupId], map: "stone_name_group_id_idx")
+  @@map("stone_name")
+  @@schema("stone")
+}
+
+model StoneShape {
+  id         String           @id @default(uuid()) @db.Uuid
+  code       String           @unique(map: "stone_shape_code_key") @db.VarChar(20)
+  name       String           @db.VarChar(120)
+  active     Boolean          @default(true)
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt  DateTime         @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy  String           @map("created_by") @db.VarChar(64)
+  updatedBy  String           @map("updated_by") @db.VarChar(64)
+  sizes      StoneShapeSize[]
+  stoneCodes StoneCode[]
+
+  @@map("stone_shape")
+  @@schema("stone")
+}
+
+model StoneShapeSize {
+  shapeId String     @map("shape_id") @db.Uuid
+  sizeId  String     @map("size_id") @db.Uuid
+  shape   StoneShape @relation(fields: [shapeId], references: [id], onDelete: Cascade)
+  size    StoneSize  @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+
+  @@id([shapeId, sizeId])
+  @@index([sizeId], map: "stone_shape_size_size_id_idx")
+  @@map("stone_shape_size")
+  @@schema("stone")
+}
+
+model StoneCode {
+  id          String        @id @default(uuid()) @db.Uuid
+  code        String        @unique(map: "stone_code_code_key") @db.VarChar(60)
+  mode        StoneCodeMode
+  /// Owner 2026-10-20: only the parts at positions #1 and #2 are required, so every part is nullable.
+  stoneNameId String?       @map("stone_name_id") @db.Uuid
+  sizeId      String?       @map("size_id") @db.Uuid
+  shapeId     String?       @map("shape_id") @db.Uuid
+  colorId     String?       @map("color_id") @db.Uuid
+  cuttingId   String?       @map("cutting_id") @db.Uuid
+  clarityId   String?       @map("clarity_id") @db.Uuid
+  qualityId   String?       @map("quality_id") @db.Uuid
+  /// Permutation of name,size,shape,color,cutting,clarity,quality (CHECK in the migration).
+  partOrder   String[]      @map("part_order")
+  active      Boolean       @default(true)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt   DateTime      @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy   String        @map("created_by") @db.VarChar(64)
+  updatedBy   String        @map("updated_by") @db.VarChar(64)
+  stoneName   StoneName?    @relation(fields: [stoneNameId], references: [id], onDelete: Restrict)
+  size        StoneSize?    @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+  shape       StoneShape?   @relation(fields: [shapeId], references: [id], onDelete: Restrict)
+  color       StoneColor?   @relation(fields: [colorId], references: [id], onDelete: Restrict)
+  cutting     StoneCutting? @relation(fields: [cuttingId], references: [id], onDelete: Restrict)
+  clarity     StoneClarity? @relation(fields: [clarityId], references: [id], onDelete: Restrict)
+  quality     StoneQuality? @relation(fields: [qualityId], references: [id], onDelete: Restrict)
+
+  @@index([stoneNameId], map: "stone_code_stone_name_id_idx")
+  @@index([sizeId], map: "stone_code_size_id_idx")
+  @@index([shapeId], map: "stone_code_shape_id_idx")
+  @@index([colorId], map: "stone_code_color_id_idx")
+  @@index([cuttingId], map: "stone_code_cutting_id_idx")
+  @@index([clarityId], map: "stone_code_clarity_id_idx")
+  @@index([qualityId], map: "stone_code_quality_id_idx")
+  @@map("stone_code")
+  @@schema("stone")
+}

@@ -30,7 +30,7 @@ describe("uploadUserPhoto", () => {
     vi.stubGlobal("fetch", fetchMock);
     const file = new File([new Uint8Array([0xff, 0xd8, 0xff])], "me.jpg", { type: "image/jpeg" });
     await expect(uploadUserPhoto("u-1", file)).resolves.toEqual({ photoVersion: "abcdef0123456789" });
-    expect(fetchMock).toHaveBeenCalledWith("/api/v1/user-admin/users/u-1/photo", expect.objectContaining({ method: "PUT", headers: { "content-type": "image/jpeg" }, body: file }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/user-admin/users/u-1/photo", expect.objectContaining({ method: "PUT", headers: { "content-type": "image/jpeg", "x-gms-csrf": "1" }, body: file }));
   });
 
   it("UT-PH-F04 failures carry the gateway domain code (or NETWORK)", async () => {

@@ -1,24 +1,20 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink } from "@trpc/client";
-import { createTRPCReact } from "@trpc/react-query";
 import { useState } from "react";
-import type { AppRouter } from "@gem-crm/backend-api-gateway/src/trpc/router";
-
-export const trpc = createTRPCReact<AppRouter>();
+import { authTrpc, createAuthTrpcClient } from "@/lib/auth-trpc";
+import { masterTrpc, createMasterTrpcClient } from "@/lib/master-trpc";
 
 export function AppProviders({ children }: Readonly<{ children: React.ReactNode }>) {
   const [queryClient] = useState(() => new QueryClient());
-  const [trpcClient] = useState(() =>
-    trpc.createClient({
-      links: [httpBatchLink({ url: "/api/trpc", fetch(url, options) { return fetch(url, { ...options, credentials: "include" }); } })],
-    }),
-  );
+  const [authClient] = useState(createAuthTrpcClient);
+  const [masterClient] = useState(createMasterTrpcClient);
 
   return (
-    <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </trpc.Provider>
+    <QueryClientProvider client={queryClient}>
+      <authTrpc.Provider client={authClient} queryClient={queryClient}>
+        <masterTrpc.Provider client={masterClient} queryClient={queryClient}>{children}</masterTrpc.Provider>
+      </authTrpc.Provider>
+    </QueryClientProvider>
   );
 }

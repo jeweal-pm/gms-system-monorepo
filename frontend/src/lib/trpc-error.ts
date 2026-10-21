@@ -1,9 +1,8 @@
 import { isTRPCClientError } from "@trpc/client";
-import type { AppRouter } from "@gem-crm/backend-api-gateway/src/trpc/router";
 
 /**
- * Shared reading of gateway tRPC errors (moved unchanged from
- * features/user-permission/api.ts by FE-CUS-001). The gateway errorFormatter
+ * Shared reading of auth/master domain tRPC errors (moved unchanged from
+ * features/user-permission/api.ts by FE-CUS-001). The domain errorFormatter
  * puts the domain code in `data.domainCode` and field errors in `data.fieldErrors`.
  */
 
@@ -13,11 +12,11 @@ export type DomainErrorInfo = { domainCode: string | null; fieldErrors: ServerFi
 const DOMAIN_CODE_PATTERN = /^[A-Z][A-Z_]{1,63}$/;
 
 /**
- * Reads `data.domainCode` / `data.fieldErrors` from the gateway errorFormatter (falls back to the
+ * Reads `data.domainCode` / `data.fieldErrors` from the domain errorFormatter (falls back to the
  * message code). A 401 has no domain code ("Authentication required"), so it is reported as "UNAUTHORIZED".
  */
 export function readDomainError(error: unknown): DomainErrorInfo {
-  if (!isTRPCClientError<AppRouter>(error)) return { domainCode: null, fieldErrors: [], httpStatus: null };
+  if (!isTRPCClientError(error)) return { domainCode: null, fieldErrors: [], httpStatus: null };
   const data = error.data;
   const domainCode =
     data?.domainCode ??

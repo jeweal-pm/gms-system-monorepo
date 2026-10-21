@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createVendorInputSchema } from "@gem-crm/backend-api-gateway/src/trpc/vendor-schemas";
+import { createVendorBodySchema } from "@gem-crm/backend-api-master/src/vendor/vendor.schemas";
 import {
   isPermissionDenied,
   isVendorNotFound,
@@ -18,7 +18,7 @@ import { gatewayError, validAddress, validInfo } from "../partner/helpers";
 
 /**
  * UT-ADR21-04b/d, UT-VEN-A01…A22: vendor data boundary (features/vendor/api.ts, FE-VEN-010/011).
- * IT-VEN-C01…C03: form schema → mapper → the gateway's real strict `vendor.create` input schema.
+ * IT-VEN-C01…C03: form schema → mapper → api-master's real strict `vendor.create` input schema.
  */
 
 const detail: VendorDetail = {
@@ -105,18 +105,18 @@ describe("toVendorFields", () => {
 
   it("IT-VEN-C01 a valid form maps to input the gateway's strict vendor.create schema accepts", () => {
     const form = vendorFormSchema.parse({ ...validForm(), phone: { country: "US", number: "201 555 0123" } });
-    const result = createVendorInputSchema.safeParse(toVendorFields(form));
+    const result = createVendorBodySchema.safeParse(toVendorFields(form));
     expect(result.error?.issues ?? []).toEqual([]);
   });
 
   it("IT-VEN-C02 a saved vendor round-trips through the form into a valid create input", () => {
-    expect(createVendorInputSchema.safeParse(toVendorFields(toFormValues(detail))).success).toBe(true);
+    expect(createVendorBodySchema.safeParse(toVendorFields(toFormValues(detail))).success).toBe(true);
   });
 
   it("IT-VEN-C03 the gateway rejects a shipping key, so the mapper never sends one", () => {
     const fields = toVendorFields(validForm());
     expect(fields).not.toHaveProperty("shippingAddresses");
-    expect(createVendorInputSchema.safeParse({ ...fields, shippingAddresses: [] }).success).toBe(false);
+    expect(createVendorBodySchema.safeParse({ ...fields, shippingAddresses: [] }).success).toBe(false);
   });
 });
 
@@ -249,3 +249,4 @@ describe("load errors and predicates", () => {
     expect(mapSaveError(gatewayError({ domainCode: "PERMISSION_DENIED", httpStatus: 403 }), "create").formError).toBe("You don't have permission to create vendors.");
   });
 });
+

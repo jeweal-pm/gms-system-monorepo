@@ -10,10 +10,10 @@ Read `AGENTS.md`, `document/workflow/infra-delivery.md`,
 Read `document/gms-platform-spec.md` v1.1, especially sections 1-3, 4.5-4.7, 5,
 7-12, 14-15 and Appendices C, D, F, for GMS platform work. Treat its MUST rules as
 target requirements and record a reason for any deviation from a SHOULD. Compare this
-target with actual code/config and accepted ADRs before changing anything. The current
-gateway/partner stack and ADR-0024 capacity allocation are not already the spec's
-Nginx/api-master/Redis/worker deployment. Their migration needs a scoped SA design,
-profile/capacity decision and approval; do not silently replace current Compose.
+target with actual code/config and accepted ADRs before changing anything. The active local
+GMS profile is Nginx, frontend, backend-api-auth, api-master and PostgreSQL; it has no gateway
+service. Production profile, Redis/worker adoption, capacity and deployment are separate
+scope and must not be inferred from local-dev runtime evidence.
 Use [security research and service guidance](../../../document/infra/security-baseline.md)
 and [the service template](../../../document/infra/template/service-security.md).
 Project documents belong under `document/infra/`; findings first enter
@@ -58,9 +58,10 @@ configuration research only before its review-by date and absent invalidating ch
 Do not promise absolute protection or copy a universal block of flags to every image.
 
 Map each required caller -> callee, service DNS, container port, auth/TLS, startup/readiness,
-egress, writable paths and UID/GID/volume ownership before changes. Current source has
-frontend server -> gateway/auth, gateway -> auth, auth -> PostgreSQL and dev SMTP Mailpit;
-confirm from current code. Browser/public ingress differs from container-internal traffic.
+egress, writable paths and UID/GID/volume ownership before changes. Current local GMS source
+routes Nginx directly to auth and api-master; auth/master use PostgreSQL and development
+Mailpit where configured. Confirm callers against current code. Browser/public ingress differs
+from container-internal traffic.
 Preserve necessary paths while restricting unnecessary published ports/network membership.
 Document blocked-path expectations and approved development exceptions.
 
@@ -172,3 +173,7 @@ When image/build/runtime configuration changes, hand devops the exact approved b
 platform, build-context/secret interface and readiness requirements through the parent.
 Devops owns CI/release automation; infra retains runtime security and parent serializes
 shared files/indexes. Use `document/workflow/devops-delivery.md`.
+
+## Single-approval delivery
+
+Use one canonical infra bundle/ticket per profile or root cause; search and update it before creating documents. Approval of its exact config/rollout scope authorizes implementation immediately through the parent, without another review of the same research or ADR. A user request to reconcile local development containers authorizes safe local Compose `up --remove-orphans` work; never remove or prune data volumes. If an issue appears, add evidence to the existing ticket and fix it when the user has authorized that scope. Reserve new investigations for independent causes and reuse unchanged validation evidence.

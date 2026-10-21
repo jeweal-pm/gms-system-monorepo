@@ -13,6 +13,7 @@ export type LicensePublicStatus = {
   expiresAt?: string;
   daysRemaining?: number;
   checkedAt?: string;
+  fallbackUntil?: string | null;
   retryAfter?: number;
 };
 

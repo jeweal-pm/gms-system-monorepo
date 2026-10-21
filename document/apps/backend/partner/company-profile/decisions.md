@@ -1,5 +1,7 @@
 # SA decisions: company-profile (partner)
 
+**Current implementation remains the approved named-volume behavior below.** Proposed [GMS file-storage SA revision 3](../../../../reviews/sa/2026-10-21-gms-file-storage-rev3.md) would migrate the logo to `@gms/storage` under the platform-wide indefinite upload-retention policy; it is pending approval and does not change this contract yet.
+
 ## SA revision 3 — **approved** (owner 2026-10-17: "อนุมัติ company-profile SA revision 3"), implemented
 
 - Source: UI revision 3 ([ui-spec](../../../frontend/company-profile/ui-spec.md#revision-3-2026-10-17--overrides-the-sections-below) R3-04, R3-07, R3-08). Owner answers 2026-10-17: Road/Street "เพิ่มจริง ทำ SA + backend"; Bank Details "เปลี่ยนเป็นข้อความธรรมดา"; Terms "เอาออกจากหน้า เอาออกจาก schema ด้วย".

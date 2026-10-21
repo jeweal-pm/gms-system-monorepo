@@ -80,9 +80,38 @@ model UserPhoto {
   contentType String   @map("content_type") @db.VarChar(16)
   sizeBytes   Int      @map("size_bytes")
   sha256      String   @db.Char(64)
+  storageKey  String?  @map("storage_key") @db.VarChar(512)
   updatedAt   DateTime @updatedAt @map("updated_at")
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@schema("auth")
+}
+
+/// User-upload metadata tombstones are independent of User/UserPhoto so account deletion cannot
+/// cascade away retention evidence. User-upload bytes are never physically deleted.
+model StoredFile {
+  id          String    @id @db.Uuid
+  kind        String    @db.VarChar(32)
+  bucket      String    @db.VarChar(16)
+  objectKey   String    @map("object_key") @db.VarChar(512)
+  filename    String    @db.VarChar(255)
+  contentType String    @map("content_type") @db.VarChar(255)
+  sizeBytes   BigInt    @map("size_bytes")
+  sha256      String    @db.Char(64)
+  status      String    @db.VarChar(16)
+  sourceType  String    @map("source_type") @db.VarChar(64)
+  sourceId    String    @map("source_id") @db.VarChar(128)
+  createdBy   String?   @map("created_by") @db.VarChar(64)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  readyAt     DateTime? @map("ready_at") @db.Timestamptz(6)
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(6)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+  purgeAfter  DateTime? @map("purge_after") @db.Timestamptz(6)
+
+  @@index([sourceType, sourceId], map: "stored_files_source_idx")
+  @@unique([bucket, objectKey], map: "stored_files_bucket_object_key_key")
+  @@index([createdBy, createdAt(sort: Desc)], map: "stored_files_user_idx")
+  @@map("stored_files")
   @@schema("auth")
 }
 

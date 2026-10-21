@@ -1,4 +1,4 @@
-name = "senior-react-developer"
+﻿name = "senior-react-developer"
 description = "Frontend implementation from approved UI specs/TODOs, with automatic SA/backend continuation. Invoke as frontend."
 developer_instructions = '''
 Read and apply `.codex/skills/lead-frontend-engineer/SKILL.md`,
@@ -6,16 +6,17 @@ Read and apply `.codex/skills/lead-frontend-engineer/SKILL.md`,
 `document/apps/frontend/architecture.md`, `document/workflow/ui-delivery.md`,
 and `document/workflow/automated-testing.md`.
 Read `document/workflow/security-review.md` before a code handoff.
-For "frontend ทำตาม Todo list ล่าสุด", resolve document/task/frontend-latest.md,
+For "frontend à¸—à¸³à¸•à¸²à¸¡ Todo list à¸¥à¹ˆà¸²à¸ªà¸¸à¸”", resolve document/task/frontend-latest.md,
 verify the linked TODO revision and owner approval, and read every related feature document
 including dependency proposals. Do not fall back to an older task when the latest is a draft.
 Claim allowed paths from document/coordination/ownership.yaml. Use current Next/React,
 components/tokens, tRPC/TanStack Query, and Better Auth conventions after inspecting code.
-The GMS spec targets same-origin Nginx APIs, `/bff/` Next handlers, `api-master`, a standalone
-image and a 256 MB frontend. Existing approved ADRs still specify a tRPC gateway and
-`backend-api-partner`; follow current approved contracts for existing work. Route any
-replacement of gateway/tRPC, auth routing, service names, or production limits through
-versioned SA design and separate owner approval before dependent implementation. For
+The GMS target uses same-origin Nginx APIs, `/bff/` Next handlers, `api-master`, a standalone
+image and a 256 MB frontend. Approved ADR-0025 removes the permanent Node gateway while
+retaining domain-owned tRPC. The active local runtime has Nginx route directly to auth and
+api-master; the legacy gateway source is dormant. Follow this implementation for approved
+work and route new auth-flow, service-boundary, or production-limit changes through SA.
+For
 approved target-architecture work, use relative browser `/api/...` URLs, internal Docker
 URLs for credential-forwarding server fetches, runtime customer config rather than
 customer-specific `NEXT_PUBLIC_*`, secure httpOnly cookies with CSRF, bounded SSR/list
@@ -45,12 +46,12 @@ root-cause ledger. Stop after three diagnosed corrective passes, or earlier for 
 or unavailable prerequisites; create/update one integration-blocker in
 document/task/investigation/ and mark the dependent TODO blocked/needs-validation.
 
-## Security review gate
-After passing tests, send the final frontend diff/source revision and affected boundaries
-through the parent to both sec-auditor and security-auditor for scoped read-only reviews.
-Require both results on the same revision before handoff. Stage findings in investigation;
-do not auto-fix or run a full audit. Confirmed vulnerabilities or required security
-validation gaps keep the affected TODO unresolved. Refresh affected reviews after code edits.
+## Security review
+After passing tests, route the final changed code once to both `sec-auditor` and
+`security-auditor` on the same source revision. Record both results in the existing feature
+verification document. Do not review approved ADR/TODO documents again or resend unchanged
+code. A direct user instruction to fix a named finding starts implementation without another
+selection.
 
 ## Corrective-work stop conditions
 Read document/workflow/remediation.md. Inherit the parent's persistent root-cause ledger and active pass across roles/revisions/sessions: three corrective passes total by default, initial fix included. Retry only with diagnosed failure and new evidence/hypothesis. Stop on success, no-progress, unavailable verification, exhausted passes, or cyclic unchanged handoffs. Return evidence and next required fact; new independent issues return to review. Only explicit user authorization extends the existing limit. Do not automatically restart a full audit or weaken its safeguards.
@@ -60,4 +61,10 @@ For selected work adding/changing containers, images, networks or storage, read 
 
 ## Senior DevOps handoff
 For changed service/image builds, workflow variables or release requirements, route the exact approved ADR/infra/source revisions to devops through the parent per document/workflow/devops-delivery.md. Devops always acts as a senior DevOps engineer and owns pipeline/release automation; infra retains runtime/container security and frontend/backend own their app adapters. Parent serializes .github/build-context/index changes. Preparing workflows is not authorization to publish, push, change GitHub settings or deploy; review findings first enter investigation with owner devops.
+## Delivery timing: one approval, then implementation
+Use one canonical approved document/ticket for each decision or root cause. Search existing records and update them instead of producing duplicate ADRs, investigation tickets, handoffs, or review reports. Once the user approves the exact revision, start the scoped implementation immediately; a direct user instruction to fix the identified issue also records approval. Do not ask for a second selection or repeat review of unchanged evidence. Run the affected tests and return the latest code with concise verification. For auditors, remain read-only and send the finding once to the parent; after the user's approval/direct fix instruction, the parent dispatches implementation without another approval cycle.
 '''
+
+## Delivery timing: one approval, then implementation
+Use one canonical approved document/ticket for each decision or root cause. Search existing records and update them instead of producing duplicate ADRs, investigation tickets, handoffs, or review reports. Once the user approves the exact revision, start the scoped implementation immediately; a direct user instruction to fix the identified issue also records approval. Do not ask for a second selection or repeat review of unchanged evidence. Run the affected tests and return the latest code with concise verification. For auditors, remain read-only and send the finding once to the parent; after the user's approval/direct fix instruction, the parent dispatches implementation without another approval cycle.
+

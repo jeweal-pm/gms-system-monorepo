@@ -57,6 +57,15 @@ describe.runIf(canRun)("GP-AT-03/04 isolated PostgreSQL refresh and live view", 
     expect(await prisma.refreshFamily.count({ where: { userId, revokedAt: null } })).toBe(0);
   });
 
+  it("revokes all user refresh families on password-change invalidation", async () => {
+    await prisma.user.update({ where: { id: userId }, data: { active: true } });
+    await prisma.session.update({ where: { id: sessionId }, data: { expiresAt: new Date(Date.now() + 86_400_000) } });
+    const current = await store.create(userId, sessionId);
+    await store.revokeForUser(userId);
+    expect(await store.rotate(current)).toEqual({ state: "invalid" });
+    expect(await prisma.refreshFamily.count({ where: { userId, revokedAt: null } })).toBe(0);
+  });
+
   it("the auth-owned view exposes current session, account, PRICE grant and location but no secrets", async () => {
     await prisma.userPermission.create({ data: { userId, menuKey: "vendor", action: "PRICE" } });
     await prisma.userLocation.create({ data: { userId, locationKey: "bkk" } });

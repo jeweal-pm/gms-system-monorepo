@@ -54,7 +54,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        service: [frontend, backend-api-gateway, backend-api-auth, backend-api-partner]
+        service: [frontend, backend-api-auth, api-master]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -68,7 +68,7 @@ jobs:
           DOCKER_BUILD_RECORD_UPLOAD: "false"
         with:
           context: .
-          file: ${{ matrix.service }}/Dockerfile
+          file: ${{ matrix.service == 'api-master' && 'backend-api-master/Dockerfile' || format('{0}/Dockerfile', matrix.service) }}
           platforms: linux/amd64
           push: false
           load: true
@@ -90,7 +90,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        service: [frontend, backend-api-gateway, backend-api-auth, backend-api-partner]
+        service: [frontend, backend-api-auth, api-master]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -123,7 +123,7 @@ jobs:
           DOCKER_BUILD_RECORD_UPLOAD: "false"
         with:
           context: .
-          file: ${{ matrix.service }}/Dockerfile
+          file: ${{ matrix.service == 'api-master' && 'backend-api-master/Dockerfile' || format('{0}/Dockerfile', matrix.service) }}
           platforms: linux/amd64
           push: true
           tags: ${{ steps.image.outputs.tag }}

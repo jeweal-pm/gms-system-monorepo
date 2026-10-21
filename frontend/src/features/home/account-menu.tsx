@@ -3,7 +3,7 @@
 import { UserRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
-import { trpc } from "@/providers/app-providers";
+import { authTrpc } from "@/lib/auth-trpc";
 
 /** `username` is the identity (ADR-0020); the session `email` is internal and never shown. */
 export type AccountMenuUser = { name: string; username: string };
@@ -38,7 +38,7 @@ export function AccountMenu({ user, onSignOut }: Readonly<{ user: AccountMenuUse
   const focusOnOpen = useRef<"first" | "last">("first");
   const menuId = useId();
   const initials = userInitials(user.name);
-  const mine = trpc.permission.mine.useQuery(undefined, { staleTime: 30_000, retry: false });
+  const mine = authTrpc.permission.mine.useQuery(undefined, { staleTime: 30_000, retry: false });
   const isSuperAdmin = mine.data?.isSuperAdmin === true;
   const roleLabel = mine.data ? (mine.data.isSuperAdmin ? "Super Admin" : "User") : null;
 

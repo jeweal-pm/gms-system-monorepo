@@ -6,12 +6,11 @@ x-dev-volumes: &dev-volumes
   - .:/app
   - dev-root-node-modules:/app/node_modules
   - dev-frontend-node-modules:/app/frontend/node_modules
-  - dev-gateway-node-modules:/app/backend-api-gateway/node_modules
   - dev-auth-node-modules:/app/backend-api-auth/node_modules
   - dev-frontend-next:/app/frontend/.next
   - dev-auth-prisma:/app/backend-api-auth/src/generated/prisma
-  - dev-partner-node-modules:/app/backend-api-partner/node_modules
-  - dev-partner-prisma:/app/backend-api-partner/src/generated/prisma
+  - dev-partner-node-modules:/app/backend-api-master/node_modules
+  - dev-partner-prisma:/app/backend-api-master/src/generated/prisma
 
 # Watch mode (compilers, Next dev server) needs more than the production limits (ADR-0024):
 # a developer workstation, not the 4 GB / 2 vCPU host. Production heap caps are cleared.
@@ -41,16 +40,6 @@ services:
       LICENSE_MOCK_PRIVATE_KEY_PKCS8_BASE64: ${LICENSE_MOCK_PRIVATE_KEY_PKCS8_BASE64:-}
     volumes: *dev-volumes
 
-  backend-api-gateway:
-    image: f1-system-dev:local
-    build: *dev-build
-    command: ["pnpm", "--filter", "@gem-crm/backend-api-gateway", "dev"]
-    deploy: *dev-limits
-    environment:
-      NODE_ENV: development
-      NODE_OPTIONS: ""
-    volumes: *dev-volumes
-
   frontend:
     image: f1-system-dev:local
     build: *dev-build
@@ -61,12 +50,12 @@ services:
       NODE_OPTIONS: ""
     volumes: *dev-volumes
 
-  # Dev exception (infra bundle backend-api-partner/1): root dev image, bind mount + watch,
+  # Dev watch profile: root dev image, bind mount + watch,
   # writable root. Networks stay internal (no egress, no published port).
-  backend-api-partner:
+  api-master:
     image: f1-system-dev:local
     build: *dev-build
-    command: ["sh", "-c", "pnpm --filter @gem-crm/backend-api-partner db:generate && pnpm --filter @gem-crm/backend-api-partner db:migrate && exec pnpm --filter @gem-crm/backend-api-partner dev"]
+    command: ["sh", "-c", "pnpm --filter @gem-crm/backend-api-master db:generate && pnpm --filter @gem-crm/backend-api-master db:migrate && exec pnpm --filter @gem-crm/backend-api-master dev"]
     environment:
       NODE_ENV: development
       # Dev only (stone-master, 2026-10-19): `nest start --watch` type-checks the larger generated
@@ -85,7 +74,6 @@ services:
 volumes:
   dev-root-node-modules:
   dev-frontend-node-modules:
-  dev-gateway-node-modules:
   dev-auth-node-modules:
   dev-frontend-next:
   dev-auth-prisma:

@@ -1,11 +1,13 @@
 # GMS Platform — Engineering Spec
 
-Version 1.1 · 20 October 2026
-(1.1: `api-partner` renamed to `api-master`; Next.js frontend added; PostgreSQL may be local or managed.)
+Version 1.2 accepted for implementation · 21 October 2026
+(1.2 approved: owner-approved permanent retention for all user uploads; 1.1: `api-partner` renamed to `api-master`; Next.js frontend added; PostgreSQL may be local or managed.)
 
 This spec defines how services in the GMS platform are built and deployed. It is written for
 developers and coding agents. Rules marked **MUST** are mandatory; **SHOULD** are strong defaults
 that need a written reason to break.
+
+The v1.2 permanent-retention change is approved for implementation by SA revision 3 and ADR-0030. Production host operations, data migration/cutover and deployment remain separately gated.
 
 ---
 
@@ -394,8 +396,19 @@ Because keys are identical, data can move between drivers with `rclone copy` wit
 
 - Every stored object has a row in `{schema}.stored_files` (Appendix B), owned by the service.
   Postgres stores metadata only, never file bytes.
-- Deletes are soft: set `deleted_at` and `purge_after = deleted_at + 30 days`; a job purges the object
-  later. This keeps DB point-in-time restores consistent with files.
+- **User-uploaded files and images are retained indefinitely**, including `files` uploads and
+  user-uploaded product images in `public`. On removal, replacement, or owning-entity deletion,
+  set `deleted_at`, make the object inaccessible through normal APIs, and retain both bytes and
+  metadata forever. Keep `purge_after` null. No lifecycle policy, cleanup job, worker, or Docker
+  operation may delete user-uploaded content. This applies to current and future modules.
+- System-generated `documents` keep their document-type retention policy. System-generated
+  `exports` keep their configured TTL (7 days by default). These lifetimes do not apply to a
+  user-uploaded file merely because its content type or extension resembles an export/document.
+- Permanent upload retention means disk use can grow without a product-defined upper bound.
+  Before production rollout, measure host disk capacity, reserve OS/database/backup headroom,
+  set alert and upload admission thresholds, and reject new uploads when storage cannot safely
+  complete them. Never reclaim retained uploads to make room. The RAM/CPU budget is not a disk
+  capacity guarantee.
 
 ### 8.5 Uploads
 
@@ -432,9 +445,16 @@ Because keys are identical, data can move between drivers with `rclone copy` wit
 
 ### 8.8 Cleanup and disk guard
 
-- Hourly job (both drivers): delete expired exports and mark rows `expired`; purge soft-deleted objects
-  past `purge_after`; delete objects without a metadata row after 24 h; delete temp files older than 1 h.
-- fs: refuse new exports and alert when free disk < 10%. Per-user cap on active exports: 2 GB.
+- A scheduled cleanup may expire system-generated exports and apply the approved type-specific
+  retention for system-generated documents only. It MUST exclude user uploads in `files` and
+  user-uploaded objects in `public`, including deleted/replaced rows and objects without metadata.
+- No lifecycle rule, worker, orphan reconciler, volume prune, or age-based job may physically delete
+  a user-uploaded object. UI removal hides the object and retains its bytes and metadata permanently.
+- Temporary `.tmp` files are unpublished write attempts, not accepted uploads; they may be removed
+  only after the writer has failed or abandoned the attempt and the system has verified no active
+  writer owns the temporary key.
+- fs: refuse new writes before available disk reaches the configured admission threshold and alert
+  the operator. Never reclaim retained user uploads to make room. Per-user cap on active exports: 2 GB.
 
 ---
 

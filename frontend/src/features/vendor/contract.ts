@@ -1,13 +1,13 @@
 import type { inferRouterClient } from "@trpc/client";
-import type { AppRouter } from "@gem-crm/backend-api-gateway/src/trpc/router";
+import type { MasterRouter } from "@gem-crm/backend-api-master/src/master/router";
 
 /**
- * vendor contract types inferred from the gateway `AppRouter` (`vendor.*`, SA revision 1 +
+ * vendor contract types inferred from `MasterRouter` (`vendor.*`, SA revision 1 +
  * ADR-0019 revision 1, approved and delivered 2026-10-15; FE-VEN-010). See
  * document/apps/backend/partner/vendor/api-contract.md and coordination/handoffs/vendor-backend.md.
  */
 
-type VendorClient = inferRouterClient<AppRouter>["vendor"];
+type VendorClient = inferRouterClient<MasterRouter>["vendor"];
 
 export type VendorListInput = NonNullable<Parameters<VendorClient["list"]["query"]>[0]>;
 export type VendorListOutput = Awaited<ReturnType<VendorClient["list"]["query"]>>;

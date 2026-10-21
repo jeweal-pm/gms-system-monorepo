@@ -29,6 +29,9 @@ importers:
 
   backend-api-auth:
     dependencies:
+      '@gms/storage':
+        specifier: workspace:*
+        version: link:../packages/gms-storage
       '@nestjs/common':
         specifier: 12.1.2
         version: 12.1.2(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -47,6 +50,9 @@ importers:
       '@prisma/client':
         specifier: 7.10.0
         version: 7.10.0(prisma@7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(typescript@5.9.3))(typescript@5.9.3)
+      '@trpc/server':
+        specifier: 11.19.0
+        version: 11.19.0(typescript@5.9.3)
       argon2:
         specifier: ^0.44.0
         version: 0.44.0
@@ -106,57 +112,11 @@ importers:
         specifier: 5.0.3
         version: 5.0.3(@types/node@24.19.1)(vite@8.3.4(@types/node@24.19.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
 
-  backend-api-gateway:
+  backend-api-master:
     dependencies:
-      '@nestjs/common':
-        specifier: 12.1.2
-        version: 12.1.2(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/core':
-        specifier: 12.1.2
-        version: 12.1.2(@nestjs/common@12.1.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@12.1.2)(reflect-metadata@0.2.2)(rxjs@7.8.2)
-      '@nestjs/platform-express':
-        specifier: 12.1.2
-        version: 12.1.2(@nestjs/common@12.1.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.1.2)
-      '@trpc/server':
-        specifier: ^11.19.0
-        version: 11.19.0(typescript@5.9.3)
-      nestjs-pino:
-        specifier: 5.3.1
-        version: 5.3.1(@nestjs/common@12.1.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.1.2)(pino-http@11.0.0)(pino@10.4.0)(rxjs@7.8.2)
-      pino:
-        specifier: ^10.0.0
-        version: 10.4.0
-      reflect-metadata:
-        specifier: ^0.2.2
-        version: 0.2.2
-      rxjs:
-        specifier: ^7.8.2
-        version: 7.8.2
-      zod:
-        specifier: ^4.4.3
-        version: 4.6.5
-    devDependencies:
-      '@nestjs/cli':
-        specifier: ^11.0.14
-        version: 11.0.24(@types/node@24.19.1)(esbuild@0.28.2)(prettier@3.9.9)
-      '@nestjs/schematics':
-        specifier: 11.1.0
-        version: 11.1.0(chokidar@4.0.3)(prettier@3.9.9)(typescript@5.9.3)
-      '@types/express':
-        specifier: ^5.0.5
-        version: 5.0.6
-      '@types/node':
-        specifier: ^24.10.0
-        version: 24.19.1
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: 5.0.3
-        version: 5.0.3(@types/node@24.19.1)(vite@8.3.4(@types/node@24.19.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
-
-  backend-api-partner:
-    dependencies:
+      '@gms/storage':
+        specifier: workspace:*
+        version: link:../packages/gms-storage
       '@nestjs/common':
         specifier: 12.1.2
         version: 12.1.2(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -227,9 +187,12 @@ importers:
 
   frontend:
     dependencies:
-      '@gem-crm/backend-api-gateway':
+      '@gem-crm/backend-api-auth':
         specifier: workspace:*
-        version: link:../backend-api-gateway
+        version: link:../backend-api-auth
+      '@gem-crm/backend-api-master':
+        specifier: workspace:*
+        version: link:../backend-api-master
       '@hookform/resolvers':
         specifier: ^5.9.1
         version: 5.9.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(effect@3.20.0)(react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0))(valibot@1.4.2(typescript@5.9.3))(zod@4.6.5)
@@ -294,6 +257,18 @@ importers:
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.0.3
+        version: 5.0.3(@types/node@24.19.1)(vite@8.3.4(@types/node@24.19.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15))
+
+  packages/gms-storage:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.10.0
+        version: 24.19.1
       typescript:
         specifier: ~5.9.3
         version: 5.9.3

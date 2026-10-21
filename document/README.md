@@ -11,8 +11,8 @@ The [GMS migration SA revision 1](reviews/sa/2026-10-20-gms-platform-migration-r
 and [central migration TODO](task/todo/gms-platform-migration.md) were approved
 for nonblocked work on 2026-10-20. The separate [license-server contract
 revision 2](reviews/sa/2026-10-20-gms-license-contract-rev2.md) is owner-approved
-for customer-backend code. External implementation, integration and capacity
-verification remain open; the current protected routes and cutover remain unchanged.
+for customer-backend code. The local GMS preview now routes through Nginx directly to
+auth and api-master; production capacity, external integration and deployment remain open.
 
 | Folder | Purpose |
 |---|---|
@@ -50,8 +50,10 @@ Selected fixes follow [bounded remediation](workflow/remediation.md), with persi
 cross-role attempt history, targeted verification, and explicit terminal outcomes.
 Frontend/backend changes follow [automated testing](workflow/automated-testing.md): unit
 and integration coverage is required for every affected item and must pass before handoff.
-Their final code also passes the two focused [security reviews](workflow/security-review.md)
-before handoff; findings enter investigation for owner review.
+Frontend/backend code gets one scoped pass from each required [security review role](workflow/security-review.md)
+on the same final source revision. Keep both results in the feature verification record;
+findings enter investigation once. Do not review approved design documents or unchanged code
+again, and do not ask for another approval before implementing an approved revision.
 Use [infra delivery](workflow/infra-delivery.md) when ADR/service changes affect containers;
 [the service index](infra/service-index.md) tracks research/configuration coverage.
 Use [DevOps delivery](workflow/devops-delivery.md) for GitHub CI/images and

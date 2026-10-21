@@ -89,7 +89,7 @@ infra-approved runtime secret contract. The same applies to backend-api-partner
 (infra bundle backend-api-partner/1): `PARTNER_DATABASE_URL` (must include
 `?schema=partner`), `PARTNER_SERVICE_TOKEN` (>= 32 chars, identical in gateway and partner;
 production rejects the .env.example value) and gateway `PARTNER_SERVICE_URL`
-(http://backend-api-partner:3201). They are runtime-only, never Docker build args, and
+(http://api-master:3201). They are runtime-only, never Docker build args, and
 current workflows do not read them. Do not inject production secrets into image build
 steps. All build context excludes .env variants and project skill/audit documents.
 

@@ -1,52 +1,32 @@
-# Security review gate for frontend and backend code
+# Focused security review for frontend and backend code
 
-Every frontend/backend implementation or fix must complete focused, read-only reviews
-by both `sec-auditor` and `security-auditor` before its code handoff is marked complete.
-This applies to changed pages, components, modules, functions, APIs, tests, and their
-affected trust boundaries. It does not request a full codebase audit: `sec-auditor` uses
-its changed-code guidance mode; a full six-phase audit requires an explicit request.
+Security review supports implementation. It is not a second approval cycle for an already
+approved ADR/TODO. Frontend/backend code handoffs use one scoped pass from each required
+security role on the same final source revision. A full audit still requires an explicit
+user request.
 
-## Review handoff
+## One review for the changed risk
 
-After required tests pass, the parent sends each reviewer the feature/task ID, approved
-contract revisions, exact changed paths and diff/source revision, affected entry points
-and trust boundaries, test results, and any prior related tickets. The two reviewers work
-read-only and independently; they do not edit application code or approve a changed
-contract. The parent serializes shared investigation ticket creation and deduplicates
-findings by root cause. If custom reviewer roles are unavailable, the parent applies each
-role's instructions sequentially and records that fallback without claiming independent
-agent reviews.
-For uncommitted work, identify the source as HEAD plus a hash of the reviewed diff or
-changed file contents; HEAD alone does not prove two reviewers saw the same code.
+After relevant tests pass, send the feature/ticket ID, approved contract revision, exact
+changed paths/source revision, affected trust boundary, test results, and related ticket to
+both `sec-auditor` and `security-auditor` once for the final code revision. These are two
+distinct project roles, not a second approval cycle or a re-review of the ADR/TODO. Record
+both outcomes together in the canonical feature verification document; do not create
+separate duplicate reports.
 
-Each reviewer returns a scoped record with source revision, paths and boundaries inspected,
-evidence/limitations, finding ticket IDs, and one status:
+The reviewer returns the source revision, paths/boundaries inspected, evidence/limitations,
+any finding ticket, and a concise result: `clear`, `advisory`, `blocked`, or
+`needs-validation`. Reuse both results while relevant code and evidence are unchanged.
+After a security fix, run affected tests and send only the changed boundary/source revision
+to both roles once. Do not re-review approved design documents, unrelated paths, or the same
+source revision.
 
-- `clear`: no actionable security issue found in the inspected scope.
-- `advisory`: only hardening recommendations outside a required security acceptance
-  criterion; stage their tickets for owner review.
-- `blocked`: a confirmed vulnerability in the changed or affected behavior; stage its
-  ticket and keep the dependent TODO unresolved.
-- `needs-validation`: a material security boundary could not be checked or a plausible
-  issue lacks the fact needed for a reliable verdict; stage the validation gap and keep
-  the dependent TODO unresolved when that boundary is required for delivery.
-
-The parent records both results in the feature testing/verification document and central
-TODO. The handoff passes this gate only when both reviewers examined the same final source
-revision and returned `clear` or `advisory`, with no unresolved security gap on a required
-boundary. `advisory` tickets remain pending owner review; passing the gate is not an
-approval to implement them. Do not label a review `clear` when a required check could not
-be made. Disagreements on an affected boundary are `needs-validation` until the evidence
-is reconciled; do not average verdicts or rerun reviewers without new evidence.
-Unrelated findings still get tickets; they do not automatically expand the selected work
-unless they make one of its required security criteria unsafe.
-
-All actionable findings first enter [investigation](../task/investigation/README.md)
-with the exact source revision. Auditors never dispatch fixes. The user selects a ticket
-revision before frontend/backend remediation, and changed schema, contract, flow, or
-dependency still needs separate SA review. A selected fix uses the existing
-[three-pass corrective ledger](remediation.md). After a code change for that fix, rerun
-tests and focused reviews of the changed and affected boundaries once; reuse still-valid
-evidence for unchanged scope. New independent findings become separate tickets rather
-than an automatic fix-and-review loop. If verification is unavailable, report the gap and
-stop the affected handoff instead of claiming a security pass.
+All actionable findings are recorded once in the canonical
+[investigation](../task/investigation/README.md) ticket, with root cause and source
+revision. Auditors do not edit application code. Approval of the exact ticket revision,
+or a direct user instruction to fix that finding, starts implementation immediately;
+do not request a second ticket selection. Changed contract/schema/flow/dependency still
+needs its own SA approval only when that decision was not already covered by the approved
+revision. See the [bounded remediation ledger](remediation.md). If required verification
+is unavailable, record the exact limitation and finish with that narrow item unresolved;
+do not repeat reviews or produce replacement documents to mask the gap.

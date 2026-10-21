@@ -155,7 +155,11 @@ export class LicenseService {
     if (!claims || !isCurrentLicenseFallbackAllowed(claims, cached.successful_at, cached.db_now, this.config.offlineGraceDays)) {
       throw new LicenseDomainError("LICENSE_UNVERIFIABLE", 503);
     }
-    return this.publicStatus(claims, "GRACE");
+    return { ...this.publicStatus(claims, "GRACE"), fallbackUntil: new Date(Math.min(
+      cached.successful_at.getTime() + this.config.offlineGraceDays * 86_400_000,
+      claims.exp * 1_000,
+      Date.parse(claims.license_expires_at),
+    )).toISOString() };
   }
 
   async activate(userId: string, email: string, keyInput: unknown): Promise<LicensePublicStatus> {

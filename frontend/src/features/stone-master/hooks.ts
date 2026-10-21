@@ -4,7 +4,8 @@ import { skipToken, useIsFetching } from "@tanstack/react-query";
 import { getQueryKey } from "@trpc/react-query";
 import { useCallback, useMemo } from "react";
 import { retryTransient } from "@/lib/trpc-error";
-import { trpc } from "@/providers/app-providers";
+import { masterTrpc } from "@/lib/master-trpc";
+import { authTrpc } from "@/lib/auth-trpc";
 import type { StoneDetail, StoneListItem, StoneOptions } from "./api";
 import type { StoneKind } from "./kinds";
 
@@ -15,14 +16,14 @@ import type { StoneKind } from "./kinds";
  * reads retried at most twice for transient failures, mutations never retried.
  */
 
-type KindRouter = typeof trpc.stoneMaster.group;
-type KindUtils = ReturnType<typeof trpc.useUtils>["stoneMaster"]["group"];
+type KindRouter = typeof masterTrpc.stoneMaster.group;
+type KindUtils = ReturnType<typeof masterTrpc.useUtils>["stoneMaster"]["group"];
 
 function kindRouter(kind: StoneKind): KindRouter {
-  return (trpc.stoneMaster as unknown as Record<StoneKind, KindRouter>)[kind];
+  return (masterTrpc.stoneMaster as unknown as Record<StoneKind, KindRouter>)[kind];
 }
 
-function kindUtils(utils: ReturnType<typeof trpc.useUtils>, kind: StoneKind): KindUtils {
+function kindUtils(utils: ReturnType<typeof masterTrpc.useUtils>, kind: StoneKind): KindUtils {
   return (utils.stoneMaster as unknown as Record<StoneKind, KindUtils>)[kind];
 }
 
@@ -48,7 +49,7 @@ export function useStoneDetail(kind: StoneKind, id: string | null) {
 }
 
 export function useStoneLoader(kind: StoneKind) {
-  const utils = trpc.useUtils();
+  const utils = masterTrpc.useUtils();
   return useCallback(
     (id: string) => kindUtils(utils, kind).get.fetch({ id }, { staleTime: 30_000, retry: retryTransient }) as unknown as Promise<StoneDetail>,
     [utils, kind],
@@ -71,7 +72,8 @@ export function useStoneMutations(kind: StoneKind) {
 }
 
 export function useStoneCache(kind: StoneKind) {
-  const utils = trpc.useUtils();
+  const utils = masterTrpc.useUtils();
+  const authUtils = authTrpc.useUtils();
   return useMemo(
     () => ({
       invalidateLists: () => kindUtils(utils, kind).list.invalidate(),
@@ -79,9 +81,9 @@ export function useStoneCache(kind: StoneKind) {
       resetDetail: (id: string) => kindUtils(utils, kind).get.reset({ id }),
       /** Selects on other pages read these, so every save refreshes them. */
       invalidateOptions: () => utils.stoneMaster.options.invalidate(),
-      recheckAccess: () => utils.permission.mine.invalidate(),
+      recheckAccess: () => authUtils.permission.mine.invalidate(),
     }),
-    [utils, kind],
+    [utils, authUtils, kind],
   );
 }
 
@@ -93,7 +95,7 @@ type OptionKindInput = "group" | "size" | "shape" | "color" | "cutting" | "clari
 
 /** Select options for the page (SA-SM-08); `include` keeps the saved record's inactive choices. */
 export function useStoneOptions(kinds: readonly OptionKindInput[], include: readonly string[]) {
-  const query = trpc.stoneMaster.options.useQuery(
+  const query = masterTrpc.stoneMaster.options.useQuery(
     kinds.length === 0 ? skipToken : { kinds: [...kinds], include: [...include].slice(0, 20) },
     { staleTime: 60_000, retry: retryTransient },
   );

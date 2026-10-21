@@ -1,5 +1,7 @@
 # Architecture: company-profile (SA 2, approved)
 
+**Current implementation remains the approved named-volume behavior below.** Proposed [GMS file-storage SA revision 3](../../../../reviews/sa/2026-10-21-gms-file-storage-rev3.md) would migrate the logo to `@gms/storage` under the platform-wide indefinite upload-retention policy; pending owner approval.
+
 > **Revision 2:** the logo is a file under the partner working directory `storage/company-profile/logo`, overwritten on upload (temp + rename under the profile row lock), deleted on removal. Production: named volume `partner-storage` at `/app/backend-api-partner/storage` ([infra bundle 2](../../../../infra/services/backend-api-partner/2/security.md)); the Dockerfile creates the folder owned by uid 1000; dev: git-ignored repo folder. Backups must include the volume. Compose, Dockerfile, `.gitignore`, `.dockerignore` change (the 'No … volume' statement below is superseded).
 
 Decisions: [decisions.md](decisions.md) · ADR: [ADR-0021](../../../../adr/0021-company-profile-in-partner-service.md)

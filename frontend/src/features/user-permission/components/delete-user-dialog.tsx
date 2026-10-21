@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { trpc } from "@/providers/app-providers";
+import { authTrpc } from "@/lib/auth-trpc";
 import { mapDeleteError, type UserSummary } from "../api";
 import { useDeleteUser } from "../hooks";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -23,7 +23,7 @@ type DeleteUserDialogProps = {
  */
 export function DeleteUserDialog({ user, onClose, onDeleted }: DeleteUserDialogProps) {
   const toast = useToast();
-  const utils = trpc.useUtils();
+  const utils = authTrpc.useUtils();
   const deletion = useDeleteUser();
   const [error, setError] = useState<string | undefined>();
 

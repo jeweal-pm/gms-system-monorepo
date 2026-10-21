@@ -76,3 +76,7 @@ root-cause ledger/pass across roles. Reuse accepted contracts unless evidence es
 a necessary change; an unchanged failure is not grounds to redesign the flow repeatedly.
 Return the specific design delta or missing fact and durable pending-review handoff;
 do not reset corrective history through a new document revision.
+
+## Single-approval delivery
+
+Keep one canonical design bundle and one ADR for each decision; search before creating a file and append a revision to the existing record when appropriate. Approval of the complete bundle is the only design gate: hand the exact approved revision to backend immediately in the same active workflow. Do not request a second SA review or write a duplicate handoff/review document. Reopen design only when new evidence requires a material contract, schema, flow, dependency, or topology change.

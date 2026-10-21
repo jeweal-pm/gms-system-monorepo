@@ -1,8 +1,9 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { HttpStatus, Injectable, Logger } from "@nestjs/common";
 import type { Request } from "express";
 import { fromNodeHeaders } from "better-auth/node";
 import * as argon2 from "argon2";
+import { uuidV7 } from "@gms/storage";
 import { auth, hashLoginIdentity } from "../auth/auth";
 import { prisma } from "../database/prisma-client";
 import type { Prisma } from "../generated/prisma/client";
@@ -11,7 +12,7 @@ import { catalogResponse, isGrantInCatalog, MAX_GRANTS_PER_USER, parsePermission
 import { loadSessionAuthz, SUPER_ADMIN_ROLE } from "../permission/grants";
 import { canUseUserAdmin, isManageableTarget, ungrantableKeys, type UserAdminAction, type UserAdminActor } from "./delegation";
 import { isKnownLocation, LOCATION_OPTIONS } from "./location-options";
-import { isPhotoType, PHOTO_MAX_BYTES, readPhotoFile, removePhotoFile, replacePhotoFile, signatureMatches } from "./photo-storage";
+import { archiveLegacyPhotoFile, isPhotoType, PHOTO_MAX_BYTES, putPhotoObject, readLegacyPhotoFile, readPhotoObject, sha256Photo, signatureMatches } from "./photo-storage";
 import { parseUserSeatLimit, USER_LIST_CAP } from "./seat-limit";
 import { userAdminException, zodFieldErrors, type FieldError } from "./user-admin.errors";
 import { createUserInputSchema, updateUserInputSchema, userIdSchema } from "./user-admin.schemas";
@@ -304,22 +305,35 @@ export class UserAdminService {
 
   /**
    * PH-02/05/06: validate, then under the User row lock check the target (exists, manageable, not the
-   * caller), overwrite the file and upsert the metadata. `User.updatedAt` is untouched (PH-07).
+   * caller), append an immutable object and switch the latest-photo association. Older bytes and
+   * metadata are retained forever. `User.updatedAt` is untouched (PH-07).
    */
   async putPhoto(actor: Actor, rawId: string, contentType: string, data: Buffer) {
     const id = parseUserId(rawId);
     if (!isPhotoType(contentType)) throw userAdminException("PHOTO_TYPE_NOT_ALLOWED", HttpStatus.UNSUPPORTED_MEDIA_TYPE);
     if (data.length > PHOTO_MAX_BYTES) throw userAdminException("PHOTO_TOO_LARGE", HttpStatus.PAYLOAD_TOO_LARGE);
     if (data.length === 0 || !signatureMatches(contentType, data)) throw userAdminException("PHOTO_TYPE_NOT_ALLOWED", HttpStatus.UNSUPPORTED_MEDIA_TYPE);
-    const sha256 = createHash("sha256").update(data).digest("hex");
+    const sha256 = sha256Photo(data);
     const outcome = await prisma.$transaction(async (transaction) => {
       const denied = await this.lockPhotoTarget(transaction, actor, id);
       if (denied) return denied;
-      await replacePhotoFile(id, data);
+      const previous = await transaction.userPhoto.findUnique({ where: { userId: id } });
+      if (previous) await this.retainPhotoAssociation(transaction, id, previous, actor.id);
+      const stored = await putPhotoObject(id, contentType, data);
+      const now = new Date();
+      await transaction.storedFile.create({
+        data: {
+          id: uuidV7(), kind: "upload", bucket: "files", objectKey: stored.key,
+          filename: `${id}.${contentType === "image/png" ? "png" : "jpg"}`,
+          contentType, sizeBytes: BigInt(stored.size), sha256: stored.sha256,
+          status: "ready", sourceType: "auth.user-photo", sourceId: id,
+          createdBy: actor.id, createdAt: now, readyAt: now, purgeAfter: null,
+        },
+      });
       await transaction.userPhoto.upsert({
         where: { userId: id },
-        create: { userId: id, contentType, sizeBytes: data.length, sha256 },
-        update: { contentType, sizeBytes: data.length, sha256 },
+        create: { userId: id, contentType, sizeBytes: data.length, sha256, storageKey: stored.key },
+        update: { contentType, sizeBytes: data.length, sha256, storageKey: stored.key },
       });
       return "DONE" as const;
     }, { timeout: 4_000 });
@@ -333,7 +347,8 @@ export class UserAdminService {
     const outcome = await prisma.$transaction(async (transaction) => {
       const denied = await this.lockPhotoTarget(transaction, actor, id);
       if (denied) return denied;
-      await removePhotoFile(id);
+      const previous = await transaction.userPhoto.findUnique({ where: { userId: id } });
+      if (previous) await this.retainPhotoAssociation(transaction, id, previous, actor.id);
       await transaction.userPhoto.deleteMany({ where: { userId: id } });
       return "DONE" as const;
     }, { timeout: 4_000 });
@@ -351,6 +366,38 @@ export class UserAdminService {
     if (actor.isSuperAdmin) return null;
     const grants = await transaction.userPermission.findMany({ where: { userId: id }, select: { menuKey: true, action: true }, take: MAX_GRANTS_PER_USER });
     return isManageableTarget(actor, { id, isSuperAdmin: target.role === SUPER_ADMIN_ROLE, permissions: catalogKeys(grants) }) ? null : "NOT_MANAGEABLE";
+  }
+
+  /** Hide a photo association without deleting its bytes or its permanent metadata record. */
+  private async retainPhotoAssociation(
+    transaction: Prisma.TransactionClient,
+    userId: string,
+    photo: { storageKey: string | null; contentType: string; sizeBytes: number; sha256: string },
+    performedBy: string,
+  ) {
+    const now = new Date();
+    if (photo.storageKey) {
+      await transaction.storedFile.updateMany({
+        where: { bucket: "files", objectKey: photo.storageKey, status: "ready" },
+        data: { status: "deleted", deletedAt: now, purgeAfter: null },
+      });
+      return;
+    }
+
+    // A photo created before the GMS adapter has no object key. Copy it into immutable storage
+    // before dropping its UserPhoto association; keep the old named-volume file untouched.
+    const legacyBytes = await readLegacyPhotoFile(userId);
+    if (!legacyBytes || legacyBytes.length === 0) return;
+    const archived = await archiveLegacyPhotoFile(userId, legacyBytes, photo.contentType);
+    await transaction.storedFile.create({
+      data: {
+        id: uuidV7(), kind: "upload", bucket: "files", objectKey: archived.key,
+        filename: `${userId}.${photo.contentType === "image/png" ? "png" : "jpg"}`,
+        contentType: photo.contentType, sizeBytes: BigInt(archived.size), sha256: archived.sha256,
+        status: "deleted", sourceType: "auth.user-photo", sourceId: userId,
+        createdBy: performedBy, createdAt: now, readyAt: now, deletedAt: now, purgeAfter: null,
+      },
+    });
   }
 
   private throwPhotoOutcome(outcome: "NOT_FOUND" | "NOT_MANAGEABLE" | "DONE", actor: Actor, id: string) {
@@ -404,6 +451,8 @@ export class UserAdminService {
         if (!isManageableTarget(actor, { id, isSuperAdmin: target.role === SUPER_ADMIN_ROLE, permissions: catalogKeys(targetGrants) })) return "NOT_MANAGEABLE" as const;
       }
       if (target.role !== "user" || id === actor.id) return "READ_ONLY" as const;
+      const photo = await transaction.userPhoto.findUnique({ where: { userId: id } });
+      if (photo) await this.retainPhotoAssociation(transaction, id, photo, actor.id);
       // Cascades: Session, Account, LicenseCache, LicenseActivationLockout, UserPermission,
       // UserLocation, UserPhoto. LoginAttempt.user_id is set to NULL.
       await transaction.user.delete({ where: { id } });
@@ -420,8 +469,6 @@ export class UserAdminService {
     }
     // The license server is not called (QL1 stays external policy).
     this.licenseService.evictStatus(id);
-    // PH-02: the row cascade removed the photo metadata; the file goes after the commit (an orphan is harmless).
-    await removePhotoFile(id).catch(() => this.logger.warn({ event: "user_admin.photo_file_cleanup_failed", actorId: actor.id, targetId: id, msg: "Photo file not removed" }));
     this.logger.log({ event: "user_admin.deleted", actorId: actor.id, targetId: id, msg: "User deleted" });
     return { ok: true as const };
   }
@@ -430,9 +477,18 @@ export class UserAdminService {
 /** user-photo.md PH-04…09: the photo bytes of one user, or PHOTO_NOT_FOUND. */
 export async function readUserPhoto(rawId: string) {
   const id = parseUserId(rawId);
-  const row = await prisma.userPhoto.findUnique({ where: { userId: id }, select: { contentType: true, sha256: true } });
+  const row = await prisma.userPhoto.findUnique({ where: { userId: id }, select: { contentType: true, sha256: true, storageKey: true } });
   if (!row) throw userAdminException("PHOTO_NOT_FOUND", HttpStatus.NOT_FOUND);
-  const data = await readPhotoFile(id);
+  if (row.storageKey) {
+    const stored = await prisma.storedFile.findUnique({
+      where: { bucket_objectKey: { bucket: "files", objectKey: row.storageKey } },
+      select: { sourceType: true, sourceId: true, status: true },
+    });
+    if (stored?.sourceType !== "auth.user-photo" || stored.sourceId !== id || stored.status !== "ready") {
+      throw userAdminException("PHOTO_NOT_FOUND", HttpStatus.NOT_FOUND);
+    }
+  }
+  const data = row.storageKey ? await readPhotoObject(row.storageKey) : await readLegacyPhotoFile(id);
   if (!data) throw userAdminException("PHOTO_NOT_FOUND", HttpStatus.NOT_FOUND);
   return { data, contentType: row.contentType, version: row.sha256.slice(0, PHOTO_VERSION_LENGTH) };
 }

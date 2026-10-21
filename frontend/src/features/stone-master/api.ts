@@ -5,8 +5,9 @@ import { emptyStoneForm, type StoneFormValues } from "./schema";
 
 /**
  * stone-master data boundary (data-fetching.md, error-handling.md): contract → form values and
- * back, drawer row text, select labels and domain-code messages. The gateway contract comes from
- * `AppRouter`; the shapes differ per page, so they are read through these small view types.
+ * back, drawer row text, select labels and domain-code messages. The api-master contract is
+ * consumed by the typed master tRPC client; the shapes differ per page, so they are read through
+ * these small view types.
  */
 
 export type StoneParts = {

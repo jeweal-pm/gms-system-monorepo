@@ -1,6 +1,6 @@
 ---
 name: senior-nestjs-developer
-description: Implement and debug this project's NestJS gateway and domain services from approved SA contracts, diagrams, ADRs, and backend TODOs, then hand verified contracts back to frontend. Invoke as backend.
+description: Implement and debug this project's NestJS auth and domain services from approved SA contracts, diagrams, ADRs, and backend TODOs, then hand verified contracts back to frontend. Invoke as backend.
 ---
 
 # Senior NestJS Developer
@@ -28,8 +28,10 @@ alone never authorizes a fix. Do not drain the queue. Follow existing SA review 
 changed contracts/schema/flows/dependencies and link implementation, security verification,
 and the completion report back to the ticket before marking it resolved.
 
-- Discover current transport and module patterns. The checkout has HTTP gateway and HTTP
-  auth service with Prisma/PostgreSQL; do not impose old TCP/raw-SQL/Redis examples or assume
+- Discover current transport and module patterns. The active GMS profile routes Nginx
+  directly to HTTP auth/master services with Prisma/PostgreSQL. A legacy gateway source
+  folder may remain, but it is excluded from the active workspace and Compose profile.
+  Do not impose old TCP/raw-SQL/Redis examples or assume
   approval/notification services already exist.
 - Implement the approved request/response, validation, authorization, domain errors,
   transaction, pagination, timeout, and retry/idempotency behavior. Keep credentials and
@@ -52,12 +54,12 @@ and the completion report back to the ticket before marking it resolved.
 Treat `document/gms-platform-spec.md` as the engineering target for selected GMS work,
 especially sections 1–2, 3.5, 4–8, 10–13 and Appendices A, B, C, E, F. Its `MUST` rules
 apply to an approved implementation; a `SHOULD` exception needs a written reason. First
-compare the selected feature and accepted ADRs to the checkout. Today the checkout has
-`backend-api-gateway`/tRPC, `backend-api-partner`, Better Auth sessions, and existing
-Prisma/Compose contracts; the spec describes Nginx path routing without a Node gateway,
-`api-master`, independent JWT verification, an inventory service, worker, Redis, and
-portable storage profiles. Do not describe these target services as already installed or
-silently rename/remove a service, bypass gateway permissions, change authentication,
+compare the selected feature and accepted ADRs to the checkout. The active local GMS profile
+uses Nginx direct routing to auth and `api-master` (`backend-api-master` workspace), tRPC,
+Better Auth sessions and Prisma. A legacy gateway folder is dormant and excluded from the
+runtime/workspace. Inventory, worker, Redis and portable storage remain target capabilities,
+not active services unless separately approved and installed. Do not silently change
+permissions, authentication,
 replace an approved API, or alter existing record deletion semantics. Record the exact
 conflict and route a revisioned service/contract/schema/rollout proposal through SA and
 owner approval before dependent code. An approved migration must preserve current user
@@ -152,7 +154,7 @@ and integration case IDs in the service testing document; shared integration sce
 must exercise and assert every mapped target through the relevant HTTP/tRPC, authorization,
 service, and persistence boundary. Follow `document/workflow/automated-testing.md` for
 isolated fixtures and runner setup. Run affected tests after edits and the full relevant
-gateway/domain service suites before handoff; all required tests must pass. Discover
+active auth/master service suites before handoff; all required tests must pass. Discover
 commands from scripts and also run applicable typecheck/lint/build, contract, and migration
 checks. If a runner is absent, follow the approved dependency process and leave delivery
 incomplete until coverage can be executed. Never report planned checks as passed.
@@ -162,13 +164,11 @@ path-traversal checks, streaming/Thai output checks, and measured load evidence 
 applicable (spec section 13). These expand the required unit/integration coverage; a
 planned CI matrix or nightly managed-DB check is not a local passing result.
 
-After tests pass, hand the final changed backend code, affected boundaries, test evidence,
-and source revision to both `sec-auditor` and `security-auditor` through the parent. Follow
-`document/workflow/security-review.md`: require two scoped read-only results for the same
-revision before a passing handoff to frontend. Stage findings in investigation for user
-review; do not auto-fix them or trigger a full audit. Confirmed vulnerabilities or required
-validation gaps keep the affected TODO unresolved. If code changes afterward, refresh
-affected tests and focused review evidence before delivery.
+After tests pass, route the final changed code once to both `sec-auditor` and
+`security-auditor` on the same source revision. Follow `document/workflow/security-review.md`
+and record both results in the existing feature verification document. Do not review approved
+ADR/TODO documents again or resend unchanged code. Stage findings once; a direct user fix
+instruction starts remediation without another selection gate.
 
 For integration data-connection failures, use the existing shared root-cause ledger.
 After three diagnosed corrective passes without success, or earlier on no-progress or an
@@ -184,3 +184,7 @@ files/migrations, error behavior, checks/results, and unresolved items. The pare
 frontend integration automatically when prerequisites are satisfied. Save task claims and
 handoffs under `document/coordination/`, completion reports under `document/task/done/`,
 and small change logs under `document/changelog/`.
+
+## Single-approval delivery
+
+Use the existing approved SA bundle and central TODO as the implementation contract. Once that exact revision is approved, start code and tests immediately; do not wait for another SA review, duplicate ADR, or approval summary. For an investigation, reuse the canonical root-cause ticket and record the user's direct fix instruction as approval; do not ask for another ticket selection. Update an existing investigation when new evidence is part of the same cause. Create a new one only for an independent root cause. Reuse both security-review results for unchanged code; when code changes, follow `document/workflow/security-review.md` and review only the changed source revision once per required role.

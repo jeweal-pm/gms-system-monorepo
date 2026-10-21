@@ -1,7 +1,7 @@
 # Database diagram: master / GMS platform migration
 
-- SA revision: 1, approved-design; see central TODO gates; current owner `backend-api-partner` / `partner` and `stone`; target owner `api-master`
-- Actual schema: `backend-api-partner/prisma/schema.prisma`, migrations `backend-api-partner/prisma/migrations/`
+- SA revision: 1, approved-design; see central TODO gates; current process/package `api-master` / `backend-api-master`; preserved schemas `partner` and `stone`
+- Actual schema: `backend-api-master/prisma/schema.prisma`, migrations `backend-api-master/prisma/migrations/`
 
 ```mermaid
 erDiagram

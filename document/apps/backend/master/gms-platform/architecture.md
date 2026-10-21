@@ -7,7 +7,7 @@
 
 ## Boundary and current capability reuse
 
-`backend-api-partner` already owns customer, vendor, company profile and stone master. Its current Nest controllers are private `/internal/v1/*` and gateway tRPC procedures are public via Next proxy. Proposed `api-master` **adapts that service** and hosts domain tRPC at `/api/master/trpc`; existing business logic and field contracts are reused after tests show parity. No new master service process is required merely for the name. Its `partner` and `stone` schemas stay as-is during route cutover; master schema/role consolidation is a separate, staged data migration. Stone catalog remains master-owned until a specific inventory consumer requires a read API/copy. Internal controllers retain private service-only access while public master handlers independently verify JWT, live rights and CSRF.
+The existing `backend-api-master` workspace now runs as Compose service `api-master`; it retains the customer, vendor, company-profile and stone implementation. The source folder/package and runtime DNS identity were renamed, while database schemas remain `partner` and `stone`, and API behavior/gateway compatibility remain unchanged. `api-master` hosts domain tRPC at `/api/master/trpc`; existing business logic and field contracts are reused while parity is completed. Master schema/role consolidation is a separate staged data migration. Stone catalog remains master-owned until a specific inventory consumer requires a read API/copy. Internal controllers retain private service-only access while public master handlers independently verify JWT, live rights and CSRF.
 
 ## Behavior
 

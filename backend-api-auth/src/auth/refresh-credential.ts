@@ -25,7 +25,7 @@ export function refreshId(now = Date.now()): string {
 }
 
 export type RefreshOutcome =
-  | { state: "rotated"; userId: string; sessionId: string; secret: string }
+  | { state: "rotated"; userId: string; username: string; sessionId: string; secret: string }
   | { state: "invalid" | "reused" | "unavailable" };
 
 /**
@@ -72,11 +72,11 @@ export class RefreshCredentialStore {
       const [row] = await tx.$queryRaw<Array<{
         id: string; family_id: string; consumed_at: Date | null; credential_expires_at: Date;
         family_expires_at: Date; revoked_at: Date | null; user_id: string; session_id: string;
-        active: boolean; session_expires_at: Date | null;
+        active: boolean; username: string; session_expires_at: Date | null;
       }>>`
         SELECT c."id", c."family_id", c."consumed_at", c."expires_at" AS credential_expires_at,
           f."expires_at" AS family_expires_at, f."revoked_at", f."user_id", f."session_id",
-          u."active", s."expiresAt" AS session_expires_at
+          u."active", u."username", s."expiresAt" AS session_expires_at
         FROM "auth"."RefreshCredential" c
         JOIN "auth"."RefreshFamily" f ON f."id" = c."family_id"
         JOIN "auth"."User" u ON u."id" = f."user_id"
@@ -99,7 +99,7 @@ export class RefreshCredentialStore {
       await tx.refreshCredential.create({ data: {
         id: refreshId(), familyId: row.family_id, tokenHash: refreshSecretHash(next), expiresAt: row.family_expires_at,
       } });
-      return { state: "rotated", userId: row.user_id, sessionId: row.session_id, secret: next };
+      return { state: "rotated", userId: row.user_id, username: row.username, sessionId: row.session_id, secret: next };
     });
   }
 

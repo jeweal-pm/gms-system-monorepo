@@ -1,6 +1,6 @@
 # Local GMS ingress preview (SA migration revision 1, infra bundle gms-target/2).
-# Overlay on docker-compose.yml + docker-compose.dev.yml. Keep the current services
-# until auth/master route parity and rollback gates are verified.
+# The adapted master process uses its target api-master service identity while its existing
+# database schemas are retained through route parity.
 services:
   nginx:
     image: nginxinc/nginx-unprivileged:1.30.6-alpine3.24@sha256:e2a8fca8aa356d66159aaf8a877a9c126773635adf210503eefaaeaffeed6ad7
@@ -27,6 +27,11 @@ services:
         condition: service_started
       backend-api-auth:
         condition: service_started
+      api-master:
+        condition: service_healthy
+    networks:
+      - default
+      - master-web
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/nginx-healthz"]
       interval: 10s
@@ -43,3 +48,36 @@ services:
     environment:
       AUTH_BASE_URL: http://localhost:8080
       FRONTEND_URL: http://localhost:8080
+      AUTH_ACCESS_JWT_ISSUER: ${AUTH_ACCESS_JWT_ISSUER:?AUTH_ACCESS_JWT_ISSUER must be set for GMS access-token signing}
+      AUTH_ACCESS_JWT_KEYS: ${AUTH_ACCESS_JWT_KEYS:?AUTH_ACCESS_JWT_KEYS must be set for GMS access-token signing}
+      MASTER_AUTH_SERVICE_TOKEN_FILE: /run/secrets/master_auth_service_token
+    secrets:
+      - master_auth_service_token
+    networks:
+      - default
+      - auth-master
+    ports: !reset []
+
+  api-master:
+    environment:
+      AUTH_SERVICE_URL: http://backend-api-auth:3101
+      AUTH_ACCESS_JWT_ISSUER: ${AUTH_ACCESS_JWT_ISSUER:?AUTH_ACCESS_JWT_ISSUER must be set for GMS master authorization}
+      FRONTEND_URL: http://localhost:8080
+      MASTER_AUTH_SERVICE_TOKEN_FILE: /run/secrets/master_auth_service_token
+      MASTER_AUTHZ_DATABASE_URL: ${MASTER_AUTHZ_DATABASE_URL:?MASTER_AUTHZ_DATABASE_URL must be set for the dedicated auth-view reader}
+    secrets:
+      - master_auth_service_token
+    networks:
+      - partner-db
+      - auth-master
+      - master-web
+
+secrets:
+  master_auth_service_token:
+    file: ${MASTER_AUTH_SERVICE_TOKEN_SOURCE:?Set MASTER_AUTH_SERVICE_TOKEN_SOURCE to a host secret file outside the repository/build context}
+
+networks:
+  auth-master:
+    internal: true
+  master-web:
+    internal: true

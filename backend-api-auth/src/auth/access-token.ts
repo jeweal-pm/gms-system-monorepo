@@ -1,8 +1,14 @@
 import { createPrivateKey, createPublicKey, randomUUID, type KeyObject } from "node:crypto";
 import { SignJWT, type JWK } from "jose";
+import { RefreshCredentialStore } from "./refresh-credential";
 
 export const ACCESS_TOKEN_AUDIENCE = "gms-domain-api";
 export const ACCESS_TOKEN_LIFETIME_SECONDS = 15 * 60;
+export const ACCESS_TOKEN_COOKIE_NAME = "gms_access";
+export const ACCESS_TOKEN_COOKIE_PATH = "/";
+export const REFRESH_TOKEN_COOKIE_NAME = "gms_refresh";
+export const REFRESH_TOKEN_COOKIE_PATH = "/api/auth/refresh";
+export const REFRESH_TOKEN_LIFETIME_SECONDS = 7 * 24 * 60 * 60;
 const MAX_PUBLISHED_KEYS = 2;
 
 type SigningKeyInput = { kid: string; privateJwk: JWK };
@@ -52,6 +58,64 @@ export class AccessTokenIssuer {
 
   publicJwks(): { keys: JWK[] } {
     return { keys: this.keys.map(({ publicJwk }) => ({ ...publicJwk })) };
+  }
+}
+
+export type AccessTokenEligibilityCheck = (userId: string, username: string) => Promise<boolean>;
+
+let eligibilityCheck: AccessTokenEligibilityCheck | null = null;
+
+/**
+ * The Nest composition root supplies the existing license service after Better Auth is created.
+ * Keeping this unset means the legacy session remains usable while no JWT is minted.
+ */
+export function registerAccessTokenEligibilityCheck(check: AccessTokenEligibilityCheck) {
+  eligibilityCheck = check;
+}
+
+/** Shared live eligibility check for login and refresh; unset means fail closed. */
+export async function isAccessTokenEligible(userId: string, username: string): Promise<boolean> {
+  if (!eligibilityCheck) return false;
+  return eligibilityCheck(userId, username);
+}
+
+/** Clear the process-local hook in tests; production never unregisters it. */
+export function resetAccessTokenEligibilityCheckForTests() {
+  eligibilityCheck = null;
+}
+
+/** Issues a short-lived, HttpOnly cookie only after the existing license check says eligible. */
+export async function issueAccessCookieAfterEligibleLogin(
+  context: { setCookie(name: string, value: string, options?: Record<string, unknown>): void },
+  user: { id: string; username?: string | null },
+  session: { id: string },
+  issuer: AccessTokenIssuer | null,
+  secure: boolean,
+  refreshStore = new RefreshCredentialStore(),
+) {
+  if (!issuer || !user.id || !session.id || !user.username) return false;
+  try {
+    if (!await isAccessTokenEligible(user.id, user.username)) return false;
+    const refresh = await refreshStore.create(user.id, session.id);
+    const token = await issuer.issue(user.id, session.id);
+    context.setCookie(ACCESS_TOKEN_COOKIE_NAME, token, {
+      httpOnly: true,
+      secure,
+      sameSite: "lax",
+      path: ACCESS_TOKEN_COOKIE_PATH,
+      maxAge: ACCESS_TOKEN_LIFETIME_SECONDS,
+    });
+    context.setCookie(REFRESH_TOKEN_COOKIE_NAME, refresh, {
+      httpOnly: true,
+      secure,
+      sameSite: "lax",
+      path: REFRESH_TOKEN_COOKIE_PATH,
+      maxAge: REFRESH_TOKEN_LIFETIME_SECONDS,
+    });
+    return true;
+  } catch {
+    // Preserve the existing Better Auth session UX; without a token, domain APIs fail closed.
+    return false;
   }
 }
 

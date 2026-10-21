@@ -7,11 +7,11 @@ import * as argon2 from "argon2";
 import { createHmac, randomUUID } from "node:crypto";
 import { prisma } from "../database/prisma-client";
 import { isValidUsername, normalizeUsername, USERNAME_MAX_LENGTH, USERNAME_MIN_LENGTH } from "./username-policy";
-import { accessTokenIssuerFromEnvironment } from "./access-token";
+import { accessTokenIssuerFromEnvironment, issueAccessCookieAfterEligibleLogin } from "./access-token";
 
 /** ADR-0020: the only sign-in route. `/sign-in/email` is disabled. */
 const SIGN_IN_PATH = "/sign-in/username";
-const accessTokenIssuer = accessTokenIssuerFromEnvironment(process.env);
+export const accessTokenIssuer = accessTokenIssuerFromEnvironment(process.env);
 
 /** Public route shares Better Auth's existing /api/auth mount; no login/session hook is changed. */
 export const accessJwksEndpoint = createAuthEndpoint("/jwks", { method: "GET" }, async (ctx) => {
@@ -181,6 +181,13 @@ export const auth = betterAuth({
           data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() },
         });
         await recordLoginAttempt(session.user.id, username, true);
+        await issueAccessCookieAfterEligibleLogin(
+          ctx,
+          { id: session.user.id, username: session.user.username },
+          { id: session.session.id },
+          accessTokenIssuer,
+          frontendUrl.protocol === "https:",
+        );
       }
     }),
   },

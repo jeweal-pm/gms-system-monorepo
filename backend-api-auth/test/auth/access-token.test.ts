@@ -1,7 +1,16 @@
 import { generateKeyPairSync } from "node:crypto";
 import { decodeProtectedHeader, jwtVerify, type JWK } from "jose";
-import { describe, expect, it } from "vitest";
-import { ACCESS_TOKEN_AUDIENCE, ACCESS_TOKEN_LIFETIME_SECONDS, AccessTokenIssuer, accessTokenIssuerFromEnvironment } from "../../src/auth/access-token";
+import { describe, expect, it, vi } from "vitest";
+import {
+  ACCESS_TOKEN_AUDIENCE,
+  ACCESS_TOKEN_COOKIE_NAME,
+  ACCESS_TOKEN_LIFETIME_SECONDS,
+  AccessTokenIssuer,
+  accessTokenIssuerFromEnvironment,
+  issueAccessCookieAfterEligibleLogin,
+  registerAccessTokenEligibilityCheck,
+  resetAccessTokenEligibilityCheckForTests,
+} from "../../src/auth/access-token";
 
 function testKey(kid: string) {
   const { privateKey } = generateKeyPairSync("ed25519");
@@ -9,6 +18,59 @@ function testKey(kid: string) {
 }
 
 describe("GP-AT-02 access JWT unit", () => {
+  it("UT-GPAUTH-01 issues a bounded HttpOnly cookie only after the existing license check accepts", async () => {
+    const issuer = new AccessTokenIssuer("https://auth.example.test", [testKey("login")]);
+    const setCookie = vi.fn();
+      const refreshStore = { create: vi.fn(async () => "r".repeat(43)) };
+    registerAccessTokenEligibilityCheck(async (userId, username) => userId === "user-1" && username === "user@example.com");
+    try {
+      await expect(issueAccessCookieAfterEligibleLogin({ setCookie }, { id: "user-1", username: "user@example.com" }, { id: "session-1" }, issuer, true, refreshStore as never)).resolves.toBe(true);
+      expect(refreshStore.create).toHaveBeenCalledWith("user-1", "session-1");
+      expect(setCookie).toHaveBeenCalledTimes(2);
+      expect(setCookie.mock.calls[0][0]).toBe(ACCESS_TOKEN_COOKIE_NAME);
+      expect(setCookie.mock.calls[0][2]).toMatchObject({
+        httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: ACCESS_TOKEN_LIFETIME_SECONDS,
+      });
+      expect(setCookie.mock.calls[1][0]).toBe("gms_refresh");
+      expect(setCookie.mock.calls[1][1]).toBe("r".repeat(43));
+      expect(setCookie.mock.calls[1][2]).toMatchObject({
+        httpOnly: true, secure: true, sameSite: "lax", path: "/api/auth/refresh", maxAge: 7 * 24 * 60 * 60,
+      });
+      const token = String(setCookie.mock.calls[0][1]);
+      expect(decodeProtectedHeader(token)).toMatchObject({ alg: "EdDSA", kid: "login" });
+    } finally {
+      resetAccessTokenEligibilityCheckForTests();
+    }
+  });
+
+  it("UT-GPAUTH-01 leaves legacy sessions unchanged when license, signer, or trusted eligibility is unavailable", async () => {
+    const setCookie = vi.fn();
+    const issuer = new AccessTokenIssuer("https://auth.example.test", [testKey("login")]);
+    await expect(issueAccessCookieAfterEligibleLogin({ setCookie }, { id: "user-1", username: "user@example.com" }, { id: "session-1" }, issuer, false)).resolves.toBe(false);
+    registerAccessTokenEligibilityCheck(async () => false);
+    await expect(issueAccessCookieAfterEligibleLogin({ setCookie }, { id: "user-1", username: "user@example.com" }, { id: "session-1" }, issuer, false)).resolves.toBe(false);
+    await expect(issueAccessCookieAfterEligibleLogin({ setCookie }, { id: "user-1", username: "user@example.com" }, { id: "session-1" }, null, false)).resolves.toBe(false);
+    expect(setCookie).not.toHaveBeenCalled();
+    resetAccessTokenEligibilityCheckForTests();
+  });
+
+  it("does not create or issue refresh credentials when login eligibility fails", async () => {
+    const setCookie = vi.fn();
+    const create = vi.fn();
+    registerAccessTokenEligibilityCheck(async () => false);
+    try {
+      await expect(issueAccessCookieAfterEligibleLogin(
+        { setCookie }, { id: "user-1", username: "user@example.com" }, { id: "session-1" },
+        new AccessTokenIssuer("https://auth.example.test", [testKey("login")]), false,
+        { create } as never,
+      )).resolves.toBe(false);
+      expect(create).not.toHaveBeenCalled();
+      expect(setCookie).not.toHaveBeenCalled();
+    } finally {
+      resetAccessTokenEligibilityCheckForTests();
+    }
+  });
+
   it("signs a distinct bounded EdDSA user token that its public JWKS verifies", async () => {
     const issuer = new AccessTokenIssuer("https://auth.example.test", [testKey("current")]);
     const token = await issuer.issue("user-1", "session-1", 1_700_000_000);

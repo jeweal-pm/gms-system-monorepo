@@ -45,15 +45,14 @@ jobs:
       - name: Typecheck after generated types exist
         run: pnpm typecheck
       - name: Run current workspace Vitest suites
-        # All four workspaces declare `test`; explicit filters fail if a script disappears.
+        # All three application workspaces declare `test`; explicit filters fail if a script disappears.
         # The service/database live integration suites remain opt-in via PARTNER_LIVE_TESTS.
         env:
           PARTNER_LIVE_TESTS: "0"
         run: |
           pnpm --filter frontend test
           pnpm --filter @gem-crm/backend-api-auth test
-          pnpm --filter @gem-crm/backend-api-gateway test
-          pnpm --filter @gem-crm/backend-api-partner test
+          pnpm --filter @gem-crm/backend-api-master test
       - name: Validate base and development Compose syntax
         # Compose requires PARTNER_SERVICE_TOKEN (`:?`). This fixed, non-secret literal only
         # satisfies interpolation for `config`; nothing is started or deployed with it.

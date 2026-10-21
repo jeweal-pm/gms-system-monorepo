@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { AppShell } from "./app-shell";
 import { navigationGroups, navigationHref } from "./navigation";
-import { trpc } from "@/providers/app-providers";
+import { authTrpc } from "@/lib/auth-trpc";
 
 export function HomeDashboard() {
-  const shortcuts = trpc.dashboard.shortcutGroups.useQuery(undefined, { retry: false });
+  const shortcuts = authTrpc.dashboard.shortcutGroups.useQuery(undefined, { retry: false });
   const groups = shortcuts.data ?? navigationGroups;
 
   return (
