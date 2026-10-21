@@ -16,14 +16,22 @@ import { photoErrorMessage, photoUrl, PhotoUploadError, UNCHANGED_PHOTO, uploadU
 import { PageHeader, type PageMode } from "./components/page-header";
 import { PermissionsCard } from "./components/permissions-card";
 import { PersonalInformationCard } from "./components/personal-information-card";
+import { PersonalSummaryBar, SUMMARY_BAR_HEIGHT } from "./components/personal-summary-bar";
 import { Button, cx, focusRing } from "@/components/ui/button";
 import { ToastProvider, useToast } from "@/components/ui/toast";
 import { USERS_DRAWER_ID, UsersDrawer } from "./components/users-drawer";
 import { useLocationOptions, usePermissionCatalog, usePermissionMine, useRemovePhoto, useSaveUser, useUserDetail, useUserList } from "./hooks";
-import { grantsFromValues, valuesFromGrants } from "./permission-utils";
+import { countEnabled, grantsFromValues, valuesFromGrants } from "./permission-utils";
 import { emptyUserForm, userFormSchema, type UserFormValues } from "./schema";
+import { useScrolledPast } from "./use-scrolled-past";
 
 const FORM_ID = "user-permission-form";
+/** The scroll column's top padding (pt-6); sticky offsets are measured from below it. */
+const SCROLL_PADDING_TOP = 24;
+/** Gap between the top bar and the compact summary, as in the design. */
+const SUMMARY_GAP = 24;
+/** Visible top band the summary covers; the card counts as gone once it is behind it. */
+const SUMMARY_COVER = SCROLL_PADDING_TOP + SUMMARY_GAP + SUMMARY_BAR_HEIGHT;
 
 /**
  * Setup › User and permission, UI revision 2 (ADR-0020).
@@ -336,12 +344,28 @@ function UserPermissionWorkspace({ access }: { access: UserAdminAccess }) {
         : null;
   const showForm = mode === "create" || savedLoaded;
 
+  // Owner 2026-10-21: the whole page scrolls; once the Personal Information card has scrolled away,
+  // a compact summary of it sticks at the top.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const personalRef = useRef<HTMLDivElement>(null);
+  const compact = useScrolledPast(personalRef, scrollRef, SUMMARY_COVER, showForm);
+  const permissionValues = useWatch({ control: form.control, name: "permissions" });
+  const permissionCount = catalog.data
+    ? { enabled: superAdminTarget ? catalog.data.applicableCount : countEnabled(catalog.data.nodes, permissionValues ?? {}), applicable: catalog.data.applicableCount }
+    : null;
+  const savedPhotoUrl = target ? photoUrl(target.id, target.photoVersion) : null;
+  const shownPhoto = photoChange.kind === "new" ? photoChange.previewUrl : photoChange.kind === "removed" ? null : savedPhotoUrl;
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-gms-page">
       <div className="relative flex min-h-0 flex-1">
-        {/* The page stays put and only the permission table scrolls (owner 2026-10-17); the page itself
-            scrolls only when the window is too short for the table's minimum height. */}
-        <div className="flex min-w-0 flex-1 flex-col overflow-y-auto pb-6 pl-6 pr-10 pt-6 print:block print:overflow-visible">
+        {/* The whole page scrolls; the table is not height-limited (owner 2026-10-21, replaces 2026-10-17). */}
+        {/* From 1600 px the open drawer sits beside the content instead of covering it (design 2026-10-21); below, the
+            drawer overlays as before so the form keeps its width. */}
+        <div
+          ref={scrollRef}
+          className={cx("flex min-w-0 flex-1 flex-col overflow-y-auto pb-6 pl-6 pr-10 pt-6 print:block print:overflow-visible", drawerOpen && "min-[1600px]:pr-[360px]")}
+        >
           <PageHeader
             formId={FORM_ID}
             mode={mode}
@@ -381,7 +405,7 @@ function UserPermissionWorkspace({ access }: { access: UserAdminAccess }) {
               id={FORM_ID}
               noValidate
               onSubmit={onSubmit}
-              className="flex min-h-0 flex-1 flex-col gap-4 print:block print:space-y-4"
+              className="flex flex-col gap-4 print:block print:space-y-4"
               aria-label={formMode === "create" ? "Create user" : formMode === "edit" ? "Edit user" : "User details"}
             >
               {formError && (
@@ -389,23 +413,44 @@ function UserPermissionWorkspace({ access }: { access: UserAdminAccess }) {
                   {formError}
                 </p>
               )}
-              <PersonalInformationCard
-                mode={formMode}
-                form={form}
-                locations={locationsState}
-                superAdmin={superAdminTarget}
-                isSelf={isSelf}
-                photo={
-                  <PhotoTile
-                    value={photoChange}
-                    savedUrl={target ? photoUrl(target.id, target.photoVersion) : null}
-                    onChange={setPhotoChange}
-                    // PH-06: your own photo is not changed on this page; unmanageable users stay read-only.
-                    readOnly={formMode === "view" || isSelf || !manageable}
-                    uploading={photoUploading}
-                  />
-                }
-              />
+              {/* Zero-height sticky anchor: the summary overlays the content without shifting it. It sticks at
+                  the scroll area's very top (over the column padding), so its page-coloured band hides the rows
+                  scrolling past above it; the table header then sticks at SUMMARY_GAP + bar height (96 px). */}
+              <div className="sticky z-30 -mb-4 h-0 print:hidden" style={{ top: -SCROLL_PADDING_TOP }}>
+                {compact && (
+                  <div className="absolute inset-x-0 top-0 bg-gms-page" style={{ paddingTop: SCROLL_PADDING_TOP + SUMMARY_GAP }}>
+                    <PersonalSummaryBar
+                      form={form}
+                      readOnly={formMode === "view"}
+                      superAdmin={superAdminTarget}
+                      isSelf={isSelf}
+                      locations={locationsState.options}
+                      photoSrc={shownPhoto}
+                      permissionCount={permissionCount}
+                      onExpand={() => scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+                    />
+                  </div>
+                )}
+              </div>
+              <div ref={personalRef}>
+                <PersonalInformationCard
+                  mode={formMode}
+                  form={form}
+                  locations={locationsState}
+                  superAdmin={superAdminTarget}
+                  isSelf={isSelf}
+                  photo={
+                    <PhotoTile
+                      value={photoChange}
+                      savedUrl={savedPhotoUrl}
+                      onChange={setPhotoChange}
+                      // PH-06: your own photo is not changed on this page; unmanageable users stay read-only.
+                      readOnly={formMode === "view" || isSelf || !manageable}
+                      uploading={photoUploading}
+                    />
+                  }
+                />
+              </div>
               <Controller
                 control={form.control}
                 name="permissions"

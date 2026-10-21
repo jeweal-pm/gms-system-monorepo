@@ -54,7 +54,7 @@ export function PermissionsCard({ catalog, catalogStatus, errorMessage, onRetry,
   const ready = catalogStatus === "success" && catalog !== undefined;
 
   return (
-    <section aria-labelledby="permissions-title" className="flex min-h-[360px] flex-1 flex-col rounded-gms-lg border border-gms-border bg-gms-surface print:block">
+    <section aria-labelledby="permissions-title" className="flex flex-col rounded-gms-lg border border-gms-border bg-gms-surface print:block">
       <header className="flex min-h-[62px] flex-wrap items-center gap-x-4 gap-y-3 border-b border-gms-border px-6 py-3">
         <h2 id="permissions-title" className="text-gms-heading font-medium text-gms-text">Permissions</h2>
         <label className="relative block w-full sm:w-[316px]">
@@ -100,7 +100,8 @@ export function PermissionsCard({ catalog, catalogStatus, errorMessage, onRetry,
         </p>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col px-6 pb-6 pt-6 print:block">
+      {/* Container: the matrix scrolls sideways only when narrower than the table (see PermissionMatrix). */}
+      <div className="@container flex flex-col px-6 pb-6 pt-6 print:block">
         {catalogStatus === "pending" && (
           <div aria-busy="true" aria-label="Loading permissions" className="space-y-2">
             <div className="h-[42px] animate-pulse rounded-gms-sm bg-gms-page" />
