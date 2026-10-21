@@ -1,13 +1,15 @@
-import { Bell, Factory, Settings } from "lucide-react";
+import { Factory } from "lucide-react";
 import type { IconComponent } from "@/components/ui/design-icon";
 import { MASTER_CODE_MENU_KEYS, menuKeyFor, setupPlaceholderLink } from "@/features/home/navigation";
 import { DEFAULT_STONE_SLUG, STONE_MENU_KEY, stonePageHref } from "@/features/stone-master/kinds";
 import {
   CertificateMasterIcon,
+  CompanyProfileIcon,
   CurrencyIcon,
   DocumentSetupIcon,
   LocationMasterIcon,
   MasterCodeIcon,
+  NotificationsIcon,
   PartnerMasterIcon,
   SalePersonIcon,
   ServiceFeeIcon,
@@ -41,13 +43,13 @@ const placeholder = (slug: Parameters<typeof setupPlaceholderLink>[0], icon: Ico
 /**
  * Setup landing tiles in reading order (S3 + owner design 2026-10-16). Company Profile has its page
  * (company-profile FE-CP-001); Notifications and Document Setup are placeholders (Q-NAV-05); Stone
- * Factory is drawn faded in the design, so it is shown as not available yet. User and Permission,
- * Master Code and Document Setup use the owner's design SVGs (setup-icons.tsx, 2026-10-20).
+ * Factory is drawn faded in the design, so it is shown as not available yet. Every tile except Stone
+ * Factory uses the owner's design SVGs (setup-icons.tsx, 2026-10-20/21).
  */
 export const setupLandingTiles: (SetupLinkDestination | SetupMasterCodeEntry | SetupUnavailableEntry)[] = [
-  { kind: "link", id: "company-profile", label: "Company Profile", href: "/setup/company-profile", icon: Settings, color: "indigo", permission: ["company-profile"] },
+  { kind: "link", id: "company-profile", label: "Company Profile", href: "/setup/company-profile", icon: CompanyProfileIcon, color: "indigo", permission: ["company-profile"] },
   { kind: "link", id: "user-permission", label: "User and Permission", href: "/setup/user-permission", icon: UserPermissionIcon, color: "green", permission: ["user-and-permission"] },
-  placeholder("notifications", Bell, "red"),
+  placeholder("notifications", NotificationsIcon, "red"),
   { kind: "master-code", id: "master-code", label: "Master Code", icon: MasterCodeIcon, color: "neutral", permission: MASTER_CODE_MENU_KEYS },
   placeholder("document-setup", DocumentSetupIcon, "blue"),
   { kind: "unavailable", id: "stone-factory", label: "Stone Factory", icon: Factory, color: "stone" },
