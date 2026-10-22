@@ -189,13 +189,13 @@ export const shortcutGroups: HomeGroup[] = [
 ];
 
 /**
- * Super Admin sees every shortcut. Others need `dashboard:VIEW` to get any shortcut at all, then
- * each item needs `<slug>:VIEW`; groups left empty are omitted.
+ * Super Admin sees every shortcut. Others see each item whose `<slug>:VIEW` they hold; groups left empty
+ * are omitted. Home is not the Dashboard page, so there is no `dashboard:VIEW` gate (user-permission SA
+ * rev 3 D3-01, owner 2026-10-22); the Dashboard shortcut itself still needs `dashboard:VIEW`.
  */
 export function shortcutGroupsFor(authz: SessionAuthz): HomeGroup[] {
   if (authz.isSuperAdmin) return shortcutGroups;
   const granted = new Set(authz.permissions);
-  if (!granted.has("dashboard:VIEW")) return [];
   return shortcutGroups
     .map((group) => ({ ...group, items: group.items.filter((item) => granted.has(`${item.slug}:VIEW`)) }))
     .filter((group) => group.items.length > 0);

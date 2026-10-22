@@ -88,7 +88,7 @@ Design ใหม่ของหน้า User and Permission ต่างจา�
 | `permission.mine` / session-context `authz` | ใช้ key v2; Super Admin คืน `"ALL"` เหมือนเดิม |
 | `POST /api/v1/users` (CRM) | รับ `username` (+ `email` แบบ deprecated ดูข้อ 1) |
 | Better Auth | เพิ่ม `/sign-in/username`, ปิด `/sign-in/email` |
-| Dashboard shortcut filter | ใช้ `dashboard:VIEW` และ key v2 |
+| Dashboard shortcut filter | ใช้ `dashboard:VIEW` และ key v2 (แก้ 2026-10-22, user-permission SA rev 3: ไม่ต้องมี `dashboard:VIEW` ก่อนแล้ว เห็นทางลัดตาม `<slug>:VIEW` ของแต่ละเมนู เพราะ Home ไม่ใช่หน้า Dashboard) |
 
 ## Alternatives
 

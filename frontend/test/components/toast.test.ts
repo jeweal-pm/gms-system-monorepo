@@ -1,9 +1,9 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ToastCard, ToastMark, type ToastItem } from "@/components/ui/toast";
+import { ToastCard, ToastMark, ToastProvider, type ToastItem } from "@/components/ui/toast";
 
-/** UT-TOAST-01…04: toast restyled to the owner's design (2026-10-20). */
+/** UT-TOAST-01…05: toast restyled to the owner's design (2026-10-20). */
 
 const card = (toast: Partial<ToastItem>) =>
   renderToStaticMarkup(createElement(ToastCard, { toast: { id: 1, tone: "success", message: "Saved", ...toast }, onDismiss: () => {} }));
@@ -43,5 +43,12 @@ describe("Toast", () => {
   it("UT-TOAST-04 the text action (design: Settings) appears only when given", () => {
     expect(card({})).not.toContain("Settings");
     expect(card({ action: { label: "Settings", onClick: () => {} } })).toContain(">Settings</button>");
+  });
+
+  it("UT-TOAST-05 the stack sits at the top right of the screen (owner 2026-10-22)", () => {
+    const html = renderToStaticMarkup(createElement(ToastProvider, null, "page"));
+    expect(html).toContain("fixed right-4 top-[100px]");
+    expect(html).toContain("sm:right-6");
+    expect(html).not.toContain("left-1/2");
   });
 });
