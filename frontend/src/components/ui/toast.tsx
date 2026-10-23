@@ -22,7 +22,7 @@ export function useToast(): ToastApi {
   return context;
 }
 
-/** C-18: top-center stack inside a polite live region; never takes focus. */
+/** C-18: stack at the top right (owner 2026-10-22, was top-center) inside a polite live region; never takes focus. */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextId = useRef(1);
@@ -40,7 +40,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <div
         aria-live="polite"
         aria-atomic="false"
-        className="pointer-events-none fixed left-1/2 top-[100px] z-50 flex w-[min(350px,calc(100vw-32px))] -translate-x-1/2 flex-col items-stretch gap-2"
+        className="pointer-events-none fixed right-4 top-[100px] z-50 flex w-[min(350px,calc(100vw-32px))] flex-col items-stretch gap-2 sm:right-6"
       >
         {toasts.map((toast) => <ToastCard key={toast.id} toast={toast} onDismiss={dismiss} />)}
       </div>

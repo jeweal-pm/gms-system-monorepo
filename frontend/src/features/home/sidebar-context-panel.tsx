@@ -14,7 +14,7 @@ import { useMenuAccess } from "./use-menu-access";
  * The group row is a link, not a disclosure: Partner master returns to `/setup` with the Master Code
  * modal open; its children stay visible.
  */
-export function SidebarContextPanel({ nav, pathname }: Readonly<{ nav: ContextNav; pathname: string }>) {
+export function SidebarContextPanel({ nav, pathname, onNavigate }: Readonly<{ nav: ContextNav; pathname: string; /** Called when a link is followed (closes the mobile drawer). */ onNavigate?: () => void }>) {
   const titleId = useId();
   const groups = visibleContextGroups(nav, useMenuAccess());
   return (
@@ -29,6 +29,7 @@ export function SidebarContextPanel({ nav, pathname }: Readonly<{ nav: ContextNa
             <li key={group.id}>
               <Link
                 href={group.href}
+                onNavigate={onNavigate}
                 className={`flex h-9 items-center gap-2 rounded-gms-md px-2 text-gms-body leading-5 text-gms-text transition-colors hover:bg-gms-nav-active ${sidebarFocusRing}`}
               >
                 <Icon aria-hidden size={18} strokeWidth={1.5} className="shrink-0" />
@@ -42,6 +43,7 @@ export function SidebarContextPanel({ nav, pathname }: Readonly<{ nav: ContextNa
                     <li key={child.id}>
                       <Link
                         href={child.href}
+                        onNavigate={onNavigate}
                         aria-current={active ? "page" : undefined}
                         className={`flex h-8 items-center rounded-gms-md px-4 text-gms-body leading-5 transition-colors hover:bg-gms-nav-active ${sidebarFocusRing} ${
                           active ? "bg-gms-nav-active text-gms-text" : "text-gms-text-secondary"

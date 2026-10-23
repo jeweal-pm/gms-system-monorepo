@@ -54,10 +54,14 @@ const shortcutGroups = [
   { title: "Report", items: [{ label: "Stock Movement (Primary Stock)", slug: "stock-movement-primary" }, { label: "Stock Movement (Consignment Stock)", slug: "stock-movement-consignment" }, { label: "Closing Stock (Primary Stock)", slug: "closing-stock-primary" }, { label: "Closing Stock (Consignment Stock)", slug: "closing-stock-consignment" }, { label: "Compare with costing", slug: "sale-report-costing" }, { label: "Shareholder Report", slug: "sale-report-shareholder" }, { label: "Commission Report", slug: "sale-report-commission" }] },
 ];
 
+/**
+ * Super Admin sees every shortcut. Others see each item whose `<slug>:VIEW` they hold; groups left empty
+ * are omitted. Home is not the Dashboard page, so there is no `dashboard:VIEW` gate (user-permission SA
+ * rev 3 D3-01, owner 2026-10-22); the Dashboard shortcut itself still needs `dashboard:VIEW`.
+ */
 export function shortcutGroupsFor(authz: AuthTrpcContext["authz"]) {
   if (authz.isSuperAdmin) return shortcutGroups;
   const granted = new Set(authz.permissions);
-  if (!granted.has("dashboard:VIEW")) return [];
   return shortcutGroups.map((group) => ({ ...group, items: group.items.filter((item) => granted.has(`${item.slug}:VIEW`)) })).filter((group) => group.items.length > 0);
 }
 

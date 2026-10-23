@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { hasNoShortcuts, NO_SHORTCUTS_MESSAGE } from "@/features/home/home-dashboard";
 import { navigationHref } from "@/features/home/navigation";
 
 /** UT-HOME-01…02: Home shortcuts open the real pages (owner 2026-10-20). */
@@ -16,5 +17,14 @@ describe("navigationHref", () => {
     expect(navigationHref({ label: "Vendor", slug: "vendor", href: "/somewhere" })).toBe("/somewhere");
     expect(navigationHref({ label: "Reserve", slug: "reserve" })).toBe("/modules/reserve");
     expect(navigationHref({ label: "Service Fee", slug: "labor-name" })).toBe("/modules/labor-name");
+  });
+});
+
+describe("Home without shortcuts (user-permission SA rev 3 D3-02)", () => {
+  it("UT-HOME-03 the message shows only after the gateway answered with no shortcuts", () => {
+    expect(hasNoShortcuts(true, [])).toBe(true);
+    expect(hasNoShortcuts(false, undefined)).toBe(false);
+    expect(hasNoShortcuts(true, [{ title: "Setup", items: [{ label: "Company Profile", slug: "company-profile" }] }])).toBe(false);
+    expect(NO_SHORTCUTS_MESSAGE).toContain("Ask your administrator");
   });
 });

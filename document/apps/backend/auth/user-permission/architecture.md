@@ -18,8 +18,8 @@
   `/is-username-available` are disabled. Lockout/rate-limit/LoginAttempt (ADR-0012) hash the
   normalized username with the same HMAC, so buckets of migrated users are unchanged.
 - **Catalog v2:** sections/groups/leaves with 9 actions, 39 leaves, 347 applicable cells; all v1
-  grants deleted by the migration. Gateway `dashboard.shortcutGroups` follows v2 keys and requires
-  `dashboard:VIEW` for non–Super Admins.
+  grants deleted by the migration. Gateway `dashboard.shortcutGroups` follows v2 keys; since SA rev 3 (2026-10-22)
+  each item needs only its own `<slug>:VIEW` (no `dashboard:VIEW` gate: Home is not the Dashboard).
 - **Update** (`PATCH /internal/v1/user-admin/users/:id`, gateway `userAdmin.update`) is now delivered.
   Super Admin targets are no longer read-only: name, phone and locations are editable; permissions,
   active, password and delete stay locked (`SUPER_ADMIN_LOCKED`).
