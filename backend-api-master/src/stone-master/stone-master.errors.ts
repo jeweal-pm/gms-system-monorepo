@@ -1,10 +1,11 @@
 import { HttpStatus } from "@nestjs/common";
 import { partnerException } from "../common/errors";
-import { persistenceErrorMapper, prismaCode } from "../common/persistence";
+import { persistenceErrorMapper, prismaCode, violatedTarget } from "../common/persistence";
 
 export const stoneNotFound = () => partnerException("STONE_MASTER_NOT_FOUND", HttpStatus.NOT_FOUND);
 export const stoneChanged = () => partnerException("STONE_MASTER_CHANGED", HttpStatus.CONFLICT);
 export const stoneCodeTaken = () => partnerException("STONE_MASTER_CODE_TAKEN", HttpStatus.CONFLICT, [{ path: "code", code: "duplicate" }]);
+export const stoneSizeNameTaken = () => partnerException("STONE_MASTER_CODE_TAKEN", HttpStatus.CONFLICT, [{ path: "name", code: "duplicate" }]);
 export const stoneInUse = () => partnerException("STONE_MASTER_IN_USE", HttpStatus.CONFLICT);
 /** SA-SM-06: a missing or newly chosen inactive reference; `path` names the field. */
 export const stoneReferenceInvalid = (path: string) =>
@@ -25,6 +26,8 @@ const baseMapper = persistenceErrorMapper({
  * Everything else follows the shared partner mapper.
  */
 export function mapStoneError(error: unknown, operation: string): unknown {
+  // Owner 2026-10-23: a size has no code; its unique Name reports the same domain code on `name`.
+  if (prismaCode(error) === "P2002" && violatedTarget(error).includes("stone_size_name_key")) return stoneSizeNameTaken();
   if (prismaCode(error) === "P2003") return operation === "delete" ? stoneInUse() : stoneReferenceInvalid("(reference)");
   return baseMapper(error, operation);
 }

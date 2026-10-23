@@ -4,17 +4,13 @@ import { parseOrThrow, validationException } from "../common/errors";
 import { listQuerySchema } from "../common/partner-schemas";
 import { parseId, requireJson } from "../common/request";
 import { requireActor } from "../internal-auth/actor";
-import { isSimpleKind, isStoneKind, type StoneKind } from "./stone-master.kinds";
-import { BODY_SCHEMAS, optionsQuerySchema } from "./stone-master.schemas";
+import { isStoneKind, type StoneKind } from "./stone-master.kinds";
+import { bodySchemasFor, optionsQuerySchema } from "./stone-master.schemas";
 import { StoneMasterService } from "./stone-master.service";
 
 function parseKind(value: string): StoneKind {
   if (!isStoneKind(value)) throw validationException([{ path: "kind", code: "invalid" }]);
   return value;
-}
-
-function bodySchemas(kind: StoneKind) {
-  return isSimpleKind(kind) ? BODY_SCHEMAS.simple : BODY_SCHEMAS[kind];
 }
 
 /**
@@ -46,7 +42,7 @@ export class StoneMasterController {
     const actorId = requireActor(request);
     const kind = parseKind(rawKind);
     requireJson(request);
-    return this.stones.create(kind, actorId, parseOrThrow(bodySchemas(kind).create, body));
+    return this.stones.create(kind, actorId, parseOrThrow(bodySchemasFor(kind).create, body));
   }
 
   @Put(":kind/:id")
@@ -56,7 +52,7 @@ export class StoneMasterController {
     const kind = parseKind(rawKind);
     const recordId = parseId(id);
     requireJson(request);
-    return this.stones.update(kind, actorId, recordId, parseOrThrow(bodySchemas(kind).update, body) as { expectedUpdatedAt: string });
+    return this.stones.update(kind, actorId, recordId, parseOrThrow(bodySchemasFor(kind).update, body) as { expectedUpdatedAt: string });
   }
 
   @Delete(":kind/:id")

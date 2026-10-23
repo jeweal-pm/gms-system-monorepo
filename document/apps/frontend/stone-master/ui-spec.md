@@ -46,7 +46,7 @@ All pages live under Setup › Master Code › **Stone Master**. Route base: `/s
 |---|---|---|---|---|---|
 | Stone Group | `stone-group` | Stone Group | Add Stone Group / {name} | Stone Group List N | Code Name\*, Name\* |
 | Stone Name | `stone-name` | Stone Name | Add Stone Name / {name} | Stone Name List N | Code Name\*, Name\*, Stone Group\*, HSN |
-| Size | `size` | Size | Add Size / {name} | Size List N | Code Name\*, Name\* |
+| Size | `size` | Size | Add Size / {name} | Size List N | Name\* only (owner 2026-10-23; unique, 1–20 of letters, digits, space . - /; Auto stone codes use it uppercased without spaces). Search placeholder "Search name...". Duplicate clears the Name. |
 | Shape | `shape` | Shape | Add Shape / {name} | Shape List N | Code Name\*, Name\*, Sizes Available\* (multi) |
 | Color | `color` | Color | Add Color / {name} | Color List N | Code Name\*, Name\* |
 | Cutting | `cutting` | Cutting | Add Cutting / {name} | Cutting List N | Code Name\*, Name\* |
@@ -79,11 +79,14 @@ All pages live under Setup › Master Code › **Stone Master**. Route base: `/s
   - Infinite scroll; empty and error states are the partner ones.
 - **Row text**:
 
+  Owner 2026-10-23: the code comes first (bold), then the name, on every page.
+
   | Page | Primary | Secondary |
   |---|---|---|
-  | Simple pages | Name | Code |
-  | Stone Name | Name | `Code · GroupCode · GroupName · HSN n` (HSN part only when set) |
-  | Shape | Name | `Code · N sizes` |
+  | Simple pages (not Size) | Code | Name |
+  | Size | Name | (none; a size has no code) |
+  | Stone Name | Code | `Name · GroupCode · GroupName · HSN n` (HSN part only when set) |
+  | Shape | Code | `Name · N sizes` |
   | Stone Code | Code | `{Stone Name} · Auto code` or `· Manual code` |
 
 - **Search**:
@@ -129,6 +132,7 @@ All pages live under Setup › Master Code › **Stone Master**. Route base: `/s
   - Reordering: drag the handle with a mouse or touch. For keyboard, focus the handle (button "Move {part}") and press ArrowUp/ArrowDown; the move is announced in a live region.
   - Empty optional parts are skipped in the code.
 - Changing a part, the order or the mode recomputes the Auto code immediately. The server rebuilds Auto codes when it saves (authoritative).
+- Owner 2026-10-23: a saved Auto code is a snapshot. View mode shows the saved code, even if a part's code changed on another page. Edit (and create) shows the code built from the current part codes, and Save stores it (SA-SM-05a). The size part uses the size name, uppercased without spaces.
 
 ## States
 

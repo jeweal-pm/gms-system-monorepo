@@ -190,7 +190,7 @@ export function PartnerDrawer<TItem extends PartnerListItem>({
                       {text ? text.primary : item.code || "No code name"}
                       <span className="sr-only">{item.active ? ", active" : ", inactive"}</span>
                     </span>
-                    <span className="block truncate text-gms-body text-gms-text-secondary">{text ? text.secondary : item.name}</span>
+                    {(text ? text.secondary : item.name) && <span className="block truncate text-gms-body text-gms-text-secondary">{text ? text.secondary : item.name}</span>}
                   </span>
                   {!item.active && <Badge variant="inactive">Inactive</Badge>}
                 </button>

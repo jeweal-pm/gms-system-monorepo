@@ -22,6 +22,16 @@
 | SA-SM-11 | **Capacity:** expected < 5,000 rows per table. Lists are paged (≤ 50) and options ≤ 1,000 × requested kinds. Indexes: unique upper(code) per table, `stone_name(group_id)`, `stone_shape_size(size_id)`, and an index per `stone_code` FK. No cache, job or pool change. | Bounded memory/CPU on the shared host. |
 | SA-SM-12 | **Release:** one migration `…_stone_master` (new tables only; nothing existing changes). Gateway, partner and frontend ship together. No infra or devops change (no new container, volume, variable or port). | Additive and reversible (drop tables). |
 
+## Owner revision 2026-10-23 (size name only, saved Auto codes)
+
+Owner request (2026-10-23, verbatim): "1. หน้า size มีเเค่ name อย่างเดียว ในหน้า stone code ก็นำname ไปใช้เเทน 2. เเล้วก็เปลี่ยนในเเถบด้านข้างสลับนำ code ขึ้นก่อนเเล้วค่อย name … ทำทุกๆหน้าใน stone master เลยนะ 3. ตอนนี้ในหน้า stone code เมื่อเป็น auto code เมื่อเราสร้าง stone code เเล้วอยากให้บันทึกไว้เเบบนั้น ถ้ามีการเปลี่ยนcode ในหน้าอื่นๆเช่น color stone code สร้างเเล้วไม่เปลี่ยนตาม". Owner choices the same day: drop the size `code` column; existing stone codes keep their saved code; keep a saved Auto code unless its parts change.
+
+| ID | Change |
+|---|---|
+| SA-SM-04a | **Size has only a Name.** Migration `20261023090000_stone_size_name_only` drops `stone_size.code` and its index and adds the unique index `stone_size_name_key` on `name` (it aborts if names are duplicated). Size bodies are `{name, active}` (strict): Name is trimmed, 1–20 of `A–Z a–z 0–9 space . - /`. A duplicate name returns `STONE_MASTER_CODE_TAKEN` (409) with field `name`. |
+| SA-SM-05a | **Size part of an Auto code** = the size Name, uppercased without spaces (`2.0 mm` → `2.0MM`). **Saved Auto codes:** a saved code is a snapshot: changing a part's code (or a size's name) on another page never rewrites saved stone codes (Q-SM-05). Saving an edit of an AUTO stone code rebuilds the code from the current part codes, even when the parts are unchanged (owner 2026-10-23 follow-up: "auto code ถ้ากด edit ก็ ดึง code ใหม่ดีกว่าเช่น GRL"). |
+| SA-SM-07a | **Size list/options/cursor/search** use `name` (order `name, id`; search on name only). Size rows and options carry `{id, name, active}` with no `code`. The cursor value limit is raised to 120. Shape detail sorts `sizeIds` by size name. |
+
 ## API contract (summary)
 
 | Partner route | Gateway procedure | Body / output |

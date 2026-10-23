@@ -23,8 +23,10 @@ import {
   OPTION_KINDS_BY_FIELDS,
   optionLabel,
   PART_OPTION,
+  partCode,
   referencedIds,
   rowText,
+  shownAutoCode,
   toDuplicateValues,
   toFormValues,
   toInput,
@@ -101,15 +103,16 @@ function StoneWorkspace({ page, access }: { page: StonePage; access: PartnerAcce
   const options = useStoneOptions(OPTION_KINDS_BY_FIELDS[fields], include);
   const optionsState: OptionsState = { data: options.data, status: options.isPending && OPTION_KINDS_BY_FIELDS[fields].length > 0 ? "loading" : options.isError ? "error" : "ready", onRetry: () => void options.refetch() };
 
-  // Live Auto code from the chosen parts' codes in the current order (the server rebuilds it on save).
+  // Live Auto code from the chosen parts' codes (a size's name) in the current order; the server rebuilds
+  // it on save. Viewing a saved record shows its saved code; Edit shows the rebuilt one (owner 2026-10-23).
   const autoCode = useMemo(() => {
     if (fields !== "stoneCode") return "";
     const codes = Object.fromEntries(PART_KEYS.map((part) => {
       const id = watched[PART_FIELD[part]];
-      return [part, options.data?.[PART_OPTION[part]]?.find((option) => option.id === id)?.code];
+      return [part, partCode(part, options.data?.[PART_OPTION[part]]?.find((option) => option.id === id))];
     }));
-    return buildAutoCode(watched.partOrder ?? [], codes);
-  }, [fields, watched, options.data]);
+    return shownAutoCode(mode === "view" && loaded ? detail.data : undefined, buildAutoCode(watched.partOrder ?? [], codes));
+  }, [fields, watched, options.data, mode, loaded, detail.data]);
 
   const requestFocus = useCallback((name: Path<StoneFormValues>) => setFocusRequest((current) => ({ name, seq: (current?.seq ?? 0) + 1 })), []);
   useEffect(() => {
@@ -134,7 +137,7 @@ function StoneWorkspace({ page, access }: { page: StonePage; access: PartnerAcce
     return () => window.removeEventListener("beforeprint", handler);
   }, []);
 
-  const firstField: Path<StoneFormValues> = fields === "stoneCode" ? "stoneNameId" : "code";
+  const firstField: Path<StoneFormValues> = fields === "stoneCode" ? "stoneNameId" : fields === "size" ? "name" : "code";
 
   function guard(action: () => void) {
     if (form.formState.isDirty) setPendingDiscard(() => action);
@@ -227,7 +230,7 @@ function StoneWorkspace({ page, access }: { page: StonePage; access: PartnerAcce
       setLoadedId(null);
       setEditing(false);
       requestFocus(firstField);
-      toast.show("info", `Copied from ${source.name ?? source.code}. Enter a new code, then save.`);
+      toast.show("info", `Copied from ${source.name ?? source.code}. Enter a new ${fields === "size" ? "name" : "code"}, then save.`);
     });
   }
 
@@ -345,7 +348,7 @@ function StoneWorkspace({ page, access }: { page: StonePage; access: PartnerAcce
     if (fields === "stoneCode" && data.parts) {
       const parts = data.parts;
       return [
-        { label: "Stone Code", value: data.code },
+        { label: "Stone Code", value: data.code ?? "" },
         { label: "Mode", value: data.mode === "MANUAL" ? "Manual Code" : "Auto Code" },
         ...(data.partOrder ?? []).map((part, index) => {
           const id = parts[PART_FIELD[part]];
@@ -355,7 +358,7 @@ function StoneWorkspace({ page, access }: { page: StonePage; access: PartnerAcce
         { label: "Active", value: data.active ? "Yes" : "No" },
       ];
     }
-    const rows = [{ label: "Code Name", value: data.code }, { label: "Name", value: data.name ?? "" }];
+    const rows = fields === "size" ? [{ label: "Name", value: data.name ?? "" }] : [{ label: "Code Name", value: data.code ?? "" }, { label: "Name", value: data.name ?? "" }];
     if (fields === "stoneName") {
       const group = find("group", data.groupId);
       rows.push({ label: "Stone Group", value: group ? optionLabel(group) : "" }, { label: "HSN", value: data.hsn ?? "" });
@@ -392,7 +395,7 @@ function StoneWorkspace({ page, access }: { page: StonePage; access: PartnerAcce
             onCancel={cancel}
             onEdit={startEdit}
             onDelete={() => {
-              if (loaded && detail.data) setDeleteTarget({ id: detail.data.id, name: recordTitle ?? detail.data.code });
+              if (loaded && detail.data) setDeleteTarget({ id: detail.data.id, name: recordTitle ?? detail.data.code ?? "" });
             }}
           />
 
@@ -473,7 +476,7 @@ function StoneWorkspace({ page, access }: { page: StonePage; access: PartnerAcce
           action?.();
         }}
       />
-      {loaded && detail.data && <StonePrintView page={page} title={recordTitle ?? detail.data.code} rows={printRows} printedAt={printedAt} />}
+      {loaded && detail.data && <StonePrintView page={page} title={recordTitle ?? detail.data.code ?? ""} rows={printRows} printedAt={printedAt} />}
     </div>
   );
 }

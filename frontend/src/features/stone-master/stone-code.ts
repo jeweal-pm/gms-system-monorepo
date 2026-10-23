@@ -48,6 +48,14 @@ export function buildAutoCode(order: readonly PartKey[], codes: Partial<Record<P
   return `${parts[0]}${parts[1]}-${parts.slice(2).join("")}`;
 }
 
+/**
+ * Owner 2026-10-23: a size has no code, so its Name stands in for the size part of an Auto code,
+ * uppercased with the spaces removed ("2.0 mm" → "2.0MM"); the server does the same.
+ */
+export function sizePartCode(name: string): string {
+  return name.toUpperCase().replace(/\s+/g, "");
+}
+
 /** Moves one item from `from` to `to` (both clamped); the original array is not changed. */
 export function moveItem<T>(items: readonly T[], from: number, to: number): T[] {
   const target = Math.max(0, Math.min(items.length - 1, to));

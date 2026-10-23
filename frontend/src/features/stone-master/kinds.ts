@@ -7,7 +7,8 @@ import type { PartnerEntity } from "@/features/partner/entity";
 export const STONE_MENU_KEY = "stone-master";
 
 export type StoneKind = "group" | "size" | "color" | "cutting" | "clarity" | "quality" | "stoneName" | "shape" | "stoneCode";
-export type FieldSet = "simple" | "stoneName" | "shape" | "stoneCode";
+/** `size`: Name only (owner 2026-10-23); Auto stone codes use the size name. */
+export type FieldSet = "simple" | "size" | "stoneName" | "shape" | "stoneCode";
 
 export type StonePage = {
   slug: string;
@@ -28,7 +29,7 @@ const SEARCH = "Search code or name...";
 export const STONE_PAGES: readonly StonePage[] = [
   { slug: "stone-group", kind: "group", fields: "simple", entity: entity("Stone Group", "Stone Groups"), navLabel: "Stone Group", codePlaceholder: "e.g. DIA", namePlaceholder: "e.g. Diamond", searchPlaceholder: SEARCH },
   { slug: "stone-name", kind: "stoneName", fields: "stoneName", entity: entity("Stone Name", "Stone Names"), navLabel: "Stone Name", codePlaceholder: "e.g. RUB", namePlaceholder: "e.g. Ruby", searchPlaceholder: "Search code, name or HSN..." },
-  { slug: "size", kind: "size", fields: "simple", entity: entity("Size", "Sizes"), navLabel: "Size", codePlaceholder: "e.g. 1.0", namePlaceholder: "e.g. 1.0 mm", searchPlaceholder: SEARCH },
+  { slug: "size", kind: "size", fields: "size", entity: entity("Size", "Sizes"), navLabel: "Size", codePlaceholder: "", namePlaceholder: "e.g. 1.0 mm", searchPlaceholder: "Search name..." },
   { slug: "shape", kind: "shape", fields: "shape", entity: entity("Shape", "Shapes"), navLabel: "Shape", codePlaceholder: "e.g. RD", namePlaceholder: "e.g. Round", searchPlaceholder: SEARCH },
   { slug: "color", kind: "color", fields: "simple", entity: entity("Color", "Colors"), navLabel: "Color", codePlaceholder: "e.g. D", namePlaceholder: "e.g. D Color", searchPlaceholder: SEARCH },
   { slug: "cutting", kind: "cutting", fields: "simple", entity: entity("Cutting", "Cuttings"), navLabel: "Cutting", codePlaceholder: "e.g. EX", namePlaceholder: "e.g. Excellent", searchPlaceholder: SEARCH },

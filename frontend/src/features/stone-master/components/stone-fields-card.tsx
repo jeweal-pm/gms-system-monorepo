@@ -21,7 +21,7 @@ type StoneFieldsCardProps = {
   form: UseFormReturn<StoneFormValues>;
   readOnly: boolean;
   options: OptionsState;
-  /** Live Auto code built from the chosen parts (Stone Code page). */
+  /** Auto code to show (Stone Code page): the saved snapshot while the parts are unchanged, else built live. */
   autoCode: string;
 };
 
@@ -47,7 +47,10 @@ export function StoneFieldsCard({ page, form, readOnly, options, autoCode }: Sto
 
   const textFields = page.fields !== "stoneCode" && (
     <>
-      <TextField id={`${ID}-code`} label="Code Name" required autoComplete="off" placeholder={page.codePlaceholder} readOnly={readOnly} error={errors.code?.message} className="[&_input]:uppercase" {...register("code")} />
+      {/* Owner 2026-10-23: a size has only a Name. */}
+      {page.fields !== "size" && (
+        <TextField id={`${ID}-code`} label="Code Name" required autoComplete="off" placeholder={page.codePlaceholder} readOnly={readOnly} error={errors.code?.message} className="[&_input]:uppercase" {...register("code")} />
+      )}
       <TextField id={`${ID}-name`} label="Name" required autoComplete="off" placeholder={page.namePlaceholder} readOnly={readOnly} error={errors.name?.message} {...register("name")} />
     </>
   );
@@ -139,10 +142,11 @@ export function StoneFieldsCard({ page, form, readOnly, options, autoCode }: Sto
           <div>
             {/* Copy button inside the field (owner 2026-10-19); the input keeps room for it on the right. */}
             <div className="relative">
+              {/* Distinct keys: the read-only Auto input is controlled, the Manual one is registered (uncontrolled). */}
               {mode === "AUTO" ? (
-                <TextField id={`${ID}-code`} label="Stone Code" required readOnly value={autoCode} placeholder={page.codePlaceholder} error={errors.code?.message} className="[&_input]:pr-12" />
+                <TextField key="code-auto" id={`${ID}-code`} label="Stone Code" required readOnly value={autoCode} placeholder={page.codePlaceholder} error={errors.code?.message} className="[&_input]:pr-12" />
               ) : (
-                <TextField id={`${ID}-code`} label="Stone Code" required autoComplete="off" placeholder={page.codePlaceholder} readOnly={readOnly} error={errors.code?.message} className="[&_input]:pr-12 [&_input]:uppercase" {...register("code")} />
+                <TextField key="code-manual" id={`${ID}-code`} label="Stone Code" required autoComplete="off" placeholder={page.codePlaceholder} readOnly={readOnly} error={errors.code?.message} className="[&_input]:pr-12 [&_input]:uppercase" {...register("code")} />
               )}
               <CopyCodeButton value={mode === "AUTO" ? autoCode : (manualCode ?? "").toUpperCase()} />
             </div>

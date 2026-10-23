@@ -45,6 +45,8 @@ export function emptyStoneForm(): StoneFormValues {
 }
 
 export const CODE_PATTERN = /^[A-Za-z0-9./-]{1,20}$/;
+/** Owner 2026-10-23: a size name is used in Auto stone codes (spaces dropped there). */
+export const SIZE_NAME_PATTERN = /^[A-Za-z0-9 ./-]{1,20}$/;
 export const STONE_CODE_PATTERN = /^[A-Za-z0-9./-]{1,60}$/;
 export const STONE_SEARCH_MAX = 100;
 
@@ -71,7 +73,12 @@ type Issue = { path: keyof StoneFormValues; message: string };
 /** Pure rules (exported for tests); the schema reports them on their fields. */
 export function stoneFormIssues(fields: FieldSet, values: StoneFormValues): Issue[] {
   const issues: Issue[] = [];
-  if (fields !== "stoneCode") {
+  if (fields === "size") {
+    const name = values.name.trim();
+    if (name === "") issues.push({ path: "name", message: "Name is required" });
+    else if (!SIZE_NAME_PATTERN.test(name)) issues.push({ path: "name", message: "Use up to 20 letters, digits, spaces, . - or /" });
+  }
+  if (fields !== "stoneCode" && fields !== "size") {
     const code = values.code.trim();
     if (code === "") issues.push({ path: "code", message: "Code Name is required" });
     else if (!CODE_PATTERN.test(code)) issues.push({ path: "code", message: "Use up to 20 letters, digits, . - or /" });
