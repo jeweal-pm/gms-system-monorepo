@@ -47,9 +47,10 @@ describe("setupLandingTiles", () => {
     ]);
   });
 
-  it("UT-NAV-F02 links Document Setup to its placeholder under Setup", () => {
+  it("UT-NAV-F02 links Document Setup to its real page, gated by the document-setup leaf (UI rev 1)", () => {
     const tile = setupLandingTiles.find((entry) => entry.id === "document-setup");
-    expect(tile && "href" in tile ? tile.href : null).toBe("/modules/document-setup");
+    expect(tile && "href" in tile ? tile.href : null).toBe("/setup/document-setup");
+    expect(tile?.permission).toEqual(["document-setup"]);
     expect(moduleBreadcrumbs("document-setup")).toEqual({
       label: "Document Setup",
       breadcrumbs: [{ label: "Home", href: "/" }, { label: "Setup", href: "/setup" }, { label: "Document Setup" }],

@@ -2,6 +2,7 @@ import { HttpException } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MasterContext } from "../../src/master/authorization";
 import { createMasterRouter } from "../../src/master/router";
+import type { DocumentSetupService } from "../../src/document-setup/document-setup.service";
 import type { CustomerService } from "../../src/customer/customer.service";
 import type { VendorService } from "../../src/vendor/vendor.service";
 import type { CompanyProfileService } from "../../src/company-profile/company-profile.service";
@@ -19,11 +20,13 @@ const vendor = {
 };
 const companyProfile = { get: vi.fn(), options: vi.fn(), save: vi.fn(), removeLogo: vi.fn() };
 const stoneMaster = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
+const documentSetup = { list: vi.fn(), get: vi.fn(), save: vi.fn() };
 const router = createMasterRouter({
   customer: customer as unknown as CustomerService,
   vendor: vendor as unknown as VendorService,
   companyProfile: companyProfile as unknown as CompanyProfileService,
   stoneMaster: stoneMaster as unknown as StoneMasterService,
+  documentSetup: documentSetup as unknown as DocumentSetupService,
 });
 
 function context(grants: string[], overrides: Partial<MasterContext> = {}): MasterContext {
@@ -34,7 +37,7 @@ function context(grants: string[], overrides: Partial<MasterContext> = {}): Mast
 }
 
 beforeEach(() => {
-  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster)]) fn.mockReset().mockResolvedValue({ ok: true });
+  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup)]) fn.mockReset().mockResolvedValue({ ok: true });
 });
 
 describe("staged master domain tRPC boundary", () => {
@@ -144,5 +147,20 @@ describe("staged master domain tRPC boundary", () => {
     expect(stoneMaster.delete).toHaveBeenCalledWith("group", "user-1", ID);
     await expect(router.createCaller(context(["stone-master:VIEW"])).stoneMaster.group.create({ code: "G", name: "Group", active: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(router.createCaller(context(["stone-master:VIEW", "stone-master:ADD"], { csrfVerified: false })).stoneMaster.group.create({ code: "G", name: "Group", active: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("GP-MT-DS document setup: VIEW reads, EDIT + CSRF saves, strict input, verified actor", async () => {
+    const save = { transactionKey: "purchase-order" as const, name: "PURCHASE ORDER", code: "PO", startFrom: 1, rows: [{ effectiveDate: "2026-01-01", prefix: "PO", separator: "-", startNo: 1 }], declaration: "", expectedVersion: null };
+    const caller = router.createCaller(context(["document-setup:VIEW", "document-setup:EDIT"]));
+    await caller.documentSetup.list();
+    await caller.documentSetup.get({ transactionKey: "quotation" });
+    await caller.documentSetup.save(save);
+    expect(documentSetup.list).toHaveBeenCalledOnce();
+    expect(documentSetup.get).toHaveBeenCalledWith("quotation");
+    expect(documentSetup.save).toHaveBeenCalledWith("user-1", expect.objectContaining({ code: "PO", expectedVersion: null }));
+    await expect(router.createCaller(context([])).documentSetup.list()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["document-setup:VIEW"])).documentSetup.save(save)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["document-setup:EDIT"], { csrfVerified: false })).documentSetup.save(save)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(caller.documentSetup.get({ transactionKey: "stone-master" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 });

@@ -91,6 +91,8 @@ export class MasterAuthContextAdapter {
       issuer: string;
       audience?: string;
       trustedOrigin: string;
+      /** Extra origins accepted for cookie mutations, e.g. a LAN address of the dev preview (opt-in, default none). */
+      extraTrustedOrigins?: readonly string[];
       jwks: MasterJwksCache;
       checkLicense?: MasterLicenseCheck;
       authorizationReader: (userId: string, sessionId: string) => Promise<CurrentAuthorizationRow | null>;
@@ -100,13 +102,19 @@ export class MasterAuthContextAdapter {
     if (!options.issuer || !URL.canParse(options.issuer) || !options.trustedOrigin || !URL.canParse(options.trustedOrigin)) {
       throw new Error("Invalid master authentication configuration");
     }
+    for (const extra of options.extraTrustedOrigins ?? []) {
+      if (!URL.canParse(extra) || !/^https?:$/.test(new URL(extra).protocol)) throw new Error("Invalid master authentication configuration");
+    }
+    this.trustedOrigins = new Set([options.trustedOrigin, ...(options.extraTrustedOrigins ?? [])].map((value) => new URL(value).origin));
   }
+
+  private readonly trustedOrigins: ReadonlySet<string>;
 
   async create(request: MasterRequest): Promise<MasterContext> {
     const token = accessCookie(request.headers.cookie);
     if (!token) throw unauthenticated();
     const mutation = request.method !== undefined && !["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase());
-    if (mutation && !verifyCsrfHeaders(request.headers, this.options.trustedOrigin)) {
+    if (mutation && !verifyCsrfHeaders(request.headers, this.trustedOrigins)) {
       throw new TRPCError({ code: "FORBIDDEN", message: "CSRF_INVALID" });
     }
 
@@ -214,11 +222,11 @@ function accessCookie(header: string | string[] | undefined): string | null {
   return token.length > 0 && token.length <= 8_192 && /^[A-Za-z0-9._-]+$/.test(token) ? token : null;
 }
 
-function verifyCsrfHeaders(headers: MasterRequest["headers"], trustedOrigin: string) {
+function verifyCsrfHeaders(headers: MasterRequest["headers"], trustedOrigins: ReadonlySet<string>) {
   const origin = singleHeader(headers.origin);
   const marker = singleHeader(headers["x-gms-csrf"]);
   const fetchSite = singleHeader(headers["sec-fetch-site"]);
-  return origin === new URL(trustedOrigin).origin && marker === "1" && (fetchSite === undefined || fetchSite === "same-origin" || fetchSite === "same-site");
+  return origin !== undefined && trustedOrigins.has(origin) && marker === "1" && (fetchSite === undefined || fetchSite === "same-origin" || fetchSite === "same-site");
 }
 
 function singleHeader(value: string | string[] | undefined) {

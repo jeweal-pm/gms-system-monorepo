@@ -51,7 +51,8 @@ export const setupLandingTiles: (SetupLinkDestination | SetupMasterCodeEntry | S
   { kind: "link", id: "user-permission", label: "User and Permission", href: "/setup/user-permission", icon: UserPermissionIcon, color: "green", permission: ["user-and-permission"] },
   placeholder("notifications", NotificationsIcon, "red"),
   { kind: "master-code", id: "master-code", label: "Master Code", icon: MasterCodeIcon, color: "neutral", permission: MASTER_CODE_MENU_KEYS },
-  placeholder("document-setup", DocumentSetupIcon, "blue"),
+  // document-setup UI rev 1 (owner 2026-10-23): real page, gated by the new `document-setup` leaf.
+  { kind: "link", id: "document-setup", label: "Document Setup", href: "/setup/document-setup", icon: DocumentSetupIcon, color: "blue", permission: ["document-setup"] },
   { kind: "unavailable", id: "stone-factory", label: "Stone Factory", icon: Factory, color: "stone" },
 ];
 
