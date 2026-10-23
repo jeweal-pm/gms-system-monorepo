@@ -1,5 +1,7 @@
 # SA decisions: company-profile (partner)
 
+**Current implementation remains the approved named-volume behavior below.** Proposed [GMS file-storage SA revision 3](../../../../reviews/sa/2026-10-21-gms-file-storage-rev3.md) would migrate the logo to `@gms/storage` under the platform-wide indefinite upload-retention policy; it is pending approval and does not change this contract yet.
+
 ## SA revision 3 — **approved** (owner 2026-10-17: "อนุมัติ company-profile SA revision 3"), implemented
 
 - Source: UI revision 3 ([ui-spec](../../../frontend/company-profile/ui-spec.md#revision-3-2026-10-17--overrides-the-sections-below) R3-04, R3-07, R3-08). Owner answers 2026-10-17: Road/Street "เพิ่มจริง ทำ SA + backend"; Bank Details "เปลี่ยนเป็นข้อความธรรมดา"; Terms "เอาออกจากหน้า เอาออกจาก schema ด้วย".
@@ -20,6 +22,7 @@ Backend TODO when approved: BE-CP-011…015 in the [central TODO](../../../../ta
 
 - Feature ID / SA revision: `company-profile` / SA 2 (**approved**: revision 1 + the owner's storage change, owner 2026-10-16 ≈12:00 +07:00: "บันทึกลงใน folder ใน backend เลยเมื่ออัพรูปใหม่ไปจะไปทับรูปเก่า  logic นี้ แค่ module company profile เท่านั้น  อนุมัติ company-profile SA revision 1")
 - Revision 2 change: SA-CP-05 (logo stored as a file in the partner service folder, overwritten on each upload, company profile module only); consequences in SA-CP-04/06, the database diagram and infra bundle [backend-api-partner/2](../../../../infra/services/backend-api-partner/2/security.md)
+- Owner storage-layout update (2026-10-21): new logo objects use `files/company-profile/<filename>` under the configured GMS storage root. The module may select a safe basename or use the UUIDv7 default. Existing service-prefixed keys remain readable and retained. This does not change the route, authorization, replacement visibility, or permanent-byte-retention behavior.
 - Source UI revision: 2 (approved 2026-10-16, [TODO](../../../../task/todo/company-profile.md))
 - Request: [SA handoff](../../../../coordination/handoffs/company-profile-sa.md); owner 2026-10-16 "ทำ api ให้เลยได้มั้ย" (request to build the API; not approval of this bundle)
 - Bundle: this file, [architecture](architecture.md), [api-contract](api-contract.md), [database-diagram](database-diagram.md), [sequence-diagram](sequence-diagram.md), [authorization](authorization.md), [error-handling](error-handling.md), [dependencies](dependencies.md), [testing](testing.md), [ADR-0021](../../../../adr/0021-company-profile-in-partner-service.md)

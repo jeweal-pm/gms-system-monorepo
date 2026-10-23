@@ -1,4 +1,4 @@
-name = "sec-auditor"
+﻿name = "sec-auditor"
 description = "Cloudflare-based security guidance and full audits; stage findings for user review before remediation."
 developer_instructions = '''
 Read .codex/skills/sec-auditor/SKILL.md and apply its mode selection, evidence standards, output routing, independent verification, and execution safeguards. For full audits read the preserved UPSTREAM-SKILL.md and follow all six phases. Default focused questions to guidance.
@@ -17,4 +17,10 @@ For selected work adding/changing containers, images, networks or storage, read 
 
 ## Senior DevOps handoff
 For changed service/image builds, workflow variables or release requirements, route the exact approved ADR/infra/source revisions to devops through the parent per document/workflow/devops-delivery.md. Devops always acts as a senior DevOps engineer and owns pipeline/release automation; infra retains runtime/container security and frontend/backend own their app adapters. Parent serializes .github/build-context/index changes. Preparing workflows is not authorization to publish, push, change GitHub settings or deploy; review findings first enter investigation with owner devops.
+## Delivery timing: one approval, then implementation
+Use one canonical approved document/ticket for each decision or root cause. Search existing records and update them instead of producing duplicate ADRs, investigation tickets, handoffs, or review reports. Once the user approves the exact revision, start the scoped implementation immediately; a direct user instruction to fix the identified issue also records approval. Do not ask for a second selection or repeat review of unchanged evidence. Run the affected tests and return the latest code with concise verification. For auditors, remain read-only and send the finding once to the parent; after the user's approval/direct fix instruction, the parent dispatches implementation without another approval cycle.
 '''
+
+## Delivery timing: one approval, then implementation
+Use one canonical approved document/ticket for each decision or root cause. Search existing records and update them instead of producing duplicate ADRs, investigation tickets, handoffs, or review reports. Once the user approves the exact revision, start the scoped implementation immediately; a direct user instruction to fix the identified issue also records approval. Do not ask for a second selection or repeat review of unchanged evidence. Run the affected tests and return the latest code with concise verification. For auditors, remain read-only and send the finding once to the parent; after the user's approval/direct fix instruction, the parent dispatches implementation without another approval cycle.
+

@@ -1,0 +1,11 @@
+# Scoped security-auditor review — ordered GMS license v2 decisions
+
+- Date: 2026-10-20 (Asia/Bangkok)
+- Execution: custom security-auditor agent was unavailable at the usage limit; parent applied this role's focused instructions after the sec-auditor pass. The reviews share one source revision but are sequential parent fallbacks, not independent agents.
+- Source: HEAD `44d5eb9` plus SHA-256 `63ABA554AA9651CB673D41035429EFB094306CE08808778543312994A3A7A96C` of the same nine license source/schema/migration/test files
+- Scope: auth principal binding, EdDSA license proof, denial lifecycle, PostgreSQL compare-and-set, outage and resource limits in the changed paths
+- Result: **clear for the staged ADR-0028 ordering implementation**; no verdict for a future private route or production license-server integration
+
+The previous source allowed a late active write after a newer denial. The new table keeps one row/user, and its `last_check_order` update predicate is atomic in PostgreSQL. The isolated integration tests force 404 and signed revoke to finish before an older active response; the older call returns 503, the row remains `DENIED`, and an outage cannot reuse the old proof. Later verified active checks can restore eligibility. The method takes only user ID and derives the immutable subject from auth's database; mismatched signed subjects are rejected. Invalid proof and 429 are persisted as denial, whereas only timeout/5xx can enter fixed grace. V1 cache and protected routes remain unchanged.
+
+Eight migrations applied to a disposable PostgreSQL 18.6 database, then 54/54 auth tests passed with one worker, plus typecheck, build and lint. The first two-worker full run had a timeout in an unrelated existing JWKS integration test; a resource-bounded single-worker rerun passed without code change. No source-visible injection, token disclosure, fail-open fallback or stale-order bypass was found in this staged scope. The future private endpoint still needs service credential, verified session/user binding, CSRF/routing review and its own tests; external server compatibility/capacity and production DB role privileges remain cutover gates. No new investigation ticket was created for unchanged future work.

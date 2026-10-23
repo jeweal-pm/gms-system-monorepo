@@ -1,12 +1,12 @@
 import type { inferRouterClient } from "@trpc/client";
-import type { AppRouter } from "@gem-crm/backend-api-gateway/src/trpc/router";
+import type { AuthRouter } from "@gem-crm/backend-api-auth/src/trpc/auth-trpc.router";
 
 /**
  * ADR-0020 (user-permission UI revision 2) contract types, derived from the
- * gateway `AppRouter`. Only `Client` is used by hooks; the view-model mapping
+ * auth service `AuthRouter`. Only `Client` is used by hooks; the view-model mapping
  * in api.ts depends on these aliases.
  */
-export type Client = inferRouterClient<AppRouter>;
+export type Client = inferRouterClient<AuthRouter>;
 type Output<T extends (...args: never[]) => Promise<unknown>> = Awaited<ReturnType<T>>;
 
 export type CatalogOutput = Output<Client["permission"]["catalog"]["query"]>;

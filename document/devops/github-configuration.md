@@ -52,9 +52,11 @@ enabling the publication variable. Future branch-policy changes update both code
    branch has not been inspected or changed.
    [workflow_dispatch](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch).
 2. CI runs on dev/master pushes or pull requests. It uses Node from .nvmrc and pnpm from
-   packageManager, frozen install, lint/build/typecheck and quiet Compose syntax checks.
+   packageManager, frozen install, lint/build/typecheck, the four current workspace
+   Vitest scripts (frontend, auth, gateway, partner), and quiet Compose syntax checks.
    Build precedes typecheck because clean Next/Prisma generated types must exist.
-   No unit/E2E script currently exists, so this workflow does not claim to run one.
+   `PARTNER_LIVE_TESTS=0` excludes opt-in live partner integration tests; no E2E or
+   remote workflow execution is claimed by the local CI change.
 3. In Actions choose **Service images -> Run workflow**, select the trusted source branch,
    and leave publish=false to build without registry login/push. Reusable CI must pass first.
 4. To publish, configure ENABLE_IMAGE_PUBLISH and environment/package access first, then
@@ -87,7 +89,7 @@ infra-approved runtime secret contract. The same applies to backend-api-partner
 (infra bundle backend-api-partner/1): `PARTNER_DATABASE_URL` (must include
 `?schema=partner`), `PARTNER_SERVICE_TOKEN` (>= 32 chars, identical in gateway and partner;
 production rejects the .env.example value) and gateway `PARTNER_SERVICE_URL`
-(http://backend-api-partner:3201). They are runtime-only, never Docker build args, and
+(http://api-master:3201). They are runtime-only, never Docker build args, and
 current workflows do not read them. Do not inject production secrets into image build
 steps. All build context excludes .env variants and project skill/audit documents.
 

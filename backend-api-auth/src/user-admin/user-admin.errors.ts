@@ -7,6 +7,7 @@ const MAX_FIELD_ERRORS = 50;
 
 const messages: Record<string, string> = {
   UNAUTHORIZED: "Authentication required",
+  CSRF_INVALID: "The request origin could not be verified",
   PERMISSION_DENIED: "You don't have permission for this action",
   PERMISSION_GRANT_NOT_ALLOWED: "You can only grant permissions you hold yourself",
   USER_NOT_MANAGEABLE: "You can't change this user",

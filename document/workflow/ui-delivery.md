@@ -112,9 +112,10 @@ Do not return to SA or audit the full application again merely because a check f
    before handoff per [automated testing](automated-testing.md). Block dependent work when
    verification fails; after three diagnosed integration data-connection correction passes,
    stage the blocker in investigation and stop that cycle.
-7. After tests pass, route the final frontend/backend diff to both `sec-auditor` and
-   `security-auditor` for focused read-only review. Record their results for the same
-   source revision and apply the [security gate](security-review.md) before code handoff.
+7. After tests pass, route the final frontend/backend diff to both project security roles
+   once on the same source revision, following the [security workflow](security-review.md).
+   Record both outcomes together in the feature verification document. Do not review approved
+   design documents again or resend unchanged code as a new review.
 8. Run manual-tester for changed user journeys according to its skill. Write completion
    evidence under `document/task/done/`; mark done only when required criteria are satisfied.
 
@@ -152,13 +153,15 @@ contains identical mirrors. A new session/reload may be needed to discover newly
 
 ## Audit investigations
 
-Focused security reviews use security-auditor; explicit full security audits use sec-auditor;
-privacy reviews use compliance-auditor. Audit invocation is independent of UI implementation.
-All actionable audit findings first enter [investigation](../task/investigation/README.md)
-for user review. Audit discovery does not authorize implementation or automatic dispatch.
-Frontend/backend fix an explicitly selected ticket revision later. New architecture,
-contracts, schema, flow, or dependencies still pass through SA and separate owner review.
-Keep the investigation queue separate from frontend-latest.md and link completion evidence
-back to selected tickets. Full audits retain upstream independent verification and execution
-safeguards; focused reviews do not silently become full audits.
+Focused frontend/backend code reviews use both required security roles once per final source
+revision; explicit full security audits use sec-auditor; privacy reviews use
+compliance-auditor. Audit invocation is independent of UI implementation.
+Full-audit findings first enter [investigation](../task/investigation/README.md) for owner
+review. A focused implementation review records a clear result in the feature verification
+document; actionable findings use one canonical investigation ticket. Approval of that
+ticket revision or a direct user fix instruction starts code work immediately. Do not ask
+for a second selection or create parallel review documents. New architecture, contracts,
+schema, flows, or dependencies need separate SA approval only when not already covered by
+the approved revision. Keep investigation separate from `frontend-latest.md` and link
+completion evidence back to the canonical record.
 Container/config findings can be assigned to infra for a user-selected later fix.

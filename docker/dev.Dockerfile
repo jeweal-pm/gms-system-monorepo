@@ -8,13 +8,12 @@ RUN corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY frontend/package.json frontend/package.json
-COPY backend-api-gateway/package.json backend-api-gateway/package.json
 COPY backend-api-auth/package.json backend-api-auth/package.json
-COPY backend-api-partner/package.json backend-api-partner/package.json
+COPY backend-api-master/package.json backend-api-master/package.json
 RUN pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm --filter @gem-crm/backend-api-auth db:generate
-RUN pnpm --filter @gem-crm/backend-api-partner db:generate
+RUN pnpm --filter @gem-crm/backend-api-master db:generate
 
 CMD ["pnpm", "--version"]

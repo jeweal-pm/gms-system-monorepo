@@ -5,12 +5,59 @@ description: Implement and debug this project's React/Next.js frontend from appr
 
 # Lead Frontend Engineer
 
-Read `document/workflow/ui-delivery.md`, `document/workflow/automated-testing.md`,
+Read `document/gms-platform-spec.md` (version 1.1, especially sections 1, 2.1, 3.2, 3.5,
+5–8, 10–12, 14 and Appendix F), `document/workflow/ui-delivery.md`, `document/workflow/automated-testing.md`,
 `document/apps/frontend/architecture.md`,
 `document/adr/tech-stack.md`, relevant accepted ADRs, package scripts, and neighboring
 feature code. Project documents belong under `document/`. Treat stale documentation as
 a discrepancy to resolve against accepted decisions and actual code, not permission to
 silently replace the approved architecture.
+
+## GMS platform target and current contracts
+
+Treat the GMS platform spec as the target for new approved architecture, with a total
+production baseline of **4 GB RAM / 2 vCPU**. Check the actual deployment profile, code,
+accepted ADRs, and tech-stack ledger before implementation. The current installation uses
+the approved direct Nginx routes to auth and `api-master` (`backend-api-master` workspace),
+tRPC/TanStack Query, and Better Auth. The legacy gateway source may remain dormant but is not
+in the active workspace or Compose profile. The GMS spec also targets `/api/inventory/` with
+no Node gateway and a
+256 MB standalone frontend. Do not silently switch routing, service names, auth/session
+design, API transport, container limits, or dependencies. For existing features, follow
+their unchanged approved contracts. For a spec-driven change to these boundaries, identify
+the discrepancy and send a versioned architecture/API/capacity proposal through SA and the
+parent; implement only after the separate SA approval and prerequisite infra/backend work.
+
+For work approved against the new target architecture:
+
+- Keep browser API calls same-origin with relative `/api/...` URLs; reserve `/bff/` for Next
+  route handlers and `/healthz` for frontend health. Do not define Next routes under the
+  Nginx-owned `/api/auth`, `/api/master`, or `/api/inventory` prefixes. Server-side fetching
+  uses the appropriate `INTERNAL_API_URL_*` Docker-network endpoint and forwards the user's
+  credentials; never loop through the public domain or expose internal URLs to the browser.
+- Keep one customer-independent image. Never put per-customer domains, API endpoints,
+  feature flags, or secrets in build-time `NEXT_PUBLIC_*`; pass customer settings from
+  server runtime configuration as approved by the contract. Coordinate standalone image,
+  non-root execution, heap/container limits, `NEXT_TELEMETRY_DISABLED`, and immutable static
+  asset caching with infra/devops; do not claim the spec's 256 MB target meets the current
+  app's needs without load evidence.
+- Follow the approved auth contract using httpOnly, Secure, `SameSite=Lax` cookies and CSRF
+  protection for state-changing requests. Do not put credentials or tokens in localStorage.
+  Keep auth and permission decisions on the backend; document any transition from Better
+  Auth before changing cookie or token handling.
+- Paginate SSR and list views (backend maximum 200 rows); avoid unbounded client/server
+  caches, request waterfalls, and heavy computation in Next. Display job ID, queue/status,
+  progress, cancellation and result states when the approved API exposes them. Keep
+  PDF/Excel generation and long-running work in the API/worker flow, not the frontend.
+- For uploads, use only the flow implemented and approved for the selected module; do not
+  assume every module is wired because `@gms/storage` exists. The current profile is local
+  filesystem with selected adapters only; S3 is proposed, not implemented. Keep file bytes
+  out of Next and use the module's authorized protected-delivery contract. Removing a user
+  upload hides it while retaining bytes forever.
+- In the default local-data profile, avoid runtime third-party fonts, analytics, CDN
+  scripts, and other data egress. Use locally hosted fonts and `images.unoptimized: true`
+  when images are resized at upload. Propagate request IDs when supported, and display business dates explicitly in
+  `Asia/Bangkok` with `th-TH` locale. Verify hydration is deterministic.
 
 ## Resolve the work
 
@@ -88,13 +135,11 @@ leave delivery incomplete until coverage can be executed. Inspect UI behavior wi
 browser when the task requires it. Run manual-tester after changed user journeys according
 to its skill; its report does not replace automated unit or integration tests.
 
-After tests pass, hand the final changed frontend code, affected boundaries, test evidence,
-and source revision to both `sec-auditor` and `security-auditor` through the parent. Follow
-`document/workflow/security-review.md`: require two scoped read-only results for the same
-revision before a passing handoff. Stage findings in investigation for user review; do not
-auto-fix them or trigger a full audit. Confirmed vulnerabilities or required validation
-gaps keep the affected TODO unresolved. If code changes afterward, refresh affected tests
-and focused review evidence before delivery.
+After tests pass, route the final changed code once to both `sec-auditor` and
+`security-auditor` on the same source revision. Follow `document/workflow/security-review.md`
+and record both results in the existing feature verification document. Do not review approved
+ADR/TODO documents again or resend unchanged code. Stage findings once; a direct user fix
+instruction starts remediation without another selection gate.
 
 For an integration data-connection failure, use the existing shared root-cause ledger.
 After three diagnosed corrective passes without success, or earlier on no-progress or an
@@ -108,3 +153,7 @@ pointer as appropriate. Completion reports go to `document/task/done/`; small ch
 go to `document/changelog/`. Mark done only when approved criteria and required checks are
 complete. For materially changed flow/design/contracts, send affected items back for review
 and preserve completed unaffected work.
+
+## Single-approval delivery
+
+Use the existing feature TODO/spec/SA bundle as the canonical record; search before adding documents and update its revision instead of creating duplicates. Once the exact UI/SA revision is approved, start frontend implementation immediately in the same workflow and continue with backend/SA handoffs only for dependencies the approved design requires. Do not request a second approval of the same documents or duplicate security-review reports. Open investigation only for an independently evidenced issue; if the user has authorized its fix, record it once and implement it without another ticket-selection question.

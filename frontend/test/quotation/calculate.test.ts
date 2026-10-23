@@ -26,7 +26,7 @@ describe("lineAmount", () => {
 
 describe("calculateTotals", () => {
   it("sums filled lines and ignores empty rows", () => {
-    const totals = calculateTotals(base(), "0.07");
+    const totals = calculateTotals(base());
     expect(formatMoney(totals.subtotal)).toBe("131,372.00");
     expect(formatMoney(totals.totalWeight)).toBe("4.68");
     expect(formatMoney(totals.grandTotal)).toBe("131,372.00");
@@ -34,8 +34,7 @@ describe("calculateTotals", () => {
 
   it("applies percent discount then exclusive VAT", () => {
     const totals = calculateTotals(
-      { ...base(), discount: { enabled: true, type: "PERCENT", value: "10" }, tax: { enabled: true, code: "VAT7", includeInPrice: false } },
-      "0.07",
+      { ...base(), discount: { enabled: true, type: "PERCENT", value: "10" }, tax: { enabled: true, rate: "7", includeInPrice: false } },
     );
     expect(formatMoney(totals.discountAmount)).toBe("13,137.20");
     expect(formatMoney(totals.totalAfterDiscount)).toBe("118,234.80");
@@ -45,8 +44,7 @@ describe("calculateTotals", () => {
 
   it("matches the tax mockup (148,372.00 + 7% = 158,758.04)", () => {
     const totals = calculateTotals(
-      { ...emptyQuotation(), lines: [line({ weightCt: "1", unitPrice: "148372" })], tax: { enabled: true, code: "VAT7", includeInPrice: false } },
-      "0.07",
+      { ...emptyQuotation(), lines: [line({ weightCt: "1", unitPrice: "148372" })], tax: { enabled: true, rate: "7", includeInPrice: false } },
     );
     expect(formatMoney(totals.taxAmount)).toBe("10,386.04");
     expect(formatMoney(totals.grandTotal)).toBe("158,758.04");
@@ -54,8 +52,7 @@ describe("calculateTotals", () => {
 
   it("extracts VAT when tax is included in price", () => {
     const totals = calculateTotals(
-      { ...emptyQuotation(), lines: [line({ weightCt: "1", unitPrice: "107" })], tax: { enabled: true, code: "VAT7", includeInPrice: true } },
-      "0.07",
+      { ...emptyQuotation(), lines: [line({ weightCt: "1", unitPrice: "107" })], tax: { enabled: true, rate: "7", includeInPrice: true } },
     );
     expect(formatMoney(totals.priceBeforeTax)).toBe("100.00");
     expect(formatMoney(totals.taxAmount)).toBe("7.00");
@@ -71,7 +68,6 @@ describe("calculateTotals", () => {
         serviceCharges: [{ chargeId: "SHIPPING", amount: "25" }, { chargeId: "HANDLING", amount: "10.5" }],
         labor: { enabled: true, work: "Re-cutting", basis: "WEIGHT", qty: "2.5", rate: "40" },
       },
-      "0.07",
     );
     expect(formatMoney(totals.discountAmount)).toBe("100.00");
     expect(formatMoney(totals.serviceChargeTotal)).toBe("35.50");

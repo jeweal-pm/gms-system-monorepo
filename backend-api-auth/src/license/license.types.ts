@@ -13,6 +13,7 @@ export type LicensePublicStatus = {
   expiresAt?: string;
   daysRemaining?: number;
   checkedAt?: string;
+  fallbackUntil?: string | null;
   retryAfter?: number;
 };
 
@@ -26,6 +27,7 @@ export type LicenseClaims = {
   license_expires_at: string;
   iat: number;
   exp: number;
+  contract_version?: number;
 };
 
 export type LicenseLookup =
@@ -37,6 +39,7 @@ export type LicenseClient = {
   lookup(email: string): Promise<LicenseLookup>;
   activate(email: string, key: string): Promise<string>;
   refresh(email: string): Promise<string>;
+  refreshCurrent(email: string): Promise<string>;
 };
 
 export class LicenseClientError extends Error {

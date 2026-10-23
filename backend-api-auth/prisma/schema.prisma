@@ -27,6 +27,7 @@ model User {
   accounts         Account[]
   loginAttempts    LoginAttempt[]
   licenseCache     LicenseCache?
+  licenseCurrentDecision LicenseCurrentDecision?
   licenseActivationLockout LicenseActivationLockout?
   active           Boolean          @default(true)
   phoneE164        String?          @map("phone_e164") @db.VarChar(16)
@@ -34,6 +35,7 @@ model User {
   permissions      UserPermission[]
   locations        UserLocation[]
   photo            UserPhoto?
+  refreshFamilies  RefreshFamily[]
 
   @@index([role, createdAt])
   @@schema("auth")
@@ -78,9 +80,38 @@ model UserPhoto {
   contentType String   @map("content_type") @db.VarChar(16)
   sizeBytes   Int      @map("size_bytes")
   sha256      String   @db.Char(64)
+  storageKey  String?  @map("storage_key") @db.VarChar(512)
   updatedAt   DateTime @updatedAt @map("updated_at")
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@schema("auth")
+}
+
+/// User-upload metadata tombstones are independent of User/UserPhoto so account deletion cannot
+/// cascade away retention evidence. User-upload bytes are never physically deleted.
+model StoredFile {
+  id          String    @id @db.Uuid
+  kind        String    @db.VarChar(32)
+  bucket      String    @db.VarChar(16)
+  objectKey   String    @map("object_key") @db.VarChar(512)
+  filename    String    @db.VarChar(255)
+  contentType String    @map("content_type") @db.VarChar(255)
+  sizeBytes   BigInt    @map("size_bytes")
+  sha256      String    @db.Char(64)
+  status      String    @db.VarChar(16)
+  sourceType  String    @map("source_type") @db.VarChar(64)
+  sourceId    String    @map("source_id") @db.VarChar(128)
+  createdBy   String?   @map("created_by") @db.VarChar(64)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  readyAt     DateTime? @map("ready_at") @db.Timestamptz(6)
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(6)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+  purgeAfter  DateTime? @map("purge_after") @db.Timestamptz(6)
+
+  @@index([sourceType, sourceId], map: "stored_files_source_idx")
+  @@unique([bucket, objectKey], map: "stored_files_bucket_object_key_key")
+  @@index([createdBy, createdAt(sort: Desc)], map: "stored_files_user_idx")
+  @@map("stored_files")
   @@schema("auth")
 }
 
@@ -115,8 +146,39 @@ model Session {
   userAgent String?
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshFamilies RefreshFamily[]
 
   @@index([userId])
+  @@schema("auth")
+}
+
+/// Additive GMS refresh state. Existing Better Auth sessions remain authoritative.
+model RefreshFamily {
+  id          String    @id @db.Uuid
+  userId      String    @map("user_id")
+  sessionId   String    @map("session_id")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(6)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session     Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  credentials RefreshCredential[]
+
+  @@index([userId, revokedAt])
+  @@index([sessionId])
+  @@schema("auth")
+}
+
+model RefreshCredential {
+  id         String    @id @db.Uuid
+  familyId   String    @map("family_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.Char(64)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+  family     RefreshFamily @relation(fields: [familyId], references: [id], onDelete: Cascade)
+
+  @@index([familyId, consumedAt])
   @@schema("auth")
 }
 
@@ -167,6 +229,19 @@ model LicenseCache {
   fetchedAt   DateTime  @default(now()) @map("fetched_at")
   lastErrorAt DateTime? @map("last_error_at")
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("auth")
+}
+
+/// Staged GMS v2 decision cache. Legacy LicenseCache remains untouched for route rollback.
+model LicenseCurrentDecision {
+  userId         String   @id @map("user_id")
+  lastCheckOrder BigInt   @map("last_check_order")
+  state          String   @db.VarChar(8)
+  signedToken    String?  @map("signed_token") @db.Text
+  successfulAt   DateTime? @map("successful_at") @db.Timestamptz(6)
+  decidedAt      DateTime @map("decided_at") @db.Timestamptz(6)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@schema("auth")
 }

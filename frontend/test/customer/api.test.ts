@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCustomerInputSchema } from "@gem-crm/backend-api-gateway/src/trpc/customer-schemas";
+import { createCustomerBodySchema } from "@gem-crm/backend-api-master/src/customer/customer.schemas";
 import {
   isPermissionDenied,
   loadErrorMessage,
@@ -102,14 +102,14 @@ describe("toCustomerFields", () => {
     expect(fields.invoiceAddresses.map((item) => [item.name, item.isDefault])).toEqual([["A", false], ["B", true]]);
   });
 
-  it("IT-CUS-C01 a valid form maps to input the gateway's strict customer.create schema accepts", () => {
+  it("IT-CUS-C01 a valid form maps to input api-master's strict customer.create schema accepts", () => {
     const form = customerFormSchema.parse({ ...validForm(), middleName: "", phone: { country: "TH", number: "081 234 5678" } });
-    const result = createCustomerInputSchema.safeParse(toCustomerFields(form));
+    const result = createCustomerBodySchema.safeParse(toCustomerFields(form));
     expect(result.error?.issues ?? []).toEqual([]);
   });
 
   it("IT-CUS-C02 a saved customer round-trips through the form into a valid create input", () => {
-    const result = createCustomerInputSchema.safeParse(toCustomerFields(toFormValues(detail)));
+    const result = createCustomerBodySchema.safeParse(toCustomerFields(toFormValues(detail)));
     expect(result.success).toBe(true);
     expect(result.data?.invoiceAddresses.map((item) => item.name)).toEqual(["Head office", "Branch"]);
   });
@@ -251,3 +251,4 @@ describe("load errors", () => {
     expect(isPermissionDenied(gatewayError({ domainCode: "CUSTOMER_STALE" }))).toBe(false);
   });
 });
+

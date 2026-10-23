@@ -41,6 +41,13 @@ export class HttpLicenseClient implements LicenseClient {
     return parsed.data.token;
   }
 
+  async refreshCurrent(email: string): Promise<string> {
+    const body = await this.postOnce("/v1/licenses/refresh", { email }, false, true);
+    const parsed = tokenSchema.safeParse(body);
+    if (!parsed.success) throw protocolError();
+    return parsed.data.token;
+  }
+
   private async post(path: string, payload: Record<string, string>, acceptAlreadyActivated = false): Promise<unknown> {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
@@ -54,7 +61,7 @@ export class HttpLicenseClient implements LicenseClient {
     throw new LicenseClientError("UPSTREAM_UNAVAILABLE", 503, true);
   }
 
-  private async postOnce(path: string, payload: Record<string, string>, acceptAlreadyActivated: boolean): Promise<unknown> {
+  private async postOnce(path: string, payload: Record<string, string>, acceptAlreadyActivated: boolean, current = false): Promise<unknown> {
     const base = this.config.apiUrl;
     if (!base || !this.config.instanceApiKey) throw protocolError();
     const url = new URL(path, base);
@@ -66,9 +73,10 @@ export class HttpLicenseClient implements LicenseClient {
           "content-type": "application/json",
           "x-instance-id": this.config.instanceId,
           authorization: `Bearer ${this.config.instanceApiKey}`,
+          ...(current ? { "x-license-contract-version": "2" } : {}),
         },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(1_400),
+        signal: AbortSignal.timeout(current ? 1_500 : 1_400),
       });
     } catch {
       throw new LicenseClientError("UPSTREAM_UNAVAILABLE", 503, true);
@@ -166,7 +174,14 @@ export class MockLicenseClient implements LicenseClient {
     return lookup.token;
   }
 
-  private async issue(email: string, status: "active" | "suspended" | "revoked", days: number): Promise<string> {
+  async refreshCurrent(email: string): Promise<string> {
+    const lookup = await this.lookup(email);
+    if (lookup.state !== "active") throw new LicenseClientError("LICENSE_NOT_FOUND", 404, false);
+    const scenario = email.split("@")[0]?.toLowerCase() ?? "";
+    return this.issue(email, scenario === "license-revoked" ? "revoked" : scenario === "license-suspended" ? "suspended" : "active", scenario === "license-expired" ? -1 : 90, true);
+  }
+
+  private async issue(email: string, status: "active" | "suspended" | "revoked", days: number, current = false): Promise<string> {
     const nowSeconds = Math.floor(Date.now() / 1_000);
     const expiresAt = new Date(Date.now() + days * 86_400_000).toISOString();
     return new SignJWT({
@@ -174,13 +189,14 @@ export class MockLicenseClient implements LicenseClient {
       type: "paid",
       status,
       license_expires_at: expiresAt,
+      ...(current ? { contract_version: 2 } : {}),
     })
       .setProtectedHeader({ alg: "EdDSA", kid: this.config.mockKid!, typ: "JWT" })
       .setIssuer(this.config.issuer)
       .setAudience(this.config.audience)
       .setSubject(email)
       .setIssuedAt(nowSeconds)
-      .setExpirationTime(nowSeconds + 86_400)
+      .setExpirationTime(nowSeconds + (current ? 3 : 1) * 86_400)
       .sign(this.privateKey);
   }
 }

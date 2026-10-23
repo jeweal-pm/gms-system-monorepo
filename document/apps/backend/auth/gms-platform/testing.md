@@ -1,0 +1,87 @@
+# Verification plan: auth / GMS platform migration
+
+## INV-20261021-006 revision 1: private master license decision (2026-10-21)
+
+- Implementation source: approved SA `INV-20261021-006-r1` / ADR-0031; private endpoint mounted at `POST /internal/v1/license/current`. Auth reads only the file path in `MASTER_AUTH_SERVICE_TOKEN_FILE`, validates a canonical 32-byte base64url token, rechecks exact `(userId, sessionId)` in `auth.current_authorization`, then resolves license status using the auth-owned username. The response includes only eligible decision/status/timestamps and `Cache-Control: private, no-store`; errors include the stable envelope. Handler deadline is 1.9 seconds. Production license-server work remains out of scope.
+- Case mapping: `IT-MAUTH-04` valid service token/current active session/eligible result; `IT-MAUTH-05` invalid token and extra request property fail before DB/license; `IT-MAUTH-06` mismatched current session fails before license. `GP-LIC-04` now also asserts GRACE `fallbackUntil` is the minimum of grace deadline, signed-token expiry and natural license expiry.
+- Focused command `pnpm --filter @gem-crm/backend-api-auth exec vitest run test/license/master-license.http.integration.test.ts test/license/license-current.service.test.ts --pool=threads --maxWorkers=1`: **10 passed**. The endpoint HTTP harness injects only a current-view query result and mock `LicenseService`; it proves HTTP contract and guard order, not deployed auth DB connectivity.
+- Full auth suite with `NODE_OPTIONS=--max-old-space-size=1024`: **63 passed, 13 skipped** across 14 files. `typecheck`, `lint`, and `build` passed. Database-gated unrelated tests remained skipped because no auth test URLs were supplied to the full suite.
+- Parent owns the auth composition-root registration. The final scoped sec-auditor and security-auditor reviews both cover the complete 20-path manifest SHA-256 `9f9134c57c1db93236280bf8592e65f8fdf0343611f496dca6dbf29c93b2ce3c` and returned clear for the approved local-dev scope. Production capacity/cutover is not established; see the master verification record and infra runtime bundle.
+
+- SA revision: 1 plus license-contract revision 2 and ordering revision 3; status: approved scoped designs; see central TODO gates; source UI revision: none
+- Test execution: **partial GP-AUTH-01/03 and staged GP-AUTH-05 service slices verified on 2026-10-20**; remaining rows and route cutover are open.
+
+| Case | Target / acceptance | Unit and integration evidence to add |
+|---|---|---|
+| GP-AT-01 | Better Auth sign-in still enforces existing lockout, active account and valid license; password generic error | Auth sign-in module/unit and real DB/license mock integration |
+| GP-AT-02 | Access JWT issuer/audience/alg/kid/exp bound; JWKS rotation and unknown key fail closed | Signing/verifier unit and cross-service integration |
+| GP-AT-03 | Refresh atomic single use, concurrent tabs, replay family revocation, logout/password change | Transaction unit and PostgreSQL integration |
+| GP-AT-04 | Permission/grant/session/account change denies next protected request; price masking; view failure denies | Auth view migration/query and master/inventory integration |
+| GP-AT-05 | Reachable remote revocation denies next request; transient outage uses only still-valid signed eligibility within configured 0/1/2-day grace, without sliding; explicit denial and invalid signature never use fallback | V2 client/policy, isolated PostgreSQL and out-of-order concurrency tests pass for staged service; private domain authorization and external server/load remain cutover gates |
+| GP-AT-06 | CSRF/origin rejects custom tRPC/REST/auth mutations; SSR Set-Cookie propagated | HTTP integration with browser cookie jar |
+| GP-AT-07 | Backward compatible additive migration and rollback, DB16/18, 4 GB load | Migration CI and staging smoke/load evidence |
+
+Every added or changed module, function and API needs unit and integration coverage. Record actual commands/results after implementation; if a data-connection problem persists after three diagnosed corrective passes, create one integration-blocker ticket. Then route final changed code through both sec-auditor and security-auditor against the same revision.
+
+## Staged license-contract revision 2 evidence (2026-10-20)
+
+The approved v2 customer client sends `X-License-Contract-Version: 2` on a single 1,500 ms attempt. The verifier requires a signed `contract_version: 2` and exactly three days between `iat` and `exp`. The separate `resolveCurrentStatus` method derives the subject from auth's user row, checks online on each invocation, and records the latest ordered decision in `LicenseCurrentDecision` with PostgreSQL `NOW()`. It uses database time for a fixed 0–2-day fallback (default 2) only on transient timeout/5xx. Existing `resolveStatus` and browser routes remain on v1 until a verified cutover.
+
+| Changed target | Unit case | Integration/boundary case |
+|---|---|---|
+| License configuration and offline policy | GP-LIC-02 range/default, expiry and denial branches | GP-LIC-04 controlled persistence and GP-LIC-05 isolated PostgreSQL boundaries |
+| HTTP/mock license client and v2 request | GP-LIC-03 mock token claims, 406/429 behavior | GP-LIC-03 local HTTP server checks v2 header and legacy no-header response, single attempt |
+| License service and token verifier | GP-LIC-02 signed fallback predicates; GP-LIC-04 missing/disabled user, stale write and DB failure | GP-LIC-05 real PostgreSQL success/revoke/404/outage/DB deadline and out-of-order 404/revoke across two service instances; external-server integration remains future cutover work |
+| License claims/client interface | GP-LIC-02 v2 claim and GP-LIC-03 response shape | GP-LIC-03/04 through HTTP and service boundaries |
+| Prisma auth schema and SQL migration | GP-LIC-04 compare-and-set fail-closed branch | GP-LIC-05 migration 8/8, real one-row/user persistence, state constraint and sequence ordering |
+
+- `pnpm --filter @gem-crm/backend-api-auth test -- test/license/license-current.test.ts test/license/license-current.service.test.ts`: 12/12 before the final DB-failure/one-day cases were added; those cases passed in the final full suite.
+- On an isolated disposable PostgreSQL 18.6 container with no project volume, `prisma migrate deploy` applied **8/8** migrations including `20261020160000_license_current_decision_order`. `LICENSE_TEST_DATABASE_URL=<isolated localhost URL> pnpm --filter @gem-crm/backend-api-auth test -- test/license/license-current.db.integration.test.ts`: GP-LIC-05 **6/6** pass, including forced out-of-order active→404/revoke. The container was stopped and removed.
+- First full run with two workers: 53 pass, one existing JWKS integration test timed out at Vitest's 5-second limit while the temporary DB ran; no license assertion failed. A resource-bounded rerun, `LICENSE_TEST_DATABASE_URL=<isolated localhost URL> pnpm --filter @gem-crm/backend-api-auth test -- --maxWorkers=1`, passed **54/54 across 8 files**. Without this explicit test URL, the isolated DB suite skips and no live database is contacted.
+- `pnpm --filter @gem-crm/backend-api-auth typecheck`, `build`, `lint`, and `git diff --check`: pass.
+- Source revision: HEAD `44d5eb9` plus SHA-256 `63ABA554AA9651CB673D41035429EFB094306CE08808778543312994A3A7A96C` of sorted changed license source/schema/migration/test path and file hashes.
+- Isolated PostgreSQL sequential and out-of-order integration passed. Real external license-server contract/load checks did not run; owner directed that the server stay in a separate repository and mock remain for now. The private endpoint is not mounted. GP-AUTH-05 and protected-route cutover remain open. See the investigation records.
+- Both custom reviewer agents returned a usage-limit error. The parent applied their scoped guidance sequentially as a fallback; no independent agent review is claimed. Initial v2 reviews returned `needs-validation` for concurrent ordering; final ADR-0028 reviews returned `clear` for the staged ordering code. Reports are under `document/reviews/sec-auditor/` and `document/reviews/security-auditor/`.
+
+## SA revision 3 ordering verification — approved and implemented
+
+Under [ADR-0028](../../../../adr/0028-gms-license-current-decision-order.md), unit and isolated PostgreSQL integration cover monotonic order allocation, active/404 and active/revoke replies completing out of order across two service instances, invalid proof/429 denial, stale-response fail-closed result, later valid reactivation, mismatched signed subject, no initial row, 0/1/2-day bounds and DB failure. Full auth suite/typecheck/build/lint passed. Focused sequential parent fallback reviews examined the same final source: [sec-auditor clear for staged ordering](../../../../reviews/sec-auditor/2026-10-20-gms-license-ordering-rev3.md) and [security-auditor clear for staged ordering](../../../../reviews/security-auditor/2026-10-20-gms-license-ordering-rev3.md). The private endpoint still needs authenticated caller and actual authorization integration before activation. Measure sequence/table/pool and remote mock latency under the 4 GB/2 vCPU budget; external server capacity is a later cutover gate.
+
+## Partial JWT/JWKS evidence (2026-10-20)
+
+The staged change adds an independent EdDSA signer and public JWKS endpoint to Better Auth's existing mount. It does **not** issue access cookies, alter sign-in/session hooks, rotate refresh credentials, change license checks or switch routes. JWT issuance and consumer checks are still open, so GP-AUTH-01/03 remain unchecked.
+
+- `pnpm install --frozen-lockfile --offline` failed because a lockfile package was absent from the local store; `pnpm install --frozen-lockfile` completed without manifest/lockfile edits.
+- The first `pnpm ... test` reported 30/30 but the new tests were outside Vitest's `test/**` include. That result covered old tests only. Tests moved to `test/auth/` and reran.
+- The first full run was 33 pass / 1 fail: Better Auth's database rate limiter queried Prisma on public `/jwks` with no local database. The diagnosed correction set the documented `"/jwks": false` rule for this bounded static endpoint, leaving sign-in rate limits unchanged. The second full run passed **35/35 across 5 files**. Corrective ledger: initial staged implementation plus one diagnosed correction, 2 of 3 allowed passes; stop on success.
+- `pnpm --filter @gem-crm/backend-api-auth typecheck` and `build` passed after Prisma Client generation. No live PostgreSQL sign-in, cookie, lockout or license test ran; no production parity is claimed.
+- Final changed-code source manifest: `44d5eb9` plus SHA-256 `06BD3751A2113D5290E88F11044B6B51BF2559CA08D51218FC46A1F83454C553`. Focused sequential parent fallback reviews: [sec-auditor clear for this slice](../../../../reviews/sec-auditor/2026-10-20-gms-access-jwks-scope.md), [security-auditor clear for this slice](../../../../reviews/security-auditor/2026-10-20-gms-access-jwks-scope.md). Agent usage limits prevented independent reviewer agents; neither review covers future token issuance or consumer authorization.
+
+## Refresh credential storage slice (2026-10-21)
+
+- Added a hashed, single-use refresh credential/family store, RFC 9562 UUIDv7 IDs compatible with PostgreSQL 16, an auth-owned current-authorization view, migration, unit tests, and PostgreSQL integration tests. This is not connected to Better Auth routes or access-token issuance; GP-AUTH-01/02/04/06 remain open.
+- `pnpm --filter @gem-crm/backend-api-auth prisma:migrate:deploy` in the local dev container applied migration 9/9 successfully. Existing database data was preserved.
+- Focused tests reported by backend: unit **2/2**, isolated PostgreSQL integration **4/4**, full auth suite **54 passed / 6 skipped**; typecheck, build, lint, and `git diff --check` passed. The isolated database test uses a disposable PostgreSQL 18.6 container; no project volume was used or removed.
+- Changed-source manifest is HEAD `d2ac3f3` plus SHA-256 `21c830e4f1c92567fccd049fdb9ddd090696f7a1d15cceea931efcd71493575a` over the scoped auth/master/config paths. Parent applied both reviewer instructions sequentially because custom review agents hit a usage limit; see [sec-auditor](../../../../reviews/sec-auditor/2026-10-21-gms-platform-slices.md) and [security-auditor](../../../../reviews/security-auditor/2026-10-21-gms-platform-slices.md). Their `clear` verdicts cover only the staged, unmounted source; no auth HTTP/session/license boundary is claimed verified.
+
+## Better Auth sign-in access-cookie issuance (2026-10-21)
+
+- Implemented the approved issuance hook inside the existing username sign-in flow. Existing Better Auth session behavior remains; an eligible user receives a separate EdDSA access JWT in the HttpOnly `gms_access` cookie with a 15-minute lifetime. Eligibility is checked through the existing auth `LicenseService`; missing signer/check, ineligible status, or issuance error does not mint the domain cookie.
+- `pnpm --filter @gem-crm/backend-api-auth exec vitest run test/auth/access-token.test.ts test/auth/access-token.login.integration.test.ts --pool=threads --maxWorkers=1`: **5 passed, 1 skipped**. The skipped live Better Auth/PostgreSQL login integration requires `AUTH_TEST_DATABASE_URL`; it was not set. An earlier run including `test/auth/access-token.integration.test.ts` passed **7 tests** plus the same skipped DB integration.
+- `pnpm --filter @gem-crm/backend-api-auth typecheck`, `lint`, and `build`: pass. DB-backed login/cookie and cross-service authorization remain unverified in this environment.
+- Full `pnpm --filter @gem-crm/backend-api-auth test -- --maxWorkers=1`: **60 passed, 13 skipped** across 13 files. Skips include DB-gated cases because dedicated test database URLs were not available.
+- This supersedes the 2026-10-20 partial-JWT statement above only for sign-in cookie issuance. Refresh credential wiring, private service-authenticated license checks, protected-route cutover, and GP-AUTH-05 are still open. Final scoped security reviews are pending parent routing; this is not a complete code handoff.
+
+## Focused security review of staged master authorization slice (2026-10-21)
+
+- Both `sec-auditor` and `security-auditor` reviewed the same changed-code manifest SHA-256 `028c22ca95d9e0f191901c6baeaab75648744287c3cc50db5039f4759b472a97`. Their verdict is **needs-validation**; neither reported a confirmed vulnerability. Code and tests were not changed after review; later updates were documentation-only.
+- Findings are staged for owner review as [INV-20261021-006](../../../../task/investigation/INV-20261021-006-gms-master-auth-boundary-validation.md) (mounted mutation/CSRF boundary, live license and DB-role proof, trusted JWKS transport) and [INV-20261021-007](../../../../task/investigation/INV-20261021-007-partner-master-test-database-target.md) (partner DB integration fixture does not use its guarded URL).
+- These tickets are not selected for remediation. The master router and adapter remain unmounted; the DB tests were skipped because dedicated test URLs were absent. Do not treat the staged slice as a completed security handoff or activate it before the required evidence and approved service-auth contract exist.
+
+## Current local GMS route fixes (2026-10-21)
+
+- After the user's direct instruction to fix the identified issues, backend changed both public and legacy photo middleware to reject unsupported methods and GET bodies before parsing, check session/license/VIEW or EDIT grants before `express.raw`, narrowed refresh-cookie `Path` to `/api/auth/refresh`, and aligned the public logo route with JWT/grant authorization.
+- Auth suite: **83 passed / 14 skipped**; auth typecheck passed. Master suite: **317 passed / 19 skipped**; master typecheck passed. Database-gated tests remain skipped because isolated auth/master test database URLs were unavailable.
+- Local runtime after restarting only `backend-api-auth` to load the bind-mounted source: legacy internal photo GET with a body returned 400, unsupported POST returned 405, and anonymous public photo GET returned 401. Existing Nginx checks returned health/login/auth session 200, anonymous logo GET 401 and `/internal/*` 404. No image was rebuilt and project data volumes were preserved.
+- `sec-auditor` and the parent-applied read-only `security-auditor` definition fallback reviewed changed photo-route delta manifest `a25d5eb92714a9895df1dcb362c42888947e75dd28e0562f81403484f5adcf9d`; both clear. The custom `security-auditor` agent type was unavailable, so no agent invocation is claimed. On the prior 18-path auth/master source manifest `8483cbf46212b194f945e142084c8aa9f76a5009aaab9088ac0eb9d36470e6cf`, the refresh-cookie path was confirmed fixed; both roles returned `needs-validation` for INV-010's remaining DB-view and production-ingress evidence.
+- See the canonical [INV-008](../../../../task/investigation/INV-20261021-008-auth-photo-method-body-buffering.md), [INV-009](../../../../task/investigation/INV-20261021-009-refresh-cookie-path-scope.md), [INV-010](../../../../task/investigation/INV-20261021-010-gms-current-boundary-runtime-validation.md), and central [GMS migration TODO](../../../../task/todo/gms-platform-migration.md). No separate review report was created. Production ingress, authenticated DB-backed logo/view flow and production capacity remain unverified.

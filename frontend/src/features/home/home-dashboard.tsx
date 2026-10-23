@@ -3,18 +3,18 @@
 import Link from "next/link";
 import { AppShell } from "./app-shell";
 import { navigationGroups, navigationHref, type NavigationGroup } from "./navigation";
-import { trpc } from "@/providers/app-providers";
+import { authTrpc } from "@/lib/auth-trpc";
 
 /** Shown when the user may view none of the shortcut menus (user-permission SA rev 3 D3-02). */
 export const NO_SHORTCUTS_MESSAGE = "You don't have access to any menu yet. Ask your administrator.";
 
-/** True when the gateway answered with no shortcuts at all (not while loading, not on the fallback). */
+/** True when the auth service answered with no shortcuts at all (not while loading, not on the fallback). */
 export function hasNoShortcuts(loaded: boolean, groups: readonly NavigationGroup[] | undefined): boolean {
   return loaded && (groups?.length ?? 0) === 0;
 }
 
 export function HomeDashboard() {
-  const shortcuts = trpc.dashboard.shortcutGroups.useQuery(undefined, { retry: false });
+  const shortcuts = authTrpc.dashboard.shortcutGroups.useQuery(undefined, { retry: false });
   const groups = shortcuts.data ?? navigationGroups;
 
   return (

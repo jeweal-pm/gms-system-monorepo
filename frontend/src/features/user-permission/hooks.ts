@@ -3,7 +3,7 @@
 import { skipToken } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
 import { retryTransient } from "@/lib/trpc-error";
-import { trpc } from "@/providers/app-providers";
+import { authTrpc } from "@/lib/auth-trpc";
 import {
   toLocationOptions,
   toPermissionCatalog,
@@ -20,29 +20,29 @@ import {
  */
 
 export function usePermissionMine() {
-  return trpc.permission.mine.useQuery(undefined, { retry: retryTransient, staleTime: 30_000 });
+  return authTrpc.permission.mine.useQuery(undefined, { retry: retryTransient, staleTime: 30_000 });
 }
 
 export function useUserList() {
-  return trpc.userAdmin.list.useQuery(undefined, { select: toUserList, staleTime: 30_000, retry: retryTransient });
+  return authTrpc.userAdmin.list.useQuery(undefined, { select: toUserList, staleTime: 30_000, retry: retryTransient });
 }
 
 export function useUserDetail(id: string | null) {
-  return trpc.userAdmin.get.useQuery(id === null ? skipToken : { id }, { select: toUserDetail, retry: retryTransient });
+  return authTrpc.userAdmin.get.useQuery(id === null ? skipToken : { id }, { select: toUserDetail, retry: retryTransient });
 }
 
 /** The catalog changes only on deploy, so it is cached for the session. */
 export function usePermissionCatalog() {
-  return trpc.permission.catalog.useQuery(undefined, { select: toPermissionCatalog, staleTime: Infinity, retry: retryTransient });
+  return authTrpc.permission.catalog.useQuery(undefined, { select: toPermissionCatalog, staleTime: Infinity, retry: retryTransient });
 }
 
 /** user-photo.md PH-04: photo removal (upload is REST, see photo.ts). Never retried. */
 export function useRemovePhoto() {
-  return trpc.userAdmin.removePhoto.useMutation();
+  return authTrpc.userAdmin.removePhoto.useMutation();
 }
 
 export function useLocationOptions() {
-  return trpc.userAdmin.locationOptions.useQuery(undefined, { select: toLocationOptions, staleTime: 5 * 60_000, retry: retryTransient });
+  return authTrpc.userAdmin.locationOptions.useQuery(undefined, { select: toLocationOptions, staleTime: 5 * 60_000, retry: retryTransient });
 }
 
 /**
@@ -52,7 +52,7 @@ export function useLocationOptions() {
  * Resolves `null` without a request while a save is already in flight.
  */
 export function useSaveUser() {
-  const utils = trpc.useUtils();
+  const utils = authTrpc.useUtils();
   const [isPending, setIsPending] = useState(false);
   const inFlight = useRef(false);
 
@@ -76,5 +76,5 @@ export function useSaveUser() {
 
 /** Delete variables are only the user ID; `gcTime: 0` drops the finished mutation. */
 export function useDeleteUser() {
-  return trpc.userAdmin.delete.useMutation({ gcTime: 0, retry: false });
+  return authTrpc.userAdmin.delete.useMutation({ gcTime: 0, retry: false });
 }

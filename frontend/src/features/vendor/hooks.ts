@@ -5,11 +5,12 @@ import { getQueryKey } from "@trpc/react-query";
 import { useCallback, useMemo } from "react";
 import { toSelectOptions } from "@/features/partner/options";
 import { retryTransient } from "@/lib/trpc-error";
-import { trpc } from "@/providers/app-providers";
+import { masterTrpc } from "@/lib/master-trpc";
+import { authTrpc } from "@/lib/auth-trpc";
 import { VENDOR_PAGE_SIZE } from "./contract";
 
 /**
- * Vendor data hooks over the typed tRPC client (`vendor.*`, FE-VEN-010; data-fetching.md).
+ * Vendor data hooks over the typed api-master tRPC client (`vendor.*`, FE-VEN-010; data-fetching.md).
  * Bounds: 50 rows per page, one page request in flight, no polling, options fetched once per
  * session (own `vendor.options` cache entry), reads retried at most twice for transient failures,
  * mutations never retried. `permission.mine` is shared in features/partner/hooks.ts.
@@ -17,12 +18,12 @@ import { VENDOR_PAGE_SIZE } from "./contract";
 
 /** Static per deployment: cached for the session. */
 export function useVendorOptions() {
-  return trpc.vendor.options.useQuery(undefined, { select: toSelectOptions, staleTime: Infinity, retry: retryTransient });
+  return masterTrpc.vendor.options.useQuery(undefined, { select: toSelectOptions, staleTime: Infinity, retry: retryTransient });
 }
 
 /** Drawer list: keyset pages of 50; a new `q` restarts without a cursor (key includes `q`). */
 export function useVendorList(q: string) {
-  return trpc.vendor.list.useInfiniteQuery(
+  return masterTrpc.vendor.list.useInfiniteQuery(
     { q: q === "" ? undefined : q, limit: VENDOR_PAGE_SIZE },
     {
       getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
@@ -43,28 +44,29 @@ export function useVendorTotal(): number | undefined {
  * ADD (the gateway requires `vendor:ADD`); always refetched when create mode starts, never polled.
  */
 export function useVendorNextCode(enabled: boolean) {
-  return trpc.vendor.nextCode.useQuery(undefined, { enabled, staleTime: 0, gcTime: 60_000, retry: retryTransient, refetchOnWindowFocus: false });
+  return masterTrpc.vendor.nextCode.useQuery(undefined, { enabled, staleTime: 0, gcTime: 60_000, retry: retryTransient, refetchOnWindowFocus: false });
 }
 
 export function useVendorDetail(id: string | null) {
-  return trpc.vendor.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient });
+  return masterTrpc.vendor.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient });
 }
 
 export function useCreateVendor() {
-  return trpc.vendor.create.useMutation({ retry: false, gcTime: 0 });
+  return masterTrpc.vendor.create.useMutation({ retry: false, gcTime: 0 });
 }
 
 export function useUpdateVendor() {
-  return trpc.vendor.update.useMutation({ retry: false, gcTime: 0 });
+  return masterTrpc.vendor.update.useMutation({ retry: false, gcTime: 0 });
 }
 
 export function useDeleteVendor() {
-  return trpc.vendor.delete.useMutation({ retry: false, gcTime: 0 });
+  return masterTrpc.vendor.delete.useMutation({ retry: false, gcTime: 0 });
 }
 
 /** Cache actions used after mutations, Refresh and permission changes. */
 export function useVendorCache() {
-  const utils = trpc.useUtils();
+  const utils = masterTrpc.useUtils();
+  const authUtils = authTrpc.useUtils();
   return useMemo(
     () => ({
       invalidateLists: () => utils.vendor.list.invalidate(),
@@ -73,9 +75,9 @@ export function useVendorCache() {
       invalidateDetail: (id: string) => utils.vendor.get.invalidate({ id }),
       resetDetail: (id: string) => utils.vendor.get.reset({ id }),
       refetchOptions: () => utils.vendor.options.refetch(),
-      recheckAccess: () => utils.permission.mine.invalidate(),
+      recheckAccess: () => authUtils.permission.mine.invalidate(),
     }),
-    [utils],
+    [utils, authUtils],
   );
 }
 
@@ -84,11 +86,11 @@ export function useVendorCache() {
  * entry of the `get` query and shares its key with `useVendorDetail`.
  */
 export function useVendorLoader() {
-  const utils = trpc.useUtils();
+  const utils = masterTrpc.useUtils();
   return useCallback((id: string) => utils.vendor.get.fetch({ id }, { staleTime: 30_000, retry: retryTransient }), [utils]);
 }
 
 /** True while any vendor list page is being fetched (Refresh spinner). */
 export function useVendorListsFetching(): boolean {
-  return useIsFetching({ queryKey: getQueryKey(trpc.vendor.list) }) > 0;
+  return useIsFetching({ queryKey: getQueryKey(masterTrpc.vendor.list) }) > 0;
 }

@@ -1,6 +1,6 @@
 import type { inferRouterClient } from "@trpc/client";
 import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
-import type { AppRouter } from "@gem-crm/backend-api-gateway/src/trpc/router";
+import type { MasterRouter } from "@gem-crm/backend-api-master/src/master/router";
 import type { ServerFieldError } from "@/lib/trpc-error";
 import { normalizePlainText, type CompanyProfileFormValues } from "./schema";
 
@@ -9,7 +9,7 @@ import { normalizePlainText, type CompanyProfileFormValues } from "./schema";
  * upload, and error messages. Server data stays in TanStack Query; nothing is cached here.
  */
 
-type CompanyProfileClient = inferRouterClient<AppRouter>["companyProfile"];
+type CompanyProfileClient = inferRouterClient<MasterRouter>["companyProfile"];
 export type CompanyProfile = NonNullable<Awaited<ReturnType<CompanyProfileClient["get"]["query"]>>["profile"]>;
 
 /** Same-origin logo URL; `v` makes it immutable per logo version (gateway cache headers). */
@@ -95,7 +95,7 @@ export async function uploadLogo(file: File, expectedVersion: number): Promise<C
   try {
     response = await fetch(`/api/v1/company-profile/logo?expectedVersion=${expectedVersion}`, {
       method: "PUT",
-      headers: { "content-type": file.type },
+      headers: { "content-type": file.type, "x-gms-csrf": "1" },
       body: file,
       credentials: "same-origin",
     });

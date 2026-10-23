@@ -5,10 +5,19 @@ import { auth } from "./auth";
 import { AuthService } from "./auth.service";
 import { LicenseDomainError, LicenseService } from "../license/license.service";
 import { loadSessionAuthz } from "../permission/grants";
+import { registerAccessTokenEligibilityCheck } from "./access-token";
+import { RefreshCredentialStore } from "./refresh-credential";
 
 @Controller()
 export class AuthController {
-  constructor(private readonly authService: AuthService, private readonly licenseService: LicenseService) {}
+  private readonly refreshCredentials = new RefreshCredentialStore();
+
+  constructor(private readonly authService: AuthService, private readonly licenseService: LicenseService) {
+    registerAccessTokenEligibilityCheck(async (userId, username) => {
+      const status = await this.licenseService.resolveStatus(userId, username);
+      return status.state === "VALID" || status.state === "EXPIRING" || status.state === "GRACE";
+    });
+  }
 
   @Get("health/live")
   live() { return { status: "ok" }; }
@@ -97,6 +106,7 @@ export class AuthController {
       throw new HttpException(details ?? "Could not update password", result.status);
     }
     await auth.api.revokeOtherSessions({ headers });
+    await this.refreshCredentials.revokeForUser(session.user.id);
   }
 }
 

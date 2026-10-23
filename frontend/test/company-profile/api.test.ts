@@ -129,7 +129,7 @@ describe("uploadLogo", () => {
     await expect(uploadLogo(file, 4)).resolves.toMatchObject({ version: 5 });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/api/v1/company-profile/logo?expectedVersion=4");
-    expect(init).toMatchObject({ method: "PUT", headers: { "content-type": "image/png" }, body: file, credentials: "same-origin" });
+    expect(init).toMatchObject({ method: "PUT", headers: { "content-type": "image/png", "x-gms-csrf": "1" }, body: file, credentials: "same-origin" });
   });
 
   it("UT-CP-F28 throws the server error code", async () => {

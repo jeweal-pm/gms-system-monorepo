@@ -5,8 +5,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { UserAdminService } from "../../src/user-admin/user-admin.service";
 
 /**
- * UT-DA-S01…S11: UserAdminService enforces delegated-admin.md DA-01…05; UT-PH-S01…S06: user photos
- * (user-photo.md PH-02/05/06/09). Prisma, better-auth, Argon2 and the photo files are mocked.
+ * UT-DA-S01…S11: UserAdminService enforces delegated-admin.md DA-01…05; UT-PH-S01…S08: user photos
+ * (user-photo.md PH-02/05/06/09). Prisma, better-auth, Argon2 and the GMS storage adapter are mocked.
  */
 
 const mocks = vi.hoisted(() => {
@@ -18,16 +18,22 @@ const mocks = vi.hoisted(() => {
     account: { updateMany: vi.fn(), create: vi.fn() },
     loginLockout: { deleteMany: vi.fn() },
     session: { deleteMany: vi.fn() },
-    userPhoto: { upsert: vi.fn(), deleteMany: vi.fn() },
+    userPhoto: { findUnique: vi.fn(), upsert: vi.fn(), deleteMany: vi.fn() },
+    storedFile: { create: vi.fn(), updateMany: vi.fn() },
   };
   return {
     tx,
     getSession: vi.fn(),
-    files: { replacePhotoFile: vi.fn(async () => undefined), readPhotoFile: vi.fn(), removePhotoFile: vi.fn(async () => undefined) },
+    files: {
+      putPhotoObject: vi.fn(async (_id: string, _type: string, data: Buffer) => ({ key: "user-photo/immutable.jpg", size: data.length, sha256: "a".repeat(64) })),
+      readPhotoObject: vi.fn(), readLegacyPhotoFile: vi.fn(),
+      archiveLegacyPhotoFile: vi.fn(async (_id: string, data: Buffer) => ({ key: "user-photo/legacy.jpg", size: data.length, sha256: "b".repeat(64) })),
+    },
     prisma: {
       user: { findUnique: vi.fn(), findMany: vi.fn() },
       userPermission: { findMany: vi.fn() },
       userPhoto: { findUnique: vi.fn() },
+      storedFile: { findUnique: vi.fn() },
       $transaction: vi.fn(async (callback: (transaction: typeof tx) => unknown) => callback(tx)),
     },
   };
@@ -94,7 +100,9 @@ const ADMIN_GRANTS = ["user-and-permission:VIEW", "user-and-permission:ADD", "us
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.files.removePhotoFile.mockResolvedValue(undefined);
+  mocks.tx.userPhoto.findUnique.mockResolvedValue(null);
+  mocks.tx.storedFile.create.mockResolvedValue({});
+  mocks.tx.storedFile.updateMany.mockResolvedValue({ count: 1 });
   mocks.tx.user.update.mockResolvedValue({ updatedAt: new Date("2026-10-17T01:00:00Z") });
 });
 
@@ -218,19 +226,42 @@ describe("user photo (PH)", () => {
     expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it("UT-PH-S02 Super Admin replaces a photo: file written, metadata upserted, version = sha256 prefix", async () => {
+  it("UT-PH-S02 Super Admin uploads a photo to an immutable key and creates ready metadata", async () => {
     signInAs([], "admin");
     const subject = service();
     const actor = await subject.requireAccess(request, "EDIT");
     mocks.tx.$queryRaw.mockResolvedValue([{ role: "admin" }]);
     const result = await subject.putPhoto(actor, TARGET_ID, "image/jpeg", JPEG);
     expect(result.photoVersion).toMatch(/^[0-9a-f]{16}$/);
-    expect(mocks.files.replacePhotoFile).toHaveBeenCalledWith(TARGET_ID, JPEG);
-    expect(mocks.tx.userPhoto.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: TARGET_ID } }));
+    expect(mocks.files.putPhotoObject).toHaveBeenCalledWith(TARGET_ID, "image/jpeg", JPEG);
+    expect(mocks.tx.storedFile.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+      bucket: "files", objectKey: "user-photo/immutable.jpg", status: "ready", purgeAfter: null,
+    }) }));
+    expect(mocks.tx.userPhoto.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { userId: TARGET_ID }, create: expect.objectContaining({ storageKey: "user-photo/immutable.jpg" }),
+    }));
     expect(mocks.tx.user.update).not.toHaveBeenCalled();
   });
 
-  it("UT-PH-S03 nobody changes their own photo here; a delegated admin can't change an unmanageable user's", async () => {
+  it("UT-PH-S03 replacement soft-deletes the prior metadata and retains both object keys", async () => {
+    signInAs([], "admin");
+    const subject = service();
+    const actor = await subject.requireAccess(request, "EDIT");
+    mocks.tx.$queryRaw.mockResolvedValue([{ role: "user" }]);
+    mocks.tx.userPhoto.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      storageKey: "user-photo/immutable.jpg", contentType: "image/jpeg", sizeBytes: JPEG.length, sha256: "a".repeat(64),
+    });
+    await subject.putPhoto(actor, TARGET_ID, "image/jpeg", JPEG);
+    await subject.putPhoto(actor, TARGET_ID, "image/png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    expect(mocks.tx.storedFile.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { bucket: "files", objectKey: "user-photo/immutable.jpg", status: "ready" },
+      data: expect.objectContaining({ status: "deleted", purgeAfter: null }),
+    }));
+    expect(mocks.tx.storedFile.create).toHaveBeenCalledTimes(2);
+    expect(mocks.files.putPhotoObject).toHaveBeenCalledTimes(2);
+  });
+
+  it("UT-PH-S04 nobody changes their own photo here; a delegated admin can't change an unmanageable user's", async () => {
     signInAs([], "admin");
     const superAdmin = await service().requireAccess(request, "EDIT");
     mocks.tx.$queryRaw.mockResolvedValue([{ role: "admin" }]);
@@ -243,41 +274,76 @@ describe("user photo (PH)", () => {
     mocks.tx.userPermission.findMany.mockResolvedValue(grantRows(["sale:VIEW"]));
     expect(await failure(subject.putPhoto(delegated, TARGET_ID, "image/jpeg", JPEG))).toEqual({ status: 403, code: "USER_NOT_MANAGEABLE" });
     expect(await failure(subject.removePhoto(delegated, TARGET_ID))).toEqual({ status: 403, code: "USER_NOT_MANAGEABLE" });
-    expect(mocks.files.replacePhotoFile).not.toHaveBeenCalled();
-    expect(mocks.files.removePhotoFile).not.toHaveBeenCalled();
+    expect(mocks.files.putPhotoObject).not.toHaveBeenCalled();
   });
 
-  it("UT-PH-S04 remove deletes the file and the metadata; unknown user is USER_NOT_FOUND", async () => {
+  it("UT-PH-S05 remove hides the photo and soft-deletes metadata while retaining bytes; unknown user is USER_NOT_FOUND", async () => {
     signInAs(ADMIN_GRANTS);
     const subject = service();
     const actor = await subject.requireAccess(request, "EDIT");
     mocks.tx.$queryRaw.mockResolvedValue([{ role: "user" }]);
     mocks.tx.userPermission.findMany.mockResolvedValue(grantRows(["vendor:VIEW"]));
+    mocks.tx.userPhoto.findUnique.mockResolvedValue({
+      storageKey: "user-photo/immutable.jpg", contentType: "image/jpeg", sizeBytes: JPEG.length, sha256: "a".repeat(64),
+    });
     await expect(subject.removePhoto(actor, TARGET_ID)).resolves.toEqual({ ok: true });
-    expect(mocks.files.removePhotoFile).toHaveBeenCalledWith(TARGET_ID);
+    expect(mocks.tx.storedFile.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { bucket: "files", objectKey: "user-photo/immutable.jpg", status: "ready" },
+      data: expect.objectContaining({ status: "deleted", purgeAfter: null }),
+    }));
     expect(mocks.tx.userPhoto.deleteMany).toHaveBeenCalledWith({ where: { userId: TARGET_ID } });
 
     mocks.tx.$queryRaw.mockResolvedValue([]);
     expect(await failure(subject.removePhoto(actor, TARGET_ID))).toEqual({ status: 404, code: "USER_NOT_FOUND" });
   });
 
-  it("UT-PH-S05 get: metadata without a file or no metadata is PHOTO_NOT_FOUND", async () => {
+  it("UT-PH-S06 get: metadata without a file or no metadata is PHOTO_NOT_FOUND", async () => {
     const subject = service();
     mocks.prisma.userPhoto.findUnique.mockResolvedValue(null);
     expect(await failure(subject.getPhoto(TARGET_ID))).toEqual({ status: 404, code: "PHOTO_NOT_FOUND" });
-    mocks.prisma.userPhoto.findUnique.mockResolvedValue({ contentType: "image/jpeg", sha256: "a".repeat(64) });
-    mocks.files.readPhotoFile.mockResolvedValue(null);
+    mocks.prisma.userPhoto.findUnique.mockResolvedValue({ contentType: "image/jpeg", sha256: "a".repeat(64), storageKey: "user-photo/missing.jpg" });
+    mocks.prisma.storedFile.findUnique.mockResolvedValue({ sourceType: "auth.user-photo", sourceId: TARGET_ID, status: "ready" });
+    mocks.files.readPhotoObject.mockResolvedValue(null);
     expect(await failure(subject.getPhoto(TARGET_ID))).toEqual({ status: 404, code: "PHOTO_NOT_FOUND" });
-    mocks.files.readPhotoFile.mockResolvedValue(JPEG);
+    mocks.files.readPhotoObject.mockResolvedValue(JPEG);
     await expect(subject.getPhoto(TARGET_ID)).resolves.toEqual({ data: JPEG, contentType: "image/jpeg", version: "a".repeat(16) });
   });
 
-  it("UT-PH-S06 deleting a user also removes the photo file", async () => {
+  it("UT-PH-S07 refuses a ready object whose retained metadata is owned by another user", async () => {
+    mocks.prisma.userPhoto.findUnique.mockResolvedValue({
+      contentType: "image/jpeg", sha256: "a".repeat(64), storageKey: "user-photo/other.jpg",
+    });
+    mocks.prisma.storedFile.findUnique.mockResolvedValue({ sourceType: "auth.user-photo", sourceId: ADMIN_ID, status: "ready" });
+    expect(await failure(service().getPhoto(TARGET_ID))).toEqual({ status: 404, code: "PHOTO_NOT_FOUND" });
+    expect(mocks.files.readPhotoObject).not.toHaveBeenCalled();
+  });
+
+  it("UT-PH-S08 legacy photo removal archives bytes and metadata without deleting the legacy source", async () => {
+    signInAs([], "admin");
+    const subject = service();
+    const actor = await subject.requireAccess(request, "EDIT");
+    mocks.tx.$queryRaw.mockResolvedValue([{ role: "user" }]);
+    mocks.tx.userPhoto.findUnique.mockResolvedValue({ storageKey: null, contentType: "image/jpeg", sizeBytes: JPEG.length, sha256: "a".repeat(64) });
+    mocks.files.readLegacyPhotoFile.mockResolvedValue(JPEG);
+    await subject.removePhoto(actor, TARGET_ID);
+    expect(mocks.files.archiveLegacyPhotoFile).toHaveBeenCalledWith(TARGET_ID, JPEG, "image/jpeg");
+    expect(mocks.tx.storedFile.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({
+      objectKey: "user-photo/legacy.jpg", status: "deleted", deletedAt: expect.any(Date), purgeAfter: null,
+    }) }));
+  });
+
+  it("UT-PH-S09 deleting a user soft-deletes metadata and never removes its bytes", async () => {
     signInAs([], "admin");
     const subject = service();
     const actor = await subject.requireAccess(request, "DELETE");
     mocks.tx.$queryRaw.mockResolvedValue([{ role: "user" }]);
+    mocks.tx.userPhoto.findUnique.mockResolvedValue({
+      storageKey: "user-photo/immutable.jpg", contentType: "image/jpeg", sizeBytes: JPEG.length, sha256: "a".repeat(64),
+    });
     await subject.delete(actor, TARGET_ID);
-    expect(mocks.files.removePhotoFile).toHaveBeenCalledWith(TARGET_ID);
+    expect(mocks.tx.storedFile.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { bucket: "files", objectKey: "user-photo/immutable.jpg", status: "ready" },
+      data: expect.objectContaining({ status: "deleted", purgeAfter: null }),
+    }));
   });
 });

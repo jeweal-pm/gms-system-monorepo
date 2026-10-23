@@ -2,13 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useFormState, useWatch, type FieldValues, type UseFormReturn } from "react-hook-form";
-import { retryTransient } from "@/lib/trpc-error";
-import { trpc } from "@/providers/app-providers";
+import { retryServiceRead, serviceRestartRetryDelay } from "@/lib/trpc-error";
+import { authTrpc } from "@/lib/auth-trpc";
 import { replacedTakenCodeMessage, shouldPrefillCode } from "./code-suggestion";
 
 /** Existing approved contract; shares the tRPC cache entry with the shell and other pages. */
 export function usePermissionMine() {
-  return trpc.permission.mine.useQuery(undefined, { retry: retryTransient, staleTime: 30_000 });
+  return authTrpc.permission.mine.useQuery(undefined, {
+    retry: retryServiceRead,
+    retryDelay: serviceRestartRetryDelay,
+    staleTime: 30_000,
+  });
 }
 
 /** Trimmed, debounced search text (300 ms); unchanged trimmed text does not change the key. */

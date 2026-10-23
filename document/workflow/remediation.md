@@ -5,6 +5,28 @@ It controls implementation retries and handoffs. It does not authorize an unsele
 audit finding, broaden the user request, or weaken security evidence requirements.
 The parent owns the shared work record; roles read it before edits or another handoff.
 
+## One record, one approval, then code
+
+- Keep one canonical ADR, TODO, or investigation ticket per feature/root cause. Search the
+  existing registry and queue before creating a file. Add evidence and revision history to
+  that record; do not create parallel review bundles, duplicate tickets, or a second TODO
+  for the same decision or defect.
+- Approval of the exact ADR/TODO/ticket revision authorizes its described implementation.
+  Start the code change in the same active task; do not ask for another selection, SA pass,
+  approval summary, or review of the already-approved documents. A direct user instruction
+  to fix a named issue/ticket also records the required selection for that scope.
+- If new evidence changes an approved contract, schema, flow, dependencies, or deployment
+  topology, update the existing canonical design record and pause only the dependent code
+  for that changed decision. Otherwise keep the approved design and fix the implementation.
+- Tests and the two required focused security role results for a changed security-sensitive
+  source revision are verification, not new design approval gates. Reuse both results for
+  unchanged code. Do not repeat either review on the same source revision or re-review an
+  approved ADR/TODO. Report a concrete unresolved blocker once, with its exact missing fact.
+- When a bug appears during approved work, record it in the existing feature/ticket ledger,
+  then fix and verify it within the active scope. Create a separate investigation only for
+  an independent root cause or when the user needs a distinct decision. Do not stop after
+  producing a ticket if the user has already authorized its fix.
+
 ## Select once and define the finish
 
 Before the first correction, record the work ID, exact selected revision and authorization,

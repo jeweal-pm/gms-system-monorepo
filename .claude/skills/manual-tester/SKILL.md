@@ -21,7 +21,7 @@ for review instead of expanding the fix or repeatedly retesting unchanged behavi
 The parent owns the persistent pass ledger. Report missing prerequisites as not run;
 do not dispatch application fixes or reopen resolved work without evidence and selection.
 
-1. Identify the page/module and the user-visible changes from the task and diff. Read document/workflow/ui-delivery.md, the approved feature UI spec and TODO (`document/task/todo/<feature-id>.md`) and SA contract where applicable, and written acceptance cases under document/apps/ or document/testing/. Preserve feature/revision and TODO IDs in the report. Do not infer an unrequested business rule.
+1. Identify the page/module and the user-visible changes from the task and diff. Read document/workflow/ui-delivery.md, the approved feature UI spec/TODO and SA contract where applicable, and written acceptance cases under document/apps/ or document/testing/. Preserve feature/revision and TODO IDs in the report. Do not infer an unrequested business rule.
 2. Open the running application with an available browser/UI tool and use it as a person would. Follow relevant scripted test cases, then try reasonable exploratory paths a customer may take, including empty or incomplete input, back/cancel, repeated actions, and clear success or failure feedback where applicable.
 3. Check that each action has an understandable result and that the page remains usable through the changed flow. Use realistic but non-sensitive test data. Do not make destructive changes to shared or production data.
 4. If no running app or usable browser is available, do not claim the UI was tested. State what prevented the test and mark the affected checks as not run in the report.

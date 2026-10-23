@@ -8,10 +8,10 @@
 
 | ID | Decision (rev 3) | Replaces |
 |---|---|---|
-| D3-01 | `dashboard.shortcutGroups` (gateway `shortcutGroupsFor`): Super Admin sees every shortcut (unchanged). Everyone else sees each shortcut whose `<slug>:VIEW` they hold, **without** needing `dashboard:VIEW` first. The Dashboard shortcut itself still needs `dashboard:VIEW` (its slug is `dashboard`). Empty groups are omitted (unchanged). Output shape unchanged. | D2-09 (the `dashboard:VIEW` gate) |
+| D3-01 | `dashboard.shortcutGroups` (`shortcutGroupsFor`, now in auth `src/trpc/auth-trpc.router.ts` after the gateway removal): Super Admin sees every shortcut (unchanged). Everyone else sees each shortcut whose `<slug>:VIEW` they hold, **without** needing `dashboard:VIEW` first. The Dashboard shortcut itself still needs `dashboard:VIEW` (its slug is `dashboard`). Empty groups are omitted (unchanged). Output shape unchanged. | D2-09 (the `dashboard:VIEW` gate) |
 | D3-02 | Frontend: when the list is empty (the user has no VIEW on any shortcut menu), Home shows a short message instead of a blank page ("You don't have access to any menu yet. Ask your administrator."). | blank "0 groups · 0 shortcuts" |
 
-Changed: gateway `shortcutGroupsFor` and its tests (BT-UP-14 / BT-UP2-14 expectations), [api-contract.md](api-contract.md) `dashboard.shortcutGroups` row, [architecture.md](architecture.md) catalog note, ADR-0020's "Dashboard shortcut filter" row (amended note), Home page empty state with a test (gateway UT-UP-HS-01…03, frontend UT-HOME-03). Security: the gate only hid links to menus the user can already open (every page and API checks its own `<menuKey>:VIEW`), so removing it exposes no new data.
+Changed: `shortcutGroupsFor` (first in the gateway, ported to auth `src/trpc/auth-trpc.router.ts` when the gateway was removed, 2026-10-23) and its tests (BT-UP-14 / BT-UP2-14 expectations), [api-contract.md](api-contract.md) `dashboard.shortcutGroups` row, [architecture.md](architecture.md) catalog note, ADR-0020's "Dashboard shortcut filter" row (amended note), Home page empty state with a test (auth UT-UP-HS-01…03 in `test/trpc/auth-trpc.router.test.ts`, frontend UT-HOME-03). Security: the gate only hid links to menus the user can already open (every page and API checks its own `<menuKey>:VIEW`), so removing it exposes no new data.
 
 ## Revision 2 (2026-10-15, ADR-0020)
 

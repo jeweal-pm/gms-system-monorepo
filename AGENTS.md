@@ -29,12 +29,12 @@ approval evidence, TODO, contracts, and allowed paths in each handoff. If this e
 cannot launch custom roles, read that role's definition and apply its skill sequentially;
 report that fallback. Do not claim an agent ran when it did not.
 
-UI spec/TODO needs user approval before frontend implementation. New or changed service,
-API, schema, or flow designs need separate SA-document approval before dependent code or
-dependency installation. Prepare those documents and complete independent approved work
-before asking. Existing unchanged, approved contracts can be reused without another review.
-An instruction to implement an identified revision counts as approval for that revision;
-permission to create this workflow does not approve any future feature.
+UI spec/TODO and changed service/API/schema/flow designs need one user approval before
+dependent implementation. Approval of the exact revision starts its code work immediately;
+do not add another review/approval handoff for the same bundle. Existing approved contracts
+are reused as-is. A direct user instruction to fix an identified issue or ticket revision
+also selects and authorizes that scope. Prepare only documents needed to make a new decision
+reviewable; search and update the existing record instead of creating duplicates.
 
 Read `document/coordination/ownership.yaml`; serialize shared manifests, lockfiles,
 composition roots, Docker files, task pointers, and tech-stack updates through the parent
@@ -52,17 +52,17 @@ If an integration data-connection failure remains after three diagnosed correcti
 or progress/verification becomes unavailable earlier, record one `integration-blocker` in
 `document/task/investigation/` and keep the dependent TODO unresolved.
 
-Before a frontend/backend code handoff is complete, route its final changed code through
-both `sec-auditor` and `security-auditor` for scoped, read-only review under
-`document/workflow/security-review.md`. Record both results against the same source
-revision. Confirmed issues or required security validation gaps block the affected TODO;
-hardening advice enters investigation for owner review. Do not run a full audit, auto-fix
-findings, or repeat reviews without changed evidence.
+Before frontend/backend handoff, route the final changed code through both `sec-auditor` and
+`security-auditor` once on the same source revision. Do not review approved ADR/TODO documents
+again or resend unchanged code as a new review. Run relevant tests for code changes. Record an
+actionable finding once; when the user has authorized its fix, implement it directly without
+another ticket-selection request. Do not run a full audit unless requested.
 
-Audit findings first enter `document/task/investigation/` for user review. Auditors do
-not edit application code or automatically dispatch fixes. Frontend/backend/infra consume only
-explicitly selected ticket revisions; record the user's actual instruction as approval.
-Changed contracts/schema/flows/dependencies still require separate SA approval. Read
+Audit findings first enter `document/task/investigation/` as one durable record. Auditors do
+not edit application code. Once the user approves the ticket revision or directly instructs
+the fix, the owner implements it without another selection loop. Changed
+contracts/schema/flows/dependencies still require separate SA approval only when outside
+the approved design. Read
 `document/task/investigation/README.md`; keep this queue separate from the latest UI TODO.
 
 For corrective work, read `document/workflow/remediation.md`. The parent persists one
@@ -71,6 +71,8 @@ initial fix included. Retry only with a diagnosed failure and new evidence/hypot
 Stop on success, no-progress, unavailable verification, or exhausted passes; return the
 durable result rather than cycling roles. New independent findings return to investigation.
 Only an explicit user-authorized extension changes the existing limit; never reset history.
+After a pass succeeds, deliver the updated code and concise verification promptly; do not
+write a duplicate review bundle or keep the task open for redundant reviewer passes.
 
 When selected ADR/TODO work adds or changes container services/images/networks/storage,
 the parent routes version-specific security research to infra, including manual user ADR
@@ -84,5 +86,7 @@ Devops always acts as a senior DevOps engineer. Read document/workflow/devops-de
 for CI/image/variable contracts. Service/ADR/infra changes route approved build and delivery
 requirements to devops; parent serializes .github/**, build contexts and the delivery index.
 Infra retains runtime/container security ownership. Preparing workflows does not authorize
-GitHub settings changes, remote runs, publication, pushing or deployment. Findings first
-enter investigation with owner devops and retain the shared corrective ledger.
+GitHub settings changes, remote runs, publication, pushing or production deployment. A
+request to reconcile local development Compose authorizes non-destructive `up --remove-orphans`
+work; preserve all volumes. Findings use one investigation record and retain the shared
+corrective ledger.

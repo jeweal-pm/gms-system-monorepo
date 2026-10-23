@@ -1,0 +1,10 @@
+# Completed staged slice: GMS license v2 decision ordering
+
+- Date: 2026-10-20 (Asia/Bangkok)
+- Feature: `gms-platform-migration`; GP-AUTH-05 remains open
+- Approval: owner approved SA revision 3 and ADR-0028 after selecting INV-20261020-001
+- Scope completed: auth-owned `LicenseCurrentDecision` migration and sequence; database compare-and-set for online v2 decisions; deny markers on explicit denial, malformed proof and 4xx/429; immutable license subject derived from auth's user row; fixed 0–2-day offline grace from the newest signed eligible decision. Existing v1 `LicenseCache`, login and protected routes were not switched.
+- Source: HEAD `44d5eb9` plus nine-file SHA-256 `63ABA554AA9651CB673D41035429EFB094306CE08808778543312994A3A7A96C`; no commit/push/deployment in this task.
+- Verification: disposable PostgreSQL 18.6 migrations 8/8; integration forced older active response to complete after newer 404 and signed revoke, both left `DENIED`; full auth suite 54/54 with one worker; typecheck, build, lint and `git diff --check` passed. The temporary container was stopped and removed. Initial two-worker full run timed out in existing JWKS integration under fixture load; one-worker rerun passed.
+- Security: [sec-auditor scoped parent fallback](../../reviews/sec-auditor/2026-10-20-gms-license-ordering-rev3.md) and [security-auditor scoped parent fallback](../../reviews/security-auditor/2026-10-20-gms-license-ordering-rev3.md) both clear for the staged ordering code at the same source hash. Custom reviewer agents were unavailable at usage limit; no independent agent review is claimed.
+- Open boundaries: [INV-20261020-001](../investigation/INV-20261020-001-gms-license-v2-cache-order.md) remains `needs-validation` for the future private endpoint's service credential/session binding. The owner deferred the real license-server repository and requested mock-only work for now. GP-AUTH-05 still requires private route design/approval, capacity evidence and later external compatibility before cutover. No production migration was run.

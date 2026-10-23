@@ -99,3 +99,7 @@ Native Windows Node lacks the upstream CLI's required safe-file flags. Use the d
 Linux validator runner; do not patch out safe reads or report a Windows CLI failure as
 a valid audit. A full audit completes only after required phases/artifacts and both
 original upstream validators pass; otherwise record `run_status: incomplete` and why.
+
+## One finding record and direct remediation handoff
+
+Search the investigation queue by root cause before creating a ticket; update or link the canonical record instead of issuing duplicates. The auditor remains read-only. Once the user approves the ticket revision or directly instructs the parent to fix it, the parent dispatches implementation immediately without another selection gate. Reuse the same ticket and review evidence; request another focused review only for changed security code, new evidence, or explicit user request. Do not expand a focused review into a repeated audit cycle.

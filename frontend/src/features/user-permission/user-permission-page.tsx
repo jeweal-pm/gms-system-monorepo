@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Controller, useForm, useWatch, type Resolver } from "react-hook-form";
 import { authClient } from "@/lib/auth-client";
-import { trpc } from "@/providers/app-providers";
+import { authTrpc } from "@/lib/auth-trpc";
 import { isCallerLicenseCode, readDomainError } from "@/lib/trpc-error";
 import { loadErrorMessage, mapSaveError, toCreateUserInput, toUpdateUserInput, type PermissionCatalog, type UserDetail, type UserSummary } from "./api";
 import { grantableOnly, userAdminAccess, type UserAdminAccess } from "./access";
@@ -123,7 +123,7 @@ function formFromDetail(user: UserDetail, catalog: PermissionCatalog | undefined
 
 function UserPermissionWorkspace({ access }: { access: UserAdminAccess }) {
   const toast = useToast();
-  const utils = trpc.useUtils();
+  const utils = authTrpc.useUtils();
   const session = authClient.useSession();
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [mode, setMode] = useState<PageMode>("create");

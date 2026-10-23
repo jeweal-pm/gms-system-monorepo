@@ -17,9 +17,11 @@ timeouts, failure/retry behavior, and bounded queries. Do not create a new servi
 because a new UI page exists. Current auth and gateway use HTTP; Prisma is already installed.
 Verify the checkout rather than adopting historical TCP/Redis assumptions.
 
-Write `document/apps/backend/<service>/<feature>/` using every file under
-`document/apps/backend/template/auth-service/` as the service-document checklist, adapting
-auth examples to the actual domain and marking irrelevant parts with a reason. Include:
+Write service design documents to `document/apps/backend/<service>/<feature>/` using every
+non-TODO files under `document/apps/backend/template/auth-service/` as the service-document
+checklist, adapting auth examples to the actual domain and marking irrelevant parts with a
+reason. Use its TODO template only as a format; put all actionable backend TODOs in
+`document/task/todo/<feature-id>.md`, not beside the bundle. Include:
 
 - `sequence-diagram.md`: editable Mermaid showing UI -> same-origin proxy -> gateway ->
   domain service -> owning PostgreSQL schema and relevant alternate/error paths. Link the
@@ -29,8 +31,9 @@ auth examples to the actual domain and marking irrelevant parts with a reason. I
   If no database change is needed, state that and show/link the existing affected model.
 - `api-contract.md`: typed operations/messages, inputs, outputs, permission rules, error codes,
   compatibility, pagination, and links to the consuming frontend TODO IDs.
-- `architecture.md`, `authorization.md`, `error-handling.md`, `dependencies.md`, `testing.md`,
-  and the backend TODO: implementation decisions, acceptance checks, and the service review bundle. Write the TODO to `document/task/todo/<feature-id>.md` (central folder, see `document/task/todo/README.md`), not inside the feature folder, and link it from the bundle.
+- `architecture.md`, `authorization.md`, `error-handling.md`, `dependencies.md`, and
+  `testing.md`: implementation decisions and acceptance checks. Link the central TODO from
+  the service bundle and include it in the review bundle.
 
 Write an ADR under `document/adr/<next-unused-number>-<decision>.md` for each new architecture
 decision; inspect filenames including extensionless ADRs to avoid duplicate IDs. Use the
@@ -41,6 +44,11 @@ traffic/egress, writable paths, secret-adapter prerequisites, capacity and rollo
 SA review. Draft ADRs allow research only; approved implementation follows prerequisite
 order with shared Docker edits serialized through the parent. Read
 `document/workflow/infra-delivery.md` and check the service index for manual ADR changes.
+For every new upload-capable module, reuse `@gms/storage` and its approved local-fs profile:
+define its own `files/{module}/` scope, metadata ownership, upload/download authorization,
+and tests. Do not design module-specific direct filesystem writes or imply S3 is implemented;
+the S3 driver remains proposed. User-uploaded bytes are retained permanently when hidden or
+replaced; there is no expiry or purge.
 For changed service builds/releases have the parent hand devops the exact approved
 service/infra revisions, Dockerfile, dependencies, variables and check requirements under
 `document/workflow/devops-delivery.md`; draft services do not enable speculative deployment.
@@ -73,3 +81,7 @@ root-cause ledger/pass across roles. Reuse accepted contracts unless evidence es
 a necessary change; an unchanged failure is not grounds to redesign the flow repeatedly.
 Return the specific design delta or missing fact and durable pending-review handoff;
 do not reset corrective history through a new document revision.
+
+## Single-approval delivery
+
+Keep one canonical design bundle and one ADR for each decision; search before creating a file and append a revision to the existing record when appropriate. Approval of the complete bundle is the only design gate: hand the exact approved revision to backend immediately in the same active workflow. Do not request a second SA review or write a duplicate handoff/review document. Reopen design only when new evidence requires a material contract, schema, flow, dependency, or topology change.

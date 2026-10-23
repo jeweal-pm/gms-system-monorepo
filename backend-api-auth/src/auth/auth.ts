@@ -1,5 +1,5 @@
 import { betterAuth } from "better-auth";
-import { APIError, createAuthMiddleware, isAPIError } from "better-auth/api";
+import { APIError, createAuthEndpoint, createAuthMiddleware, isAPIError } from "better-auth/api";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { deleteSessionCookie } from "better-auth/cookies";
 import { username as usernamePlugin } from "better-auth/plugins";
@@ -7,9 +7,23 @@ import * as argon2 from "argon2";
 import { createHmac, randomUUID } from "node:crypto";
 import { prisma } from "../database/prisma-client";
 import { isValidUsername, normalizeUsername, USERNAME_MAX_LENGTH, USERNAME_MIN_LENGTH } from "./username-policy";
+import { accessTokenIssuerFromEnvironment, issueAccessCookieAfterEligibleLogin } from "./access-token";
 
 /** ADR-0020: the only sign-in route. `/sign-in/email` is disabled. */
 const SIGN_IN_PATH = "/sign-in/username";
+export const accessTokenIssuer = accessTokenIssuerFromEnvironment(process.env);
+
+/** Public route shares Better Auth's existing /api/auth mount; no login/session hook is changed. */
+export const accessJwksEndpoint = createAuthEndpoint("/jwks", { method: "GET" }, async (ctx) => {
+  if (!accessTokenIssuer) {
+    return new Response(JSON.stringify({ error: { code: "JWKS_UNAVAILABLE", message: "Access-token keys are not configured" } }), {
+      status: 503,
+      headers: { "content-type": "application/json", "cache-control": "no-store" },
+    });
+  }
+  ctx.setHeader("cache-control", "public, max-age=600");
+  return ctx.json(accessTokenIssuer.publicJwks());
+});
 
 const frontendUrl = new URL(process.env.FRONTEND_URL ?? "http://localhost:3000");
 const trustedOrigins = new Set([frontendUrl.origin]);
@@ -41,6 +55,7 @@ export const auth = betterAuth({
     },
   },
   plugins: [
+    { id: "gms-access-jwks", endpoints: { accessJwks: accessJwksEndpoint } },
     usernamePlugin({
       minUsernameLength: USERNAME_MIN_LENGTH,
       maxUsernameLength: USERNAME_MAX_LENGTH,
@@ -64,6 +79,9 @@ export const auth = betterAuth({
     max: 30,
     customRules: {
       [SIGN_IN_PATH]: { window: 60, max: 5 },
+      // Public, bounded static keys must remain available during a database outage.
+      // Better Auth's database-backed global limiter otherwise queries RateLimit here.
+      "/jwks": false,
     },
   },
   hooks: {
@@ -163,6 +181,13 @@ export const auth = betterAuth({
           data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() },
         });
         await recordLoginAttempt(session.user.id, username, true);
+        await issueAccessCookieAfterEligibleLogin(
+          ctx,
+          { id: session.user.id, username: session.user.username },
+          { id: session.session.id },
+          accessTokenIssuer,
+          frontendUrl.protocol === "https:",
+        );
       }
     }),
   },

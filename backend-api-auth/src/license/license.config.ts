@@ -11,6 +11,7 @@ export type LicenseConfiguration = {
   issuer: string;
   audience: string;
   publicKeys: Record<string, string>;
+  offlineGraceDays: 0 | 1 | 2;
   mockKid?: string;
   mockPrivateKeyPkcs8Base64?: string;
 };
@@ -29,6 +30,9 @@ export function parseLicenseConfiguration(env: NodeJS.ProcessEnv): LicenseConfig
   const issuer = required(env, "LICENSE_JWT_ISSUER");
   const audience = env.LICENSE_JWT_AUDIENCE ?? DEFAULT_AUDIENCE;
   if (audience !== DEFAULT_AUDIENCE) throw new Error("LICENSE_JWT_AUDIENCE must match the approved audience");
+  const graceInput = env.LICENSE_OFFLINE_GRACE_DAYS ?? "2";
+  if (!/^[012]$/.test(graceInput)) throw new Error("LICENSE_OFFLINE_GRACE_DAYS must be 0, 1 or 2");
+  const offlineGraceDays = Number(graceInput) as 0 | 1 | 2;
 
   const publicKeysRaw = required(env, "LICENSE_PUBLIC_KEYS_JSON");
   let publicKeys: unknown;
@@ -67,6 +71,7 @@ export function parseLicenseConfiguration(env: NodeJS.ProcessEnv): LicenseConfig
       issuer,
       audience,
       publicKeys,
+      offlineGraceDays,
     };
   }
 
@@ -87,7 +92,7 @@ export function parseLicenseConfiguration(env: NodeJS.ProcessEnv): LicenseConfig
   } catch {
     throw new Error("Mock signing key must match the configured Ed25519 public key");
   }
-  return { mode, instanceId, issuer, audience, publicKeys, mockKid, mockPrivateKeyPkcs8Base64 };
+  return { mode, instanceId, issuer, audience, publicKeys, offlineGraceDays, mockKid, mockPrivateKeyPkcs8Base64 };
 }
 
 function required(env: NodeJS.ProcessEnv, key: string): string {

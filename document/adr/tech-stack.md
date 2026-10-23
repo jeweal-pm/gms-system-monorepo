@@ -82,6 +82,33 @@ Core stack, service, runtime/queue/cache ใหม่ หรือการเ�
 Approval ของ UI ไม่ครอบคลุมเอกสาร SA ที่สร้างภายหลัง และ approval ไม่ใช่หลักฐานการติดตั้ง.
 การเปลี่ยน flow/API/schema/package choice ต้องอัปเดต revision และให้ตรวจส่วนที่เปลี่ยนใหม่.
 
+## GMS platform migration dependency ledger (SA revision 1 approved 2026-10-20)
+
+These entries are **proposed**, except existing installed libraries explicitly marked for
+reuse. The current gateway/partner stack above remains the installed baseline. Source:
+[SA review](../reviews/sa/2026-10-20-gms-platform-migration-rev1.md) and
+[central TODO](../task/todo/gms-platform-migration.md). Owner approval evidence for this
+SA revision: **none**. Exact new package/image versions and runtime measurements must be
+recorded before installation; no proposal in this table is an installed dependency.
+
+| Package or service | Status | Purpose and alternative | 4 GB / 2 vCPU cost and approval gate |
+|---|---|---|---|
+| tRPC 11 / TanStack Query in frontend and gateway | installed; proposed reuse in domain auth/master | Domain-hosted tRPC; [official adapters](https://trpc.io/docs/server/adapters); REST alternative for new inventory | No permanent gateway; migrate procedure parity under ADR-0025 |
+| Better Auth 1.7.7 in auth/frontend | installed; approved reuse | Keep login/database session; separate access JWT and refresh contract under ADR-0026 | Existing auth process; version-locked integration prototype in progress |
+| Better Auth JWT plugin bundled with installed version, or existing `jose` | existing `jose` selected for staged signer/JWKS; plugin not activated | Public-key access JWT/JWKS; [Better Auth plugin](https://better-auth.com/docs/plugins/jwt), [jose](https://github.com/panva/jose) | Existing auth signer/JWKS tests pass; login issuance, consumer verification, key rotation and capacity remain open |
+| `jose@6.2.12` in auth; exact compatible verifier in master/inventory | auth installed; other workspaces proposed | Verify separate user JWT and existing signed-license token; Node crypto alternative | Bounded JWKS cache; parent serializes manifest/lockfile |
+| Hono for `api-inventory` | proposed; version not selected | New typed HTTP service; NestJS reuse alternative; [Hono docs](https://hono.dev/docs/) | Proposed 256 MiB process; first inventory slice and ADR-0027 approval required |
+| Redis and BullMQ worker | proposed later; versions not selected | Heavy queued work only; off-hours job alternative; [BullMQ docs](https://docs.bullmq.io/) | Redis 192 MiB + worker 512 MiB hard caps; measured fit and selected feature required |
+| `@gms/storage` fs driver | approved for implementation; workspace package pending integration | Shared streaming interface; [GMS Appendix A](../gms-platform-spec.md) | [ADR-0030 / SA revision 3](0030-permanent-retention-for-user-uploaded-files.md) authorizes indefinite retention for all user-uploaded files/images; UI removal hides only; bytes and metadata remain permanently; no TTL or automated deletion; production disk budget and upload admission remain rollout prerequisites |
+| AWS SDK v3 / `@aws-sdk/lib-storage` | proposed only for selected S3 profile | Multipart streaming; [AWS SDK guide](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/) | No install for default fs profile; external residency/security review |
+| Nginx upstream image | proposed, tag/digest not selected | Sole public ingress; [Nginx docs](https://nginx.org/en/docs/) | Target 32 MiB cap requires TLS/upload measurement; infra approval |
+| PostgreSQL 18.6 Alpine current image | installed; target reuse/profile subject to infra | db-local default; managed PostgreSQL >=16 is alternate profile | Target 1024 MiB cap, total pool 30/40; data-volume migration and restore evidence |
+
+The proposed online license check adds runtime `LICENSE_OFFLINE_GRACE_DAYS` (integer
+0–7, default 2) to auth, with no new package. A transient outage can honor only a still-valid
+signed eligible result until a fixed deadline; remote revocation may remain unknown for that
+window. See the [license policy amendment](../spec/gms-license-offline-policy.md).
+
 ## Development security audit tooling
 
 `sec-auditor` uses [Cloudflare security-audit-skill](https://github.com/cloudflare/security-audit-skill)

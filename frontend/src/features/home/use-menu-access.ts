@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { retryTransient } from "@/lib/trpc-error";
-import { trpc } from "@/providers/app-providers";
+import { authTrpc } from "@/lib/auth-trpc";
 import { canViewWith, type CanView } from "./navigation";
 
 /**
@@ -11,7 +11,7 @@ import { canViewWith, type CanView } from "./navigation";
  * gated items stay hidden (pages still enforce access themselves).
  */
 export function useMenuAccess(): CanView {
-  const mine = trpc.permission.mine.useQuery(undefined, { retry: retryTransient, staleTime: 30_000 });
+  const mine = authTrpc.permission.mine.useQuery(undefined, { retry: retryTransient, staleTime: 30_000 });
   const data = mine.data;
   return useCallback((permission: readonly string[] | undefined) => canViewWith(data, permission), [data]);
 }

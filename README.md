@@ -54,7 +54,7 @@ See [GitHub variables/secrets setup](document/devops/github-configuration.md) an
 
 ## Local application setup
 
-The initial runnable application lives in `frontend/`, `backend-api-gateway/`, and `backend-api-auth/`.
+The application runs as `frontend/`, `backend-api-auth/`, and `backend-api-master/`; Nginx routes browser requests directly to the owning domain service.
 It uses PostgreSQL from Docker Compose.
 
 ```powershell

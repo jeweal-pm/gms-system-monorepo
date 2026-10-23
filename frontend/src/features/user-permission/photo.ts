@@ -1,6 +1,6 @@
 /**
  * User photo (user-photo.md PH-04…09, FE-UP-013): JPEG/PNG up to 5 MB, uploaded as raw bytes to the
- * gateway REST route after the user's details are saved (PH-08); removal is `userAdmin.removePhoto`.
+ * auth service REST route after the user's details are saved (PH-08); removal is `userAdmin.removePhoto`.
  */
 
 export const PHOTO_TYPES = ["image/jpeg", "image/png"] as const;
@@ -35,7 +35,7 @@ export class PhotoUploadError extends Error {
 export async function uploadUserPhoto(userId: string, file: File): Promise<{ photoVersion: string }> {
   let response: Response;
   try {
-    response = await fetch(photoPath(userId), { method: "PUT", headers: { "content-type": file.type }, body: file, credentials: "same-origin" });
+    response = await fetch(photoPath(userId), { method: "PUT", headers: { "content-type": file.type, "x-gms-csrf": "1" }, body: file, credentials: "same-origin" });
   } catch {
     throw new PhotoUploadError("NETWORK");
   }

@@ -10,7 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@gem-crm/backend-api-gateway": "workspace:*",
+    "@gem-crm/backend-api-auth": "workspace:*",
+    "@gem-crm/backend-api-master": "workspace:*",
     "@hookform/resolvers": "^5.9.1",
     "@tanstack/react-query": "^5.104.1",
     "@trpc/client": "^11.19.0",
