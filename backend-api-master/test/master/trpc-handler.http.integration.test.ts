@@ -4,6 +4,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { SignJWT, type JWK } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MasterTrpcHandler } from "../../src/master/trpc-handler";
+import type { DocumentSetupService } from "../../src/document-setup/document-setup.service";
 import type { CustomerService } from "../../src/customer/customer.service";
 import type { VendorService } from "../../src/vendor/vendor.service";
 import type { CompanyProfileService } from "../../src/company-profile/company-profile.service";
@@ -52,7 +53,8 @@ describe("IT-MAUTH-07 mounted Express tRPC adapter", () => {
       account_role: "user", permissions: ["customer:ADD", "company-profile:VIEW", "stone-master:VIEW"], location_keys: [],
     })) } as unknown as MasterAuthzDatabase;
     const license = { check: vi.fn(async () => "ELIGIBLE" as const) } as unknown as MasterLicenseClient;
-    const handler = new MasterTrpcHandler(customer, vendor, companyProfile, stoneMaster, authz, license);
+    const documentSetup = { list: vi.fn(), get: vi.fn(), save: vi.fn() } as unknown as DocumentSetupService;
+    const handler = new MasterTrpcHandler(customer, vendor, companyProfile, stoneMaster, authz, license, documentSetup);
     const app = express();
     app.use(express.json({ limit: "256kb" }));
     app.use("/api/master/trpc", handler.handle.bind(handler));

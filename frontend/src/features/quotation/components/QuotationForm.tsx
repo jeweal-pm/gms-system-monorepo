@@ -179,7 +179,6 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
           <QuotationHeader
             docNo={docNo}
             isPreview={!saved?.docNo}
-            status={status}
             mode={mode}
             saving={saveMutation.isPending}
             canEdit={Boolean(saved) && status === "DRAFT"}
@@ -248,18 +247,21 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
                 />
                 </fieldset>
               </div>
+
+              {/* Same column as the table, so Summary Value ends exactly where the table ends (owner 2026-10-23),
+                  with or without the right rail. */}
+              <fieldset disabled={readOnly} className="mt-6 flex flex-col gap-10 pb-6 lg:flex-row">
+                <DocumentNote />
+                <div className="w-full shrink-0 lg:w-[440px]">
+                  <h2 className="mb-2 text-lg font-medium text-[#1C252E]">Summary Value</h2>
+                  <SummaryValue totals={totals} currency={values.currency ?? ""} />
+                </div>
+              </fieldset>
             </div>
 
             {editorIndex === null && <RailButtons active={railPanel} onChange={setRailPanel} />}
           </div>
 
-          <fieldset disabled={readOnly} className="flex flex-col gap-10 px-6 pb-12 lg:flex-row">
-            <DocumentNote />
-            <div className="w-full shrink-0 lg:w-[440px]">
-              <h2 className="mb-2 text-lg font-medium text-[#1C252E]">Summary Value</h2>
-              <SummaryValue totals={totals} currency={values.currency ?? ""} />
-            </div>
-          </fieldset>
         </div>
 
         {editorIndex !== null && (

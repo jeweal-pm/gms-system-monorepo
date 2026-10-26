@@ -65,7 +65,7 @@ function labelBackground({ invalid, readOnly, disabled }: { invalid: boolean; re
  */
 export function FieldShell({ id, label, required, error, labelAsText, readOnly, disabled, labelPosition = "notch", children, className }: FieldShellProps) {
   const labelClass = cx(
-    "absolute z-[1] text-gms-label font-semibold leading-4",
+    "absolute z-[1] text-gms-label font-medium leading-4",
     labelPosition === "above" ? "top-0 left-1" : cx("-top-2 left-3 px-1", labelBackground({ invalid: Boolean(error), readOnly, disabled })),
     error ? "text-gms-danger" : "text-gms-text",
   );

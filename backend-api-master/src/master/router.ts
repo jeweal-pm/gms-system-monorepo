@@ -8,8 +8,13 @@ import type { VendorService } from "../vendor/vendor.service";
 import type { CompanyProfileService } from "../company-profile/company-profile.service";
 import { saveCompanyProfileBodySchema } from "../company-profile/company-profile.schemas";
 import type { StoneMasterService } from "../stone-master/stone-master.service";
+import type { StoneMasterService } from "../stone-master/stone-master.service";
+import type { DocumentSetupService } from "../document-setup/document-setup.service";
+import { saveDocumentSetupBodySchema, transactionKeySchema } from "../document-setup/document-setup.schemas";
 import { bodySchemasFor, optionsQuerySchema } from "../stone-master/stone-master.schemas";
 import type { StoneKind } from "../stone-master/stone-master.kinds";
+import { LIST_LIMIT_MAX } from "../common/partner-schemas";
+
 import { LIST_LIMIT_MAX } from "../common/partner-schemas";
 import { requireMasterGrant, type MasterAction, type MasterContext, type MasterMenu } from "./authorization";
 
@@ -83,7 +88,8 @@ export type MasterServices = Pick<{
   vendor: VendorService;
   companyProfile: CompanyProfileService;
   stoneMaster: StoneMasterService;
-}, "customer" | "vendor" | "companyProfile" | "stoneMaster">;
+  documentSetup: DocumentSetupService;
+}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup">;
 
 function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
   const schemas = bodySchemasFor(kind);
@@ -100,7 +106,7 @@ function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
 }
 
 /** Direct service calls preserve IDs, transaction behavior and existing partner/stone schemas. */
-export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster }: MasterServices) {
+export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup }: MasterServices) {
   return t.router({
     customer: t.router({
       list: permitted("customer", "VIEW").input(listInput).query(({ input }) => domainCall(() => customer.list(toListQuery(input)))),
@@ -144,6 +150,13 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       stoneName: stoneProcedures("stone-name", stoneMaster),
       shape: stoneProcedures("shape", stoneMaster),
       stoneCode: stoneProcedures("stone-code", stoneMaster),
+    }),
+    // document-setup SA rev 1 (owner 2026-10-23): fixed transaction list, VIEW to read, EDIT to save.
+    documentSetup: t.router({
+      list: permitted("document-setup", "VIEW").query(() => domainCall(() => documentSetup.list())),
+      get: permitted("document-setup", "VIEW").input(z.object({ transactionKey: transactionKeySchema }).strict())
+        .query(({ input }) => domainCall(() => documentSetup.get(input.transactionKey))),
+      save: permitted("document-setup", "EDIT", true).input(saveDocumentSetupBodySchema).mutation(({ ctx, input }) => domainCall(() => documentSetup.save(ctx.userId, input))),
     }),
   });
 }

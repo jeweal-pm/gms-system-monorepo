@@ -372,3 +372,40 @@ model StoneCode {
   @@map("stone_code")
   @@schema("stone")
 }
+
+/// Document Setup (document-setup SA revision 1, owner 2026-10-23): one row per transaction type from the
+/// fixed list in `src/document-setup/document-setup.transactions.ts`. Name is the printed document header.
+model DocumentSetup {
+  transactionKey String              @id @map("transaction_key") @db.VarChar(40)
+  name           String              @db.VarChar(120)
+  /// Stored UPPERCASE; unique across transactions (Q-DS-10).
+  code           String              @unique @db.VarChar(10)
+  /// Default Start No for new numbering rows (Q-DS-03).
+  startFrom      Int                 @map("start_from")
+  /// Plain text printed on the document, "" = empty (Q-DS-09).
+  declaration    String              @default("") @db.VarChar(2000)
+  /// Optimistic version: +1 on every save.
+  version        Int                 @default(1)
+  updatedBy      String              @map("updated_by") @db.VarChar(64)
+  updatedAt      DateTime            @default(now()) @map("updated_at") @db.Timestamp(3)
+  rows           DocumentNumbering[]
+
+  @@map("document_setup")
+  @@schema("partner")
+}
+
+/// A numbering period: applies from `effectiveDate` until the next row's date (owner 2026-10-23).
+/// Document number = prefix + separator + running number, no zero padding (Q-DS-04, Q-DS-05).
+model DocumentNumbering {
+  id             String        @id @db.Uuid
+  transactionKey String        @map("transaction_key") @db.VarChar(40)
+  effectiveDate  DateTime      @map("effective_date") @db.Date
+  prefix         String        @default("") @db.VarChar(10)
+  separator      String        @default("") @db.VarChar(3)
+  startNo        Int           @map("start_no")
+  setup          DocumentSetup @relation(fields: [transactionKey], references: [transactionKey], onDelete: Cascade)
+
+  @@unique([transactionKey, effectiveDate])
+  @@map("document_numbering")
+  @@schema("partner")
+}

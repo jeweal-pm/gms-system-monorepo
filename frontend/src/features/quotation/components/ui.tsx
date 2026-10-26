@@ -77,24 +77,47 @@ export function Field({
   className?: string;
   children: ReactNode;
 }) {
+  // Same label as the shared FieldShell (owner 2026-10-23): upper half transparent, lower half the field's own
+  // fill, so it never shows a white strip on a grey disabled/read-only field.
   return (
-    <label className={cx("relative block", className)}>
-      <span className="absolute -top-2 left-3 z-10 bg-[linear-gradient(to_bottom,transparent_8px,white_8px)] px-1 text-xs font-medium text-[#1C252E]">
+    <label className={cx("group/field relative block", className)}>
+      <span
+        className={cx(
+          "absolute -top-2 left-3 z-10 px-1 text-gms-label font-medium leading-4",
+          error
+            ? "bg-[linear-gradient(to_bottom,transparent_6px,var(--color-gms-danger-subtle)_6px)] text-gms-danger"
+            : cx(
+                "bg-[linear-gradient(to_bottom,transparent_6px,var(--color-gms-surface)_6px)] text-gms-text",
+                "group-has-[:disabled]/field:bg-[linear-gradient(to_bottom,transparent_6px,var(--color-gms-field-disabled)_6px)]",
+                "group-has-[input:read-only]/field:bg-[linear-gradient(to_bottom,transparent_6px,var(--color-gms-field-disabled)_6px)]",
+                "group-has-[[aria-readonly=true]]/field:bg-[linear-gradient(to_bottom,transparent_6px,var(--color-gms-field-disabled)_6px)]",
+              ),
+        )}
+      >
         {label}
-        {required && <span className="text-[#E5484D]"> *</span>}
+        {required && <span className="text-gms-danger"> *</span>}
       </span>
       {children}
-      {error && <span className="mt-1 block text-xs text-[#E5484D]">{error}</span>}
+      {error && <span className="mt-1 block pl-4 text-gms-label italic text-gms-danger">{error}</span>}
     </label>
   );
 }
 
-const controlClass =
-  "h-12 w-full rounded-lg border border-[#E3E6EA] bg-white px-4 text-[15px] text-[#1C252E] outline-none placeholder:text-[#A9B1B9] focus:border-[#1C252E] disabled:cursor-not-allowed disabled:bg-[#F6F7F8] disabled:text-[#6B7480] read-only:bg-[#F6F7F8]";
+/** Shared field colors (fieldBoxClass / fieldFocusClass in components/ui/outlined-field.tsx); sizes stay as designed. */
+const controlClass = cx(
+  "h-12 w-full rounded-gms-md border border-gms-border bg-gms-surface px-4 text-[15px] text-gms-text transition-colors placeholder:text-gms-text-placeholder hover:border-gms-text-placeholder",
+  "outline-none focus:border-gms-primary focus:ring-2 focus:ring-gms-primary/20",
+  "disabled:cursor-not-allowed disabled:bg-gms-field-disabled disabled:text-gms-checkbox-readonly disabled:hover:border-gms-border",
+);
+/**
+ * Read-only look for inputs only: a <button> always matches :read-only, so this must not be in controlClass
+ * (it made every enabled dropdown look disabled grey).
+ */
+const readOnlyInputClass = "read-only:cursor-default read-only:bg-gms-field-disabled read-only:hover:border-gms-border read-only:focus:border-gms-border read-only:focus:ring-0";
 
 export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { compact?: boolean }>(
   function TextInput({ className, compact, ...props }, ref) {
-    return <input ref={ref} className={cx(controlClass, compact && "h-10 px-3 text-sm", className)} {...props} />;
+    return <input ref={ref} className={cx(controlClass, readOnlyInputClass, compact && "h-10 px-3 text-sm", className)} {...props} />;
   },
 );
 
@@ -125,11 +148,11 @@ export const NumberInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTML
 export function ReadonlyBox({ value, placeholder = "—", compact }: { value?: string; placeholder?: string; compact?: boolean }) {
   return (
     <div
-      aria-readonly
+      aria-readonly="true"
       className={cx(
-        "flex w-full cursor-not-allowed items-center rounded-lg border border-[#E3E6EA] bg-[#F3F4F5] px-4 text-[15px]",
+        "flex w-full cursor-not-allowed items-center rounded-gms-md border border-gms-border bg-gms-field-disabled px-4 text-[15px]",
         compact ? "h-10 px-3 text-sm" : "h-12",
-        value ? "text-[#1C252E]" : "text-[#A9B1B9]",
+        value ? "text-gms-text" : "text-gms-text-placeholder",
       )}
     >
       <span className="truncate">{value || placeholder}</span>
@@ -213,12 +236,12 @@ export function SelectMenu({
           controlClass,
           "flex items-center justify-between gap-2 text-left",
           compact && "h-10 px-3 text-sm",
-          open && "border-[#1C252E]",
-          invalid && "border-[#E5484D]",
+          open && "border-gms-primary ring-2 ring-gms-primary/20",
+          invalid && "border-gms-danger bg-gms-danger-subtle",
         )}
       >
-        <span className={cx("truncate", !selected && "text-[#A9B1B9]")}>{selected?.label ?? placeholder}</span>
-        <ChevronDown className={cx("size-4 shrink-0 transition-transform", open && "rotate-180", disabled && "text-[#B5BCC3]")} />
+        <span className={cx("truncate", !selected && "text-gms-text-placeholder")}>{selected?.label ?? placeholder}</span>
+        <ChevronDown className={cx("size-4 shrink-0 transition-transform", open && "rotate-180", disabled ? "text-gms-checkbox-readonly" : "text-gms-text")} />
       </button>
       {open && (
         <ul
@@ -226,9 +249,9 @@ export function SelectMenu({
           role="listbox"
           // อยู่ใน <label> ของ Field: กันไม่ให้ label ส่ง click กลับไปเปิด dropdown ซ้ำ
           onClick={(e) => e.preventDefault()}
-          className="absolute right-0 left-0 z-30 mt-2 max-h-64 overflow-y-auto rounded-xl border border-[#EEF0F2] bg-white py-2 shadow-[0_12px_32px_rgba(28,37,46,0.14)]"
+          className="absolute right-0 left-0 z-30 mt-2 max-h-64 overflow-y-auto rounded-gms-lg border border-gms-border bg-gms-surface py-2 shadow-gms-overlay"
         >
-          {options.length === 0 && <li className="px-5 py-2.5 text-sm text-[#A9B1B9]">No options</li>}
+          {options.length === 0 && <li className="px-5 py-2.5 text-sm text-gms-text-placeholder">No options</li>}
           {options.map((o, i) => (
             <li
               key={o.value}
@@ -238,13 +261,13 @@ export function SelectMenu({
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => choose(i)}
               className={cx(
-                "flex cursor-pointer items-center justify-between gap-2 px-5 py-2.5 text-[15px] text-[#1C252E]",
-                i === active && "bg-[#F6F7F8]",
+                "flex cursor-pointer items-center justify-between gap-2 px-5 py-2.5 text-[15px] text-gms-text",
+                i === active && "bg-gms-surface-sunken",
                 o.value === value && "font-medium",
               )}
             >
               <span className="truncate">{o.label}</span>
-              {o.value === value && <Check className="size-4 shrink-0 text-[#0E5E63]" />}
+              {o.value === value && <Check className="size-4 shrink-0 text-gms-primary" />}
             </li>
           ))}
         </ul>
