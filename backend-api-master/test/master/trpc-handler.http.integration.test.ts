@@ -9,6 +9,7 @@ import type { CustomerService } from "../../src/customer/customer.service";
 import type { VendorService } from "../../src/vendor/vendor.service";
 import type { CompanyProfileService } from "../../src/company-profile/company-profile.service";
 import type { StoneMasterService } from "../../src/stone-master/stone-master.service";
+import type { CurrencyService } from "../../src/currency/currency.service";
 import type { MasterAuthzDatabase } from "../../src/master/authz-database";
 import type { MasterLicenseClient } from "../../src/master/license-client";
 import { customerBody } from "../partner-shared/fixtures";
@@ -54,7 +55,8 @@ describe("IT-MAUTH-07 mounted Express tRPC adapter", () => {
     })) } as unknown as MasterAuthzDatabase;
     const license = { check: vi.fn(async () => "ELIGIBLE" as const) } as unknown as MasterLicenseClient;
     const documentSetup = { list: vi.fn(), get: vi.fn(), save: vi.fn() } as unknown as DocumentSetupService;
-    const handler = new MasterTrpcHandler(customer, vendor, companyProfile, stoneMaster, authz, license, documentSetup);
+    const currency = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as unknown as CurrencyService;
+    const handler = new MasterTrpcHandler(customer, vendor, companyProfile, stoneMaster, authz, license, documentSetup, currency);
     const app = express();
     app.use(express.json({ limit: "256kb" }));
     app.use("/api/master/trpc", handler.handle.bind(handler));

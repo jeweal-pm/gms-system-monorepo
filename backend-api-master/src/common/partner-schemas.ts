@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { MAX_CURSOR_LENGTH } from "./cursor";
 import type { FieldError } from "./errors";
-import { COUNTRY_CODES, CURRENCY_CODES } from "./reference-data";
+import { COUNTRY_CODES } from "./reference-data";
 
 /**
  * Partner Master building blocks shared by customer (SA rev 1) and vendor (SA rev 1, D-V09).
@@ -79,19 +79,21 @@ export type ListQuery = z.output<typeof listQuerySchema>;
 export type PartnerScalarInput = z.output<z.ZodObject<typeof partnerScalarFields>>;
 
 /**
- * D-09: currency/country must be in the runtime lists, or equal to a value already stored on this
- * record (update). Address lists are checked in the order given (field paths `<field>.<index>.countryCode`).
+ * D-09: country must be in the runtime list, or equal to a value already stored on this record (update).
+ * The currency is checked against the currency master by the caller (currency SA-CUR-05: active, or the
+ * stored code) and passed as `currencyAllowed`. Address lists are checked in the order given (field paths
+ * `<field>.<index>.countryCode`).
  */
 export function membershipErrors(
-  currencyCode: string,
+  currencyAllowed: boolean,
   addressLists: ReadonlyArray<readonly [field: string, addresses: ReadonlyArray<{ countryCode: string }>]>,
-  stored?: { currencyCode: string; countryCodes: Set<string> },
+  storedCountryCodes?: ReadonlySet<string>,
 ): FieldError[] {
   const errors: FieldError[] = [];
-  if (!CURRENCY_CODES.has(currencyCode) && currencyCode !== stored?.currencyCode) errors.push({ path: "currencyCode", code: "unknown" });
+  if (!currencyAllowed) errors.push({ path: "currencyCode", code: "unknown" });
   for (const [field, addresses] of addressLists) {
     addresses.forEach((address, index) => {
-      if (!COUNTRY_CODES.has(address.countryCode) && !stored?.countryCodes.has(address.countryCode)) errors.push({ path: `${field}.${index}.countryCode`, code: "unknown" });
+      if (!COUNTRY_CODES.has(address.countryCode) && !storedCountryCodes?.has(address.countryCode)) errors.push({ path: `${field}.${index}.countryCode`, code: "unknown" });
     });
   }
   return errors;

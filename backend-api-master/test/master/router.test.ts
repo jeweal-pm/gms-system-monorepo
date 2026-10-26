@@ -7,6 +7,7 @@ import type { CustomerService } from "../../src/customer/customer.service";
 import type { VendorService } from "../../src/vendor/vendor.service";
 import type { CompanyProfileService } from "../../src/company-profile/company-profile.service";
 import type { StoneMasterService } from "../../src/stone-master/stone-master.service";
+import type { CurrencyService } from "../../src/currency/currency.service";
 import { customerBody, withVersion } from "../partner-shared/fixtures";
 
 vi.mock("../../src/database/prisma-client", async () => (await import("../partner-shared/prisma-fake")).prismaModule);
@@ -21,12 +22,14 @@ const vendor = {
 const companyProfile = { get: vi.fn(), options: vi.fn(), save: vi.fn(), removeLogo: vi.fn() };
 const stoneMaster = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
 const documentSetup = { list: vi.fn(), get: vi.fn(), save: vi.fn() };
+const currency = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
 const router = createMasterRouter({
   customer: customer as unknown as CustomerService,
   vendor: vendor as unknown as VendorService,
   companyProfile: companyProfile as unknown as CompanyProfileService,
   stoneMaster: stoneMaster as unknown as StoneMasterService,
   documentSetup: documentSetup as unknown as DocumentSetupService,
+  currency: currency as unknown as CurrencyService,
 });
 
 function context(grants: string[], overrides: Partial<MasterContext> = {}): MasterContext {
@@ -37,7 +40,7 @@ function context(grants: string[], overrides: Partial<MasterContext> = {}): Mast
 }
 
 beforeEach(() => {
-  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup)]) fn.mockReset().mockResolvedValue({ ok: true });
+  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(currency)]) fn.mockReset().mockResolvedValue({ ok: true });
 });
 
 describe("staged master domain tRPC boundary", () => {
@@ -162,5 +165,36 @@ describe("staged master domain tRPC boundary", () => {
     await expect(router.createCaller(context(["document-setup:VIEW"])).documentSetup.save(save)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(router.createCaller(context(["document-setup:EDIT"], { csrfVerified: false })).documentSetup.save(save)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller.documentSetup.get({ transactionKey: "stone-master" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("GP-MT-CUR currency: exact grants, CSRF on writes, no code on update, options also for quotation:VIEW", async () => {
+    const body = { code: " usd ", name: "US Dollar", description: "Sales to the US", active: true, sellingRate: "33.25", buyingRate: "32.9" };
+    const caller = router.createCaller(context(["currency:VIEW", "currency:ADD", "currency:EDIT", "currency:DELETE"]));
+    await caller.currency.list({ q: " us " });
+    expect(currency.list).toHaveBeenCalledWith({ q: "us", cursor: undefined, limit: 50 });
+    await caller.currency.get({ id: ID });
+    expect(currency.get).toHaveBeenCalledWith(ID);
+    await caller.currency.create(body);
+    expect(currency.create).toHaveBeenCalledWith("user-1", { ...body, code: "USD" });
+    const update = { id: ID, expectedUpdatedAt: "2026-10-26T00:00:00.000Z", name: "US Dollar", description: "x", active: true, sellingRate: null, buyingRate: null };
+    await caller.currency.update(update);
+    expect(currency.update).toHaveBeenCalledWith("user-1", ID, { expectedUpdatedAt: update.expectedUpdatedAt, name: "US Dollar", description: "x", active: true, sellingRate: null, buyingRate: null });
+    await expect(caller.currency.update({ ...update, code: "EUR" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await caller.currency.delete({ id: ID });
+    expect(currency.delete).toHaveBeenCalledWith("user-1", ID);
+
+    await expect(caller.currency.create({ ...body, code: "US" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.currency.create({ ...body, sellingRate: "0" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.currency.create({ ...body, sellingRate: "1.23456" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(router.createCaller(context(["currency:VIEW"])).currency.create(body)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["currency:ADD"], { csrfVerified: false })).currency.create(body)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["quotation:VIEW"])).currency.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    await router.createCaller(context(["quotation:VIEW"])).currency.options();
+    await router.createCaller(context(["currency:VIEW"])).currency.options();
+    expect(currency.options).toHaveBeenCalledTimes(2);
+    await expect(router.createCaller(context(["vendor:VIEW"])).currency.options()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["quotation:VIEW"], { license: "DENIED" })).currency.options()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(currency.options).toHaveBeenCalledTimes(2);
   });
 });

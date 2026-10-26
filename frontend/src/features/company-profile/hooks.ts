@@ -21,7 +21,7 @@ export function useCompanyProfile() {
 export function useCompanyProfileOptions() {
   return masterTrpc.companyProfile.options.useQuery(undefined, {
     select: toSelectOptions,
-    staleTime: Infinity,
+    staleTime: 60_000,
     retry: retryServiceRead,
     retryDelay: serviceRestartRetryDelay,
   });

@@ -30,12 +30,6 @@ export const customers: CustomerOption[] = [
   },
 ];
 
-export const currencies: (Option & { rateToThb: string })[] = [
-  { value: "USD", label: "USD", rateToThb: "36.25" },
-  { value: "THB", label: "THB", rateToThb: "1" },
-  { value: "EUR", label: "EUR", rateToThb: "39.10" },
-];
-
 export const locations: Option[] = [
   { value: "BKK-01", label: "BKK-01" },
   { value: "BKK-02", label: "BKK-02" },

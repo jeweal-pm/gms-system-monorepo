@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import { Injectable, Logger } from "@nestjs/common";
 import { validationException, type FieldError } from "../common/errors";
 import { toIso, WRITE_TX, type Tx } from "../common/persistence";
-import { COUNTRY_CODES, CURRENCY_CODES, OPTIONS_RESPONSE } from "../common/reference-data";
+import { COUNTRY_CODES, COUNTRY_OPTIONS } from "../common/reference-data";
+import { currencyOptions, isCurrencyAllowed } from "../currency/currency-directory";
 import { prisma } from "../database/prisma-client";
 import type { CompanyProfile } from "../generated/prisma/client";
 import { companyLogoNotFound, companyProfileConflict, companyProfileNotFound, imageTooLarge, mapCompanyProfileError, unsupportedImage } from "./company-profile.errors";
@@ -62,11 +63,14 @@ function profileData(input: SaveCompanyProfileInput) {
   };
 }
 
-/** Currency/country must be in the reference lists (same lists as vendor/customer options). */
-function membershipErrors(input: SaveCompanyProfileInput): FieldError[] {
+/**
+ * Country must be in the reference list; the currency must be active in the currency master or equal to
+ * the stored one (currency SA-CUR-05). The chosen currency is the base for every exchange rate (SA-CUR-02).
+ */
+function membershipErrors(input: SaveCompanyProfileInput, currencyAllowed: boolean): FieldError[] {
   const errors: FieldError[] = [];
   if (!COUNTRY_CODES.has(input.countryCode)) errors.push({ path: "countryCode", code: "unknown" });
-  if (!CURRENCY_CODES.has(input.currencyCode)) errors.push({ path: "currencyCode", code: "unknown" });
+  if (!currencyAllowed) errors.push({ path: "currencyCode", code: "unknown" });
   return errors;
 }
 
@@ -136,9 +140,13 @@ async function hideCurrentLogo(tx: Tx, current: LogoState | null, now: Date): Pr
 export class CompanyProfileService {
   private readonly logger = new Logger("CompanyProfile");
 
-  /** Same frozen lists as `vendor.options` (SA-CP-11). */
-  options() {
-    return OPTIONS_RESPONSE;
+  /** Same lists as `vendor.options` (SA-CP-11); currencies from the currency master (SA-CUR-05). */
+  async options() {
+    try {
+      return { currencies: await currencyOptions(), countries: COUNTRY_OPTIONS };
+    } catch (error) {
+      throw mapCompanyProfileError(error, "options");
+    }
   }
 
   async get() {
@@ -152,11 +160,12 @@ export class CompanyProfileService {
 
   /** Whole replacement. `expectedVersion: null` creates the row (CONFLICT if it exists). */
   async save(actorId: string, input: SaveCompanyProfileInput) {
-    const invalid = membershipErrors(input);
-    if (invalid.length > 0) throw validationException(invalid);
     const data = profileData(input);
     try {
       const row = await prisma.$transaction(async (tx) => {
+        const stored = await tx.companyProfile.findUnique({ where: { id: PROFILE_ID }, select: { currencyCode: true } });
+        const invalid = membershipErrors(input, await isCurrencyAllowed(tx, input.currencyCode, stored?.currencyCode));
+        if (invalid.length > 0) throw validationException(invalid);
         const now = new Date();
         if (input.expectedVersion === null) {
           return tx.companyProfile.create({ data: { id: PROFILE_ID, ...data, version: 1, updatedBy: actorId, updatedAt: now } });

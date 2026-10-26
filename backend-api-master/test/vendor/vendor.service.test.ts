@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { decodeCursor } from "../../src/common/cursor";
 import { READ_TX, WRITE_TX } from "../../src/common/persistence";
-import { OPTIONS_RESPONSE } from "../../src/common/reference-data";
+import { COUNTRY_OPTIONS } from "../../src/common/reference-data";
 import { Prisma } from "../../src/generated/prisma/client";
 import { VendorService } from "../../src/vendor/vendor.service";
 import { createVendorBodySchema, updateVendorBodySchema } from "../../src/vendor/vendor.schemas";
@@ -28,8 +28,22 @@ const stored = (id: string) => fake.tables.vendor.get(id)!;
 const defaults = (id: string) => stored(id).addresses.map((row) => row.isDefault);
 
 describe("options", () => {
-  it("UT-VEN-P20 returns the same frozen object as customer.options (D-V04)", () => {
-    expect(service.options()).toBe(OPTIONS_RESPONSE);
+  it("UT-VEN-P20 lists every currency from the currency master and the shared countries (currency SA-CUR-05)", async () => {
+    const options = await service.options();
+    expect(options.currencies.map((item) => item.code)).toEqual(["EUR", "INR", "THB", "USD"]);
+    expect(options.currencies.find((item) => item.code === "INR")).toEqual({ code: "INR", name: "Indian Rupee", active: false });
+    expect(options.countries).toBe(COUNTRY_OPTIONS);
+  });
+});
+
+describe("currency master (currency SA-CUR-05)", () => {
+  it("UT-VEN-CUR1 rejects an inactive currency on create and keeps the stored inactive one on update", async () => {
+    expect(await failure(service.create(ACTOR, create({ currencyCode: "INR" })))).toMatchObject({ status: 400, code: "VALIDATION_ERROR", fieldErrors: [{ path: "currencyCode", code: "unknown" }] });
+    const row = seedRow("vendor", { id: ID, currencyCode: "INR", updatedAt: new Date(EXPECTED) });
+    await expect(service.update(ACTOR, ID, update({ currencyCode: "INR" }, row.updatedAt.toISOString()))).resolves.toMatchObject({ id: ID });
+    fake.tables.vendor.get(ID)!.currencyCode = "THB";
+    const current = fake.tables.vendor.get(ID)!.updatedAt.toISOString();
+    expect(await failure(service.update(ACTOR, ID, update({ currencyCode: "INR" }, current)))).toMatchObject({ status: 400, code: "VALIDATION_ERROR", fieldErrors: [{ path: "currencyCode", code: "unknown" }] });
   });
 });
 

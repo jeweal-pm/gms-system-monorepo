@@ -8,6 +8,7 @@ import { CompanyProfileService } from "./company-profile/company-profile.service
 import { CustomerController } from "./customer/customer.controller";
 import { CustomerService } from "./customer/customer.service";
 import { DocumentSetupService } from "./document-setup/document-setup.service";
+import { CurrencyService } from "./currency/currency.service";
 import { PrismaLifecycleService } from "./database/prisma-lifecycle.service";
 import { HealthController } from "./health/health.controller";
 import { ServiceTokenGuard } from "./internal-auth/service-token.guard";
@@ -45,6 +46,7 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
     CompanyProfileService,
     StoneMasterService,
     DocumentSetupService,
+    CurrencyService,
     MasterAuthzDatabase,
     MasterLicenseClient,
     MasterTrpcHandler,

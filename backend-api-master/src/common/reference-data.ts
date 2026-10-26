@@ -1,7 +1,7 @@
 /**
- * Static option lists (architecture.md §9, D-09). Built once at start; ~30 KB in memory.
- * Currencies: Node/ICU `Intl.supportedValuesOf("currency")`, sorted by code.
+ * Static country list (architecture.md §9, D-09). Built once at start.
  * Countries: ISO 3166-1 alpha-2 (249 codes), English names via `Intl.DisplayNames`, sorted by name.
+ * Currencies come from the currency master table instead (currency SA-CUR-05).
  */
 export type OptionItem = { code: string; name: string };
 
@@ -41,15 +41,6 @@ function displayName(names: Intl.DisplayNames, code: string): string {
   }
 }
 
-function buildCurrencies(): OptionItem[] {
-  const names = new Intl.DisplayNames(["en"], { type: "currency" });
-  return Intl.supportedValuesOf("currency")
-    .filter((code) => /^[A-Z]{3}$/.test(code))
-    .map((code) => ({ code, name: displayName(names, code) }))
-    .sort((a, b) => (a.code < b.code ? -1 : a.code > b.code ? 1 : 0))
-    .slice(0, 400);
-}
-
 function buildCountries(): OptionItem[] {
   const names = new Intl.DisplayNames(["en"], { type: "region" });
   return ISO_3166_ALPHA2
@@ -57,8 +48,5 @@ function buildCountries(): OptionItem[] {
     .sort((a, b) => a.name.localeCompare(b.name, "en") || (a.code < b.code ? -1 : 1));
 }
 
-export const CURRENCY_OPTIONS: readonly OptionItem[] = Object.freeze(buildCurrencies());
 export const COUNTRY_OPTIONS: readonly OptionItem[] = Object.freeze(buildCountries());
-export const CURRENCY_CODES: ReadonlySet<string> = new Set(CURRENCY_OPTIONS.map((item) => item.code));
 export const COUNTRY_CODES: ReadonlySet<string> = new Set(ISO_3166_ALPHA2);
-export const OPTIONS_RESPONSE = Object.freeze({ currencies: CURRENCY_OPTIONS, countries: COUNTRY_OPTIONS });
