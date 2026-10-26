@@ -177,7 +177,7 @@ export function prismaCode(error: unknown): string | undefined {
 }
 
 /** Index/constraint names only (never values) from a Prisma unique-violation error. */
-function violatedTarget(error: unknown): string {
+export function violatedTarget(error: unknown): string {
   const meta = (error as { meta?: unknown }).meta;
   try {
     return JSON.stringify(meta ?? {});

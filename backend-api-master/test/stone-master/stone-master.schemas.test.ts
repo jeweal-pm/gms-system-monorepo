@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { BODY_SCHEMAS, optionsQuerySchema } from "../../src/stone-master/stone-master.schemas";
-import { buildAutoCode, DEFAULT_PART_ORDER, isPermutation } from "../../src/stone-master/stone-code";
+import { BODY_SCHEMAS, bodySchemasFor, optionsQuerySchema } from "../../src/stone-master/stone-master.schemas";
+import { buildAutoCode, DEFAULT_PART_ORDER, isPermutation, sizePartCode } from "../../src/stone-master/stone-code";
 import { mapStoneError } from "../../src/stone-master/stone-master.errors";
 
 /** UT-SM-P01…P08: stone master input rules (SA-SM-04/05/08) and error mapping (SA-SM-06). */
@@ -100,5 +100,26 @@ describe("options query and errors", () => {
     expect(status(mapStoneError(fk, "create")).getResponse().error.code).toBe("STONE_MASTER_REFERENCE_INVALID");
     const unique = Object.assign(new Error("unique"), { code: "P2002", meta: { target: "stone_group_code_key" } });
     expect(status(mapStoneError(unique, "create")).getResponse().error.code).toBe("STONE_MASTER_CODE_TAKEN");
+  });
+});
+
+describe("size (owner 2026-10-23)", () => {
+  it("UT-SM-P09 a size has only a name: 1–20 of letters, digits, space . - /; a code is rejected", () => {
+    expect(bodySchemasFor("size").create.parse({ name: " 2.0 mm ", active: true })).toEqual({ name: "2.0 mm", active: true });
+    for (const name of ["", "2.0 × 3.0", "x".repeat(21)]) {
+      expect(bodySchemasFor("size").create.safeParse({ name, active: true }).success).toBe(false);
+    }
+    expect(bodySchemasFor("size").create.safeParse({ code: "1.0", name: "1.0", active: true }).success).toBe(false);
+    expect(bodySchemasFor("size").update.safeParse({ name: "1.0", active: true }).success).toBe(false);
+    expect(bodySchemasFor("color")).toBe(BODY_SCHEMAS.simple);
+    expect(bodySchemasFor("shape")).toBe(BODY_SCHEMAS.shape);
+    expect(sizePartCode(" 2.0 mm ")).toBe("2.0MM");
+  });
+
+  it("UT-SM-P09b a duplicate size name is STONE_MASTER_CODE_TAKEN on `name`", () => {
+    const unique = Object.assign(new Error("unique"), { code: "P2002", meta: { target: "stone_size_name_key" } });
+    const response = (mapStoneError(unique, "create") as { getResponse(): { error: { code: string; fieldErrors: Array<{ path: string }> } } }).getResponse();
+    expect(response.error.code).toBe("STONE_MASTER_CODE_TAKEN");
+    expect(response.error.fieldErrors[0].path).toBe("name");
   });
 });

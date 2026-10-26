@@ -12,7 +12,15 @@
 - approved-by: project owner
 - approved-at: 2026-10-19
 - approval-evidence: owner 2026-10-19: "อนุมัติ stone-master UI rev 1 และ SA rev 1" (Q-SM-01…09 use the documented defaults)
-- updated-at: 2026-10-19
+- owner-revision 2026-10-23: size name only, code-first drawer rows, saved Auto codes (SA-SM-04a/05a/07a in [decisions.md](../../apps/backend/partner/stone-master/decisions.md#owner-revision-2026-10-23-size-name-only-saved-auto-codes)); directly instructed and choices confirmed by the owner 2026-10-23
+- updated-at: 2026-10-23
+
+## Owner revision 2026-10-23
+
+| Done | ID | Status | Owner | Task | Allowed files | Acceptance | Tests |
+|---|---|---|---|---|---|---|---|
+| [ ] | BE-SM-009 | implemented; migration applied on dev; tests pass (master 325); dual security review 2026-10-23 clear (no findings; notes: size names differing only in case/spaces give the same Auto part, legacy size names over ~31 Thai chars exceed the 200-char cursor) | backend | Size name only (migration `20261023090000_stone_size_name_only`), size part = name; saving an Auto edit rebuilds from current part codes | `backend-api-master/prisma/**`, `backend-api-master/src/{stone-master,master,common/persistence.ts}/**`, `backend-api-master/test/stone-master/**` | SA-SM-04a/05a/07a | UT-SM-P09, P09b, P21–P23 |
+| [ ] | FE-SM-009 | implemented; tests pass (frontend 380); browser not run; dual security review 2026-10-23 clear | frontend | Size page Name only; code-first drawer rows on all pages; Auto code field shows the saved code in view and the rebuilt code in edit; keyed Auto/Manual inputs (controlled→uncontrolled warning) | `frontend/src/features/stone-master/**`, `frontend/src/features/partner/components/partner-drawer.tsx`, `frontend/test/stone-master/**` | ui-spec "Row text", Size row, Auto code rule | UT-SM-10 |
 
 ## Backend (after SA approval)
 

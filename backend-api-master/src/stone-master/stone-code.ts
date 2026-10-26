@@ -28,6 +28,14 @@ export const PART_FIELD = {
  */
 export const REQUIRED_POSITIONS = 2;
 
+/**
+ * Owner 2026-10-23: a size has no code, so its Name stands in for the size part of an Auto code,
+ * uppercased with the spaces removed ("2.0 mm" → "2.0MM").
+ */
+export function sizePartCode(name: string): string {
+  return name.toUpperCase().replace(/\s+/g, "");
+}
+
 export function isPermutation(order: readonly string[]): boolean {
   return order.length === PART_KEYS.length && PART_KEYS.every((key) => order.includes(key));
 }

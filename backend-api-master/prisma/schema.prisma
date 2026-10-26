@@ -212,10 +212,10 @@ model StoneGroup {
   @@schema("stone")
 }
 
+/// Owner 2026-10-23: a size has only a Name (unique); Auto stone codes use it for the size part.
 model StoneSize {
   id         String           @id @default(uuid()) @db.Uuid
-  code       String           @unique(map: "stone_size_code_key") @db.VarChar(20)
-  name       String           @db.VarChar(120)
+  name       String           @unique(map: "stone_size_name_key") @db.VarChar(120)
   active     Boolean          @default(true)
   createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamp(3)
   updatedAt  DateTime         @default(now()) @map("updated_at") @db.Timestamp(3)

@@ -1,6 +1,6 @@
 import { isCallerLicenseCode, readDomainError } from "@/lib/trpc-error";
 import type { FieldSet } from "./kinds";
-import { DEFAULT_PART_ORDER, PART_KEYS, type PartKey } from "./stone-code";
+import { DEFAULT_PART_ORDER, PART_KEYS, sizePartCode, type PartKey } from "./stone-code";
 import { emptyStoneForm, type StoneFormValues } from "./schema";
 
 /**
@@ -22,7 +22,8 @@ export type StoneParts = {
 
 export type StoneDetail = {
   id: string;
-  code: string;
+  /** Absent for a size (owner 2026-10-23: Name only). */
+  code?: string;
   name?: string;
   active: boolean;
   updatedAt: string;
@@ -36,7 +37,7 @@ export type StoneDetail = {
 
 export type StoneListItem = {
   id: string;
-  code: string;
+  code: string | null;
   name: string;
   active: boolean;
   hsn?: string | null;
@@ -46,13 +47,15 @@ export type StoneListItem = {
   stoneName?: { code: string; name: string } | null;
 };
 
-export type StoneOption = { id: string; code: string; name: string; active: boolean; sizeIds?: string[] };
+/** A size option has no code (owner 2026-10-23). */
+export type StoneOption = { id: string; code?: string; name: string; active: boolean; sizeIds?: string[] };
 export type OptionKey = "group" | "size" | "shape" | "color" | "cutting" | "clarity" | "quality" | "stoneName";
 export type StoneOptions = Partial<Record<OptionKey, StoneOption[]>>;
 
 /** Option kinds each page needs (SA-SM-08; gateway kind names). */
 export const OPTION_KINDS_BY_FIELDS: Readonly<Record<FieldSet, readonly ("group" | "size" | "shape" | "color" | "cutting" | "clarity" | "quality" | "stone-name")[]>> = {
   simple: [],
+  size: [],
   stoneName: ["group"],
   shape: ["size"],
   stoneCode: ["stone-name", "size", "shape", "color", "cutting", "clarity", "quality"],
@@ -69,9 +72,24 @@ export const PART_OPTION: Readonly<Record<PartKey, OptionKey>> = {
   quality: "quality",
 };
 
-/** "DIA · Diamond", marked when inactive (shown only for a saved choice). */
+/** "DIA · Diamond" (a size: just its name), marked when inactive (shown only for a saved choice). */
 export function optionLabel(option: StoneOption): string {
-  return `${option.code} · ${option.name}${option.active ? "" : " (inactive)"}`;
+  return `${option.code ? `${option.code} · ` : ""}${option.name}${option.active ? "" : " (inactive)"}`;
+}
+
+/** The text a chosen option adds to an Auto code: its code, or a size's name (owner 2026-10-23). */
+export function partCode(part: PartKey, option: StoneOption | undefined): string | undefined {
+  if (!option) return undefined;
+  return part === "size" ? sizePartCode(option.name) : option.code;
+}
+
+/**
+ * The Stone Code shown in Auto mode (owner 2026-10-23): viewing a saved Auto record shows its saved
+ * code (a snapshot; part-code changes elsewhere don't cascade). Create and Edit show the code built from
+ * the current part codes, which is what the server saves.
+ */
+export function shownAutoCode(viewed: StoneDetail | undefined, liveCode: string): string {
+  return viewed?.mode === "AUTO" && viewed.code ? viewed.code : liveCode;
 }
 
 /** Q-SM-03: the Size part offers only the sizes available on the chosen shape (none before a shape). */
@@ -98,7 +116,7 @@ export function referencedIds(fields: FieldSet, detail: StoneDetail | undefined)
 
 export function toFormValues(fields: FieldSet, detail: StoneDetail): StoneFormValues {
   const values = emptyStoneForm();
-  values.code = detail.code;
+  values.code = detail.code ?? "";
   values.active = detail.active;
   values.name = detail.name ?? "";
   if (fields === "stoneName") {
@@ -120,15 +138,20 @@ export function toFormValues(fields: FieldSet, detail: StoneDetail): StoneFormVa
   return values;
 }
 
-/** Duplicate (ui-spec "Duplicate"): every field copied, Code cleared (codes are unique, no running number). */
+/**
+ * Duplicate (ui-spec "Duplicate"): every field copied, Code cleared (codes are unique, no running
+ * number); a size has no code, so its unique Name is cleared instead.
+ */
 export function toDuplicateValues(fields: FieldSet, detail: StoneDetail): StoneFormValues {
-  return { ...toFormValues(fields, detail), code: "" };
+  const values = { ...toFormValues(fields, detail), code: "" };
+  return fields === "size" ? { ...values, name: "" } : values;
 }
 
 const orNull = (value: string) => (value === "" ? null : value);
 
 /** Form values → strict create input for the page's kind (update adds `id` + `expectedUpdatedAt`). */
 export function toInput(fields: FieldSet, values: StoneFormValues): Record<string, unknown> {
+  if (fields === "size") return { name: values.name.trim(), active: values.active };
   const simple = { code: values.code.trim().toUpperCase(), name: values.name.trim(), active: values.active };
   if (fields === "simple") return simple;
   if (fields === "stoneName") return { ...simple, groupId: values.groupId, hsn: orNull(values.hsn.trim()) };
@@ -150,21 +173,26 @@ export function toInput(fields: FieldSet, values: StoneFormValues): Record<strin
   };
 }
 
-/** Drawer row text per page (ui-spec "Row text"). */
+/**
+ * Drawer row text per page (ui-spec "Row text"). Owner 2026-10-23: the code comes first (bold), then
+ * the name, on every Stone Master page; a size has only its name.
+ */
 export function rowText(fields: FieldSet, item: StoneListItem): { primary: string; secondary: string } {
+  const code = item.code ?? "";
+  if (fields === "size") return { primary: item.name, secondary: "" };
   if (fields === "stoneName") {
-    const parts = [item.code, item.group?.code, item.group?.name, item.hsn ? `HSN ${item.hsn}` : null].filter(Boolean);
-    return { primary: item.name, secondary: parts.join(" · ") };
+    const parts = [item.name, item.group?.code, item.group?.name, item.hsn ? `HSN ${item.hsn}` : null].filter(Boolean);
+    return { primary: code, secondary: parts.join(" · ") };
   }
   if (fields === "shape") {
     const count = item.sizeCount ?? 0;
-    return { primary: item.name, secondary: `${item.code} · ${count} size${count === 1 ? "" : "s"}` };
+    return { primary: code, secondary: `${item.name} · ${count} size${count === 1 ? "" : "s"}` };
   }
   if (fields === "stoneCode") {
     const mode = item.mode === "MANUAL" ? "Manual code" : "Auto code";
-    return { primary: item.code, secondary: item.stoneName ? `${item.stoneName.name} · ${mode}` : mode };
+    return { primary: code, secondary: item.stoneName ? `${item.stoneName.name} · ${mode}` : mode };
   }
-  return { primary: item.name, secondary: item.code };
+  return { primary: code, secondary: item.name };
 }
 
 // ---- errors ----
@@ -207,6 +235,8 @@ export function mapSaveError(error: unknown, fields: FieldSet): SaveOutcome {
   const { domainCode, fieldErrors } = readDomainError(error);
   switch (domainCode) {
     case "STONE_MASTER_CODE_TAKEN":
+      // A size has no code: its unique Name is reported on `name` (owner 2026-10-23).
+      if (fieldErrors[0]?.path === "name") return { fieldErrors: [{ name: "name", message: "This name is already used" }], formError: null };
       return { fieldErrors: [{ name: "code", message: fields === "stoneCode" ? "This stone code is already used" : "This code is already used" }], formError: null };
     case "STONE_MASTER_REFERENCE_INVALID": {
       const name = REFERENCE_FIELD[fieldErrors[0]?.path ?? ""];

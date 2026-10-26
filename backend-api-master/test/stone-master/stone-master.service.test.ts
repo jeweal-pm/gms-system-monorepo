@@ -23,13 +23,18 @@ const db = vi.hoisted(() => {
     existsCount: 1,
     deleteError: null as unknown,
     created: [] as Array<{ model: string; data: Record<string, unknown> }>,
+    updated: [] as Array<{ model: string; data: Record<string, unknown> }>,
     findManyArgs: [] as unknown[],
   };
 });
 
 vi.mock("../../src/database/prisma-client", () => {
   const refDelegate = (model: string) => ({
-    findUnique: vi.fn(async ({ where }: { where: { id: string } }) => db.refs[model].get(where.id) ?? null),
+    // A size has no code (owner 2026-10-23): its name is the seeded code value.
+    findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+      const ref = db.refs[model].get(where.id);
+      return ref ? { name: ref.code, ...ref } : null;
+    }),
     findMany: vi.fn(async (args: { where?: { id?: { in: string[] } } }) => {
       db.findManyArgs.push(args);
       const ids = args.where?.id?.in;
@@ -40,7 +45,10 @@ vi.mock("../../src/database/prisma-client", () => {
       db.created.push({ model, data });
       return { id: "00000000-0000-4000-8000-0000000000aa", updatedAt: new Date("2026-10-19T00:00:00.000Z") };
     }),
-    updateMany: vi.fn(async () => ({ count: db.updateCount })),
+    updateMany: vi.fn(async (args: { data: Record<string, unknown> }) => {
+      db.updated.push({ model, data: args.data });
+      return { count: db.updateCount };
+    }),
     count: vi.fn(async () => db.existsCount),
     deleteMany: vi.fn(async () => {
       if (db.deleteError) throw db.deleteError;
@@ -112,6 +120,7 @@ beforeEach(() => {
   db.existsCount = 1;
   db.deleteError = null;
   db.created = [];
+  db.updated = [];
   db.findManyArgs = [];
 });
 
@@ -198,5 +207,42 @@ describe("references and versions", () => {
     expect(db.findManyArgs[0]).toMatchObject({ where: { active: true }, take: 1000 });
     await new StoneMasterService().options({ kinds: ["group"], include: [GROUP] });
     expect(db.findManyArgs[2]).toMatchObject({ where: { OR: [{ active: true }, { id: { in: [GROUP] } }] } });
+  });
+});
+
+describe("size name only and saved auto codes (owner 2026-10-23)", () => {
+  const body = { mode: "AUTO" as const, code: undefined, parts, partOrder: [...DEFAULT_PART_ORDER], active: true };
+  const versioned = (input: object) => ({ ...input, expectedUpdatedAt: EXPECTED });
+
+  it("UT-SM-P21 the size part of an auto code is the size name, uppercased without spaces", async () => {
+    db.refs.stoneSize.set(SIZE, { code: "2.0 mm", active: true });
+    await new StoneMasterService().create("stone-code", "a", body);
+    expect(db.created[0].data.code).toBe("RD2.0MM-RDDEXVVS1");
+  });
+
+  it("UT-SM-P22 saving an edit rebuilds the auto code from the current part codes, even with the same parts", async () => {
+    db.refs.stoneColor.set(COLOR, { code: "GRL", active: true });
+    db.storedStoneCode = { ...parts };
+    await new StoneMasterService().update("stone-code", "a", id(99), versioned({ ...body, active: false }));
+    expect(db.updated[0].data).toMatchObject({ code: "RD1.0-RDGRLEXVVS1", active: false });
+
+    const reordered = ["color", "name", "size", "shape", "cutting", "clarity", "quality"] as typeof DEFAULT_PART_ORDER[number][];
+    await new StoneMasterService().update("stone-code", "a", id(99), versioned({ ...body, partOrder: reordered }));
+    expect(db.updated[1].data.code).toBe("GRLRD-1.0RDEXVVS1");
+  });
+
+  it("UT-SM-P23 sizes list, search, cursor and options use the name, never a code", async () => {
+    await new StoneMasterService().list("size", { q: "mm", limit: 10 });
+    const listArgs = db.findManyArgs[0] as { select: unknown; orderBy: unknown; where: { AND: unknown[] } };
+    expect(listArgs.select).toEqual({ id: true, name: true, active: true });
+    expect(listArgs.orderBy).toEqual([{ name: "asc" }, { id: "asc" }]);
+    expect(listArgs.where.AND).toEqual([{ OR: [{ name: { contains: "mm", mode: "insensitive" } }] }]);
+
+    await new StoneMasterService().options({ kinds: ["size"], include: [] });
+    expect(db.findManyArgs[1]).toMatchObject({ select: { id: true, name: true, active: true }, orderBy: { name: "asc" } });
+
+    const cursor = Buffer.from(JSON.stringify({ c: "2.0 mm", i: SIZE, v: 1 })).toString("base64url");
+    await new StoneMasterService().list("size", { cursor, limit: 10 });
+    expect((db.findManyArgs[2] as { where: { AND: unknown[] } }).where.AND).toEqual([{ OR: [{ name: { gt: "2.0 mm" } }, { name: "2.0 mm", id: { gt: SIZE } }] }]);
   });
 });

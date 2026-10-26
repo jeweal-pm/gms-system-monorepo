@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { partnerDrawerId } from "@/features/partner/components/partner-drawer";
 import { canViewWith, contextNavFor, navigationGroups, visibleContextGroups } from "@/features/home/navigation";
 import { masterCodeDestinations } from "@/features/setup/setup-destinations";
-import { mapDeleteError, mapSaveError, referencedIds, rowText, sizeAfterShapeChange, sizesForShape, toDuplicateValues, toFormValues, toInput, type StoneDetail } from "@/features/stone-master/api";
+import { mapDeleteError, mapSaveError, optionLabel, partCode, referencedIds, rowText, shownAutoCode, sizeAfterShapeChange, sizesForShape, toDuplicateValues, toFormValues, toInput, type StoneDetail } from "@/features/stone-master/api";
 import { STONE_PAGES, stonePageBySlug, stonePageHref } from "@/features/stone-master/kinds";
 import { emptyStoneForm, stoneFormIssues } from "@/features/stone-master/schema";
-import { buildAutoCode, DEFAULT_PART_ORDER, isPartRequired, moveItem } from "@/features/stone-master/stone-code";
+import { buildAutoCode, DEFAULT_PART_ORDER, isPartRequired, moveItem, sizePartCode } from "@/features/stone-master/stone-code";
 import { gatewayError } from "../partner/helpers";
 
 /** UT-SM-01…09: Stone Master pages (stone-master UI revision 1, testing.md). */
@@ -123,11 +123,53 @@ describe("mapping (UT-SM-06)", () => {
     expect(referencedIds("simple", stoneCode)).toEqual([]);
   });
 
-  it("row text per page", () => {
-    expect(rowText("simple", { id: ID, code: "DIA", name: "Diamond", active: true })).toEqual({ primary: "Diamond", secondary: "DIA" });
-    expect(rowText("stoneName", { id: ID, code: "RD", name: "Round Diamond", active: true, hsn: "7102", group: { code: "DIA", name: "Diamond" } }).secondary).toBe("RD · DIA · Diamond · HSN 7102");
-    expect(rowText("shape", { id: ID, code: "RD", name: "Round", active: true, sizeCount: 1 }).secondary).toBe("RD · 1 size");
+  it("row text per page: code first, then name (owner 2026-10-23); a size shows only its name", () => {
+    expect(rowText("simple", { id: ID, code: "E", name: "Excellent", active: true })).toEqual({ primary: "E", secondary: "Excellent" });
+    expect(rowText("stoneName", { id: ID, code: "RD", name: "Round Diamond", active: true, hsn: "7102", group: { code: "DIA", name: "Diamond" } }))
+      .toEqual({ primary: "RD", secondary: "Round Diamond · DIA · Diamond · HSN 7102" });
+    expect(rowText("shape", { id: ID, code: "RD", name: "Round", active: true, sizeCount: 1 })).toEqual({ primary: "RD", secondary: "Round · 1 size" });
+    expect(rowText("size", { id: ID, code: null, name: "2.0 mm", active: true })).toEqual({ primary: "2.0 mm", secondary: "" });
     expect(rowText("stoneCode", { id: ID, code: "RD-1.0", name: "", active: true, mode: "MANUAL", stoneName: { code: "RD", name: "Round Diamond" } })).toEqual({ primary: "RD-1.0", secondary: "Round Diamond · Manual code" });
+  });
+});
+
+describe("size name only and saved auto codes (UT-SM-10, owner 2026-10-23)", () => {
+  const saved: StoneDetail = {
+    id: ID, code: "R2-DISDEVVSSQAAA", active: true, updatedAt: "2026-10-23T00:00:00.000Z", mode: "AUTO",
+    parts: { stoneNameId: "n", sizeId: "s", shapeId: "sh", colorId: "c", cuttingId: null, clarityId: null, qualityId: null },
+    partOrder: ["color", "size", "name", "shape", "cutting", "clarity", "quality"],
+  };
+
+  it("a size form has only a name; the input sends name + active", () => {
+    const paths = (patch: Partial<ReturnType<typeof emptyStoneForm>>) => stoneFormIssues("size", { ...emptyStoneForm(), ...patch }).map((issue) => issue.path);
+    expect(paths({})).toEqual(["name"]);
+    expect(paths({ name: "2.0 mm" })).toEqual([]);
+    expect(paths({ name: "2.0 × 3.0" })).toEqual(["name"]);
+    expect(paths({ name: "x".repeat(21) })).toEqual(["name"]);
+    expect(toInput("size", { ...emptyStoneForm(), code: "X", name: " 2.0 mm " })).toEqual({ name: "2.0 mm", active: true });
+    expect(toDuplicateValues("size", { id: ID, name: "2.0 mm", active: true, updatedAt: "2026-10-23T00:00:00.000Z" })).toMatchObject({ name: "", code: "" });
+    expect(stonePageBySlug("size")?.fields).toBe("size");
+  });
+
+  it("a size option is labelled and coded by its name", () => {
+    const size = { id: "s", name: "2.0 mm", active: true };
+    expect(optionLabel(size)).toBe("2.0 mm");
+    expect(optionLabel({ id: "c", code: "RED", name: "Red", active: false })).toBe("RED · Red (inactive)");
+    expect(partCode("size", size)).toBe("2.0MM");
+    expect(partCode("color", { id: "c", code: "RED", name: "Red", active: true })).toBe("RED");
+    expect(partCode("color", undefined)).toBeUndefined();
+    expect(sizePartCode(" 1.0 mm ")).toBe("1.0MM");
+  });
+
+  it("viewing shows the saved auto code; create/edit (no viewed record) show the live code", () => {
+    expect(shownAutoCode(saved, "GRL2-DISDEVVSSQAAA")).toBe("R2-DISDEVVSSQAAA");
+    expect(shownAutoCode({ ...saved, mode: "MANUAL" }, "LIVE")).toBe("LIVE");
+    expect(shownAutoCode(undefined, "GRL2-DISDEVVSSQAAA")).toBe("GRL2-DISDEVVSSQAAA");
+  });
+
+  it("a taken size name is reported on the name field", () => {
+    expect(mapSaveError(gatewayError({ domainCode: "STONE_MASTER_CODE_TAKEN", httpStatus: 409, code: "CONFLICT", fieldErrors: [{ path: "name", code: "duplicate" }] }), "size").fieldErrors)
+      .toEqual([{ name: "name", message: "This name is already used" }]);
   });
 });
 

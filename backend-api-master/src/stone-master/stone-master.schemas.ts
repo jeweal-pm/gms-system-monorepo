@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { expectedUpdatedAtSchema } from "../common/partner-schemas";
-import { OPTION_KINDS } from "./stone-master.kinds";
+import { isSimpleKind, OPTION_KINDS, type StoneKind } from "./stone-master.kinds";
 import { isPermutation, PART_FIELD, PART_KEYS, REQUIRED_POSITIONS, STONE_CODE_PATTERN, type PartKey } from "./stone-code";
 
 /** SA-SM-04: trimmed, stored UPPERCASE, 1–20 of A–Z 0–9 . - / (so the unique index is case-insensitive). */
@@ -10,6 +10,13 @@ const uuid = z.uuid();
 const version = { expectedUpdatedAt: expectedUpdatedAtSchema };
 
 const simpleFields = { code: codeSchema, name: nameSchema, active: z.boolean() };
+
+/**
+ * Owner 2026-10-23: a size has only a Name (unique), which Auto stone codes use for the size part, so it
+ * is limited to 1–20 of A–Z a–z 0–9 space . - / (spaces are dropped in the code).
+ */
+const sizeNameSchema = z.string().trim().regex(/^[A-Za-z0-9 ./-]{1,20}$/);
+const sizeFields = { name: sizeNameSchema, active: z.boolean() };
 
 /** HSN optional, 4–8 digits; "" means none (SA-SM-04). */
 const hsnSchema = z.preprocess(
@@ -73,6 +80,10 @@ export const BODY_SCHEMAS = {
     create: z.object(simpleFields).strict(),
     update: z.object({ ...simpleFields, ...version }).strict(),
   },
+  size: {
+    create: z.object(sizeFields).strict(),
+    update: z.object({ ...sizeFields, ...version }).strict(),
+  },
   "stone-name": {
     create: z.object(stoneNameFields).strict(),
     update: z.object({ ...stoneNameFields, ...version }).strict(),
@@ -87,7 +98,13 @@ export const BODY_SCHEMAS = {
   },
 } as const;
 
-export type SimpleInput = z.output<typeof BODY_SCHEMAS.simple.create>;
+/** Body schemas for a kind: Size has its own (name only); the other simple kinds share code + name. */
+export function bodySchemasFor(kind: StoneKind) {
+  if (kind === "size") return BODY_SCHEMAS.size;
+  return isSimpleKind(kind) ? BODY_SCHEMAS.simple : BODY_SCHEMAS[kind];
+}
+
+export type SimpleInput = z.output<typeof BODY_SCHEMAS.simple.create> | z.output<typeof BODY_SCHEMAS.size.create>;
 export type StoneNameInput = z.output<(typeof BODY_SCHEMAS)["stone-name"]["create"]>;
 export type ShapeInput = z.output<typeof BODY_SCHEMAS.shape.create>;
 export type StoneCodeInput = z.output<(typeof BODY_SCHEMAS)["stone-code"]["create"]>;

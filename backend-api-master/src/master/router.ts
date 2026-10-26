@@ -8,10 +8,13 @@ import type { VendorService } from "../vendor/vendor.service";
 import type { CompanyProfileService } from "../company-profile/company-profile.service";
 import { saveCompanyProfileBodySchema } from "../company-profile/company-profile.schemas";
 import type { StoneMasterService } from "../stone-master/stone-master.service";
+import type { StoneMasterService } from "../stone-master/stone-master.service";
 import type { DocumentSetupService } from "../document-setup/document-setup.service";
 import { saveDocumentSetupBodySchema, transactionKeySchema } from "../document-setup/document-setup.schemas";
-import { BODY_SCHEMAS, optionsQuerySchema } from "../stone-master/stone-master.schemas";
-import { isSimpleKind, type StoneKind } from "../stone-master/stone-master.kinds";
+import { bodySchemasFor, optionsQuerySchema } from "../stone-master/stone-master.schemas";
+import type { StoneKind } from "../stone-master/stone-master.kinds";
+import { LIST_LIMIT_MAX } from "../common/partner-schemas";
+
 import { LIST_LIMIT_MAX } from "../common/partner-schemas";
 import { requireMasterGrant, type MasterAction, type MasterContext, type MasterMenu } from "./authorization";
 
@@ -89,7 +92,7 @@ export type MasterServices = Pick<{
 }, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup">;
 
 function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
-  const schemas = isSimpleKind(kind) ? BODY_SCHEMAS.simple : BODY_SCHEMAS[kind];
+  const schemas = bodySchemasFor(kind);
   return t.router({
     list: permitted("stone-master", "VIEW").input(listInput).query(({ input }) => domainCall(() => service.list(kind, toListQuery(input)))),
     get: permitted("stone-master", "VIEW").input(idInput).query(({ input }) => domainCall(() => service.get(kind, input.id))),

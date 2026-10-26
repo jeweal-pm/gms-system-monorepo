@@ -7,13 +7,13 @@ import { prisma } from "../database/prisma-client";
 import { OPTION_KEY, isSimpleKind, type OptionKind, type StoneKind } from "./stone-master.kinds";
 import { mapStoneError, stoneChanged, stoneNotFound, stoneReferenceInvalid } from "./stone-master.errors";
 import type { OptionsQuery, ShapeInput, SimpleInput, StoneCodeInput, StoneNameInput } from "./stone-master.schemas";
-import { buildAutoCode, STONE_CODE_PATTERN, type PartKey } from "./stone-code";
+import { buildAutoCode, sizePartCode, STONE_CODE_PATTERN, type PartKey } from "./stone-code";
 
 const LIST_LIMIT = 50;
 const OPTIONS_LIMIT = 1_000;
 
 type Client = Tx | typeof prisma;
-type Row = Record<string, unknown> & { id: string; code: string; updatedAt?: Date };
+type Row = Record<string, unknown> & { id: string; updatedAt?: Date };
 /** The few delegate methods the generic paths use; every stone model has them (same column names). */
 type Delegate = {
   findMany(args: unknown): Promise<Row[]>;
@@ -39,9 +39,12 @@ function delegate(client: Client, kind: StoneKind): Delegate {
   return (client as unknown as Record<string, Delegate>)[MODEL[kind]];
 }
 
-// ---- keyset cursor on (code, id) (SA-SM-07: order by code; codes are unique and uppercase) ----
+// ---- keyset cursor on (sort key, id) (SA-SM-07: order by code; a size has no code and orders by its unique name) ----
 
-const cursorSchema = z.object({ c: z.string().max(60), i: z.uuid(), v: z.literal(1) }).strict();
+/** Owner 2026-10-23: a size has only a Name, so it sorts, searches and is cursored by name. */
+const sortKey = (kind: StoneKind): "code" | "name" => (kind === "size" ? "name" : "code");
+
+const cursorSchema = z.object({ c: z.string().max(120), i: z.uuid(), v: z.literal(1) }).strict();
 
 function encodeCursor(code: string, id: string): string {
   return Buffer.from(JSON.stringify({ c: code, i: id, v: 1 }), "utf8").toString("base64url");
@@ -65,6 +68,7 @@ const contains = (value: string) => ({ contains: value, mode: "insensitive" as c
 
 /** SA-SM-07 search fields per kind. */
 function searchWhere(kind: StoneKind, q: string) {
+  if (kind === "size") return [{ name: contains(q) }];
   const base = [{ code: contains(q) }, { name: contains(q) }];
   if (kind === "stone-name") return [...base, { hsn: { contains: q } }, { group: { code: contains(q) } }];
   if (kind === "stone-code") return [{ code: contains(q) }, { stoneName: { name: contains(q) } }, { stoneName: { code: contains(q) } }];
@@ -72,8 +76,13 @@ function searchWhere(kind: StoneKind, q: string) {
 }
 
 const SIMPLE_SELECT = { id: true, code: true, name: true, active: true } as const;
+const SIZE_SELECT = { id: true, name: true, active: true } as const;
+
+/** Simple row fields of a kind (a size has no code). */
+const simpleSelect = (kind: StoneKind) => (kind === "size" ? SIZE_SELECT : SIMPLE_SELECT);
 
 function listSelect(kind: StoneKind) {
+  if (kind === "size") return SIZE_SELECT;
   if (kind === "stone-name") return { ...SIMPLE_SELECT, hsn: true, group: { select: { id: true, code: true, name: true } } };
   if (kind === "shape") return { ...SIMPLE_SELECT, _count: { select: { sizes: true } } };
   if (kind === "stone-code") return { id: true, code: true, mode: true, active: true, stoneName: { select: { code: true, name: true } } };
@@ -99,13 +108,15 @@ type RefModel = "stoneGroup" | "stoneSize" | "stoneShape" | "stoneColor" | "ston
 
 /**
  * SA-SM-06: a reference must exist and be active, unless it equals the value already stored on the
- * record (an old, now-inactive choice may stay). Returns the referenced code.
+ * record (an old, now-inactive choice may stay). Returns the referenced code; a size returns its
+ * name as a code part (owner 2026-10-23).
  */
 async function referenceCode(tx: Tx, model: RefModel, id: string, path: string, storedId?: string | null): Promise<string> {
-  const row = await (tx as unknown as Record<RefModel, { findUnique(args: unknown): Promise<{ code: string; active: boolean } | null> }>)[model]
-    .findUnique({ where: { id }, select: { code: true, active: true } });
+  const select = model === "stoneSize" ? { name: true, active: true } : { code: true, active: true };
+  const row = await (tx as unknown as Record<RefModel, { findUnique(args: unknown): Promise<{ code?: string; name?: string; active: boolean } | null> }>)[model]
+    .findUnique({ where: { id }, select });
   if (!row || (!row.active && id !== storedId)) throw stoneReferenceInvalid(path);
-  return row.code;
+  return model === "stoneSize" ? sizePartCode(row.name ?? "") : (row.code ?? "");
 }
 
 type StoredStoneCode = { stoneNameId: string | null; sizeId: string | null; shapeId: string | null; colorId: string | null; cuttingId: string | null; clarityId: string | null; qualityId: string | null };
@@ -120,18 +131,19 @@ export class StoneMasterService {
     const and: unknown[] = [];
     if (query.active) and.push({ active: query.active === "true" });
     if (query.q) and.push({ OR: searchWhere(kind, query.q) });
-    if (after) and.push({ OR: [{ code: { gt: after.code } }, { code: after.code, id: { gt: after.id } }] });
+    const key = sortKey(kind);
+    if (after) and.push({ OR: [{ [key]: { gt: after.code } }, { [key]: after.code, id: { gt: after.id } }] });
     try {
       const model = delegate(prisma, kind);
       const [rows, total] = await Promise.all([
-        model.findMany({ where: { AND: and }, select: listSelect(kind), orderBy: [{ code: "asc" }, { id: "asc" }], take: limit + 1 }),
+        model.findMany({ where: { AND: and }, select: listSelect(kind), orderBy: [{ [key]: "asc" }, { id: "asc" }], take: limit + 1 }),
         model.count(),
       ]);
       const page = rows.slice(0, limit);
       const last = page[page.length - 1];
       return {
         items: page.map((row) => listItem(kind, row)),
-        nextCursor: rows.length > limit && last ? encodeCursor(last.code, last.id) : null,
+        nextCursor: rows.length > limit && last ? encodeCursor(String(last[key]), last.id) : null,
         total,
       };
     } catch (error) {
@@ -142,7 +154,7 @@ export class StoneMasterService {
   async get(kind: StoneKind, id: string) {
     try {
       if (isSimpleKind(kind)) {
-        const [row] = await delegate(prisma, kind).findMany({ where: { id }, select: { ...SIMPLE_SELECT, createdAt: true, updatedAt: true }, take: 1 });
+        const [row] = await delegate(prisma, kind).findMany({ where: { id }, select: { ...simpleSelect(kind), createdAt: true, updatedAt: true }, take: 1 });
         if (!row) throw stoneNotFound();
         return { ...row, createdAt: iso(row.createdAt as Date), updatedAt: iso(row.updatedAt as Date) };
       }
@@ -154,11 +166,11 @@ export class StoneMasterService {
       if (kind === "shape") {
         const row = await prisma.stoneShape.findUnique({
           where: { id },
-          select: { ...SIMPLE_SELECT, createdAt: true, updatedAt: true, sizes: { select: { sizeId: true, size: { select: { code: true } } } } },
+          select: { ...SIMPLE_SELECT, createdAt: true, updatedAt: true, sizes: { select: { sizeId: true, size: { select: { name: true } } } } },
         });
         if (!row) throw stoneNotFound();
         const { sizes, ...rest } = row;
-        const sizeIds = [...sizes].sort((a, b) => a.size.code.localeCompare(b.size.code)).map((entry) => entry.sizeId);
+        const sizeIds = [...sizes].sort((a, b) => a.size.name.localeCompare(b.size.name)).map((entry) => entry.sizeId);
         return { ...rest, sizeIds, createdAt: iso(row.createdAt), updatedAt: iso(row.updatedAt) };
       }
       const row = await prisma.stoneCode.findUnique({ where: { id } });
@@ -277,8 +289,8 @@ export class StoneMasterService {
     const where = query.include.length > 0 ? { OR: [{ active: true }, { id: { in: query.include } }] } : { active: true };
     try {
       const entries = await Promise.all(query.kinds.map(async (kind: OptionKind) => {
-        const select = kind === "shape" ? { ...SIMPLE_SELECT, sizes: { select: { sizeId: true } } } : SIMPLE_SELECT;
-        const rows = await delegate(prisma, kind).findMany({ where, select, orderBy: { code: "asc" }, take: OPTIONS_LIMIT });
+        const select = kind === "shape" ? { ...SIMPLE_SELECT, sizes: { select: { sizeId: true } } } : simpleSelect(kind);
+        const rows = await delegate(prisma, kind).findMany({ where, select, orderBy: { [sortKey(kind)]: "asc" }, take: OPTIONS_LIMIT });
         const items = kind === "shape"
           ? rows.map((row) => {
             const { sizes, ...rest } = row as Row & { sizes: { sizeId: string }[] };
@@ -306,6 +318,8 @@ export class StoneMasterService {
   /**
    * SA-SM-05/06: every part valid; the size belongs to the shape (an unchanged stored pair may stay);
    * AUTO builds the code from the part codes in order, MANUAL keeps the validated client code.
+   * Owner 2026-10-23: a saved Auto code is a snapshot (part-code changes never cascade), but saving an
+   * edit rebuilds it from the current part codes.
    */
   private async resolveStoneCode(tx: Tx, body: StoneCodeInput, stored: StoredStoneCode | null): Promise<string> {
     const { parts } = body;
