@@ -1,4 +1,4 @@
-FROM node:24.11.0-bookworm-slim
+FROM node:24.22.1-bookworm-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/*

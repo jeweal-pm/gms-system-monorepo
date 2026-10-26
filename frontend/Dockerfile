@@ -1,4 +1,4 @@
-FROM node:24.11.0-bookworm-slim
+FROM node:24.22.1-bookworm-slim
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
