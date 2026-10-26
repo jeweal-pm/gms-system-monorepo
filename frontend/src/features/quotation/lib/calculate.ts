@@ -15,9 +15,25 @@ export type QuotationTotals = {
   grandTotal: Dec;
 };
 
-export function lineAmount(line: Pick<QuotationLine, "priceUnit" | "pcs" | "weightCt" | "unitPrice">): Dec {
+type LinePrice = Pick<QuotationLine, "priceUnit" | "pcs" | "weightCt" | "unitPrice"> & Partial<Pick<QuotationLine, "discountPercent" | "discountAmount">>;
+
+/** Weight (per carat) or pieces × unit price. */
+export function lineGross(line: LinePrice): Dec {
   const qty = line.priceUnit === "PER_CT" ? dec(line.weightCt) : dec(line.pcs);
   return round(mul(qty, dec(line.unitPrice)));
+}
+
+/** Owner 2026-10-26: the line discount — a percent of the line or an amount — capped at the line (same as the server). */
+export function lineDiscount(line: LinePrice): Dec {
+  const gross = lineGross(line);
+  if (line.discountPercent) return min(max(round(div(mul(gross, dec(line.discountPercent)), dec(100))), ZERO), gross);
+  if (line.discountAmount) return min(max(round(dec(line.discountAmount)), ZERO), gross);
+  return ZERO;
+}
+
+/** Line amount after its discount. */
+export function lineAmount(line: LinePrice): Dec {
+  return sub(lineGross(line), lineDiscount(line));
 }
 
 type CalcInput = Pick<QuotationFormValues, "lines" | "discount" | "tax" | "serviceCharges" | "labor">;

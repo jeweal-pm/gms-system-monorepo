@@ -5,6 +5,7 @@ import { createHTTPHandler } from "@trpc/server/adapters/standalone";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MasterAuthContextAdapter, MasterJwksCache } from "../../src/master/auth-context";
 import { createMasterRouter } from "../../src/master/router";
+import type { QuotationService } from "../../src/quotation/quotation.service";
 import type { DocumentSetupService } from "../../src/document-setup/document-setup.service";
 import type { CustomerService } from "../../src/customer/customer.service";
 import type { VendorService } from "../../src/vendor/vendor.service";
@@ -47,6 +48,7 @@ async function startHttp(authReader = vi.fn(async () => ({
     companyProfile: companyProfile as unknown as CompanyProfileService,
     stoneMaster: stoneMaster as unknown as StoneMasterService,
     documentSetup: { list: vi.fn(), get: vi.fn(), save: vi.fn() } as unknown as DocumentSetupService,
+    quotation: {} as unknown as QuotationService,
   });
   const handler = createHTTPHandler({ router, createContext: ({ req }) => adapter.create(req) });
   const server = createServer(handler);

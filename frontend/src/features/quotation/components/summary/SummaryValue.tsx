@@ -5,7 +5,7 @@ import { useState, type ReactNode } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import type { QuotationTotals } from "../../lib/calculate";
 import { formatMoney } from "../../lib/format";
-import { serviceChargeTypes } from "../../mock/masters";
+import { SERVICE_CHARGE_TYPES } from "../../lib/options";
 import type { QuotationFormValues } from "../../schema";
 import { Checkbox, cx, NumberInput, TextInput } from "../ui";
 
@@ -175,7 +175,7 @@ function ServiceCharges({ totalLabel }: { totalLabel: string }) {
           </button>
           {open && (
             <ul className="absolute right-0 z-20 mt-1 w-full overflow-hidden rounded-lg border border-[#E3E6EA] bg-white py-1 text-sm shadow-lg">
-              {serviceChargeTypes.map((c) => {
+              {SERVICE_CHARGE_TYPES.map((c) => {
                 const on = selectedIds.includes(c.value);
                 return (
                   <li key={c.value}>
@@ -200,7 +200,7 @@ function ServiceCharges({ totalLabel }: { totalLabel: string }) {
           {fields.map((f, i) => (
             <div key={f.chargeId} className="flex items-center gap-3">
               <span className="flex-1 text-[#6B7480]">
-                {serviceChargeTypes.find((c) => c.value === f.chargeId)?.label ?? f.chargeId}
+                {SERVICE_CHARGE_TYPES.find((c) => c.value === f.chargeId)?.label ?? f.chargeId}
               </span>
               <div className="w-36">
                 <NumberInput compact placeholder="0.00" className={numberInput} {...register(`serviceCharges.${i}.amount`)} />

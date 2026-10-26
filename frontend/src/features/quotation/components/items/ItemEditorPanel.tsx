@@ -3,10 +3,10 @@
 import { ChevronDown, ChevronUp, Lock, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
-import { lineAmount } from "../../lib/calculate";
-import { formatMoney } from "../../lib/format";
-import * as m from "../../mock/masters";
-import { isFilledLine, type QuotationFormValues } from "../../schema";
+import { CER_TYPES, toOptions, type Option } from "../../lib/options";
+import { useOptions } from "../../options-context";
+import { isFilledLine, MAX_LINE_PHOTOS, type QuotationFormValues } from "../../schema";
+import { LinePhotosField } from "./LinePhotosField";
 import { Button, Field, FormSelect, IconButton, NumberInput, ReadonlyBox, TextInput } from "../ui";
 
 const PRICE_UNITS = [
@@ -33,25 +33,37 @@ export function ItemEditorPanel({
   onRemove: () => void;
   onClose: () => void;
 }) {
-  const { register, setValue, control } = useFormContext<QuotationFormValues>();
+  const { register, setValue, control, formState } = useFormContext<QuotationFormValues>();
   const line = useWatch({ control, name: `lines.${index}` });
+  const currency = useWatch({ control, name: "currency" });
+  const lineErrors = formState.errors.lines?.[index];
+  const stone = useOptions()?.stone;
   if (!line) return null;
 
   const fromStock = line.source === "STOCK";
   const locked = readOnly || fromStock;
   const name = <K extends keyof typeof line>(key: K) => `lines.${index}.${key}` as const;
 
-  // เลือก Stone Code → fill คุณสมบัติพลอยจาก stone master
-  const onStoneCodeChange = (code: string) => {
-    const s = m.stoneCodes.find((x) => x.value === code);
-    if (!s) return;
+  // Choosing a Stone Code fills the stone attributes from the stone master (text snapshot, SA-QT-07).
+  const onStoneCodeChange = (id: string) => {
+    const code = stone?.codes.find((x) => x.id === id);
+    if (!code) return;
+    setValue(`lines.${index}.stoneCode`, code.code, { shouldDirty: true });
     for (const key of ["stone", "shape", "size", "color", "clarity", "cutting", "quality"] as const) {
-      setValue(`lines.${index}.${key}`, s[key], { shouldDirty: true });
+      setValue(`lines.${index}.${key}`, code[key], { shouldDirty: true });
     }
   };
 
-  const select = (key: Parameters<typeof name>[0], options: readonly m.Option[], extra?: { onValueChange?: (v: string) => void }) => (
-    <FormSelect<QuotationFormValues> compact disabled={locked} name={name(key)} options={options} {...extra} />
+  /** Active choices, plus the saved value so an old/inactive one still shows. */
+  const withCurrent = (options: Option[], current: string) =>
+    current && !options.some((option) => option.value === current) ? [{ value: current, label: current }, ...options] : options;
+  const stoneCodeOptions = (stone?.codes ?? []).map((code) => ({ value: code.id, label: code.code }));
+  const savedStoneCode = line.stoneCodeId && !stoneCodeOptions.some((option) => option.value === line.stoneCodeId)
+    ? [{ value: line.stoneCodeId, label: line.stoneCode || "(inactive)" }]
+    : [];
+
+  const select = (key: Parameters<typeof name>[0], values: readonly string[] | undefined) => (
+    <FormSelect<QuotationFormValues> compact disabled={locked} name={name(key)} options={withCurrent(toOptions(values ?? []), String(line[key] ?? ""))} />
   );
 
   return (
@@ -99,24 +111,26 @@ export function ItemEditorPanel({
 
         <Section title="Stone">
           <Field label="Stone Code" className="col-span-2">
-            {select("stoneCode", m.stoneCodes, { onValueChange: onStoneCodeChange })}
+            <FormSelect<QuotationFormValues> compact disabled={locked} name={name("stoneCodeId")} options={[...savedStoneCode, ...stoneCodeOptions]} onValueChange={onStoneCodeChange} />
           </Field>
-          <Field label="Stone">{select("stone", m.stones)}</Field>
-          <Field label="Shape">{select("shape", m.shapes)}</Field>
-          <Field label="Size">{select("size", m.sizes)}</Field>
+          <Field label="Stone">{select("stone", stone?.stones)}</Field>
+          <Field label="Shape">{select("shape", stone?.shapes)}</Field>
+          <Field label="Size">{select("size", stone?.sizes)}</Field>
         </Section>
 
         <Section title="Stone Quality">
-          <Field label="Color">{select("color", m.colors)}</Field>
-          <Field label="Clarity">{select("clarity", m.clarities)}</Field>
-          <Field label="Cutting">{select("cutting", m.cuttings)}</Field>
-          <Field label="Quality">{select("quality", m.qualities)}</Field>
+          <Field label="Color">{select("color", stone?.colors)}</Field>
+          <Field label="Clarity">{select("clarity", stone?.clarities)}</Field>
+          <Field label="Cutting">{select("cutting", stone?.cuttings)}</Field>
+          <Field label="Quality">{select("quality", stone?.qualities)}</Field>
         </Section>
 
         <Section title="Certificate">
-          <Field label="Cer Type">{select("cerType", m.cerTypes)}</Field>
+          <Field label="Cer Type">
+            <FormSelect<QuotationFormValues> compact disabled={locked} name={name("cerType")} options={withCurrent(CER_TYPES, line.cerType)} />
+          </Field>
           <Field label="Cer No.">
-            <TextInput compact readOnly={locked} maxLength={40} {...register(name("cerNo"))} />
+            <TextInput compact readOnly={locked} maxLength={60} {...register(name("cerNo"))} />
           </Field>
         </Section>
 
@@ -134,15 +148,29 @@ export function ItemEditorPanel({
           <Field label="Sale Price">
             <NumberInput compact placeholder="0.00" {...register(name("unitPrice"))} />
           </Field>
-          <div className="col-span-2 flex items-center justify-between rounded-lg bg-[#F6F7F8] px-4 py-3 text-sm">
-            <span className="text-[#6B7480]">Amount</span>
-            <span className="font-medium">{formatMoney(lineAmount(line))}</span>
+          {/* Owner 2026-10-26: one of the two only; the Amount shows in the table, not here. */}
+          <Field label="Discount (%)" error={lineErrors?.discountPercent?.message}>
+            <NumberInput compact placeholder="0 %" readOnly={line.discountAmount !== ""} {...register(name("discountPercent"))} />
+          </Field>
+          <Field label={`Discount Amt${currency ? ` (${currency})` : ""}`}>
+            <NumberInput compact placeholder="0" readOnly={line.discountPercent !== ""} {...register(name("discountAmount"))} />
+          </Field>
+          {(line.discountPercent !== "" || line.discountAmount !== "") && (
+            <p className="col-span-2 -mt-3 text-xs text-[#6B7480]">
+              Use either a percent or an amount. Clear one to enter the other.
+            </p>
+          )}
+        </Section>
+
+        <Section title={`Photos ${line.photos.length} / ${MAX_LINE_PHOTOS}`}>
+          <div className="col-span-2">
+            <LinePhotosField index={index} readOnly={readOnly} />
           </div>
         </Section>
 
         <Section title="Item Note">
           <Field label="Note" className="col-span-2">
-            <TextInput compact maxLength={200} {...register(name("itemNote"))} />
+            <TextInput compact maxLength={500} {...register(name("itemNote"))} />
           </Field>
         </Section>
       </fieldset>

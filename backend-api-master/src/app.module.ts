@@ -9,6 +9,8 @@ import { CustomerController } from "./customer/customer.controller";
 import { CustomerService } from "./customer/customer.service";
 import { DocumentSetupService } from "./document-setup/document-setup.service";
 import { PrismaLifecycleService } from "./database/prisma-lifecycle.service";
+import { QuotationPhotoPublicController } from "./quotation/quotation-photo.public.controller";
+import { QuotationService } from "./quotation/quotation.service";
 import { HealthController } from "./health/health.controller";
 import { ServiceTokenGuard } from "./internal-auth/service-token.guard";
 import { MasterAuthzDatabase } from "./master/authz-database";
@@ -37,7 +39,7 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
       },
     }),
   ],
-  controllers: [HealthController, CustomerController, VendorController, CompanyProfileController, CompanyLogoPublicController, StoneMasterController],
+  controllers: [HealthController, CustomerController, VendorController, CompanyProfileController, CompanyLogoPublicController, StoneMasterController, QuotationPhotoPublicController],
   providers: [
     PrismaLifecycleService,
     CustomerService,
@@ -45,6 +47,7 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
     CompanyProfileService,
     StoneMasterService,
     DocumentSetupService,
+    QuotationService,
     MasterAuthzDatabase,
     MasterLicenseClient,
     MasterTrpcHandler,

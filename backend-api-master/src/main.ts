@@ -9,6 +9,8 @@ import { loadDatabaseUrl, loadServiceTokenDigest } from "./config";
 import { serviceTokenMatches } from "./internal-auth/service-token.guard";
 import { MasterTrpcHandler } from "./master/trpc-handler";
 import { createPublicLogoAccessCheck, publicLogoMethodCheck } from "./company-profile/company-logo.http";
+import { createQuotationPhotoAccessCheck, QUOTATION_PHOTO_ROUTE, quotationPhotoMethodCheck } from "./quotation/quotation-photo.http";
+import { QUOTATION_PHOTO_MAX_BYTES, QUOTATION_PHOTO_TYPES } from "./quotation/quotation-photo.storage";
 
 /** Maps body-parser failures to the partner envelope (413 over 256 KB, 400 malformed JSON). */
 const bodyErrorHandler: ErrorRequestHandler = (error: unknown, _request, response, next) => {
@@ -55,6 +57,8 @@ async function bootstrap() {
   expressApp.disable("x-powered-by");
   expressApp.use(LOGO_ROUTE, logoTokenCheck(tokenDigest), express.raw({ type: [...LOGO_TYPES], limit: LOGO_MAX_BYTES }));
   expressApp.use(PUBLIC_LOGO_ROUTE, publicLogoMethodCheck, createPublicLogoAccessCheck(masterTrpc), express.raw({ type: [...LOGO_TYPES], limit: LOGO_MAX_BYTES }), bodyErrorHandler);
+  // Quotation line photos (SA-QT-10): authorize first, then buffer ≤ 5 MB of JPEG/PNG.
+  expressApp.use(QUOTATION_PHOTO_ROUTE, quotationPhotoMethodCheck, createQuotationPhotoAccessCheck(masterTrpc), express.raw({ type: [...QUOTATION_PHOTO_TYPES], limit: QUOTATION_PHOTO_MAX_BYTES }), bodyErrorHandler);
   expressApp.use(express.json({ limit: "256kb" }));
   expressApp.use(bodyErrorHandler);
   expressApp.use("/api/master/trpc", masterTrpc.handle.bind(masterTrpc));

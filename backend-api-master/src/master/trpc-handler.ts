@@ -9,6 +9,7 @@ import { DocumentSetupService } from "../document-setup/document-setup.service";
 import { MasterAuthContextAdapter, MasterJwksCache } from "./auth-context";
 import { MasterAuthzDatabase } from "./authz-database";
 import { MasterLicenseClient } from "./license-client";
+import { QuotationService } from "../quotation/quotation.service";
 import { createMasterRouter } from "./router";
 
 /** Express-compatible handler for parent-owned `/api/master/trpc` composition. */
@@ -17,7 +18,7 @@ export class MasterTrpcHandler {
   private readonly handler: ReturnType<typeof createExpressMiddleware>;
   private readonly authContext: MasterAuthContextAdapter;
 
-  constructor(customer: CustomerService, vendor: VendorService, companyProfile: CompanyProfileService, stoneMaster: StoneMasterService, authz: MasterAuthzDatabase, license: MasterLicenseClient, documentSetup: DocumentSetupService) {
+  constructor(customer: CustomerService, vendor: VendorService, companyProfile: CompanyProfileService, stoneMaster: StoneMasterService, authz: MasterAuthzDatabase, license: MasterLicenseClient, documentSetup: DocumentSetupService, quotation: QuotationService) {
     const issuer = process.env.AUTH_ACCESS_JWT_ISSUER;
     const trustedOrigin = process.env.FRONTEND_URL;
     const authService = process.env.AUTH_SERVICE_URL;
@@ -31,7 +32,7 @@ export class MasterTrpcHandler {
       authorizationReader: (userId, sessionId) => authz.read(userId, sessionId),
       checkLicense: (userId, sessionId) => license.check(userId, sessionId),
     });
-    const router = createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup });
+    const router = createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, quotation });
     this.handler = createExpressMiddleware({ router, createContext: ({ req }) => this.authContext.create(req) });
   }
 

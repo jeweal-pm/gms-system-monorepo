@@ -3,7 +3,8 @@ import { Injectable, Logger } from "@nestjs/common";
 import { WRITE_TX } from "../common/persistence";
 import { prisma } from "../database/prisma-client";
 import type { DocumentNumbering, DocumentSetup } from "../generated/prisma/client";
-import { documentSetupChanged, documentSetupCodeTaken, documentSetupNotFound, mapDocumentSetupError } from "./document-setup.errors";
+import { usedNumberingIds } from "./document-numbering";
+import { documentSetupChanged, documentSetupCodeTaken, documentSetupNotFound, documentSetupRowInUse, mapDocumentSetupError } from "./document-setup.errors";
 import type { SaveDocumentSetupInput } from "./document-setup.schemas";
 import { DOCUMENT_TRANSACTIONS, findTransaction } from "./document-setup.transactions";
 
@@ -13,8 +14,8 @@ type SetupRow = DocumentSetup & { rows: DocumentNumbering[] };
 export const toDbDate = (value: string) => new Date(`${value}T00:00:00.000Z`);
 export const fromDbDate = (value: Date) => value.toISOString().slice(0, 10);
 
-/** Contract output (document-setup SA rev 1). `used` stays false until transactions issue numbers (Q-DS-06). */
-export function toSetup(row: SetupRow) {
+/** Contract output (document-setup SA rev 1). `used` = the row issued a document number (Q-DS-06, SA-QT-05). */
+export function toSetup(row: SetupRow, used: ReadonlySet<string> = new Set()) {
   return {
     transactionKey: row.transactionKey,
     name: row.name,
@@ -25,7 +26,7 @@ export function toSetup(row: SetupRow) {
     updatedAt: row.updatedAt.toISOString(),
     rows: [...row.rows]
       .sort((a, b) => a.effectiveDate.getTime() - b.effectiveDate.getTime())
-      .map((item) => ({ id: item.id, effectiveDate: fromDbDate(item.effectiveDate), prefix: item.prefix, separator: item.separator, startNo: item.startNo, used: false })),
+      .map((item) => ({ id: item.id, effectiveDate: fromDbDate(item.effectiveDate), prefix: item.prefix, separator: item.separator, startNo: item.startNo, used: used.has(item.id) })),
   };
 }
 
@@ -57,18 +58,32 @@ export class DocumentSetupService {
     if (!findTransaction(transactionKey)) throw documentSetupNotFound();
     try {
       const row = await prisma.documentSetup.findUnique({ where: { transactionKey }, include: { rows: true } });
-      return { setup: row ? toSetup(row) : null };
+      if (!row) return { setup: null };
+      return { setup: toSetup(row, await usedNumberingIds(prisma, row.rows.map((item) => item.id))) };
     } catch (error) {
       throw mapDocumentSetupError(error, "get");
     }
   }
 
-  /** Whole replacement of one transaction's setup and its numbering rows, in one transaction. */
+  /**
+   * Whole replacement of one transaction's setup and its numbering rows, in one transaction. Rows that
+   * issued a document number (SA-QT-05) must come back unchanged (matched by date) and are kept as they are.
+   */
   async save(actorId: string, input: SaveDocumentSetupInput) {
     try {
       const row = await prisma.$transaction(async (tx) => {
         const clash = await tx.documentSetup.findFirst({ where: { code: input.code, NOT: { transactionKey: input.transactionKey } }, select: { transactionKey: true } });
         if (clash) throw documentSetupCodeTaken();
+        const existing = await tx.documentNumbering.findMany({ where: { transactionKey: input.transactionKey } });
+        const used = await usedNumberingIds(tx, existing.map((item) => item.id));
+        const keptDates = new Set<string>();
+        for (const row of existing.filter((item) => used.has(item.id))) {
+          const date = fromDbDate(row.effectiveDate);
+          const index = input.rows.findIndex((item) => item.effectiveDate === date);
+          const same = index >= 0 && input.rows[index].prefix === row.prefix && input.rows[index].separator === row.separator && input.rows[index].startNo === row.startNo;
+          if (!same) throw documentSetupRowInUse(index >= 0 ? `rows.${index}` : "rows");
+          keptDates.add(date);
+        }
         const now = new Date();
         const data = { name: input.name, code: input.code, startFrom: input.startFrom, declaration: input.declaration, updatedBy: actorId, updatedAt: now };
         if (input.expectedVersion === null) {
@@ -79,10 +94,10 @@ export class DocumentSetupService {
             data: { ...data, version: { increment: 1 } },
           });
           if (updated.count === 0) throw documentSetupChanged();
-          await tx.documentNumbering.deleteMany({ where: { transactionKey: input.transactionKey } });
         }
+        await tx.documentNumbering.deleteMany({ where: { transactionKey: input.transactionKey, id: { notIn: [...used] } } });
         await tx.documentNumbering.createMany({
-          data: input.rows.map((item) => ({
+          data: input.rows.filter((item) => !keptDates.has(item.effectiveDate)).map((item) => ({
             id: uuidV7(),
             transactionKey: input.transactionKey,
             effectiveDate: toDbDate(item.effectiveDate),
@@ -91,10 +106,11 @@ export class DocumentSetupService {
             startNo: item.startNo,
           })),
         });
-        return tx.documentSetup.findUniqueOrThrow({ where: { transactionKey: input.transactionKey }, include: { rows: true } });
+        const saved = await tx.documentSetup.findUniqueOrThrow({ where: { transactionKey: input.transactionKey }, include: { rows: true } });
+        return { ...saved, used };
       }, WRITE_TX);
       this.logger.log({ event: input.expectedVersion === null ? "document_setup.created" : "document_setup.updated", actorId, transactionKey: row.transactionKey, version: row.version, rows: row.rows.length });
-      return { setup: toSetup(row) };
+      return { setup: toSetup(row, row.used) };
     } catch (error) {
       throw mapDocumentSetupError(error, "save");
     }

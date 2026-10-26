@@ -43,6 +43,7 @@ model Customer {
   createdBy    String            @map("created_by") @db.VarChar(64)
   updatedBy    String            @map("updated_by") @db.VarChar(64)
   addresses    CustomerAddress[]
+  quotations   Quotation[]
 
   @@index([nameKey, id], map: "customer_name_key_id_idx")
   @@index([active, nameKey, id], map: "customer_active_name_key_id_idx")
@@ -51,19 +52,21 @@ model Customer {
 }
 
 model CustomerAddress {
-  id          String      @id @default(uuid()) @db.Uuid
-  customerId  String      @map("customer_id") @db.Uuid
-  type        AddressType
-  position    Int         @db.SmallInt
-  name        String      @db.VarChar(200)
-  taxId       String?     @map("tax_id") @db.VarChar(32)
-  address     String      @db.VarChar(500)
-  countryCode String      @map("country_code") @db.Char(2)
-  state       String      @db.VarChar(100)
-  city        String      @db.VarChar(100)
-  postcode    String      @db.VarChar(20)
-  isDefault   Boolean     @default(false) @map("is_default")
-  customer    Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  id                 String      @id @default(uuid()) @db.Uuid
+  customerId         String      @map("customer_id") @db.Uuid
+  type               AddressType
+  position           Int         @db.SmallInt
+  name               String      @db.VarChar(200)
+  taxId              String?     @map("tax_id") @db.VarChar(32)
+  address            String      @db.VarChar(500)
+  countryCode        String      @map("country_code") @db.Char(2)
+  state              String      @db.VarChar(100)
+  city               String      @db.VarChar(100)
+  postcode           String      @db.VarChar(20)
+  isDefault          Boolean     @default(false) @map("is_default")
+  customer           Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  shippingQuotations Quotation[] @relation("QuotationShippingAddress")
+  invoiceQuotations  Quotation[] @relation("QuotationInvoiceAddress")
 
   @@unique([customerId, type, position], map: "customer_address_position_key")
   @@unique([customerId, type], where: { isDefault: true }, map: "customer_address_one_default_key")
@@ -160,26 +163,27 @@ model CompanyProfile {
 
 /// User-upload metadata tombstones are independent of CompanyProfile and cannot cascade away.
 model StoredFile {
-  id          String    @id @db.Uuid
-  kind        String    @db.VarChar(32)
-  bucket      String    @db.VarChar(16)
-  objectKey   String    @map("object_key") @db.VarChar(512)
-  filename    String    @db.VarChar(255)
-  contentType String    @map("content_type") @db.VarChar(255)
-  sizeBytes   BigInt    @map("size_bytes")
-  sha256      String    @db.Char(64)
-  status      String    @db.VarChar(16)
-  sourceType  String    @map("source_type") @db.VarChar(64)
-  sourceId    String    @map("source_id") @db.VarChar(128)
-  createdBy   String?   @map("created_by") @db.VarChar(64)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  readyAt     DateTime? @map("ready_at") @db.Timestamptz(6)
-  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(6)
-  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
-  purgeAfter  DateTime? @map("purge_after") @db.Timestamptz(6)
+  id                  String               @id @db.Uuid
+  kind                String               @db.VarChar(32)
+  bucket              String               @db.VarChar(16)
+  objectKey           String               @map("object_key") @db.VarChar(512)
+  filename            String               @db.VarChar(255)
+  contentType         String               @map("content_type") @db.VarChar(255)
+  sizeBytes           BigInt               @map("size_bytes")
+  sha256              String               @db.Char(64)
+  status              String               @db.VarChar(16)
+  sourceType          String               @map("source_type") @db.VarChar(64)
+  sourceId            String               @map("source_id") @db.VarChar(128)
+  createdBy           String?              @map("created_by") @db.VarChar(64)
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  readyAt             DateTime?            @map("ready_at") @db.Timestamptz(6)
+  expiresAt           DateTime?            @map("expires_at") @db.Timestamptz(6)
+  deletedAt           DateTime?            @map("deleted_at") @db.Timestamptz(6)
+  purgeAfter          DateTime?            @map("purge_after") @db.Timestamptz(6)
+  quotationLinePhotos QuotationLinePhoto[]
 
-  @@index([sourceType, sourceId], map: "stored_files_source_idx")
   @@unique([bucket, objectKey], map: "stored_files_bucket_object_key_key")
+  @@index([sourceType, sourceId], map: "stored_files_source_idx")
   @@index([createdBy, createdAt(sort: Desc)], map: "stored_files_user_idx")
   @@map("stored_files")
   @@schema("partner")
@@ -336,31 +340,32 @@ model StoneShapeSize {
 }
 
 model StoneCode {
-  id          String        @id @default(uuid()) @db.Uuid
-  code        String        @unique(map: "stone_code_code_key") @db.VarChar(60)
-  mode        StoneCodeMode
+  id             String          @id @default(uuid()) @db.Uuid
+  code           String          @unique(map: "stone_code_code_key") @db.VarChar(60)
+  mode           StoneCodeMode
   /// Owner 2026-10-20: only the parts at positions #1 and #2 are required, so every part is nullable.
-  stoneNameId String?       @map("stone_name_id") @db.Uuid
-  sizeId      String?       @map("size_id") @db.Uuid
-  shapeId     String?       @map("shape_id") @db.Uuid
-  colorId     String?       @map("color_id") @db.Uuid
-  cuttingId   String?       @map("cutting_id") @db.Uuid
-  clarityId   String?       @map("clarity_id") @db.Uuid
-  qualityId   String?       @map("quality_id") @db.Uuid
+  stoneNameId    String?         @map("stone_name_id") @db.Uuid
+  sizeId         String?         @map("size_id") @db.Uuid
+  shapeId        String?         @map("shape_id") @db.Uuid
+  colorId        String?         @map("color_id") @db.Uuid
+  cuttingId      String?         @map("cutting_id") @db.Uuid
+  clarityId      String?         @map("clarity_id") @db.Uuid
+  qualityId      String?         @map("quality_id") @db.Uuid
   /// Permutation of name,size,shape,color,cutting,clarity,quality (CHECK in the migration).
-  partOrder   String[]      @map("part_order")
-  active      Boolean       @default(true)
-  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamp(3)
-  updatedAt   DateTime      @default(now()) @map("updated_at") @db.Timestamp(3)
-  createdBy   String        @map("created_by") @db.VarChar(64)
-  updatedBy   String        @map("updated_by") @db.VarChar(64)
-  stoneName   StoneName?    @relation(fields: [stoneNameId], references: [id], onDelete: Restrict)
-  size        StoneSize?    @relation(fields: [sizeId], references: [id], onDelete: Restrict)
-  shape       StoneShape?   @relation(fields: [shapeId], references: [id], onDelete: Restrict)
-  color       StoneColor?   @relation(fields: [colorId], references: [id], onDelete: Restrict)
-  cutting     StoneCutting? @relation(fields: [cuttingId], references: [id], onDelete: Restrict)
-  clarity     StoneClarity? @relation(fields: [clarityId], references: [id], onDelete: Restrict)
-  quality     StoneQuality? @relation(fields: [qualityId], references: [id], onDelete: Restrict)
+  partOrder      String[]        @map("part_order")
+  active         Boolean         @default(true)
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt      DateTime        @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy      String          @map("created_by") @db.VarChar(64)
+  updatedBy      String          @map("updated_by") @db.VarChar(64)
+  stoneName      StoneName?      @relation(fields: [stoneNameId], references: [id], onDelete: Restrict)
+  size           StoneSize?      @relation(fields: [sizeId], references: [id], onDelete: Restrict)
+  shape          StoneShape?     @relation(fields: [shapeId], references: [id], onDelete: Restrict)
+  color          StoneColor?     @relation(fields: [colorId], references: [id], onDelete: Restrict)
+  cutting        StoneCutting?   @relation(fields: [cuttingId], references: [id], onDelete: Restrict)
+  clarity        StoneClarity?   @relation(fields: [clarityId], references: [id], onDelete: Restrict)
+  quality        StoneQuality?   @relation(fields: [qualityId], references: [id], onDelete: Restrict)
+  quotationLines QuotationLine[]
 
   @@index([stoneNameId], map: "stone_code_stone_name_id_idx")
   @@index([sizeId], map: "stone_code_size_id_idx")
@@ -404,8 +409,138 @@ model DocumentNumbering {
   separator      String        @default("") @db.VarChar(3)
   startNo        Int           @map("start_no")
   setup          DocumentSetup @relation(fields: [transactionKey], references: [transactionKey], onDelete: Cascade)
+  /// Owner 2026-10-26 (SA-QT-04/05): a row referenced by a quotation is "used" and locked.
+  quotations     Quotation[]
 
   @@unique([transactionKey, effectiveDate])
   @@map("document_numbering")
+  @@schema("partner")
+}
+
+// ---- Quotation (SA quotation rev 1, ADR-0032; approved 2026-10-26) ----
+// Ids + text snapshots (SA-QT-06/07); totals are server-computed (SA-QT-08); `version` is the
+// optimistic version (SA-QT-09). Status/discount/tax/labor/source/price-unit values are CHECKed in SQL.
+
+model Quotation {
+  id                      String             @id @db.Uuid
+  /// null = plain running number 1, 2, 3 … (no Document Setup row in effect, owner 2026-10-26).
+  numberingId             String?            @map("numbering_id") @db.Uuid
+  runningNo               Int                @map("running_no")
+  docNo                   String             @unique(map: "quotation_doc_no_key") @map("doc_no") @db.VarChar(40)
+  status                  String             @db.VarChar(20)
+  docDate                 DateTime           @map("doc_date") @db.Date
+  dueDate                 DateTime           @map("due_date") @db.Date
+  customerId              String             @map("customer_id") @db.Uuid
+  customerCodeSnapshot    String             @map("customer_code_snapshot") @db.VarChar(120)
+  customerNameSnapshot    String             @map("customer_name_snapshot") @db.VarChar(200)
+  shippingAddressId       String?            @map("shipping_address_id") @db.Uuid
+  shippingAddressSnapshot String             @map("shipping_address_snapshot") @db.VarChar(1000)
+  invoiceAddressId        String?            @map("invoice_address_id") @db.Uuid
+  invoiceAddressSnapshot  String             @map("invoice_address_snapshot") @db.VarChar(1000)
+  currencyCode            String             @map("currency_code") @db.Char(3)
+  exchangeRate            Decimal?           @map("exchange_rate") @db.Decimal(18, 6)
+  ref                     String             @default("") @db.VarChar(100)
+  documentNote            String             @default("") @map("document_note") @db.VarChar(500)
+  discountType            String             @map("discount_type") @db.VarChar(10)
+  discountValue           Decimal            @map("discount_value") @db.Decimal(18, 4)
+  taxEnabled              Boolean            @map("tax_enabled")
+  taxRate                 Decimal            @map("tax_rate") @db.Decimal(9, 4)
+  taxIncluded             Boolean            @map("tax_included")
+  laborWork               String?            @map("labor_work") @db.VarChar(120)
+  laborBasis              String?            @map("labor_basis") @db.VarChar(10)
+  laborQty                Decimal?           @map("labor_qty") @db.Decimal(18, 3)
+  laborRate               Decimal?           @map("labor_rate") @db.Decimal(18, 2)
+  subtotal                Decimal            @db.Decimal(18, 2)
+  discountAmount          Decimal            @map("discount_amount") @db.Decimal(18, 2)
+  priceBeforeTax          Decimal            @map("price_before_tax") @db.Decimal(18, 2)
+  taxAmount               Decimal            @map("tax_amount") @db.Decimal(18, 2)
+  chargesAmount           Decimal            @map("charges_amount") @db.Decimal(18, 2)
+  laborAmount             Decimal            @map("labor_amount") @db.Decimal(18, 2)
+  grandTotal              Decimal            @map("grand_total") @db.Decimal(18, 2)
+  statusReason            String?            @map("status_reason") @db.VarChar(500)
+  version                 Int                @default(1)
+  createdAt               DateTime           @default(now()) @map("created_at") @db.Timestamp(3)
+  createdBy               String             @map("created_by") @db.VarChar(64)
+  updatedAt               DateTime           @default(now()) @map("updated_at") @db.Timestamp(3)
+  updatedBy               String             @map("updated_by") @db.VarChar(64)
+  approvedAt              DateTime?          @map("approved_at") @db.Timestamp(3)
+  approvedBy              String?            @map("approved_by") @db.VarChar(64)
+  numbering               DocumentNumbering? @relation(fields: [numberingId], references: [id], onDelete: Restrict)
+  customer                Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  shippingAddress         CustomerAddress?   @relation("QuotationShippingAddress", fields: [shippingAddressId], references: [id], onDelete: SetNull)
+  invoiceAddress          CustomerAddress?   @relation("QuotationInvoiceAddress", fields: [invoiceAddressId], references: [id], onDelete: SetNull)
+  lines                   QuotationLine[]
+  charges                 QuotationCharge[]
+
+  @@unique([numberingId, runningNo], map: "quotation_numbering_running_no_key")
+  @@unique([runningNo], where: { numberingId: null }, map: "quotation_plain_running_no_key")
+  @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "quotation_list_idx")
+  @@index([status, docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "quotation_status_list_idx")
+  @@index([customerId, docDate(sort: Desc)], map: "quotation_customer_idx")
+  @@index([shippingAddressId], map: "quotation_shipping_address_idx")
+  @@index([invoiceAddressId], map: "quotation_invoice_address_idx")
+  @@map("quotation")
+  @@schema("partner")
+}
+
+model QuotationLine {
+  id                String               @id @db.Uuid
+  quotationId       String               @map("quotation_id") @db.Uuid
+  position          Int                  @db.SmallInt
+  source            String               @db.VarChar(10)
+  stoneCodeId       String?              @map("stone_code_id") @db.Uuid
+  stoneCodeSnapshot String               @default("") @map("stone_code_snapshot") @db.VarChar(60)
+  stone             String               @default("") @db.VarChar(60)
+  shape             String               @default("") @db.VarChar(60)
+  size              String               @default("") @db.VarChar(60)
+  color             String               @default("") @db.VarChar(60)
+  clarity           String               @default("") @db.VarChar(60)
+  cutting           String               @default("") @db.VarChar(60)
+  quality           String               @default("") @db.VarChar(60)
+  lot               String               @default("") @db.VarChar(40)
+  location          String               @default("") @db.VarChar(40)
+  cerType           String               @default("") @map("cer_type") @db.VarChar(20)
+  cerNo             String               @default("") @map("cer_no") @db.VarChar(60)
+  pcs               Int
+  weightCt          Decimal              @map("weight_ct") @db.Decimal(12, 3)
+  priceUnit         String               @map("price_unit") @db.VarChar(10)
+  unitPrice         Decimal              @map("unit_price") @db.Decimal(18, 2)
+  /// Owner 2026-10-26: per-line discount (NONE | PERCENT | AMOUNT); `amount` is after it.
+  discountType      String               @default("NONE") @map("discount_type") @db.VarChar(10)
+  discountValue     Decimal              @default(0) @map("discount_value") @db.Decimal(18, 4)
+  discountAmount    Decimal              @default(0) @map("discount_amount") @db.Decimal(18, 2)
+  amount            Decimal              @db.Decimal(18, 2)
+  itemNote          String               @default("") @map("item_note") @db.VarChar(500)
+  quotation         Quotation            @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  stoneCode         StoneCode?           @relation(fields: [stoneCodeId], references: [id], onDelete: SetNull)
+  photos            QuotationLinePhoto[]
+
+  @@unique([quotationId, position], map: "quotation_line_position_key")
+  @@index([stoneCodeId], map: "quotation_line_stone_code_idx")
+  @@map("quotation_line")
+  @@schema("partner")
+}
+
+model QuotationCharge {
+  quotationId String    @map("quotation_id") @db.Uuid
+  chargeType  String    @map("charge_type") @db.VarChar(20)
+  amount      Decimal   @db.Decimal(18, 2)
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  @@id([quotationId, chargeType])
+  @@map("quotation_charge")
+  @@schema("partner")
+}
+
+model QuotationLinePhoto {
+  lineId   String        @map("line_id") @db.Uuid
+  position Int           @db.SmallInt
+  fileId   String        @map("file_id") @db.Uuid
+  line     QuotationLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  file     StoredFile    @relation(fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@id([lineId, position])
+  @@index([fileId], map: "quotation_line_photo_file_idx")
+  @@map("quotation_line_photo")
   @@schema("partner")
 }
