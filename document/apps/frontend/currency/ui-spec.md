@@ -33,7 +33,7 @@ Route `/setup/currency`. Breadcrumb: Home › Setup › Currency. The left conte
 [   Description* (textarea, 0/250)                           |  ● THB · Thai Baht              ]
 [   ┌ Exchange Rate ──────────────────────┐                  |    Base currency                ]
 [   │ Selling Rate*      Buying Rate*      │                  |  ● USD · US Dollar              ]
-[   │ 1 = [  0.0000] THB 1 = [  0.0000] THB│                  |    Sell 33.2500 · Buy 32.9000 THB ]
+[   │ [      0.0000] THB [      0.0000] THB│                  |    Sell 33.2500 · Buy 32.9000 THB ]
 [   │ Used when you sell… Used when you buy…│                 |  ○ INR · Indian Rupee [Inactive] ]
 [   └──────────────────────────────────────┘                  |    Sell 0.4000 · Buy 0.3850 THB ]
 ```
@@ -50,7 +50,7 @@ Route `/setup/currency`. Breadcrumb: Home › Setup › Currency. The left conte
 | C-03 | Code Name* | Exactly 3 letters A–Z, uppercased as typed, e.g. USD (Q-CUR-02). **Read-only after the first save**, because other records store the code (Q-CUR-04). Helper in edit mode: "Code can't be changed after saving". |
 | C-04 | Name* | 1–100 characters, e.g. "US Dollar". |
 | C-05 | Description* | Textarea, 1–250 characters, counter "n/250". Placeholder: "Notes for your team, e.g. which vendors use this currency". |
-| C-06 | Exchange Rate panel: **Selling Rate\*** and **Buying Rate\*** | Each input reads "1 = [rate] {BASE}": prefix "1 =", right-aligned value, suffix = base code. Digits and one dot only, at most 4 decimals, greater than 0, at most 99,999,999,999,999.9999. Formatted to 4 decimals on blur. Helpers: "Used when you sell to customers in this currency." / "Used when you buy from vendors in this currency." |
+| C-06 | Exchange Rate panel: **Selling Rate\*** and **Buying Rate\*** | Each input reads "[rate] {BASE}": right-aligned value, suffix = base code (owner 2026-10-26: no "1 =" prefix; the rate still means 1 {code} = rate {BASE}). Digits and one dot only, at most 4 decimals, greater than 0, at most 99,999,999,999,999.9999. Formatted to 4 decimals on blur. Helpers: "Used when you sell to customers in this currency." / "Used when you buy from vendors in this currency." |
 | C-06b | Exchange Rate panel for the base currency | No inputs. Text: "Base currency — other currencies' rates are set against {BASE}. Change it in Company Profile." |
 | C-06c | No company currency yet | The suffix shows "base" and a note reads "Set the company currency in Company Profile". Rates are still required. |
 | C-07 | Drawer "Currencies N" | Search by code or name. A "New currency · Not saved yet · Draft" row appears while creating. Each row shows a status dot, **"{CODE} · {Name}"** in bold, and a second line: "Base currency", "Sell {s} · Buy {b} {BASE}", or "Rates not set" (rows created by the migration). Inactive rows carry the "Inactive" badge. Sorted by code. |

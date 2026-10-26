@@ -330,8 +330,8 @@ function CurrencyWorkspace({ access }: { access: PartnerAccess }) {
       { label: "Code Name", value: data.code },
       { label: "Name", value: data.name },
       { label: "Description", value: data.description },
-      { label: "Selling Rate", value: base ? "Base currency" : data.sellingRate ? `1 = ${data.sellingRate} ${data.baseCode ?? ""}` : "" },
-      { label: "Buying Rate", value: base ? "Base currency" : data.buyingRate ? `1 = ${data.buyingRate} ${data.baseCode ?? ""}` : "" },
+      { label: "Selling Rate", value: base ? "Base currency" : data.sellingRate ? `${data.sellingRate} ${data.baseCode ?? ""}` : "" },
+      { label: "Buying Rate", value: base ? "Base currency" : data.buyingRate ? `${data.buyingRate} ${data.baseCode ?? ""}` : "" },
       { label: "Active", value: data.active ? "Yes" : "No" },
     ];
   }, [loaded, detail.data]);

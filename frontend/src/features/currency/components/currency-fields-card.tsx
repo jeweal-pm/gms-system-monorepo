@@ -128,7 +128,7 @@ type RateFieldProps = {
   help: string;
 };
 
-/** "1 = [rate] THB" (ui-spec C-06): digits and one dot, ≤ 4 decimals, shown with 4 decimals after blur. */
+/** "[rate] THB" (ui-spec C-06; owner 2026-10-26: no "1 =" prefix): digits and one dot, ≤ 4 decimals, shown with 4 decimals after blur. */
 function RateField({ form, name, label, baseCode, readOnly, help }: RateFieldProps) {
   const id = `${ID}-${name}`;
   const { errors } = useFormState({ control: form.control, name });
@@ -150,7 +150,6 @@ function RateField({ form, name, label, baseCode, readOnly, help }: RateFieldPro
               !readOnly && fieldFocusWithinClass,
             )}
           >
-            <span aria-hidden className="shrink-0 text-gms-text">1 =</span>
             <input
               ref={field.ref}
               id={id}
