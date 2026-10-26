@@ -89,7 +89,7 @@ beforeEach(() => {
 describe("GMS user-photo retention through user-admin", () => {
   it("IT-PH-01 uploads and reads the active object with ready metadata", async () => {
     await subject.putPhoto(actor, TARGET_ID, "image/jpeg", JPEG);
-    expect(state.photo).toMatchObject({ contentType: "image/jpeg", storageKey: expect.stringMatching(/^auth\/user-photo\//) });
+    expect(state.photo).toMatchObject({ contentType: "image/jpeg", storageKey: expect.stringMatching(/^user-photo\//) });
     expect(state.storedFiles).toHaveLength(1);
     expect(state.storedFiles[0]).toMatchObject({ status: "ready", bucket: "files", sourceType: "auth.user-photo", sourceId: TARGET_ID, purgeAfter: null });
     await expect(subject.getPhoto(TARGET_ID)).resolves.toEqual({ data: JPEG, contentType: "image/jpeg", version: state.photo.sha256.slice(0, 16) });
