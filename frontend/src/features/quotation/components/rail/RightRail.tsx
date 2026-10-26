@@ -1,11 +1,10 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { Calculator, FileSearch } from "lucide-react";
-import { listDaybook, quotationKeys } from "../../api";
+import Link from "next/link";
+import { loadErrorMessage, useDaybook, type QuotationStatus } from "../../api";
 import type { QuotationTotals } from "../../lib/calculate";
 import { formatDate } from "../../lib/format";
-import type { DaybookEntry } from "../../mock/daybook";
 import { SummaryValue } from "../summary/SummaryValue";
 import { cx, IconButton, SidePanel } from "../ui";
 
@@ -59,11 +58,22 @@ export function RailPanelView({
   );
 }
 
-function DaybookList() {
-  const { data = [], isLoading } = useQuery({ queryKey: quotationKeys.daybook(), queryFn: listDaybook });
+const DOT: Record<QuotationStatus, string> = {
+  DRAFT: "bg-[#A9B1B9]",
+  PENDING_APPROVAL: "bg-[#F5A524]",
+  APPROVED: "bg-[#22C55E]",
+  REJECTED: "bg-[#E5484D]",
+  CANCELLED: "bg-[#D5DADF]",
+};
 
-  if (isLoading) return <p className="py-16 text-center text-sm text-[#6B7480]">Loading…</p>;
-  if (data.length === 0) {
+/** Quotations newest first, without cancelled ones (owner 2026-10-26, Q-QT-06). */
+function DaybookList() {
+  const daybook = useDaybook();
+
+  if (daybook.isPending) return <p className="py-16 text-center text-sm text-[#6B7480]">Loading…</p>;
+  if (daybook.isError) return <p className="py-16 text-center text-sm text-[#E5484D]">{loadErrorMessage(daybook.error)}</p>;
+  const entries = daybook.data.items;
+  if (entries.length === 0) {
     return (
       <div className="flex flex-col items-center gap-4 py-20 text-[#6B7480]">
         <FileSearch className="size-10 text-[#1C252E]" strokeWidth={1.5} />
@@ -72,37 +82,19 @@ function DaybookList() {
     );
   }
 
-  // เอกสารที่ยังไม่อนุมัติอยู่บน, อนุมัติแล้วอยู่ล่าง
-  const pending = data.filter((d) => d.status !== "APPROVED");
-  const approved = data.filter((d) => d.status === "APPROVED");
-
   return (
-    <div className="px-5 py-3">
-      <DaybookGroup entries={pending} />
-      {approved.length > 0 && pending.length > 0 && <hr className="my-2 border-[#E3E6EA]" />}
-      <DaybookGroup entries={approved} />
-    </div>
-  );
-}
-
-function DaybookGroup({ entries }: { entries: DaybookEntry[] }) {
-  return (
-    <ul>
-      {entries.map((e) => (
+    <ul className="px-5 py-3">
+      {entries.map((e, i) => (
         <li key={e.id}>
-          {/* TODO: เปิดเอกสาร /pre-sale/quotation/[id] */}
-          <button type="button" className="flex w-full items-start gap-3 rounded-lg px-2 py-2.5 text-left hover:bg-[#F6F7F8]">
-            <span className="w-8 shrink-0 text-[#1C252E]">#{e.id.replace(/\D/g, "")}</span>
-            <span
-              className={cx("mt-1.5 size-3 shrink-0 rounded-full", e.status === "APPROVED" ? "bg-[#22C55E]" : "bg-[#F5A524]")}
-              title={e.status}
-            />
+          <Link href={`/pre-sale/quotation/${e.id}`} className="flex w-full items-start gap-3 rounded-lg px-2 py-2.5 text-left hover:bg-[#F6F7F8]">
+            <span className="w-8 shrink-0 text-[#1C252E]">#{i + 1}</span>
+            <span className={cx("mt-1.5 size-3 shrink-0 rounded-full", DOT[e.status])} title={e.status} />
             <span className="min-w-0 flex-1">
               <span className="block font-medium text-[#1C252E]">{e.docNo}</span>
               <span className="block truncate text-sm text-[#1C252E]">{e.customerName}</span>
             </span>
             <span className="shrink-0 text-sm text-[#A9B1B9]">{formatDate(e.docDate)}</span>
-          </button>
+          </Link>
         </li>
       ))}
     </ul>

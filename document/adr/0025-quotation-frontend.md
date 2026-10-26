@@ -237,9 +237,15 @@ grandTotal           = priceBeforeTax + taxAmount + serviceCharges + laborAmount
 2. Item editor panel (prev / next / remove / next row)
 3. From Stock modal (mock) + photo box + item note
 4. Right rail (Daybook / Summary panel) + mode view/edit + status stepper
-5. เชื่อม backend (ADR แยก)
+5. เชื่อม backend (ADR แยก) → [ADR-0032](0032-quotation-backend-in-master-service.md) (Accepted 2026-10-26)
 
 ---
+
+## 8. Revision 2026-10-26 (owner, Figma row panel)
+
+- **รูป:** อัปโหลด/ลบ/ตั้งรูปหลักย้ายไปที่แถบด้านข้างของ row (ส่วน "Photos n / 5": Add files, ลากวาง, สูงสุด 5 รูป) กล่องรูปทางซ้ายดูได้อย่างเดียว เลื่อนดูและกดขยาย (lightbox) ได้
+- **ส่วนลดต่อรายการ:** เพิ่ม Discount (%) และ Discount Amt ในแถบด้านข้าง กรอกได้ช่องเดียว (SA-QT-08a)
+- **Amount:** แสดงในตารางเท่านั้น ไม่แสดงในแถบด้านข้าง
 
 ## 7. Revision 2026-10-21 (feedback จาก owner)
 

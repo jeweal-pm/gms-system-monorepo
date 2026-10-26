@@ -1,12 +1,20 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
 import { ScanLine, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { FormProvider, useFieldArray, useForm, useWatch } from "react-hook-form";
-import { deleteQuotation, previewDocNo, saveQuotation } from "../api";
+import {
+  isEditableStatus,
+  mapSaveError,
+  toQuotationInput,
+  useNextNumber,
+  useQuotationMutations,
+  useQuotationOptions,
+  type QuotationAccess,
+} from "../api";
+import { QuotationOptionsContext } from "../options-context";
 import { calculateTotals } from "../lib/calculate";
 import { emptyLine, emptyQuotation, newKey } from "../lib/defaults";
 import type { StockItem } from "../mock/stock";
@@ -27,7 +35,11 @@ function stockToLine({ note, loadedAt, ...fields }: StockItem): QuotationLine {
   return { ...emptyLine(), ...fields, source: "STOCK", itemNote: note };
 }
 
-export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
+/**
+ * One quotation document (ADR-0025 layout, data from SA quotation rev 1). A saved quotation is remounted
+ * with the new server version after every write (QuotationPage keys on id + version).
+ */
+export function QuotationForm({ initial, access }: { initial?: QuotationFormValues; access: QuotationAccess }) {
   const router = useRouter();
   const [saved, setSaved] = useState<QuotationFormValues | undefined>(initial);
   const [mode, setMode] = useState<"view" | "edit">(initial ? "view" : "edit");
@@ -42,7 +54,7 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
     resolver: zodResolver(quotationSchema),
     defaultValues: initial ?? emptyQuotation(),
   });
-  const { control, reset, getValues, handleSubmit, formState } = form;
+  const { control, reset, getValues, handleSubmit, formState, setValue, setError } = form;
   const lineArray = useFieldArray({ control, name: "lines", keyName: "_rhfId" });
 
   const values = useWatch({ control }) as QuotationFormValues;
@@ -51,7 +63,18 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
 
   const readOnly = mode === "view";
   const status = values.status ?? "DRAFT";
-  const docNo = saved?.docNo ?? previewDocNo(values.docDate ?? "");
+  const options = useQuotationOptions(saved?.customerId);
+  const nextNumber = useNextNumber(values.docDate ?? "", !saved?.docNo);
+  // Without a Document Setup row in effect the server numbers plainly 1, 2, 3 … (owner 2026-10-26).
+  const docNo = saved?.docNo ?? nextNumber.data?.docNo ?? "—";
+  const mutations = useQuotationMutations();
+  const busy = mutations.create.isPending || mutations.update.isPending || mutations.remove.isPending;
+
+  // A new quotation starts in the company currency once the options arrive.
+  const companyCurrency = options.data?.companyCurrency;
+  useEffect(() => {
+    if (!saved && companyCurrency && getValues("currency") === "") setValue("currency", companyCurrency);
+  }, [saved, companyCurrency, getValues, setValue]);
   const existingStockIds = useMemo(() => new Set(lines.map((l) => l.stockId).filter(Boolean)), [lines]);
 
   useEffect(() => {
@@ -62,24 +85,39 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
 
   /* ---------- document actions ---------- */
 
-  const saveMutation = useMutation({
-    mutationFn: (v: QuotationFormValues) =>
-      // แถวว่างไม่ส่งไป backend
-      saveQuotation({ ...v, lines: v.lines.filter(isFilledLine) }),
-    onSuccess: (result) => {
-      setSaved(result);
-      reset(result);
-      setMode("view");
-      setEditorOpen(false);
-      setToast(`Saved ${result.docNo}`);
-      if (!saved?.id) router.replace(`/pre-sale/quotation/${result.id}`);
-    },
-  });
+  const showError = (error: unknown) => {
+    const outcome = mapSaveError(error);
+    for (const field of outcome.fieldErrors) setError(field.name, { type: "server", message: field.message });
+    setToast(outcome.message);
+  };
+
+  /** After a write: reload the saved document (the page remounts with the new version). */
+  const afterWrite = async (message: string) => {
+    setToast(message);
+    await mutations.invalidate();
+  };
 
   const onSave = handleSubmit(
-    (v) => saveMutation.mutate(v),
+    async (v) => {
+      // Empty rows are not sent; the server computes every total.
+      const input = toQuotationInput(v);
+      try {
+        if (saved?.id && saved.version) {
+          await mutations.update.mutateAsync({ id: saved.id, expectedVersion: saved.version, ...input });
+          await afterWrite(`Saved ${saved.docNo}`);
+        } else {
+          const result = await mutations.create.mutateAsync(input);
+          await mutations.invalidate();
+          router.replace(`/pre-sale/quotation/${result.id}`);
+        }
+      } catch (error) {
+        showError(error);
+      }
+    },
     () => setToast("Please complete the required fields"),
   );
+
+
 
   const onCancel = () => {
     if (formState.isDirty && !window.confirm("Discard unsaved changes?")) return;
@@ -90,9 +128,14 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
   };
 
   const onDelete = async () => {
-    if (!saved?.id || !window.confirm(`Delete ${saved.docNo}?`)) return;
-    await deleteQuotation(saved.id);
-    router.push("/pre-sale/quotation");
+    if (!saved?.id || !saved.version || !window.confirm(`Delete ${saved.docNo}?`)) return;
+    try {
+      await mutations.remove.mutateAsync({ id: saved.id, expectedVersion: saved.version });
+      await mutations.invalidate();
+      router.push("/pre-sale/quotation");
+    } catch (error) {
+      showError(error);
+    }
   };
 
   const onDuplicate = () => {
@@ -103,6 +146,8 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
       ...current,
       id: undefined,
       docNo: undefined,
+      version: undefined,
+      statusReason: undefined,
       status: "DRAFT",
       lines: current.lines.map((l) => ({ ...l, key: newKey() })),
     });
@@ -172,6 +217,7 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
   const editorIndex = editorOpen && selectedIndex !== null && selectedIndex < lines.length ? selectedIndex : null;
 
   return (
+    <QuotationOptionsContext.Provider value={options.data}>
     <FormProvider {...form}>
       {/* AppShell <main> เป็นตัว scroll: ฝั่งซ้าย scroll เอง, editor panel สูงเต็มจอไม่ถูกตัด */}
       <div className="relative flex h-full bg-white">
@@ -179,17 +225,21 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
           <QuotationHeader
             docNo={docNo}
             isPreview={!saved?.docNo}
+            status={saved ? status : undefined}
+            statusReason={saved?.statusReason}
             mode={mode}
-            saving={saveMutation.isPending}
-            canEdit={Boolean(saved) && status === "DRAFT"}
-            canDelete={Boolean(saved) && status === "DRAFT"}
+            saving={busy}
+            canSave={saved ? access.edit : access.add}
+            canCreate={access.add}
+            canEdit={Boolean(saved) && access.edit && isEditableStatus(status)}
+            canDelete={Boolean(saved) && access.delete && status === "DRAFT"}
             actions={{
               onCancel,
               onSave: () => void onSave(),
               onEdit: () => setMode("edit"),
               onDelete: () => void onDelete(),
               onDuplicate,
-              onRefresh: () => reset(saved ?? emptyQuotation()),
+              onRefresh: () => void mutations.invalidate().then(() => setToast("Refreshed")),
             }}
           />
 
@@ -204,9 +254,12 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
               <div className="mb-4 flex items-center gap-3">
                 <h2 className="text-lg font-medium text-[#1C252E]">Item</h2>
                 <span className="text-xs text-[#6B7480]">{lines.length} rows</span>
-                <Button variant="dark" size="sm" disabled={readOnly} onClick={() => setFromStockOpen(true)}>
-                  From Stock
-                </Button>
+                {/* SA-QT-13: no stock data until the inventory service exists. */}
+                <span title="Stock isn't available yet">
+                  <Button variant="dark" size="sm" disabled onClick={() => setFromStockOpen(true)}>
+                    From Stock
+                  </Button>
+                </span>
                 {/* TODO: scan barcode เพื่อเพิ่มรายการ */}
                 <IconButton label="Scan to add" disabled={readOnly} className="bg-[#F6F7F8]">
                   <ScanLine className="size-4" />
@@ -223,7 +276,7 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
 
               <div className="flex items-start gap-4">
                 {/* อยู่นอก fieldset เพื่อให้เลื่อนดูรูปได้ใน view mode */}
-                <ItemPhotoBox index={selectedIndex} readOnly={readOnly} />
+                <ItemPhotoBox index={selectedIndex} />
                 <fieldset disabled={readOnly} className="min-w-0 flex-1">
                 <ItemTable
                   lines={lines}
@@ -296,5 +349,6 @@ export function QuotationForm({ initial }: { initial?: QuotationFormValues }) {
       )}
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </FormProvider>
+    </QuotationOptionsContext.Provider>
   );
 }

@@ -13,6 +13,7 @@ type StoredRow = { id: string; transactionKey: string; effectiveDate: Date; pref
 const db = vi.hoisted(() => ({
   setups: new Map<string, Stored>(),
   rows: [] as StoredRow[],
+  usedIds: new Set<string>(),
   failWith: null as unknown,
 }));
 
@@ -47,8 +48,9 @@ vi.mock("../../src/database/prisma-client", () => {
       findUniqueOrThrow: vi.fn(async ({ where }: { where: { transactionKey: string } }) => withRows(db.setups.get(where.transactionKey)!)),
     },
     documentNumbering: {
-      deleteMany: vi.fn(async ({ where }: { where: { transactionKey: string } }) => {
-        db.rows = db.rows.filter((row) => row.transactionKey !== where.transactionKey);
+      findMany: vi.fn(async ({ where }: { where: { transactionKey: string } }) => db.rows.filter((row) => row.transactionKey === where.transactionKey)),
+      deleteMany: vi.fn(async ({ where }: { where: { transactionKey: string; id: { notIn: string[] } } }) => {
+        db.rows = db.rows.filter((row) => row.transactionKey !== where.transactionKey || where.id.notIn.includes(row.id));
         return { count: 1 };
       }),
       createMany: vi.fn(async ({ data }: { data: StoredRow[] }) => {
@@ -57,6 +59,12 @@ vi.mock("../../src/database/prisma-client", () => {
       }),
     },
   };
+  Object.assign(tx, {
+    quotation: {
+      groupBy: vi.fn(async ({ where }: { where: { numberingId: { in: string[] } } }) =>
+        where.numberingId.in.filter((id) => db.usedIds.has(id)).map((numberingId) => ({ numberingId }))),
+    },
+  });
   return { prisma: { ...tx, $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) } };
 });
 
@@ -83,6 +91,7 @@ async function domainCode(promise: Promise<unknown>) {
 beforeEach(() => {
   db.setups.clear();
   db.rows = [];
+  db.usedIds = new Set();
   db.failWith = null;
 });
 
@@ -157,5 +166,22 @@ describe("saveDocumentSetupBodySchema", () => {
     }
     expect(saveDocumentSetupBodySchema.safeParse({ ...body(), rows: [] }).success).toBe(false);
     expect(saveDocumentSetupBodySchema.safeParse({ ...body(), extra: 1 }).success).toBe(false);
+  });
+
+  it("UT-DS-B09 a row that issued a number is reported used, kept as is, and can't be changed or removed (SA-QT-05)", async () => {
+    const twoRows = [{ effectiveDate: "2026-01-01", prefix: "po", separator: "-", startNo: 180001 }, { effectiveDate: "2027-01-01", prefix: "po", separator: "/", startNo: 1 }];
+    await service.save("actor", body({ rows: twoRows }));
+    const used = db.rows.find((row) => fromDbDate(row.effectiveDate) === "2026-01-01")!;
+    db.usedIds.add(used.id);
+    const { setup } = await service.get("purchase-order");
+    expect(setup!.rows.map((row) => row.used)).toEqual([true, false]);
+
+    // Same values back: the used row keeps its id; the unused row is replaced.
+    const saved = await service.save("actor", body({ rows: [...twoRows, { effectiveDate: "2028-01-01", prefix: "PO", separator: "", startNo: 1 }], expectedVersion: 1 }));
+    expect(saved.setup.rows.map((row) => [row.effectiveDate, row.used])).toEqual([["2026-01-01", true], ["2027-01-01", false], ["2028-01-01", false]]);
+    expect(db.rows.filter((row) => row.id === used.id)).toHaveLength(1);
+
+    expect(await domainCode(service.save("actor", body({ rows: [{ ...twoRows[0], prefix: "QQ" }], expectedVersion: 2 })))).toBe("DOCUMENT_SETUP_ROW_IN_USE");
+    expect(await domainCode(service.save("actor", body({ rows: [twoRows[1]], expectedVersion: 2 })))).toBe("DOCUMENT_SETUP_ROW_IN_USE");
   });
 });

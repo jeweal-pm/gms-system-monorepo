@@ -14,6 +14,15 @@ import { bodySchemasFor, optionsQuerySchema } from "../stone-master/stone-master
 import type { StoneKind } from "../stone-master/stone-master.kinds";
 import type { CurrencyService } from "../currency/currency.service";
 import { createCurrencyBodySchema, updateCurrencyBodySchema } from "../currency/currency.schemas";
+import type { QuotationService } from "../quotation/quotation.service";
+import {
+  createQuotationSchema,
+  nextNumberSchema,
+  quotationListSchema,
+  reasonedIdSchema,
+  updateQuotationSchema,
+  versionedIdSchema,
+} from "../quotation/quotation.schemas";
 import { LIST_LIMIT_MAX } from "../common/partner-schemas";
 import { requireAnyMasterGrant, requireMasterGrant, type MasterAction, type MasterContext, type MasterMenu } from "./authorization";
 
@@ -65,7 +74,7 @@ function mapDomainError(error: unknown): never {
       ? (response as { error?: { code?: unknown } }).error : undefined;
     const domainCode = typeof detail?.code === "string" ? detail.code : "DEPENDENCY_UNAVAILABLE";
     const code = error.getStatus() === 400 ? "BAD_REQUEST" : error.getStatus() === 404 ? "NOT_FOUND"
-      : error.getStatus() === 409 ? "CONFLICT" : "SERVICE_UNAVAILABLE";
+      : error.getStatus() === 409 ? "CONFLICT" : error.getStatus() === 422 ? "UNPROCESSABLE_CONTENT" : "SERVICE_UNAVAILABLE";
     throw new TRPCError({ code, message: domainCode, cause: error });
   }
   throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "DEPENDENCY_UNAVAILABLE" });
@@ -97,7 +106,8 @@ export type MasterServices = Pick<{
   stoneMaster: StoneMasterService;
   documentSetup: DocumentSetupService;
   currency: CurrencyService;
-}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "currency">;
+  quotation: QuotationService;
+}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "currency" | "quotation">;
 
 function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
   const schemas = bodySchemasFor(kind);
@@ -114,7 +124,7 @@ function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
 }
 
 /** Direct service calls preserve IDs, transaction behavior and existing partner/stone schemas. */
-export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, currency }: MasterServices) {
+export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, currency, quotation }: MasterServices) {
   return t.router({
     customer: t.router({
       list: permitted("customer", "VIEW").input(listInput).query(({ input }) => domainCall(() => customer.list(toListQuery(input)))),
@@ -177,6 +187,24 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
         return domainCall(() => currency.update(ctx.userId, id, body));
       }),
       delete: permitted("currency", "DELETE", true).input(idInput).mutation(({ ctx, input }) => domainCall(() => currency.delete(ctx.userId, input.id))),
+    }),
+    // quotation SA rev 1 / ADR-0032 (owner 2026-10-26). Quotation has no approval (owner 2026-10-26); the status procedures stay unused by the UI.
+    quotation: t.router({
+      list: permitted("quotation", "VIEW").input(quotationListSchema).query(({ input }) => domainCall(() => quotation.list(input))),
+      get: permitted("quotation", "VIEW").input(idInput).query(({ input }) => domainCall(() => quotation.get(input.id))),
+      nextNumber: permitted("quotation", "VIEW").input(nextNumberSchema).query(({ input }) => domainCall(() => quotation.nextNumber(input.docDate))),
+      options: permitted("quotation", "VIEW").input(z.object({ customerId: z.uuid().optional() }).strict())
+        .query(({ input }) => domainCall(() => quotation.options(input.customerId))),
+      create: permitted("quotation", "ADD", true).input(createQuotationSchema).mutation(({ ctx, input }) => domainCall(() => quotation.create(ctx.userId, input))),
+      update: permitted("quotation", "EDIT", true).input(updateQuotationSchema).mutation(({ ctx, input }) => {
+        const { id, expectedVersion, ...body } = input;
+        return domainCall(() => quotation.update(ctx.userId, id, expectedVersion, body));
+      }),
+      submit: permitted("quotation", "EDIT", true).input(versionedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.submit(ctx.userId, input.id, input.expectedVersion))),
+      approve: permitted("quotation", "APPROVE", true).input(versionedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.approve(ctx.userId, input.id, input.expectedVersion))),
+      reject: permitted("quotation", "APPROVE", true).input(reasonedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.reject(ctx.userId, input.id, input.expectedVersion, input.reason))),
+      cancel: permitted("quotation", "CANCEL", true).input(reasonedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.cancel(ctx.userId, input.id, input.expectedVersion, input.reason))),
+      delete: permitted("quotation", "DELETE", true).input(versionedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.delete(ctx.userId, input.id, input.expectedVersion))),
     }),
   });
 }
