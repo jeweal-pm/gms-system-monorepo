@@ -2,7 +2,7 @@
   "name": "f1-system",
   "private": true,
   "packageManager": "pnpm@10.22.0",
-  "engines": { "node": ">=24.11.0" },
+  "engines": { "node": ">=24.22.1" },
   "scripts": {
     "dev": "dotenv -e .env -- pnpm --parallel --filter frontend --filter @gem-crm/backend-api-auth --filter @gem-crm/backend-api-master dev",
     "build": "pnpm -r build",

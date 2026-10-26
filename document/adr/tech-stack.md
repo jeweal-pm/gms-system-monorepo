@@ -10,7 +10,7 @@
 
 | หมวด | เทคโนโลยี | ขอบเขต |
 |---|---|---|
-| Runtime | Node.js 24.11.0 | `.nvmrc`; ใช้ pnpm 10.22.0 |
+| Runtime | Node.js 24.22.1 (LTS Krypton, security release 2026-10-20; owner 2026-10-26) | `.nvmrc` + every Dockerfile `node:24.22.1-bookworm-slim`; ใช้ pnpm 10.22.0 |
 | Language | TypeScript 5.9, strict | frontend และ backend |
 | Repository | pnpm monorepo | หนึ่ง repository สำหรับ frontend และ backend |
 | Architecture | Microservices | NestJS gateway และ domain services; เริ่มจาก auth service |
