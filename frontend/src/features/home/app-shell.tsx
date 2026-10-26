@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { clearAccountCache } from "@/lib/session-cache";
-import { contextNavFor, type Breadcrumb } from "./navigation";
+import { contextNavFor, type Breadcrumb, type ContextNav } from "./navigation";
 import { Sidebar } from "./sidebar";
 import { SidebarContextPanel } from "./sidebar-context-panel";
 import { SidebarRail, type SidebarFocusRequest } from "./sidebar-rail";
@@ -114,7 +114,7 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
         )}
       </aside>
 
-      {isNavigationOpen && <MobileNavigation pathname={pathname} onClose={closeNavigation} />}
+      {isNavigationOpen && <MobileNavigation pathname={pathname} contextNav={contextNav} onClose={closeNavigation} />}
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
@@ -133,13 +133,18 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
   );
 }
 
+const noFocusRequest = () => null;
+
 /**
- * Below `lg` the sidebar opens as a modal drawer from the topbar menu button (FE-NAV-004): always the
- * expanded sidebar, no collapse toggle or rail; the focus trap skips links inside closed disclosures.
+ * Below `lg` the sidebar opens as a modal drawer from the topbar menu button (FE-NAV-004); the focus trap
+ * skips links inside closed disclosures. On a context page (Stone Master, Vendor/Customer) it shows the same
+ * rail + context panel as wide screens, so the sibling pages are one tap away (owner 2026-10-22); the rail's
+ * ⇆ and section buttons switch the drawer to the full sidebar. Elsewhere it is the expanded sidebar.
  */
-function MobileNavigation({ pathname, onClose }: Readonly<{ pathname: string; onClose: (returnFocus: boolean) => void }>) {
+function MobileNavigation({ pathname, contextNav, onClose }: Readonly<{ pathname: string; contextNav: ContextNav | null; onClose: (returnFocus: boolean) => void }>) {
   const panelRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const [showFullSidebar, setShowFullSidebar] = useState(false);
 
   useEffect(() => {
     closeButtonRef.current?.focus();
@@ -177,8 +182,16 @@ function MobileNavigation({ pathname, onClose }: Readonly<{ pathname: string; on
         onKeyDown={handleKeyDown}
         className="absolute inset-y-0 left-0 max-w-[85vw] shadow-gms-overlay"
       >
-        <Sidebar pathname={pathname} onNavigate={() => onClose(false)} className="max-w-[85vw]" />
-        <button ref={closeButtonRef} type="button" onClick={() => onClose(true)} aria-label="Close main menu" className={`${topbarIconButton} absolute right-2 top-[18px]`}>
+        {contextNav && !showFullSidebar ? (
+          <div className="flex h-full bg-gms-surface-muted">
+            <SidebarRail pathname={pathname} controlsId="mobile-navigation" takeFocusRequest={noFocusRequest} onExpand={() => setShowFullSidebar(true)} />
+            <SidebarContextPanel nav={contextNav} pathname={pathname} onNavigate={() => onClose(false)} />
+          </div>
+        ) : (
+          <Sidebar pathname={pathname} onNavigate={() => onClose(false)} className="max-w-[85vw]" />
+        )}
+        {/* topbarIconButton is `relative`; `absolute!` keeps the close button at the top right (it used to fall below the menu, off screen). */}
+        <button ref={closeButtonRef} type="button" onClick={() => onClose(true)} aria-label="Close main menu" className={`${topbarIconButton} absolute! right-2 top-[18px] z-10`}>
           <X aria-hidden size={20} strokeWidth={1.5} />
         </button>
       </div>

@@ -44,6 +44,7 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   vendor: "/setup/vendor",
   customer: "/setup/customer",
   "stone-master": stonePageHref(DEFAULT_STONE_SLUG),
+  "document-setup": "/setup/document-setup",
   quotation: "/pre-sale/quotation",
 };
 
@@ -135,7 +136,7 @@ const CATALOG_KEY_ALIASES: Readonly<Record<string, string>> = {
 /** Master Code sub-menus in the catalog (Setup › Master Code). */
 export const MASTER_CODE_MENU_KEYS = ["vendor", "customer", "stone-master", "location-master", "certificate-type", "labor-name", "sale-person"] as const;
 /** Every Setup leaf in the catalog; Setup is visible when any of them is. */
-export const SETUP_MENU_KEYS = ["company-profile", "user-and-permission", "notifications", ...MASTER_CODE_MENU_KEYS] as const;
+export const SETUP_MENU_KEYS = ["company-profile", "user-and-permission", "notifications", "document-setup", ...MASTER_CODE_MENU_KEYS] as const;
 
 const CATALOG_LEAF_KEYS: ReadonlySet<string> = new Set([
   "dashboard", ...SETUP_MENU_KEYS, "quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return",

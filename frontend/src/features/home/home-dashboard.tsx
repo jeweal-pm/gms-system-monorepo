@@ -2,8 +2,16 @@
 
 import Link from "next/link";
 import { AppShell } from "./app-shell";
-import { navigationGroups, navigationHref } from "./navigation";
+import { navigationGroups, navigationHref, type NavigationGroup } from "./navigation";
 import { authTrpc } from "@/lib/auth-trpc";
+
+/** Shown when the user may view none of the shortcut menus (user-permission SA rev 3 D3-02). */
+export const NO_SHORTCUTS_MESSAGE = "You don't have access to any menu yet. Ask your administrator.";
+
+/** True when the auth service answered with no shortcuts at all (not while loading, not on the fallback). */
+export function hasNoShortcuts(loaded: boolean, groups: readonly NavigationGroup[] | undefined): boolean {
+  return loaded && (groups?.length ?? 0) === 0;
+}
 
 export function HomeDashboard() {
   const shortcuts = authTrpc.dashboard.shortcutGroups.useQuery(undefined, { retry: false });
@@ -26,6 +34,11 @@ export function HomeDashboard() {
             </article>
           ))}
         </section>
+        {hasNoShortcuts(shortcuts.isSuccess, shortcuts.data) && (
+          <p role="status" className="rounded-gms-md border border-gms-border bg-gms-surface-muted px-4 py-3 text-gms-body text-gms-text-secondary">
+            {NO_SHORTCUTS_MESSAGE}
+          </p>
+        )}
         {shortcuts.isError && <p className="mt-4 text-gms-label text-amber-700">กำลังแสดงเมนูเริ่มต้น เนื่องจากเชื่อมต่อบริการเมนูไม่ได้</p>}
       </div>
     </AppShell>

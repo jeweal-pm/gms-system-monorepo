@@ -81,6 +81,31 @@ describe("auth-owned tRPC compatibility router", () => {
     expect(shortcutGroupsFor({ isSuperAdmin: false, permissions: [] })).toEqual([]);
   });
 
+  // UT-UP-HS-01…03 (user-permission SA rev 3 D3-01, owner 2026-10-22): Home is not the Dashboard page.
+  const titlesAndSlugs = (permissions: string[]) =>
+    shortcutGroupsFor({ isSuperAdmin: false, permissions }).map((group) => [group.title, group.items.map((item) => item.slug)]);
+
+  it("UT-UP-HS-01 without dashboard:VIEW a user still sees the shortcuts they may view", () => {
+    expect(titlesAndSlugs(["company-profile:VIEW", "customer:VIEW", "customer:ADD", "memo-receive:VIEW", "barcode:VIEW"])).toEqual([
+      ["Setup", ["company-profile"]],
+      ["Master Code", ["customer"]],
+      ["Memo", ["memo-receive"]],
+      ["Inventory", ["barcode"]],
+    ]);
+  });
+
+  it("UT-UP-HS-02 the Dashboard shortcut still needs dashboard:VIEW; other actions never show a shortcut", () => {
+    expect(titlesAndSlugs(["quotation:ADD", "quotation:PRINT"])).toEqual([]);
+    expect(titlesAndSlugs(["dashboard:VIEW", "quotation:VIEW"])).toEqual([
+      ["Main Menu", ["dashboard"]],
+      ["Pre-Sale", ["quotation"]],
+    ]);
+  });
+
+  it("UT-UP-HS-03 Super Admin sees every shortcut", () => {
+    expect(shortcutGroupsFor({ isSuperAdmin: true, permissions: [] }).flatMap((group) => group.items)).toHaveLength(38);
+  });
+
   it("serves an auth procedure through the actual Express tRPC HTTP boundary", async () => {
     const { router, userAdmin } = setup();
     const app = express();

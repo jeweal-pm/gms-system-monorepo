@@ -26,6 +26,7 @@ the backend is implemented. **All cases are not run.**
 | BT-UP-12 | delete guards + cascade | Super Admin, regular user | delete admin, delete self, delete user | 403, 403, 200; cascaded rows gone; LoginAttempt rows kept with NULL user | manual runtime + SQL | not run |
 | BT-UP-13 | grants apply on next request | user with `vendor:VIEW` | revoke, then call shortcuts | Vendor shortcut gone on the next request (no cache) | manual runtime | not run |
 | BT-UP-14 | shortcut filtering | user with only `quotation:VIEW` | `dashboard.shortcutGroups` | only Quotation; Super Admin sees all | manual runtime | not run |
+| BT-UP3-01 | shortcuts without Dashboard (SA rev 3 D3-01) | user with VIEW on several menus but no `dashboard:VIEW` (e.g. `pun`) | open Home | shortcuts of those menus, no Dashboard item; no VIEW at all → "You don't have access to any menu yet…" | unit (UT-UP-HS-01…03, UT-HOME-03) + manual runtime | unit pass |
 | BT-UP-15 | inactive sign-in, wrong password | inactive user | wrong password | existing 401/423 (no inactive disclosure) | manual runtime | not run |
 | BT-UP-16 | gateway context parse | old/new auth response | session-context without/with `authz` | missing `authz` → treated as no grants (fail closed) | code review | not run |
 | BT-UP-17 | CRM unchanged | CRM key | `POST /api/v1/users` existing contract | same 201/400/409/422/503 behavior as before | manual runtime | not run |

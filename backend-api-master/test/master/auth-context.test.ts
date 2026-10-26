@@ -114,6 +114,22 @@ describe("master trusted JWT + live auth context", () => {
     }
   });
 
+  it("UT-GPMT-10b extra trusted origins (dev LAN preview) are accepted for mutations; others still are not", async () => {
+    const token = await accessToken();
+    const lan = "http://192.168.0.109";
+    const ok = adapter({ extraTrustedOrigins: [lan, "http://192.168.0.109:3000/"] });
+    await expect(ok.subject.create(request(token, "POST", { origin: lan, "x-gms-csrf": "1", "sec-fetch-site": "same-origin" })))
+      .resolves.toMatchObject({ csrfVerified: true });
+    await expect(ok.subject.create(request(token, "POST", { origin: "http://192.168.0.109:3000", "x-gms-csrf": "1" })))
+      .resolves.toMatchObject({ csrfVerified: true });
+    await expect(adapter().subject.create(request(token, "POST", { origin: lan, "x-gms-csrf": "1" })))
+      .rejects.toMatchObject({ code: "FORBIDDEN", message: "CSRF_INVALID" });
+    await expect(ok.subject.create(request(token, "POST", { origin: "http://192.168.0.110", "x-gms-csrf": "1" })))
+      .rejects.toMatchObject({ code: "FORBIDDEN", message: "CSRF_INVALID" });
+    expect(() => adapter({ extraTrustedOrigins: ["192.168.0.109"] })).toThrow("Invalid master authentication configuration");
+    expect(() => adapter({ extraTrustedOrigins: ["ftp://192.168.0.109"] })).toThrow("Invalid master authentication configuration");
+  });
+
   it("UT-GPMT-10 accepts a valid mutation CSRF before continuing through JWT, auth-view and license checks", async () => {
     const { subject, fetcher, authorizationReader, checkLicense } = adapter();
     const token = await accessToken();

@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import express, { type ErrorRequestHandler, type RequestHandler } from "express";
+import express, { type ErrorRequestHandler } from "express";
 import { toNodeHandler } from "better-auth/node";
 import { NestFactory } from "@nestjs/core";
 import { Logger } from "nestjs-pino";

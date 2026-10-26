@@ -2,28 +2,7 @@
 
 import { Copy, FileSpreadsheet, Pencil, Plus, Printer, RefreshCw, ScanLine, Trash2 } from "lucide-react";
 import Link from "next/link";
-import type { QuotationStatus } from "../../schema";
 import { Button, cx, IconButton } from "../ui";
-
-const STEPS: { label: string; reached: (s: QuotationStatus) => boolean }[] = [
-  { label: "Save", reached: () => true },
-  { label: "Pending Approval", reached: (s) => s === "PENDING_APPROVAL" || s === "APPROVED" },
-  { label: "Approve", reached: (s) => s === "APPROVED" },
-  { label: "Approved", reached: (s) => s === "APPROVED" },
-];
-
-export function StatusStepper({ status }: { status: QuotationStatus }) {
-  return (
-    <ol className="flex items-center gap-2 text-xs">
-      {STEPS.map((step, i) => (
-        <li key={step.label} className="flex items-center gap-2">
-          {i > 0 && <span className="h-px w-5 bg-[#C9CED3]" />}
-          <span className={step.reached(status) ? "font-semibold text-[#1C252E]" : "text-[#6B7480]"}>{step.label}</span>
-        </li>
-      ))}
-    </ol>
-  );
-}
 
 export type HeaderActions = {
   onCancel: () => void;
@@ -37,7 +16,6 @@ export type HeaderActions = {
 export function QuotationHeader({
   docNo,
   isPreview,
-  status,
   mode,
   saving,
   canEdit,
@@ -46,7 +24,6 @@ export function QuotationHeader({
 }: {
   docNo: string;
   isPreview: boolean;
-  status: QuotationStatus;
   mode: "view" | "edit";
   saving: boolean;
   canEdit: boolean;
@@ -66,7 +43,6 @@ export function QuotationHeader({
           <IconButton label="Scan" className="bg-[#F6F7F8]">
             <ScanLine className="size-4" />
           </IconButton>
-          <StatusStepper status={status} />
         </div>
       </div>
 
