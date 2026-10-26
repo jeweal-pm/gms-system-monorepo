@@ -4,6 +4,8 @@ import { isPrismaUnavailable, prismaCode } from "../common/persistence";
 
 export const documentSetupNotFound = () => partnerException("DOCUMENT_SETUP_NOT_FOUND", HttpStatus.NOT_FOUND);
 export const documentSetupChanged = () => partnerException("DOCUMENT_SETUP_CHANGED", HttpStatus.CONFLICT);
+/** SA-QT-05: a numbering row that issued a document number cannot be changed or removed. */
+export const documentSetupRowInUse = (path: string) => partnerException("DOCUMENT_SETUP_ROW_IN_USE", HttpStatus.CONFLICT, [{ path, code: "in_use" }]);
 export const documentSetupCodeTaken = () => partnerException("DOCUMENT_SETUP_CODE_TAKEN", HttpStatus.CONFLICT, [{ path: "code", code: "duplicate" }]);
 
 const logger = new Logger("DocumentSetup");

@@ -15,6 +15,9 @@ export function mapSaveError(error: unknown, rowIndexBySaved: readonly number[] 
       return { fieldErrors: [{ name: "code", message: "This code is already used" }], formError: null };
     case "DOCUMENT_SETUP_CHANGED":
       return { fieldErrors: [], formError: "Someone else changed this setup. Reload to see the latest.", stale: true };
+    case "DOCUMENT_SETUP_ROW_IN_USE":
+      // SA-QT-05: a row that already issued document numbers can't be changed or removed.
+      return { fieldErrors: [], formError: "A numbering row that documents already use can't be changed or removed. Reload to see the latest.", stale: true };
     case "VALIDATION_ERROR": {
       const mapped = fieldErrors.flatMap((entry): SaveFieldError[] => {
         if (FIELD_NAMES.has(entry.path)) return [{ name: entry.path as SaveFieldError["name"], message: "Check this field" }];

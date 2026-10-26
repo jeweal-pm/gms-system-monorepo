@@ -5,10 +5,14 @@ import { useFormContext, useWatch } from "react-hook-form";
 import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
 import { quotationCurrencyOptions, quotationExchangeRate } from "../../lib/currency";
-import { customers } from "../../mock/masters";
+import { useOptions } from "../../options-context";
 import type { QuotationFormValues } from "../../schema";
 import { Field, FormSelect, TextInput } from "../ui";
 
+/**
+ * Header fields (ADR-0025 §1): customers and addresses from `quotation.options` (SA-QT-06); currencies and
+ * the exchange rate from Setup › Currency (currency UI rev 1: Exchange Rate = the Selling Rate).
+ */
 export function QuotationInfoForm() {
   const {
     register,
@@ -16,6 +20,7 @@ export function QuotationInfoForm() {
     control,
     formState: { errors },
   } = useFormContext<QuotationFormValues>();
+  const options = useOptions();
   const customerId = useWatch({ control, name: "customerId" });
   const currency = useWatch({ control, name: "currency" }) ?? "";
   const exchangeRate = useWatch({ control, name: "exchangeRate" }) ?? "";
@@ -23,20 +28,30 @@ export function QuotationInfoForm() {
   const currencyOptions = masterTrpc.currency.options.useQuery(undefined, { staleTime: 60_000, retry: retryTransient });
   const items = currencyOptions.data?.items ?? [];
   const baseCode = currencyOptions.data?.baseCode ?? null;
-  const addresses = customers.find((c) => c.value === customerId)?.addresses ?? [];
-  const shippingOptions = addresses.filter((a) => a.kind !== "INVOICE");
-  const invoiceOptions = addresses.filter((a) => a.kind !== "SHIPPING");
-
-  // เปลี่ยนลูกค้า → เลือกที่อยู่แรกให้อัตโนมัติ (Open Question #8)
-  const onCustomerChange = (id: string) => {
-    const next = customers.find((c) => c.value === id)?.addresses ?? [];
-    setValue("shippingAddressId", next.find((a) => a.kind !== "INVOICE")?.value ?? "", { shouldDirty: true });
-    setValue("invoiceAddressId", next.find((a) => a.kind !== "SHIPPING")?.value ?? "", { shouldDirty: true });
-  };
+  const customers = options?.customers ?? [];
+  const customerOptions = customers.map((c) => ({ value: c.id, label: `${c.code} · ${c.name}${c.active ? "" : " (inactive)"}` }));
+  const addresses = customers.find((c) => c.id === customerId)?.addresses ?? [];
+  const shippingOptions = addresses.filter((a) => a.type === "SHIPPING").map((a) => ({ value: a.id, label: a.label }));
+  const invoiceOptions = addresses.filter((a) => a.type === "INVOICE").map((a) => ({ value: a.id, label: a.label }));
 
   // Exchange Rate = the currency's Selling Rate (Q-CUR-07); the base currency leaves it empty.
   const onCurrencyChange = (code: string) => {
     setValue("exchangeRate", quotationExchangeRate(items, baseCode, code), { shouldDirty: true });
+  };
+
+  // Changing the customer picks its default addresses and currency (ADR-0025 open question 8).
+  const onCustomerChange = (id: string) => {
+    const customer = customers.find((c) => c.id === id);
+    const pick = (type: "SHIPPING" | "INVOICE") => {
+      const list = customer?.addresses.filter((a) => a.type === type) ?? [];
+      return (list.find((a) => a.isDefault) ?? list[0])?.id ?? "";
+    };
+    setValue("shippingAddressId", pick("SHIPPING"), { shouldDirty: true });
+    setValue("invoiceAddressId", pick("INVOICE"), { shouldDirty: true });
+    if (customer?.currency) {
+      setValue("currency", customer.currency, { shouldDirty: true });
+      onCurrencyChange(customer.currency);
+    }
   };
 
   // A new quotation starts with a currency but no rate: fill it once the currency list arrives.
@@ -51,7 +66,7 @@ export function QuotationInfoForm() {
         <TextInput type="date" {...register("docDate")} />
       </Field>
       <Field label="Customer" required error={errors.customerId?.message}>
-        <FormSelect<QuotationFormValues> name="customerId" options={customers} onValueChange={onCustomerChange} />
+        <FormSelect<QuotationFormValues> name="customerId" options={customerOptions} onValueChange={onCustomerChange} />
       </Field>
       <Field label="Shipping Address" required error={errors.shippingAddressId?.message}>
         <FormSelect<QuotationFormValues> name="shippingAddressId" options={shippingOptions} />
@@ -66,11 +81,11 @@ export function QuotationInfoForm() {
       <Field label="Currency" required error={errors.currency?.message}>
         <FormSelect<QuotationFormValues> name="currency" options={quotationCurrencyOptions(items, currency)} onValueChange={onCurrencyChange} />
       </Field>
-      <Field label="Exchange Rate">
+      <Field label={baseCode && currency && currency !== baseCode ? `Exchange Rate (1 ${currency} = ? ${baseCode})` : "Exchange Rate"} error={errors.exchangeRate?.message}>
         <TextInput readOnly tabIndex={-1} placeholder="Exchange Rate" {...register("exchangeRate")} />
       </Field>
       <Field label="Ref.">
-        <TextInput maxLength={50} {...register("ref")} />
+        <TextInput maxLength={100} {...register("ref")} />
       </Field>
     </div>
   );

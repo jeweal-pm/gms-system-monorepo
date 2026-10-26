@@ -8,6 +8,7 @@ import type { VendorService } from "../../src/vendor/vendor.service";
 import type { CompanyProfileService } from "../../src/company-profile/company-profile.service";
 import type { StoneMasterService } from "../../src/stone-master/stone-master.service";
 import type { CurrencyService } from "../../src/currency/currency.service";
+import type { QuotationService } from "../../src/quotation/quotation.service";
 import { customerBody, withVersion } from "../partner-shared/fixtures";
 
 vi.mock("../../src/database/prisma-client", async () => (await import("../partner-shared/prisma-fake")).prismaModule);
@@ -23,6 +24,10 @@ const companyProfile = { get: vi.fn(), options: vi.fn(), save: vi.fn(), removeLo
 const stoneMaster = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
 const documentSetup = { list: vi.fn(), get: vi.fn(), save: vi.fn() };
 const currency = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
+const quotation = {
+  list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(),
+  submit: vi.fn(), approve: vi.fn(), reject: vi.fn(), cancel: vi.fn(), delete: vi.fn(),
+};
 const router = createMasterRouter({
   customer: customer as unknown as CustomerService,
   vendor: vendor as unknown as VendorService,
@@ -30,6 +35,7 @@ const router = createMasterRouter({
   stoneMaster: stoneMaster as unknown as StoneMasterService,
   documentSetup: documentSetup as unknown as DocumentSetupService,
   currency: currency as unknown as CurrencyService,
+  quotation: quotation as unknown as QuotationService,
 });
 
 function context(grants: string[], overrides: Partial<MasterContext> = {}): MasterContext {
@@ -40,7 +46,7 @@ function context(grants: string[], overrides: Partial<MasterContext> = {}): Mast
 }
 
 beforeEach(() => {
-  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(currency)]) fn.mockReset().mockResolvedValue({ ok: true });
+  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(currency), ...Object.values(quotation)]) fn.mockReset().mockResolvedValue({ ok: true });
 });
 
 describe("staged master domain tRPC boundary", () => {
@@ -196,5 +202,41 @@ describe("staged master domain tRPC boundary", () => {
     await expect(router.createCaller(context(["vendor:VIEW"])).currency.options()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(router.createCaller(context(["quotation:VIEW"], { license: "DENIED" })).currency.options()).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(currency.options).toHaveBeenCalledTimes(2);
+  });
+
+  it("GP-MT-QT quotation: each procedure needs its own action; mutations need CSRF; 422 keeps its domain code", async () => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const versioned = { id, expectedVersion: 1 };
+    const body = {
+      docDate: "2026-10-26", dueDate: "2026-10-27", customerId: id, shippingAddressId: id, invoiceAddressId: id, currency: "THB", exchangeRate: null, ref: "", documentNote: "",
+      lines: [{ source: "MANUAL" as const, stoneCodeId: null, stoneCode: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "", location: "", cerType: "", cerNo: "", pcs: 1, weightCt: "1", priceUnit: "PER_CT" as const, unitPrice: "10", discount: { type: "NONE" as const, value: "0" }, itemNote: "", photoIds: [] }],
+      discount: { type: "NONE" as const, value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
+    };
+    const as = (grants: string[]) => router.createCaller(context(grants.map((action) => `quotation:${action}`)));
+    await as(["VIEW"]).quotation.list({});
+    expect(quotation.list).toHaveBeenCalledWith(expect.objectContaining({ limit: 50 }));
+    await as(["VIEW"]).quotation.get({ id });
+    await as(["VIEW"]).quotation.nextNumber({ docDate: "2026-10-26" });
+    await as(["VIEW"]).quotation.options({});
+    await as(["ADD"]).quotation.create(body);
+    expect(quotation.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ currency: "THB" }));
+    await as(["EDIT"]).quotation.update({ ...body, ...versioned });
+    expect(quotation.update).toHaveBeenCalledWith("user-1", id, 1, expect.not.objectContaining({ id }));
+    await as(["EDIT"]).quotation.submit(versioned);
+    await as(["APPROVE"]).quotation.approve(versioned);
+    await as(["APPROVE"]).quotation.reject({ ...versioned, reason: "No" });
+    await as(["CANCEL"]).quotation.cancel({ ...versioned, reason: "No" });
+    await as(["DELETE"]).quotation.delete(versioned);
+    expect(quotation.delete).toHaveBeenCalledWith("user-1", id, 1);
+
+    await expect(as(["ADD"]).quotation.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(as(["VIEW", "ADD"]).quotation.submit(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(as(["EDIT"]).quotation.approve(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(as(["EDIT"]).quotation.cancel({ ...versioned, reason: "x" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(as(["EDIT"]).quotation.delete(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["quotation:ADD"], { csrfVerified: false })).quotation.create(body)).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    quotation.create.mockRejectedValueOnce(new HttpException({ error: { code: "QUOTATION_REFERENCE_INVALID", message: "x" } }, 422));
+    await expect(as(["ADD"]).quotation.create(body)).rejects.toMatchObject({ code: "UNPROCESSABLE_CONTENT", message: "QUOTATION_REFERENCE_INVALID" });
   });
 });

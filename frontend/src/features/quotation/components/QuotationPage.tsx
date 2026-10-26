@@ -1,17 +1,23 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { getQuotation, quotationKeys } from "../api";
+import { fromQuotation, loadErrorMessage, useQuotationAccess, useQuotationDetail } from "../api";
 import { QuotationForm } from "./QuotationForm";
 
-/** `/pre-sale/quotation` — ยังไม่มีหน้า list จึงเปิดฟอร์มสร้างใหม่ */
+const message = "p-10 text-gms-body text-gms-text-secondary";
+
+/** `/pre-sale/quotation` — no list page yet, so it opens a new quotation. */
 export function NewQuotationPage() {
-  return <QuotationForm />;
+  const access = useQuotationAccess();
+  if (!access) return <p className={message}>Loading…</p>;
+  if (!access.view) return <p className={message}>You don&apos;t have permission to view quotations.</p>;
+  return <QuotationForm access={access} />;
 }
 
 export function EditQuotationPage({ id }: { id: string }) {
-  const { data, isLoading } = useQuery({ queryKey: quotationKeys.detail(id), queryFn: () => getQuotation(id) });
-  if (isLoading) return <p className="p-10 text-gms-body text-gms-text-secondary">Loading…</p>;
-  if (!data) return <p className="p-10 text-gms-body text-gms-text-secondary">Quotation not found.</p>;
-  return <QuotationForm key={id} initial={data} />;
+  const access = useQuotationAccess();
+  const detail = useQuotationDetail(access?.view ? id : null);
+  if (!access || (access.view && detail.isPending)) return <p className={message}>Loading…</p>;
+  if (!access.view) return <p className={message}>You don&apos;t have permission to view quotations.</p>;
+  if (detail.isError || !detail.data) return <p className={message}>{detail.error ? loadErrorMessage(detail.error) : "Quotation not found."}</p>;
+  return <QuotationForm key={`${id}:${detail.data.version}`} access={access} initial={fromQuotation(detail.data)} />;
 }

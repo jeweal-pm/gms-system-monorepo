@@ -2,6 +2,7 @@
 
 import { Copy, FileSpreadsheet, Pencil, Plus, Printer, RefreshCw, ScanLine, Trash2 } from "lucide-react";
 import Link from "next/link";
+import type { QuotationStatus } from "../../schema";
 import { Button, cx, IconButton } from "../ui";
 
 export type HeaderActions = {
@@ -13,24 +14,42 @@ export type HeaderActions = {
   onRefresh: () => void;
 };
 
+const STATUS_LABEL: Record<QuotationStatus, { label: string; tone: string }> = {
+  DRAFT: { label: "Draft", tone: "bg-[#EEF0F2] text-[#4B5563]" },
+  PENDING_APPROVAL: { label: "Pending Approval", tone: "bg-[#FFF4E0] text-[#B45309]" },
+  APPROVED: { label: "Approved", tone: "bg-[#E7F7EE] text-[#15803D]" },
+  REJECTED: { label: "Rejected", tone: "bg-[#FDECEC] text-[#B42318]" },
+  CANCELLED: { label: "Cancelled", tone: "bg-[#EEF0F2] text-[#6B7480] line-through" },
+};
+
 export function QuotationHeader({
   docNo,
   isPreview,
+  status,
+  statusReason,
   mode,
   saving,
+  canSave,
+  canCreate,
   canEdit,
   canDelete,
   actions,
 }: {
   docNo: string;
   isPreview: boolean;
+  /** Undefined for a new, unsaved quotation. */
+  status?: QuotationStatus;
+  statusReason?: string;
   mode: "view" | "edit";
   saving: boolean;
+  canSave: boolean;
+  canCreate: boolean;
   canEdit: boolean;
   canDelete: boolean;
   actions: HeaderActions;
 }) {
   const editing = mode === "edit";
+  const badge = status ? STATUS_LABEL[status] : undefined;
   return (
     <div className="flex flex-wrap items-start justify-between gap-4 px-6 pt-6 pb-2">
       <div>
@@ -39,46 +58,53 @@ export function QuotationHeader({
           <h1 className={cx("text-[28px] leading-none font-medium", isPreview ? "text-[#6B7480]" : "text-[#1C252E]")}>
             {docNo}
           </h1>
+          {badge && <span className={cx("rounded-full px-3 py-1 text-xs font-medium", badge.tone)}>{badge.label}</span>}
           {/* TODO: scan barcode / เปิดเอกสารจากเลข */}
           <IconButton label="Scan" className="bg-[#F6F7F8]">
             <ScanLine className="size-4" />
           </IconButton>
         </div>
+        {isPreview && <p className="mt-1 text-xs text-[#6B7480]">Number preview — the number is issued when you save.</p>}
+        {statusReason && (status === "REJECTED" || status === "CANCELLED") && (
+          <p className="mt-1 max-w-xl text-xs break-words text-[#B42318]">Reason: {statusReason}</p>
+        )}
       </div>
 
       <div className="flex flex-col items-end gap-3">
         <div className="flex items-center gap-1">
           {/* Print / Excel ยังไม่มี implementation */}
-          <IconButton label="Print" disabled={isPreview}>
+          <IconButton label="Print" disabled>
             <Printer className="size-4" />
           </IconButton>
-          <IconButton label="Export Excel" disabled={isPreview} className="text-[#1D6F42]">
+          <IconButton label="Export Excel" disabled className="text-[#1D6F42]">
             <FileSpreadsheet className="size-4" />
           </IconButton>
-          <IconButton label="Duplicate" disabled={isPreview} onClick={actions.onDuplicate}>
+          <IconButton label="Duplicate" disabled={isPreview || !canCreate} onClick={actions.onDuplicate}>
             <Copy className="size-4" />
           </IconButton>
-          <IconButton label="Refresh" disabled={isPreview} onClick={actions.onRefresh}>
+          <IconButton label="Refresh" disabled={isPreview || saving} onClick={actions.onRefresh}>
             <RefreshCw className="size-4" />
           </IconButton>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/pre-sale/quotation"
-            className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#E3E6EA] px-4 text-sm text-[#6B7480] hover:bg-[#F6F7F8]"
-          >
-            <Plus className="size-4" /> Create New
-          </Link>
+          {canCreate && (
+            <Link
+              href="/pre-sale/quotation"
+              className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#E3E6EA] px-4 text-sm text-[#6B7480] hover:bg-[#F6F7F8]"
+            >
+              <Plus className="size-4" /> Create New
+            </Link>
+          )}
           <Button onClick={actions.onCancel} disabled={!editing || saving}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={actions.onSave} disabled={!editing || saving} className="min-w-24">
+          <Button variant="primary" onClick={actions.onSave} disabled={!editing || saving || !canSave} className="min-w-24">
             {saving ? "Saving…" : "Save"}
           </Button>
           <Button variant="primary" onClick={actions.onEdit} disabled={editing || !canEdit} className="min-w-24">
             <Pencil className="size-4" /> Edit
           </Button>
-          <Button variant="danger" onClick={actions.onDelete} disabled={!canDelete || saving} className="min-w-24">
+          <Button variant="danger" onClick={actions.onDelete} disabled={editing || !canDelete || saving} className="min-w-24">
             <Trash2 className="size-4" /> Delete
           </Button>
         </div>

@@ -111,6 +111,8 @@ describe("errors", () => {
   it("UT-DS-07 maps code taken, changed, validation rows (server order → form rows), permission and unknown errors", () => {
     expect(mapSaveError(trpcError("DOCUMENT_SETUP_CODE_TAKEN"))).toEqual({ fieldErrors: [{ name: "code", message: "This code is already used" }], formError: null });
     expect(mapSaveError(trpcError("DOCUMENT_SETUP_CHANGED"))).toMatchObject({ stale: true, formError: expect.stringContaining("Reload") });
+    // SA-QT-05: rows that issued quotation numbers are locked.
+    expect(mapSaveError(trpcError("DOCUMENT_SETUP_ROW_IN_USE"))).toMatchObject({ stale: true, formError: expect.stringContaining("can't be changed or removed") });
     const order = savedRowOrder({ rows: [{ effectiveDate: "2027-01-01" }, { effectiveDate: "2026-01-01" }] as DocumentSetupFormValues["rows"] });
     expect(order).toEqual([1, 0]);
     expect(mapSaveError(trpcError("VALIDATION_ERROR", [{ path: "rows.0.effectiveDate", code: "duplicate" }, { path: "name", code: "too_big" }]), order).fieldErrors).toEqual([

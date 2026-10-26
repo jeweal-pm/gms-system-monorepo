@@ -75,3 +75,13 @@ describe("calculateTotals", () => {
     expect(formatMoney(totals.grandTotal)).toBe("135.50");
   });
 });
+
+describe("line discount (owner 2026-10-26)", () => {
+  it("is a percent of the line or an amount, capped at the line, and lowers the subtotal", () => {
+    expect(formatMoney(lineAmount(line({ weightCt: "1", unitPrice: "1000", discountPercent: "10" })))).toBe("900.00");
+    expect(formatMoney(lineAmount(line({ weightCt: "1", unitPrice: "1000", discountAmount: "150.50" })))).toBe("849.50");
+    expect(formatMoney(lineAmount(line({ weightCt: "1", unitPrice: "100", discountAmount: "500" })))).toBe("0.00");
+    const totals = calculateTotals({ ...emptyQuotation(), lines: [line({ weightCt: "1", unitPrice: "1000", discountPercent: "10" }), line({ weightCt: "1", unitPrice: "500" })] });
+    expect(formatMoney(totals.subtotal)).toBe("1,400.00");
+  });
+});
