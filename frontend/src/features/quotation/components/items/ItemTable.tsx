@@ -1,10 +1,11 @@
 "use client";
 
 import { ChevronsUpDown, CircleMinus, Ellipsis, MessageSquare, Plus } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { lineAmount, type QuotationTotals } from "../../lib/calculate";
 import { dec, toFixed } from "../../lib/decimal";
 import { formatMoney, formatMoneyText, formatWeight } from "../../lib/format";
+import { visibleRowsHeight } from "../../lib/table-scroll";
 import { isFilledLine, type QuotationLine } from "../../schema";
 import { Badge, Button, cx } from "../ui";
 
@@ -50,12 +51,41 @@ export function ItemTable({
   onAddRow: () => void;
 }) {
   const allChecked = lines.length > 0 && lines.every((l) => checkedKeys.has(l.key));
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Fixed at 5 rows, the rest scroll (owner 2026-10-23). Re-measured whenever a row changes size.
+  useEffect(() => {
+    const box = scrollRef.current;
+    const table = box?.querySelector("table");
+    if (!box || !table) return;
+    const fit = () => fitVisibleRows(box);
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(table);
+    return () => observer.disconnect();
+  }, []);
+
+  // Show a row added with "Add row", which lands below the visible five.
+  const scrollToNewRow = useRef(false);
+  useLayoutEffect(() => {
+    if (!scrollToNewRow.current) return;
+    scrollToNewRow.current = false;
+    const box = scrollRef.current;
+    if (!box) return;
+    fitVisibleRows(box); // before the ResizeObserver runs, so the sixth row can already scroll
+    box.scrollTo({ top: box.scrollHeight });
+  }, [lines.length]);
+
+  const addRow = () => {
+    scrollToNewRow.current = true;
+    onAddRow();
+  };
 
   return (
     <div className="min-w-0 flex-1">
-      <div className="overflow-x-auto rounded-lg">
+      <div ref={scrollRef} className="overflow-auto rounded-lg">
         <table className="w-full min-w-[1180px] border-collapse text-sm text-[#1C252E]">
-          <thead className="bg-[#F6F7F8] text-left">
+          <thead className="sticky top-0 z-10 bg-[#F6F7F8] text-left">
             <tr>
               <th className="w-10 px-3 py-3">
                 <input
@@ -141,7 +171,7 @@ export function ItemTable({
               );
             })}
           </tbody>
-          <tfoot>
+          <tfoot className="sticky bottom-0 z-10">
             <tr className="bg-[#F6F7F8] font-medium">
               <td colSpan={3} />
               <td className="px-3 py-3">Totals</td>
@@ -156,12 +186,24 @@ export function ItemTable({
         </table>
       </div>
       {!readOnly && (
-        <Button size="sm" className="mt-3 bg-[#F6F7F8]" onClick={onAddRow}>
+        <Button size="sm" className="mt-3 bg-[#F6F7F8]" onClick={addRow}>
           <Plus className="size-4" /> Add row
         </Button>
       )}
     </div>
   );
+}
+
+function fitVisibleRows(box: HTMLDivElement) {
+  const table = box.querySelector("table");
+  if (!table) return;
+  const height = visibleRowsHeight(
+    table.tHead?.offsetHeight ?? 0,
+    Array.from(table.tBodies[0]?.rows ?? [], (row) => row.offsetHeight),
+    table.tFoot?.offsetHeight ?? 0,
+    box.offsetHeight - box.clientHeight,
+  );
+  box.style.maxHeight = height === null ? "" : `${height}px`;
 }
 
 function FilledCells({ line, currency }: { line: QuotationLine; currency: string }) {
