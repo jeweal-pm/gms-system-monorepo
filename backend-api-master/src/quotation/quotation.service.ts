@@ -3,7 +3,8 @@ import { Injectable, Logger } from "@nestjs/common";
 import { z } from "zod";
 import { validationException, type FieldError } from "../common/errors";
 import { WRITE_TX, type Tx } from "../common/persistence";
-import { COUNTRY_OPTIONS, CURRENCY_CODES, CURRENCY_OPTIONS } from "../common/reference-data";
+import { COUNTRY_OPTIONS } from "../common/reference-data";
+import { currencyOptions, isCurrencyAllowed } from "../currency/currency-directory";
 import { prisma } from "../database/prisma-client";
 import { fromDbDate, toDbDate } from "../document-setup/document-setup.service";
 import { DOC_NO_MAX, formatDocNo, nextPlainQuotationRunningNo, nextQuotationRunningNo, numberingInEffect } from "../document-setup/document-numbering";
@@ -26,7 +27,7 @@ const COMPANY_PROFILE_ID = 1;
 const CUSTOMER_OPTIONS_LIMIT = 1_000;
 const COUNTRY_NAME = new Map(COUNTRY_OPTIONS.map((item) => [item.code, item.name]));
 
-type StoredRefs = { customerId: string; shippingAddressId: string | null; invoiceAddressId: string | null; stoneCodeIds: Set<string> };
+type StoredRefs = { customerId: string; shippingAddressId: string | null; invoiceAddressId: string | null; currencyCode: string; stoneCodeIds: Set<string> };
 type Snapshot = { customerCode: string; customerName: string; shippingText: string; invoiceText: string };
 
 /** Printed address text kept on the quotation (SA-QT-06 snapshot). */
@@ -299,7 +300,8 @@ export class QuotationService {
             isDefault: address.isDefault,
           })),
         })),
-        currencies: CURRENCY_OPTIONS.map((item) => item.code),
+        // Setup › Currency (currency SA-CUR-05): active currencies only.
+        currencies: (await currencyOptions(prisma)).filter((item) => item.active).map((item) => item.code),
         companyCurrency: company?.currencyCode ?? null,
         chargeTypes: [...CHARGE_TYPES],
         numbering: { configured: setup !== null },
@@ -347,7 +349,7 @@ export class QuotationService {
       const version = await prisma.$transaction(async (tx) => {
         const stored = await tx.quotation.findUnique({
           where: { id },
-          select: { status: true, version: true, customerId: true, shippingAddressId: true, invoiceAddressId: true, lines: { select: { stoneCodeId: true } } },
+          select: { status: true, version: true, customerId: true, shippingAddressId: true, invoiceAddressId: true, currencyCode: true, lines: { select: { stoneCodeId: true } } },
         });
         if (!stored) throw quotationNotFound();
         if (stored.version !== expectedVersion) throw quotationChanged();
@@ -356,6 +358,7 @@ export class QuotationService {
           customerId: stored.customerId,
           shippingAddressId: stored.shippingAddressId,
           invoiceAddressId: stored.invoiceAddressId,
+          currencyCode: stored.currencyCode,
           stoneCodeIds: new Set(stored.lines.flatMap((line) => (line.stoneCodeId ? [line.stoneCodeId] : []))),
         });
         const result = await tx.quotation.updateMany({
@@ -440,7 +443,8 @@ export class QuotationService {
     const invoice = customer.addresses.find((address) => address.id === input.invoiceAddressId && address.type === "INVOICE");
     if (!shipping) errors.push({ path: "shippingAddressId", code: "invalid_reference" });
     if (!invoice) errors.push({ path: "invoiceAddressId", code: "invalid_reference" });
-    if (!CURRENCY_CODES.has(input.currency)) errors.push({ path: "currency", code: "unknown" });
+    // Currency master (SA-CUR-05): an active currency, or the one already stored on this quotation.
+    if (!(await isCurrencyAllowed(tx, input.currency, stored?.currencyCode))) errors.push({ path: "currency", code: "unknown" });
 
     const stoneCodeIds = [...new Set(input.lines.flatMap((line) => (line.stoneCodeId ? [line.stoneCodeId] : [])))];
     if (stoneCodeIds.length > 0) {

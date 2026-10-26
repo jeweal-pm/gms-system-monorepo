@@ -2,7 +2,8 @@ import { Injectable, Logger } from "@nestjs/common";
 import { validationException } from "../common/errors";
 import { membershipErrors as sharedMembershipErrors } from "../common/partner-schemas";
 import { addressDetail, listPage, nextPartnerCode, scalarData, scalarDetail, SCALAR_FIELDS, WRITE_TX } from "../common/persistence";
-import { OPTIONS_RESPONSE } from "../common/reference-data";
+import { COUNTRY_OPTIONS } from "../common/reference-data";
+import { currencyOptions, isCurrencyAllowed } from "../currency/currency-directory";
 import { prisma } from "../database/prisma-client";
 import { mapPersistenceError, vendorNotFound, vendorStale } from "./vendor.errors";
 import type { ListQuery, UpdateVendorInput, VendorInput } from "./vendor.schemas";
@@ -25,9 +26,12 @@ function addressRows(input: VendorInput) {
   }));
 }
 
-/** D-09 (reused): currency/country in the runtime lists, or equal to a value stored on this vendor. */
-function membershipErrors(input: VendorInput, stored?: { currencyCode: string; countryCodes: Set<string> }) {
-  return sharedMembershipErrors(input.currencyCode, [["invoiceAddresses", input.invoiceAddresses]], stored);
+/**
+ * D-09: country in the runtime list, or equal to a value stored on this vendor; the currency is active in
+ * the currency master or equal to the stored one (currency SA-CUR-05).
+ */
+function membershipErrors(input: VendorInput, currencyAllowed: boolean, storedCountryCodes?: ReadonlySet<string>) {
+  return sharedMembershipErrors(currencyAllowed, [["invoiceAddresses", input.invoiceAddresses]], storedCountryCodes);
 }
 
 function vendorInput(input: UpdateVendorInput): VendorInput {
@@ -39,9 +43,13 @@ function vendorInput(input: UpdateVendorInput): VendorInput {
 export class VendorService {
   private readonly logger = new Logger("Vendor");
 
-  /** Same frozen object as `customer.options` (D-V04). */
-  options() {
-    return OPTIONS_RESPONSE;
+  /** Same lists as `customer.options` (D-V04); currencies from the currency master (SA-CUR-05). */
+  async options() {
+    try {
+      return { currencies: await currencyOptions(), countries: COUNTRY_OPTIONS };
+    } catch (error) {
+      throw mapPersistenceError(error, "options");
+    }
   }
 
   list(query: ListQuery) {
@@ -72,7 +80,13 @@ export class VendorService {
   }
 
   async create(actorId: string, input: VendorInput) {
-    const invalid = membershipErrors(input);
+    let currencyAllowed: boolean;
+    try {
+      currencyAllowed = await isCurrencyAllowed(prisma, input.currencyCode);
+    } catch (error) {
+      throw mapPersistenceError(error, "create");
+    }
+    const invalid = membershipErrors(input, currencyAllowed);
     if (invalid.length > 0) throw validationException(invalid);
     try {
       const created = await prisma.$transaction(async (tx) => {
@@ -97,7 +111,8 @@ export class VendorService {
       const result = await prisma.$transaction(async (tx) => {
         const stored = await tx.vendor.findUnique({ where: { id }, include: { addresses: { select: { countryCode: true } } } });
         if (!stored) throw vendorNotFound();
-        const invalid = membershipErrors(input, { currencyCode: stored.currencyCode, countryCodes: new Set(stored.addresses.map((a) => a.countryCode)) });
+        const currencyAllowed = await isCurrencyAllowed(tx, input.currencyCode, stored.currencyCode);
+        const invalid = membershipErrors(input, currencyAllowed, new Set(stored.addresses.map((a) => a.countryCode)));
         if (invalid.length > 0) throw validationException(invalid);
 
         const data = await scalarData(tx, input);

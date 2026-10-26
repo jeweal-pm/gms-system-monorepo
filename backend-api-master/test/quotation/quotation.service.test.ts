@@ -57,6 +57,11 @@ vi.mock("../../src/database/prisma-client", () => {
     stoneQuality: { findMany: vi.fn(async () => []) },
     storedFile: { findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => db.photos.filter((photo) => where.id.in.includes(photo.id))) },
     companyProfile: { findUnique: vi.fn(async () => (db.companyCurrency ? { currencyCode: db.companyCurrency } : null)) },
+    // Currency master (currency SA-CUR-05): THB/USD active, EUR inactive.
+    currency: {
+      findUnique: vi.fn(async ({ where }: { where: { code: string } }) => ({ THB: { active: true }, USD: { active: true }, EUR: { active: false } } as Record<string, { active: boolean }>)[where.code] ?? null),
+      findMany: vi.fn(async () => [{ code: "EUR", name: "Euro", active: false }, { code: "THB", name: "Baht", active: true }, { code: "USD", name: "Dollar", active: true }]),
+    },
     documentSetup: { findUnique: vi.fn(async () => null) },
     quotation: {
       aggregate: vi.fn(async () => ({ _max: { runningNo: db.maxRunning } })),
@@ -179,6 +184,8 @@ describe("create and references (SA-QT-06/07/08/10)", () => {
     expect(await failure(service.create("a", input()))).toMatchObject({ code: "QUOTATION_REFERENCE_INVALID", path: "customerId" });
     db.customer = { ...db.customer!, active: true };
     expect(await failure(service.create("a", input({ shippingAddressId: INVOICE })))).toMatchObject({ code: "QUOTATION_REFERENCE_INVALID", path: "shippingAddressId" });
+    // Currency master: an inactive currency is refused on a new quotation.
+    expect(await failure(service.create("a", input({ currency: "EUR", exchangeRate: "39" })))).toMatchObject({ code: "QUOTATION_REFERENCE_INVALID", path: "currency" });
     db.stoneCodes = [{ id: STONE, active: false }];
     expect(await failure(service.create("a", input()))).toMatchObject({ code: "QUOTATION_REFERENCE_INVALID", path: "lines.0.stoneCodeId" });
     db.stoneCodes = [{ id: STONE, active: true }];
@@ -265,7 +272,7 @@ describe("list (SA-QT-11, owner Q-QT-06)", () => {
   it("UT-QT-B25 options carry customers, currencies, charge types and stone choices", async () => {
     const options = await service.options();
     expect(options).toMatchObject({ companyCurrency: "THB", chargeTypes: ["SHIPPING", "HANDLING", "INSURANCE", "CERTIFICATE"], numbering: { configured: false } });
-    expect(options.currencies).toContain("USD");
+    expect(options.currencies).toEqual(["THB", "USD"]);
     expect(options.stone.codes).toEqual([{ id: "sc", code: "RUOV-1", stone: "Ruby", shape: "Oval", size: "", color: "", clarity: "", cutting: "", quality: "" }]);
     expect(options.stone.stones).toEqual(["Ruby"]);
   });

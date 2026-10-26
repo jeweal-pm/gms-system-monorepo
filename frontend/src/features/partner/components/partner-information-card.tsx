@@ -6,7 +6,7 @@ import { TextField } from "@/components/ui/outlined-field";
 import { PhoneField } from "@/components/ui/phone-field";
 import { SelectField } from "@/components/ui/select-field";
 import { Switch } from "@/components/ui/switch";
-import type { OptionsState } from "../options";
+import { currencyChoices, type OptionsState } from "../options";
 import type { PartnerInfoValues } from "../schema";
 
 type PartnerInformationCardProps<TForm extends FieldValues & PartnerInfoValues> = {
@@ -54,7 +54,7 @@ export function PartnerInformationCard<TForm extends FieldValues & PartnerInfoVa
               label="Currency"
               required
               placeholder="Select currency"
-              options={options.currencies}
+              options={currencyChoices(options.currencies, field.value)}
               status={options.status}
               onRetry={options.onRetry}
               readOnly={readOnly}

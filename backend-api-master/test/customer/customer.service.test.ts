@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { decodeCursor, encodeCursor } from "../../src/common/cursor";
 import { READ_TX, WRITE_TX } from "../../src/common/persistence";
-import { OPTIONS_RESPONSE } from "../../src/common/reference-data";
+import { COUNTRY_OPTIONS } from "../../src/common/reference-data";
 import { createCustomerBodySchema, updateCustomerBodySchema } from "../../src/customer/customer.schemas";
 import { CustomerService } from "../../src/customer/customer.service";
 import { Prisma } from "../../src/generated/prisma/client";
@@ -16,6 +16,7 @@ import { fake, prismaError, resetFake, seedRow } from "../partner-shared/prisma-
 vi.mock("../../src/database/prisma-client", async () => (await import("../partner-shared/prisma-fake")).prismaModule);
 
 const ACTOR = "user-1";
+const ID = "0b9f3c4e-1d2a-4b3c-8d4e-5f6a7b8c9d0e";
 const create = (overrides: Record<string, unknown> = {}) => createCustomerBodySchema.parse(customerBody(overrides));
 const update = (overrides: Record<string, unknown> = {}, expected = EXPECTED) => updateCustomerBodySchema.parse(withVersion(customerBody(overrides), expected));
 
@@ -31,9 +32,22 @@ const stored = (id: string) => fake.tables.customer.get(id)!;
 const defaults = (id: string, type: "INVOICE" | "SHIPPING") => stored(id).addresses.filter((row) => row.type === type).map((row) => row.isDefault);
 
 describe("options", () => {
-  it("UT-CUS-P20 returns the shared frozen reference lists", () => {
-    expect(service.options()).toBe(OPTIONS_RESPONSE);
-    expect(Object.isFrozen(service.options())).toBe(true);
+  it("UT-CUS-P20 lists every currency from the currency master and the shared countries (currency SA-CUR-05)", async () => {
+    const options = await service.options();
+    expect(options.currencies.map((item) => item.code)).toEqual(["EUR", "INR", "THB", "USD"]);
+    expect(options.currencies.find((item) => item.code === "INR")).toEqual({ code: "INR", name: "Indian Rupee", active: false });
+    expect(options.countries).toBe(COUNTRY_OPTIONS);
+  });
+});
+
+describe("currency master (currency SA-CUR-05)", () => {
+  it("UT-CUS-CUR1 rejects an inactive currency on create and keeps the stored inactive one on update", async () => {
+    expect(await failure(service.create(ACTOR, create({ currencyCode: "INR" })))).toMatchObject({ status: 400, code: "VALIDATION_ERROR", fieldErrors: [{ path: "currencyCode", code: "unknown" }] });
+    const row = seedRow("customer", { id: ID, currencyCode: "INR", updatedAt: new Date(EXPECTED) });
+    await expect(service.update(ACTOR, ID, update({ currencyCode: "INR" }, row.updatedAt.toISOString()))).resolves.toMatchObject({ id: ID });
+    fake.tables.customer.get(ID)!.currencyCode = "THB";
+    const current = fake.tables.customer.get(ID)!.updatedAt.toISOString();
+    expect(await failure(service.update(ACTOR, ID, update({ currencyCode: "INR" }, current)))).toMatchObject({ status: 400, code: "VALIDATION_ERROR", fieldErrors: [{ path: "currencyCode", code: "unknown" }] });
   });
 });
 

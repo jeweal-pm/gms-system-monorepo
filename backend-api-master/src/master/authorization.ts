@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 
-export type MasterMenu = "customer" | "vendor" | "company-profile" | "stone-master" | "document-setup" | "quotation";
+export type MasterMenu = "customer" | "vendor" | "company-profile" | "stone-master" | "document-setup" | "currency" | "quotation";
 export type MasterAction = "VIEW" | "ADD" | "EDIT" | "DELETE" | "CANCEL" | "APPROVE" | "PRICE";
 
 /** Supplied only by the future JWT + current-authorization adapter, never from browser headers. */
@@ -22,4 +22,14 @@ export function requireMasterGrant(ctx: MasterContext, menu: MasterMenu, action:
     throw new TRPCError({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
   }
   return ctx.principal.userId;
+}
+
+/** Read-only variant: `action` on any one of `menus` is enough (currency SA-CUR-07). Same live checks first. */
+export function requireAnyMasterGrant(ctx: MasterContext, menus: readonly MasterMenu[], action: MasterAction): string {
+  const [first, ...rest] = menus;
+  if (!first) throw new TRPCError({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+  for (const menu of rest) {
+    if (ctx.principal?.grants.includes(`${menu}:${action}`)) return requireMasterGrant(ctx, menu, action, false);
+  }
+  return requireMasterGrant(ctx, first, action, false);
 }

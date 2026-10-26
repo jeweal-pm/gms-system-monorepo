@@ -17,6 +17,15 @@ export type FakeRow = Record<string, unknown> & {
   id: string; code: string; codeKey: string; currencyCode: string; updatedAt: Date; createdAt: Date; addresses: FakeAddress[];
 };
 export type RawCall = { text: string; strings: readonly string[]; values: unknown[] };
+export type FakeCurrency = { code: string; name: string; active: boolean };
+
+/** Currency master rows read by options and the save membership check (currency SA-CUR-05). */
+export const defaultCurrencies = (): FakeCurrency[] => [
+  { code: "EUR", name: "Euro", active: true },
+  { code: "INR", name: "Indian Rupee", active: false },
+  { code: "THB", name: "Thai Baht", active: true },
+  { code: "USD", name: "US Dollar", active: true },
+];
 
 export const fake = {
   tables: { customer: new Map<string, FakeRow>(), vendor: new Map<string, FakeRow>() },
@@ -31,6 +40,7 @@ export const fake = {
   total: 0,
   /** `next` returned by the next-code aggregate (text, as PostgreSQL returns it). */
   nextValue: "1",
+  currencies: defaultCurrencies(),
 };
 
 export function resetFake() {
@@ -43,6 +53,7 @@ export function resetFake() {
   fake.listRows = [];
   fake.total = 0;
   fake.nextValue = "1";
+  fake.currencies = defaultCurrencies();
 }
 
 /** Prisma-shaped error (only `code` and `meta` are read by the mapper). */
@@ -152,6 +163,17 @@ const client = {
   vendor: entityModel("vendor"),
   customerAddress: addressModel("customer"),
   vendorAddress: addressModel("vendor"),
+  currency: {
+    findMany: vi.fn(async () => {
+      guard();
+      return clone([...fake.currencies].sort((a, b) => a.code.localeCompare(b.code)));
+    }),
+    findUnique: vi.fn(async ({ where }: { where: { code: string } }) => {
+      guard();
+      const row = fake.currencies.find((entry) => entry.code === where.code);
+      return row ? { active: row.active } : null;
+    }),
+  },
 };
 
 export const prisma = {

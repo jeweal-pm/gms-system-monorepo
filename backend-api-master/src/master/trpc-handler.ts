@@ -6,6 +6,7 @@ import { VendorService } from "../vendor/vendor.service";
 import { CompanyProfileService } from "../company-profile/company-profile.service";
 import { StoneMasterService } from "../stone-master/stone-master.service";
 import { DocumentSetupService } from "../document-setup/document-setup.service";
+import { CurrencyService } from "../currency/currency.service";
 import { MasterAuthContextAdapter, MasterJwksCache } from "./auth-context";
 import { MasterAuthzDatabase } from "./authz-database";
 import { MasterLicenseClient } from "./license-client";
@@ -18,7 +19,7 @@ export class MasterTrpcHandler {
   private readonly handler: ReturnType<typeof createExpressMiddleware>;
   private readonly authContext: MasterAuthContextAdapter;
 
-  constructor(customer: CustomerService, vendor: VendorService, companyProfile: CompanyProfileService, stoneMaster: StoneMasterService, authz: MasterAuthzDatabase, license: MasterLicenseClient, documentSetup: DocumentSetupService, quotation: QuotationService) {
+  constructor(customer: CustomerService, vendor: VendorService, companyProfile: CompanyProfileService, stoneMaster: StoneMasterService, authz: MasterAuthzDatabase, license: MasterLicenseClient, documentSetup: DocumentSetupService, currency: CurrencyService, quotation: QuotationService) {
     const issuer = process.env.AUTH_ACCESS_JWT_ISSUER;
     const trustedOrigin = process.env.FRONTEND_URL;
     const authService = process.env.AUTH_SERVICE_URL;
@@ -32,7 +33,7 @@ export class MasterTrpcHandler {
       authorizationReader: (userId, sessionId) => authz.read(userId, sessionId),
       checkLicense: (userId, sessionId) => license.check(userId, sessionId),
     });
-    const router = createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, quotation });
+    const router = createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, currency, quotation });
     this.handler = createExpressMiddleware({ router, createContext: ({ req }) => this.authContext.create(req) });
   }
 

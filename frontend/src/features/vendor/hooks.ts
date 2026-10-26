@@ -18,7 +18,7 @@ import { VENDOR_PAGE_SIZE } from "./contract";
 
 /** Static per deployment: cached for the session. */
 export function useVendorOptions() {
-  return masterTrpc.vendor.options.useQuery(undefined, { select: toSelectOptions, staleTime: Infinity, retry: retryTransient });
+  return masterTrpc.vendor.options.useQuery(undefined, { select: toSelectOptions, staleTime: 60_000, retry: retryTransient });
 }
 
 /** Drawer list: keyset pages of 50; a new `q` restarts without a cursor (key includes `q`). */

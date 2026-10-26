@@ -83,11 +83,11 @@ describe("cursor", () => {
 
 describe("membershipErrors (D-09)", () => {
   it("UT-PS-P08 accepts listed currency and countries", () => {
-    expect(membershipErrors("THB", [["invoiceAddresses", [{ countryCode: "TH" }, { countryCode: "US" }]]])).toEqual([]);
+    expect(membershipErrors(true, [["invoiceAddresses", [{ countryCode: "TH" }, { countryCode: "US" }]]])).toEqual([]);
   });
 
   it("UT-PS-P09 reports unknown currency and each unknown country with its index", () => {
-    expect(membershipErrors("ZZZ", [["invoiceAddresses", [{ countryCode: "TH" }, { countryCode: "ZZ" }]], ["shippingAddresses", [{ countryCode: "XX" }]]])).toEqual([
+    expect(membershipErrors(false, [["invoiceAddresses", [{ countryCode: "TH" }, { countryCode: "ZZ" }]], ["shippingAddresses", [{ countryCode: "XX" }]]])).toEqual([
       { path: "currencyCode", code: "unknown" },
       { path: "invoiceAddresses.1.countryCode", code: "unknown" },
       { path: "shippingAddresses.0.countryCode", code: "unknown" },
@@ -95,7 +95,7 @@ describe("membershipErrors (D-09)", () => {
   });
 
   it("UT-PS-P10 keeps values already stored on the record valid", () => {
-    expect(membershipErrors("ZZZ", [["invoiceAddresses", [{ countryCode: "ZZ" }]]], { currencyCode: "ZZZ", countryCodes: new Set(["ZZ"]) })).toEqual([]);
+    expect(membershipErrors(true, [["invoiceAddresses", [{ countryCode: "ZZ" }]]], new Set(["ZZ"]))).toEqual([]);
   });
 });
 

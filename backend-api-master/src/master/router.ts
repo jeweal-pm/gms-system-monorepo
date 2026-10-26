@@ -12,6 +12,8 @@ import type { DocumentSetupService } from "../document-setup/document-setup.serv
 import { saveDocumentSetupBodySchema, transactionKeySchema } from "../document-setup/document-setup.schemas";
 import { bodySchemasFor, optionsQuerySchema } from "../stone-master/stone-master.schemas";
 import type { StoneKind } from "../stone-master/stone-master.kinds";
+import type { CurrencyService } from "../currency/currency.service";
+import { createCurrencyBodySchema, updateCurrencyBodySchema } from "../currency/currency.schemas";
 import type { QuotationService } from "../quotation/quotation.service";
 import {
   createQuotationSchema,
@@ -22,7 +24,7 @@ import {
   versionedIdSchema,
 } from "../quotation/quotation.schemas";
 import { LIST_LIMIT_MAX } from "../common/partner-schemas";
-import { requireMasterGrant, type MasterAction, type MasterContext, type MasterMenu } from "./authorization";
+import { requireAnyMasterGrant, requireMasterGrant, type MasterAction, type MasterContext, type MasterMenu } from "./authorization";
 
 // Staged router: do not mount until the auth-owned JWT/view/license context adapter is verified.
 const t = initTRPC.context<MasterContext>().create({
@@ -89,14 +91,23 @@ function permitted(menu: MasterMenu, action: MasterAction, mutation = false) {
   });
 }
 
+/** Read allowed with `action` on any of `menus` (currency SA-CUR-07: Quotation reads currency options). */
+function permittedAny(menus: readonly MasterMenu[], action: MasterAction) {
+  return t.procedure.use(({ ctx, next }) => {
+    const userId = requireAnyMasterGrant(ctx, menus, action);
+    return next({ ctx: { ...ctx, userId } });
+  });
+}
+
 export type MasterServices = Pick<{
   customer: CustomerService;
   vendor: VendorService;
   companyProfile: CompanyProfileService;
   stoneMaster: StoneMasterService;
   documentSetup: DocumentSetupService;
+  currency: CurrencyService;
   quotation: QuotationService;
-}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "quotation">;
+}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "currency" | "quotation">;
 
 function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
   const schemas = bodySchemasFor(kind);
@@ -113,7 +124,7 @@ function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
 }
 
 /** Direct service calls preserve IDs, transaction behavior and existing partner/stone schemas. */
-export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, quotation }: MasterServices) {
+export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, currency, quotation }: MasterServices) {
   return t.router({
     customer: t.router({
       list: permitted("customer", "VIEW").input(listInput).query(({ input }) => domainCall(() => customer.list(toListQuery(input)))),
@@ -165,7 +176,19 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
         .query(({ input }) => domainCall(() => documentSetup.get(input.transactionKey))),
       save: permitted("document-setup", "EDIT", true).input(saveDocumentSetupBodySchema).mutation(({ ctx, input }) => domainCall(() => documentSetup.save(ctx.userId, input))),
     }),
-    // quotation SA rev 1 / ADR-0032 (owner 2026-10-26). Approve/reject serve the separate Approve page.
+    // currency SA rev 1 (owner 2026-10-26): currency master; rates are against the Company Profile currency.
+    currency: t.router({
+      list: permitted("currency", "VIEW").input(listInput).query(({ input }) => domainCall(() => currency.list({ q: input.q, cursor: input.cursor, limit: input.limit }))),
+      get: permitted("currency", "VIEW").input(idInput).query(({ input }) => domainCall(() => currency.get(input.id))),
+      options: permittedAny(["currency", "quotation"], "VIEW").query(() => domainCall(() => currency.options())),
+      create: permitted("currency", "ADD", true).input(createCurrencyBodySchema).mutation(({ ctx, input }) => domainCall(() => currency.create(ctx.userId, input))),
+      update: permitted("currency", "EDIT", true).input(updateCurrencyBodySchema.extend({ id: z.uuid() })).mutation(({ ctx, input }) => {
+        const { id, ...body } = input;
+        return domainCall(() => currency.update(ctx.userId, id, body));
+      }),
+      delete: permitted("currency", "DELETE", true).input(idInput).mutation(({ ctx, input }) => domainCall(() => currency.delete(ctx.userId, input.id))),
+    }),
+    // quotation SA rev 1 / ADR-0032 (owner 2026-10-26). Quotation has no approval (owner 2026-10-26); the status procedures stay unused by the UI.
     quotation: t.router({
       list: permitted("quotation", "VIEW").input(quotationListSchema).query(({ input }) => domainCall(() => quotation.list(input))),
       get: permitted("quotation", "VIEW").input(idInput).query(({ input }) => domainCall(() => quotation.get(input.id))),

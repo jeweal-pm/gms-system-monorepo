@@ -7,6 +7,7 @@ import type { CustomerService } from "../../src/customer/customer.service";
 import type { VendorService } from "../../src/vendor/vendor.service";
 import type { CompanyProfileService } from "../../src/company-profile/company-profile.service";
 import type { StoneMasterService } from "../../src/stone-master/stone-master.service";
+import type { CurrencyService } from "../../src/currency/currency.service";
 import type { QuotationService } from "../../src/quotation/quotation.service";
 import { customerBody, withVersion } from "../partner-shared/fixtures";
 
@@ -22,6 +23,7 @@ const vendor = {
 const companyProfile = { get: vi.fn(), options: vi.fn(), save: vi.fn(), removeLogo: vi.fn() };
 const stoneMaster = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
 const documentSetup = { list: vi.fn(), get: vi.fn(), save: vi.fn() };
+const currency = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
 const quotation = {
   list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(),
   submit: vi.fn(), approve: vi.fn(), reject: vi.fn(), cancel: vi.fn(), delete: vi.fn(),
@@ -32,6 +34,7 @@ const router = createMasterRouter({
   companyProfile: companyProfile as unknown as CompanyProfileService,
   stoneMaster: stoneMaster as unknown as StoneMasterService,
   documentSetup: documentSetup as unknown as DocumentSetupService,
+  currency: currency as unknown as CurrencyService,
   quotation: quotation as unknown as QuotationService,
 });
 
@@ -43,7 +46,7 @@ function context(grants: string[], overrides: Partial<MasterContext> = {}): Mast
 }
 
 beforeEach(() => {
-  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(quotation)]) fn.mockReset().mockResolvedValue({ ok: true });
+  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(currency), ...Object.values(quotation)]) fn.mockReset().mockResolvedValue({ ok: true });
 });
 
 describe("staged master domain tRPC boundary", () => {
@@ -170,6 +173,37 @@ describe("staged master domain tRPC boundary", () => {
     await expect(caller.documentSetup.get({ transactionKey: "stone-master" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
+  it("GP-MT-CUR currency: exact grants, CSRF on writes, no code on update, options also for quotation:VIEW", async () => {
+    const body = { code: " usd ", name: "US Dollar", description: "Sales to the US", active: true, sellingRate: "33.25", buyingRate: "32.9" };
+    const caller = router.createCaller(context(["currency:VIEW", "currency:ADD", "currency:EDIT", "currency:DELETE"]));
+    await caller.currency.list({ q: " us " });
+    expect(currency.list).toHaveBeenCalledWith({ q: "us", cursor: undefined, limit: 50 });
+    await caller.currency.get({ id: ID });
+    expect(currency.get).toHaveBeenCalledWith(ID);
+    await caller.currency.create(body);
+    expect(currency.create).toHaveBeenCalledWith("user-1", { ...body, code: "USD" });
+    const update = { id: ID, expectedUpdatedAt: "2026-10-26T00:00:00.000Z", name: "US Dollar", description: "x", active: true, sellingRate: null, buyingRate: null };
+    await caller.currency.update(update);
+    expect(currency.update).toHaveBeenCalledWith("user-1", ID, { expectedUpdatedAt: update.expectedUpdatedAt, name: "US Dollar", description: "x", active: true, sellingRate: null, buyingRate: null });
+    await expect(caller.currency.update({ ...update, code: "EUR" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await caller.currency.delete({ id: ID });
+    expect(currency.delete).toHaveBeenCalledWith("user-1", ID);
+
+    await expect(caller.currency.create({ ...body, code: "US" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.currency.create({ ...body, sellingRate: "0" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.currency.create({ ...body, sellingRate: "1.23456" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(router.createCaller(context(["currency:VIEW"])).currency.create(body)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["currency:ADD"], { csrfVerified: false })).currency.create(body)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["quotation:VIEW"])).currency.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    await router.createCaller(context(["quotation:VIEW"])).currency.options();
+    await router.createCaller(context(["currency:VIEW"])).currency.options();
+    expect(currency.options).toHaveBeenCalledTimes(2);
+    await expect(router.createCaller(context(["vendor:VIEW"])).currency.options()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["quotation:VIEW"], { license: "DENIED" })).currency.options()).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(currency.options).toHaveBeenCalledTimes(2);
+  });
+
   it("GP-MT-QT quotation: each procedure needs its own action; mutations need CSRF; 422 keeps its domain code", async () => {
     const id = "11111111-1111-4111-8111-111111111111";
     const versioned = { id, expectedVersion: 1 };
@@ -202,7 +236,7 @@ describe("staged master domain tRPC boundary", () => {
     await expect(as(["EDIT"]).quotation.delete(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(router.createCaller(context(["quotation:ADD"], { csrfVerified: false })).quotation.create(body)).rejects.toMatchObject({ code: "FORBIDDEN" });
 
-    quotation.create.mockRejectedValueOnce(new HttpException({ error: { code: "QUOTATION_NUMBERING_MISSING", message: "x" } }, 422));
-    await expect(as(["ADD"]).quotation.create(body)).rejects.toMatchObject({ code: "UNPROCESSABLE_CONTENT", message: "QUOTATION_NUMBERING_MISSING" });
+    quotation.create.mockRejectedValueOnce(new HttpException({ error: { code: "QUOTATION_REFERENCE_INVALID", message: "x" } }, 422));
+    await expect(as(["ADD"]).quotation.create(body)).rejects.toMatchObject({ code: "UNPROCESSABLE_CONTENT", message: "QUOTATION_REFERENCE_INVALID" });
   });
 });

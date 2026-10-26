@@ -11,6 +11,7 @@ import type { CustomerService } from "../../src/customer/customer.service";
 import type { VendorService } from "../../src/vendor/vendor.service";
 import type { CompanyProfileService } from "../../src/company-profile/company-profile.service";
 import type { StoneMasterService } from "../../src/stone-master/stone-master.service";
+import type { CurrencyService } from "../../src/currency/currency.service";
 import { customerBody } from "../partner-shared/fixtures";
 
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
@@ -48,6 +49,7 @@ async function startHttp(authReader = vi.fn(async () => ({
     companyProfile: companyProfile as unknown as CompanyProfileService,
     stoneMaster: stoneMaster as unknown as StoneMasterService,
     documentSetup: { list: vi.fn(), get: vi.fn(), save: vi.fn() } as unknown as DocumentSetupService,
+    currency: { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as unknown as CurrencyService,
     quotation: {} as unknown as QuotationService,
   });
   const handler = createHTTPHandler({ router, createContext: ({ req }) => adapter.create(req) });

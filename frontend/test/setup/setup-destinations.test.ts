@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { moduleBreadcrumbs } from "@/features/home/navigation";
+import { contextNavFor, moduleBreadcrumbs } from "@/features/home/navigation";
 import { masterCodeDestinations, setupLandingTiles } from "@/features/setup/setup-destinations";
 
 /** UT-NAV-F01…F05: Setup landing tiles and Master Code modal tiles (owner design 2026-10-16). */
@@ -22,6 +22,14 @@ describe("masterCodeDestinations", () => {
       ["sale-person", "Sale Person", "sale-person", true],
     ]);
     expect(moduleBreadcrumbs("labor-name")?.label).toBe("Service Fee");
+  });
+
+  it("UT-NAV-F07 links Currency to its real page and context panel, gated by the currency leaf (currency UI rev 1)", () => {
+    const tile = masterCodeDestinations.find((entry) => entry.id === "currency");
+    expect(tile).toMatchObject({ kind: "link", href: "/setup/currency", permission: ["currency"] });
+    const nav = contextNavFor("/setup/currency");
+    expect(nav?.id).toBe("setup-currency");
+    expect(nav?.groups[0]?.children.map((child) => [child.label, child.href, child.permission])).toEqual([["Currency", "/setup/currency", ["currency"]]]);
   });
 
   it("UT-NAV-F06 per-path stroke weights and the filled Service Fee shape are kept", () => {

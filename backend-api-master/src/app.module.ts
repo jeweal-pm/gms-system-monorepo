@@ -8,6 +8,7 @@ import { CompanyProfileService } from "./company-profile/company-profile.service
 import { CustomerController } from "./customer/customer.controller";
 import { CustomerService } from "./customer/customer.service";
 import { DocumentSetupService } from "./document-setup/document-setup.service";
+import { CurrencyService } from "./currency/currency.service";
 import { PrismaLifecycleService } from "./database/prisma-lifecycle.service";
 import { QuotationPhotoPublicController } from "./quotation/quotation-photo.public.controller";
 import { QuotationService } from "./quotation/quotation.service";
@@ -47,6 +48,7 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
     CompanyProfileService,
     StoneMasterService,
     DocumentSetupService,
+    CurrencyService,
     QuotationService,
     MasterAuthzDatabase,
     MasterLicenseClient,

@@ -544,3 +544,24 @@ model QuotationLinePhoto {
   @@map("quotation_line_photo")
   @@schema("partner")
 }
+
+/// Currency master (currency SA revision 1, owner 2026-10-26). Rates are "1 {code} = rate {base}", where the
+/// base is `company_profile.currency_code`; the base currency's rates are NULL (SA-CUR-02). Other tables keep
+/// their own `currency_code` char(3) without a foreign key; membership is checked by the services (SA-CUR-05).
+model Currency {
+  id          String   @id @default(uuid()) @db.Uuid
+  /// 3 letters A–Z, immutable after create (Q-CUR-02, Q-CUR-04).
+  code        String   @unique(map: "currency_code_key") @db.Char(3)
+  name        String   @db.VarChar(100)
+  description String   @default("") @db.VarChar(250)
+  sellingRate Decimal? @map("selling_rate") @db.Decimal(18, 4)
+  buyingRate  Decimal? @map("buying_rate") @db.Decimal(18, 4)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy   String   @map("created_by") @db.VarChar(64)
+  updatedBy   String   @map("updated_by") @db.VarChar(64)
+
+  @@map("currency")
+  @@schema("partner")
+}
