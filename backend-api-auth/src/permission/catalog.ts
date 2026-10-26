@@ -1,7 +1,8 @@
 /**
  * Permission catalog v2 (ADR-0020 §3, user-permission SA revision 2).
- * 39 grantable leaves: Dashboard has VIEW/APPROVE/PRICE/PRINT/EXCEL, every other leaf has all
- * nine actions, so 5 + 38 x 9 = 347 applicable cells. Sections and groups are UI structure only
+ * 41 grantable leaves: Dashboard has VIEW/APPROVE/PRICE/PRINT/EXCEL, Document Setup has VIEW/EDIT
+ * (document-setup SA rev 1, 2026-10-23), every other leaf has all nine actions, so 5 + 2 + 39 x 9 = 358
+ * applicable cells (Currency added by currency SA rev 1, 2026-10-26). Sections and groups are UI structure only
  * and are never stored as grants. Changing the catalog is a code change; stored grants for
  * removed cells are ignored (filtered on read).
  */
@@ -32,9 +33,11 @@ export const PERMISSION_CATALOG: readonly CatalogNode[] = [
     leaf("company-profile", "Company Profile"),
     leaf("user-and-permission", "User and Permission"),
     leaf("notifications", "Notifications"),
+    leaf("document-setup", "Document Setup", ["VIEW", "EDIT"]),
     group("master-code", "Master Code", [
       leaf("vendor", "Vendor"),
       leaf("customer", "Customer"),
+      leaf("currency", "Currency"),
       leaf("stone-master", "Stone Master"),
       leaf("location-master", "Location Master"),
       leaf("certificate-type", "Certificate Type"),

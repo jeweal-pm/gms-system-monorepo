@@ -63,7 +63,8 @@ export const setupLandingTiles: (SetupLinkDestination | SetupMasterCodeEntry | S
 export const masterCodeDestinations: SetupLinkDestination[] = [
   // Shown with VIEW on Vendor or Customer; the dialog opens Customer when only that one is allowed.
   { kind: "link", id: "partner-master", label: "Partner Master", href: "/setup/vendor", icon: PartnerMasterIcon, color: "neutral", permission: ["vendor", "customer"] },
-  placeholder("currency", CurrencyIcon, "neutral"),
+  // currency UI rev 1 (owner 2026-10-26): real page, gated by the new `currency` leaf.
+  { kind: "link", id: "currency", label: "Currency", href: "/setup/currency", icon: CurrencyIcon, color: "neutral", permission: ["currency"] },
   // stone-master FE-SM-002: real pages (Stone Group first); `stone-master:VIEW` (Q-SM-04).
   { kind: "link", id: "stone-master", label: "Stone Master", href: stonePageHref(DEFAULT_STONE_SLUG), icon: StoneMasterIcon, color: "neutral", permission: [STONE_MENU_KEY] },
   placeholder("location-master", LocationMasterIcon, "neutral"),

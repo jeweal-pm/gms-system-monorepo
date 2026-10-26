@@ -49,6 +49,7 @@ describe("menu visibility", () => {
     expect(menuKeyFor("certificate-master")).toBe("certificate-type");
     expect(menuKeyFor("company-profile")).toBe("company-profile");
     expect(menuKeyFor("approve")).toBeUndefined();
-    expect(menuKeyFor("currency")).toBeUndefined();
+    // currency UI rev 1 (owner 2026-10-26): Currency has its own catalog leaf.
+    expect(menuKeyFor("currency")).toBe("currency");
   });
 });

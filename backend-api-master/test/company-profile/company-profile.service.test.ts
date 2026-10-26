@@ -12,11 +12,25 @@ import { CompanyProfileService } from "../../src/company-profile/company-profile
 
 type Row = Record<string, unknown> & { id: number; version: number };
 
-const db = vi.hoisted(() => ({ row: null as Row | null, storedFiles: [] as Record<string, unknown>[], failCreateWith: null as unknown }));
+const db = vi.hoisted(() => ({
+  row: null as Row | null,
+  storedFiles: [] as Record<string, unknown>[],
+  failCreateWith: null as unknown,
+  /** Currency master rows (currency SA-CUR-05). */
+  currencies: [] as { code: string; name: string; active: boolean }[],
+}));
 const files = vi.hoisted(() => ({ objects: new Map<string, Buffer>(), store: vi.fn(), read: vi.fn() }));
 
 vi.mock("../../src/database/prisma-client", () => {
+  const currency = {
+    findMany: vi.fn(async () => [...db.currencies]),
+    findUnique: vi.fn(async ({ where }: { where: { code: string } }) => {
+      const row = db.currencies.find((entry) => entry.code === where.code);
+      return row ? { active: row.active } : null;
+    }),
+  };
   const tx = {
+    currency,
     $queryRaw: vi.fn(async () => (db.row ? [{ version: db.row.version }] : [])),
     companyProfile: {
       findUnique: vi.fn(async () => db.row),
@@ -53,6 +67,7 @@ vi.mock("../../src/database/prisma-client", () => {
   };
   return {
     prisma: {
+      currency,
       $transaction: vi.fn(async (callback: (client: typeof tx) => unknown) => callback(tx)),
       companyProfile: {
         findUnique: vi.fn(async ({ select }: { select?: Record<string, boolean> }) => {
@@ -124,6 +139,7 @@ beforeEach(() => {
   db.row = null;
   db.storedFiles = [];
   db.failCreateWith = null;
+  db.currencies = [{ code: "THB", name: "Thai Baht", active: true }, { code: "INR", name: "Indian Rupee", active: false }, { code: "USD", name: "US Dollar", active: true }];
   files.objects.clear();
   files.store.mockClear();
   files.read.mockClear();
@@ -135,10 +151,19 @@ describe("get and options", () => {
     expect(await service.get()).toEqual({ profile: null });
   });
 
-  it("UT-CP-P41 returns the shared reference lists", () => {
-    const options = service.options();
+  it("UT-CP-P41 returns currencies from the currency master and the shared countries (currency SA-CUR-05)", async () => {
+    const options = await service.options();
+    expect(options.currencies).toContainEqual({ code: "INR", name: "Indian Rupee", active: false });
     expect(options.currencies.some((item) => item.code === "THB")).toBe(true);
     expect(options.countries.some((item) => item.code === "TH")).toBe(true);
+  });
+
+  it("UT-CUR-B11 accepts an active currency or the stored one, rejects an inactive new choice", async () => {
+    expect(await failure(service.save("user-1", input({ currencyCode: "INR" })))).toMatchObject({ status: 400, code: "VALIDATION_ERROR", paths: ["currencyCode"] });
+    await service.save("user-1", input({ currencyCode: "USD" }));
+    db.currencies = db.currencies.map((entry) => (entry.code === "USD" ? { ...entry, active: false } : entry));
+    const { profile } = await service.save("user-1", input({ currencyCode: "USD", name: "Renamed", expectedVersion: 1 }));
+    expect(profile).toMatchObject({ currencyCode: "USD", name: "Renamed", version: 2 });
   });
 });
 

@@ -8,15 +8,14 @@ import type { VendorService } from "../vendor/vendor.service";
 import type { CompanyProfileService } from "../company-profile/company-profile.service";
 import { saveCompanyProfileBodySchema } from "../company-profile/company-profile.schemas";
 import type { StoneMasterService } from "../stone-master/stone-master.service";
-import type { StoneMasterService } from "../stone-master/stone-master.service";
 import type { DocumentSetupService } from "../document-setup/document-setup.service";
 import { saveDocumentSetupBodySchema, transactionKeySchema } from "../document-setup/document-setup.schemas";
 import { bodySchemasFor, optionsQuerySchema } from "../stone-master/stone-master.schemas";
 import type { StoneKind } from "../stone-master/stone-master.kinds";
+import type { CurrencyService } from "../currency/currency.service";
+import { createCurrencyBodySchema, updateCurrencyBodySchema } from "../currency/currency.schemas";
 import { LIST_LIMIT_MAX } from "../common/partner-schemas";
-
-import { LIST_LIMIT_MAX } from "../common/partner-schemas";
-import { requireMasterGrant, type MasterAction, type MasterContext, type MasterMenu } from "./authorization";
+import { requireAnyMasterGrant, requireMasterGrant, type MasterAction, type MasterContext, type MasterMenu } from "./authorization";
 
 // Staged router: do not mount until the auth-owned JWT/view/license context adapter is verified.
 const t = initTRPC.context<MasterContext>().create({
@@ -83,13 +82,22 @@ function permitted(menu: MasterMenu, action: MasterAction, mutation = false) {
   });
 }
 
+/** Read allowed with `action` on any of `menus` (currency SA-CUR-07: Quotation reads currency options). */
+function permittedAny(menus: readonly MasterMenu[], action: MasterAction) {
+  return t.procedure.use(({ ctx, next }) => {
+    const userId = requireAnyMasterGrant(ctx, menus, action);
+    return next({ ctx: { ...ctx, userId } });
+  });
+}
+
 export type MasterServices = Pick<{
   customer: CustomerService;
   vendor: VendorService;
   companyProfile: CompanyProfileService;
   stoneMaster: StoneMasterService;
   documentSetup: DocumentSetupService;
-}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup">;
+  currency: CurrencyService;
+}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "currency">;
 
 function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
   const schemas = bodySchemasFor(kind);
@@ -106,7 +114,7 @@ function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
 }
 
 /** Direct service calls preserve IDs, transaction behavior and existing partner/stone schemas. */
-export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup }: MasterServices) {
+export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, currency }: MasterServices) {
   return t.router({
     customer: t.router({
       list: permitted("customer", "VIEW").input(listInput).query(({ input }) => domainCall(() => customer.list(toListQuery(input)))),
@@ -157,6 +165,18 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       get: permitted("document-setup", "VIEW").input(z.object({ transactionKey: transactionKeySchema }).strict())
         .query(({ input }) => domainCall(() => documentSetup.get(input.transactionKey))),
       save: permitted("document-setup", "EDIT", true).input(saveDocumentSetupBodySchema).mutation(({ ctx, input }) => domainCall(() => documentSetup.save(ctx.userId, input))),
+    }),
+    // currency SA rev 1 (owner 2026-10-26): currency master; rates are against the Company Profile currency.
+    currency: t.router({
+      list: permitted("currency", "VIEW").input(listInput).query(({ input }) => domainCall(() => currency.list({ q: input.q, cursor: input.cursor, limit: input.limit }))),
+      get: permitted("currency", "VIEW").input(idInput).query(({ input }) => domainCall(() => currency.get(input.id))),
+      options: permittedAny(["currency", "quotation"], "VIEW").query(() => domainCall(() => currency.options())),
+      create: permitted("currency", "ADD", true).input(createCurrencyBodySchema).mutation(({ ctx, input }) => domainCall(() => currency.create(ctx.userId, input))),
+      update: permitted("currency", "EDIT", true).input(updateCurrencyBodySchema.extend({ id: z.uuid() })).mutation(({ ctx, input }) => {
+        const { id, ...body } = input;
+        return domainCall(() => currency.update(ctx.userId, id, body));
+      }),
+      delete: permitted("currency", "DELETE", true).input(idInput).mutation(({ ctx, input }) => domainCall(() => currency.delete(ctx.userId, input.id))),
     }),
   });
 }

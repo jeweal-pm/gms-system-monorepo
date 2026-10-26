@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { can, partnerAccess } from "@/features/partner/access";
 import { invoiceAddressType, shippingAddressType } from "@/features/partner/address-types";
 import { lowerPlural, lowerSingular, type PartnerEntity } from "@/features/partner/entity";
-import { toSelectOptions } from "@/features/partner/options";
+import { currencyChoices, toSelectOptions } from "@/features/partner/options";
 import { draftRowTitle, partnerDrawerId } from "@/features/partner/components/partner-drawer";
 import { partnerHeaderButtons, partnerTitle, type PartnerMode } from "@/features/partner/components/partner-page-header";
 
@@ -111,9 +111,9 @@ describe("toSelectOptions", () => {
   it("UT-PTN-P05 sorts currencies by code (\"{code} — {name}\") and countries by name", () => {
     const options = toSelectOptions({
       currencies: [
-        { code: "USD", name: "US Dollar" },
-        { code: "THB", name: "Thai Baht" },
-        { code: "EUR", name: "Euro" },
+        { code: "USD", name: "US Dollar", active: true },
+        { code: "THB", name: "Thai Baht", active: true },
+        { code: "EUR", name: "Euro", active: true },
       ],
       countries: [
         { code: "TH", name: "Thailand" },
@@ -122,18 +122,28 @@ describe("toSelectOptions", () => {
       ],
     });
     expect(options.currencies).toEqual([
-      { value: "EUR", label: "EUR — Euro" },
-      { value: "THB", label: "THB — Thai Baht" },
-      { value: "USD", label: "USD — US Dollar" },
+      { value: "EUR", label: "EUR — Euro", active: true },
+      { value: "THB", label: "THB — Thai Baht", active: true },
+      { value: "USD", label: "USD — US Dollar", active: true },
     ]);
     expect(options.countries.map((option) => option.value)).toEqual(["AU", "JP", "TH"]);
     expect(options.countries[0]).toEqual({ value: "AU", label: "Australia" });
   });
 
   it("UT-PTN-P06 does not mutate the server output", () => {
-    const output = { currencies: [{ code: "USD", name: "US Dollar" }, { code: "EUR", name: "Euro" }], countries: [] };
+    const output = { currencies: [{ code: "USD", name: "US Dollar", active: true }, { code: "EUR", name: "Euro", active: true }], countries: [] };
     toSelectOptions(output);
     expect(output.currencies[0].code).toBe("USD");
+  });
+
+  it("UT-CUR-05 marks inactive currencies; choices keep only the saved inactive one", () => {
+    const { currencies } = toSelectOptions({
+      currencies: [{ code: "USD", name: "US Dollar", active: true }, { code: "INR", name: "Indian Rupee", active: false }, { code: "LKR", name: "Sri Lankan Rupee", active: false }],
+      countries: [],
+    });
+    expect(currencies.find((option) => option.value === "INR")).toEqual({ value: "INR", label: "INR — Indian Rupee (inactive)", active: false });
+    expect(currencyChoices(currencies, "USD").map((option) => option.value)).toEqual(["USD"]);
+    expect(currencyChoices(currencies, "INR").map((option) => option.value)).toEqual(["INR", "USD"]);
   });
 });
 

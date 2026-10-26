@@ -12,6 +12,7 @@ import { TextField } from "@/components/ui/outlined-field";
 import { PhoneField } from "@/components/ui/phone-field";
 import { SelectField } from "@/components/ui/select-field";
 import { ToastProvider, useToast } from "@/components/ui/toast";
+import { currencyChoices } from "@/features/partner/options";
 import type { PartnerAccess } from "@/features/partner/access";
 import { DiscardChangesDialog } from "@/features/partner/components/discard-changes-dialog";
 import { PartnerAccessGuard } from "@/features/partner/components/partner-page-parts";
@@ -347,7 +348,7 @@ function CompanyProfileWorkspace({ access, saved, refetch }: { access: PartnerAc
                   label="Company Currency"
                   required
                   placeholder="Select"
-                  options={options.data?.currencies ?? []}
+                  options={currencyChoices(options.data?.currencies ?? [], field.value)}
                   status={optionList.status}
                   onRetry={optionList.onRetry}
                   error={errors.currencyCode?.message}

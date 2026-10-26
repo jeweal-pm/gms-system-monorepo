@@ -45,6 +45,7 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   customer: "/setup/customer",
   "stone-master": stonePageHref(DEFAULT_STONE_SLUG),
   "document-setup": "/setup/document-setup",
+  currency: "/setup/currency",
   quotation: "/pre-sale/quotation",
 };
 
@@ -134,7 +135,7 @@ const CATALOG_KEY_ALIASES: Readonly<Record<string, string>> = {
 };
 
 /** Master Code sub-menus in the catalog (Setup › Master Code). */
-export const MASTER_CODE_MENU_KEYS = ["vendor", "customer", "stone-master", "location-master", "certificate-type", "labor-name", "sale-person"] as const;
+export const MASTER_CODE_MENU_KEYS = ["vendor", "customer", "currency", "stone-master", "location-master", "certificate-type", "labor-name", "sale-person"] as const;
 /** Every Setup leaf in the catalog; Setup is visible when any of them is. */
 export const SETUP_MENU_KEYS = ["company-profile", "user-and-permission", "notifications", "document-setup", ...MASTER_CODE_MENU_KEYS] as const;
 
@@ -306,7 +307,22 @@ const stoneContextNav: ContextNav = {
   ],
 };
 
-const contextNavs: ContextNav[] = [partnerContextNav, stoneContextNav];
+/** Setup › Currency context (currency UI rev 1, source 01 left): one group with the Currency page. */
+const currencyContextNav: ContextNav = {
+  id: "setup-currency",
+  title: "Setup",
+  groups: [
+    {
+      id: "currency",
+      label: "Currency",
+      icon: Receipt,
+      href: masterCodeDialogHref,
+      children: [link("currency-page", "Currency", undefined, "/setup/currency")].map((child) => ({ ...child, permission: ["currency"] })),
+    },
+  ],
+};
+
+const contextNavs: ContextNav[] = [partnerContextNav, stoneContextNav, currencyContextNav];
 
 /** The context panel for the current route, or null when the route uses the normal sidebar. */
 export function contextNavFor(pathname: string): ContextNav | null {

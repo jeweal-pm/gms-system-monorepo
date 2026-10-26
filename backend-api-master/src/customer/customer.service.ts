@@ -2,7 +2,8 @@ import { Injectable, Logger } from "@nestjs/common";
 import { validationException } from "../common/errors";
 import { membershipErrors as sharedMembershipErrors } from "../common/partner-schemas";
 import { addressDetail, listPage, nextPartnerCode, scalarData, scalarDetail, SCALAR_FIELDS, WRITE_TX } from "../common/persistence";
-import { OPTIONS_RESPONSE } from "../common/reference-data";
+import { COUNTRY_OPTIONS } from "../common/reference-data";
+import { currencyOptions, isCurrencyAllowed } from "../currency/currency-directory";
 import { prisma } from "../database/prisma-client";
 import { AddressType } from "../generated/prisma/client";
 import { customerNotFound, customerStale, mapPersistenceError } from "./customer.errors";
@@ -31,9 +32,12 @@ function allAddressRows(input: CustomerInput) {
   return [...addressRows(AddressType.INVOICE, input.invoiceAddresses), ...addressRows(AddressType.SHIPPING, input.shippingAddresses)];
 }
 
-/** D-09: membership in the runtime lists, or equal to a value already stored on this customer. */
-function membershipErrors(input: CustomerInput, stored?: { currencyCode: string; countryCodes: Set<string> }) {
-  return sharedMembershipErrors(input.currencyCode, [["invoiceAddresses", input.invoiceAddresses], ["shippingAddresses", input.shippingAddresses]], stored);
+/**
+ * D-09: country in the runtime list, or equal to a value stored on this customer; the currency is active in
+ * the currency master or equal to the stored one (currency SA-CUR-05).
+ */
+function membershipErrors(input: CustomerInput, currencyAllowed: boolean, storedCountryCodes?: ReadonlySet<string>) {
+  return sharedMembershipErrors(currencyAllowed, [["invoiceAddresses", input.invoiceAddresses], ["shippingAddresses", input.shippingAddresses]], storedCountryCodes);
 }
 
 function customerInput(input: UpdateCustomerInput): CustomerInput {
@@ -45,8 +49,13 @@ function customerInput(input: UpdateCustomerInput): CustomerInput {
 export class CustomerService {
   private readonly logger = new Logger("Customer");
 
-  options() {
-    return OPTIONS_RESPONSE;
+  /** Currencies from the currency master (currency SA-CUR-05); countries from the runtime list. */
+  async options() {
+    try {
+      return { currencies: await currencyOptions(), countries: COUNTRY_OPTIONS };
+    } catch (error) {
+      throw mapPersistenceError(error, "options");
+    }
   }
 
   list(query: ListQuery) {
@@ -78,7 +87,13 @@ export class CustomerService {
   }
 
   async create(actorId: string, input: CustomerInput) {
-    const invalid = membershipErrors(input);
+    let currencyAllowed: boolean;
+    try {
+      currencyAllowed = await isCurrencyAllowed(prisma, input.currencyCode);
+    } catch (error) {
+      throw mapPersistenceError(error, "create");
+    }
+    const invalid = membershipErrors(input, currencyAllowed);
     if (invalid.length > 0) throw validationException(invalid);
     try {
       const created = await prisma.$transaction(async (tx) => {
@@ -106,7 +121,8 @@ export class CustomerService {
       const result = await prisma.$transaction(async (tx) => {
         const stored = await tx.customer.findUnique({ where: { id }, include: { addresses: { select: { countryCode: true } } } });
         if (!stored) throw customerNotFound();
-        const invalid = membershipErrors(input, { currencyCode: stored.currencyCode, countryCodes: new Set(stored.addresses.map((a) => a.countryCode)) });
+        const currencyAllowed = await isCurrencyAllowed(tx, input.currencyCode, stored.currencyCode);
+        const invalid = membershipErrors(input, currencyAllowed, new Set(stored.addresses.map((a) => a.countryCode)));
         if (invalid.length > 0) throw validationException(invalid);
 
         const data = await scalarData(tx, input);
