@@ -28,8 +28,9 @@ export function emptyLine(): QuotationLine {
     weightCt: "",
     priceUnit: "PER_CT",
     unitPrice: "",
-    discountPercent: "",
-    discountAmount: "",
+    discountType: "PERCENT",
+    discountValue: "",
+    stonePartOrder: [],
     photos: [],
     itemNote: "",
   };

@@ -72,7 +72,7 @@ export function CurrencyFieldsCard({ form, readOnly, codeLocked, baseCode, isBas
           {codeLocked && !readOnly && <p className="mt-1 pl-4 text-gms-label text-gms-text-secondary">Code can&apos;t be changed after saving</p>}
         </div>
         <TextField id={`${ID}-name`} label="Name" required autoComplete="off" placeholder="e.g. US Dollar" readOnly={readOnly} error={errors.name?.message} {...register("name")} />
-        <FieldShell id={`${ID}-description`} label="Description" required error={errors.description?.message} readOnly={readOnly}>
+        <FieldShell id={`${ID}-description`} label="Description" error={errors.description?.message} readOnly={readOnly}>
           <div className="relative">
             <textarea
               id={`${ID}-description`}
@@ -106,9 +106,9 @@ export function CurrencyFieldsCard({ form, readOnly, codeLocked, baseCode, isBas
             </p>
           ) : (
             <>
-              <div className="mt-3 grid grid-cols-1 gap-4 min-[400px]:grid-cols-2">
-                <RateField form={form} name="sellingRate" label="Selling Rate" baseCode={baseCode} readOnly={readOnly} help="Used when you sell to customers in this currency." />
-                <RateField form={form} name="buyingRate" label="Buying Rate" baseCode={baseCode} readOnly={readOnly} help="Used when you buy from vendors in this currency." />
+              <div className="mt-3 grid max-w-[260px] grid-cols-1 gap-4">
+                {/* Owner 2026-10-27: one Exchange Rate (no separate selling/buying) and an optional description. */}
+                <RateField form={form} name="sellingRate" label="Exchange Rate" baseCode={baseCode} readOnly={readOnly} help={`1 unit of this currency in ${baseCode ?? "the company currency"}.`} />
               </div>
               {!baseCode && <p className="mt-3 text-gms-label text-gms-text-secondary">Set the company currency in Company Profile.</p>}
             </>

@@ -59,7 +59,7 @@ describe("form ↔ contract", () => {
     expect(input.lines[0]).toMatchObject({ source: "MANUAL", stoneCodeId: ID, location: "BKK-01", pcs: 2, weightCt: "1.12", unitPrice: "65000", photoIds: ["p1"] });
     expect(input.discount).toEqual({ type: "NONE", value: "0" });
     expect(input.lines[0].discount).toEqual({ type: "NONE", value: "0" });
-    const withAmount = toQuotationInput(values({ lines: [{ ...values().lines[0], discountAmount: " 150 " }] }));
+    const withAmount = toQuotationInput(values({ lines: [{ ...values().lines[0], discountType: "AMOUNT" as const, discountValue: " 150 " }] }));
     expect(withAmount.lines[0].discount).toEqual({ type: "AMOUNT", value: "150" });
     expect(input.labor).toBeNull();
     expect(input.exchangeRate).toBe("36.25");
@@ -77,7 +77,7 @@ describe("form ↔ contract", () => {
   it("UT-QT-02 a saved quotation loads into the form and saves back unchanged", () => {
     const form = fromQuotation(detail);
     expect(form).toMatchObject({ id: ID, docNo: "QT-1", version: 3, status: "REJECTED", statusReason: "Price too high", invoiceAddressId: "" });
-    expect(form.lines[0]).toMatchObject({ key: "l1", locationId: "BKK-01", pcs: "1", stoneCodeId: "", discountPercent: "5", discountAmount: "" });
+    expect(form.lines[0]).toMatchObject({ key: "l1", locationId: "BKK-01", pcs: "1", stoneCodeId: "", discountType: "PERCENT", discountValue: "5", stonePartOrder: [] });
     expect(form.lines[0].photos.map((photo) => photo.url)).toEqual(["/api/v1/quotation/photos/p1", "/api/v1/quotation/photos/p2"]);
     expect(form.discount).toEqual({ enabled: true, type: "AMOUNT", value: "100" });
     const input = toQuotationInput(form);

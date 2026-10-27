@@ -51,8 +51,9 @@ export function toCreateInput(values: CurrencyFormValues, baseCode: string | nul
     name: values.name.trim(),
     description: values.description.trim(),
     active: values.active,
+    // Owner 2026-10-27: one Exchange Rate (no separate selling/buying) and an optional description.
     sellingRate: base ? null : formatRate(values.sellingRate.trim()),
-    buyingRate: base ? null : formatRate(values.buyingRate.trim()),
+    buyingRate: base ? null : formatRate(values.sellingRate.trim()),
   };
 }
 
@@ -66,8 +67,8 @@ export function toUpdateFields(values: CurrencyFormValues, storedCode: string, b
 export function rowText(item: CurrencyListItem, baseCode: string | null): { primary: string; secondary: string } {
   const primary = `${item.code} · ${item.name}`;
   if (item.code === baseCode) return { primary, secondary: "Base currency" };
-  if (item.sellingRate === null || item.buyingRate === null) return { primary, secondary: "Rates not set" };
-  return { primary, secondary: `Sell ${item.sellingRate} · Buy ${item.buyingRate} ${baseCode ?? ""}`.trimEnd() };
+  if (item.sellingRate === null) return { primary, secondary: "Rate not set" };
+  return { primary, secondary: `Rate ${item.sellingRate} ${baseCode ?? ""}`.trimEnd() };
 }
 
 // ---- errors ----

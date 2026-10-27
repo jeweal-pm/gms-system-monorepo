@@ -25,6 +25,13 @@
 | SA-QT-13 | **Frontend scope:** replace `api.ts` mock calls with typed `masterTrpc.quotation.*`; options and the next-number preview from the API; header actions Save / Edit / Send for Approval / Delete by permission and status (owner 2026-10-26: no Cancel Quotation button on this page; `quotation.cancel` stays in the API) — **no Approve/Reject on this page** (SA-QT-03); due date starts empty; From Stock button disabled with "Stock isn't available yet"; Print/Excel stay disabled; Document Setup page shows used rows locked. | No UI redesign; contract swap behind `api.ts` as ADR-0025 planned. |
 | SA-QT-14 | **Infra:** add one nginx location `/api/v1/quotation/photos` → `api-master` (dev `docker/nginx/gms-dev.conf` and the production profile), body limit 5 MB. No other container/volume change; photos use the existing master storage mount. | Binary upload cannot go through tRPC JSON. |
 
+## Amendment 2026-10-27 (owner)
+
+| ID | Change |
+|---|---|
+| SA-QT-08b | **Linked discount fields** (line and document): the UI shows Discount (%) and Discount Amt together; typing a percent fills the amount and typing an amount fills the percent. The field typed last is saved as `discount {type, value}` — contract and server rule unchanged. Percent/currency units sit inside the input boxes; every money value shows the document currency code. |
+| SA-QT-07b | **Editable stone code on a line:** the Stone Code can be typed or picked; changing stone/shape/size/… rebuilds it from the parts’ codes in the chosen master code’s part order (default order otherwise). A code that matches a master stone code is linked (`stoneCodeId`), otherwise it is a quotation-only snapshot; the stone master is never changed. `quotation.options.stone` part lists become `{name, code}[]` (a size uses its name as code) and stone codes carry `partOrder` (additive). |
+
 ## Correction 2026-10-26 — no approval for quotations
 
 **Corrected by the owner 2026-10-26** ("ลบปุ่ม send of approval ไปเลยบอกเเล้วว่า quotation ไม่มี approve"): Quotation has **no approval step**. Quotations stay `DRAFT` (editable and deletable by permission); the Quotation page has no Send for Approval / Approve / Reject / Cancel buttons. The `submit`/`approve`/`reject`/`cancel` procedures remain in the API but are not used by the UI.

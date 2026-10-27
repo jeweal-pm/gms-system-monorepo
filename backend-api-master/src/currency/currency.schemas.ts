@@ -17,7 +17,8 @@ export const rateSchema = z
 
 const fields = {
   name: z.string().trim().min(1).max(100),
-  description: z.string().trim().min(1).max(250),
+  // Owner 2026-10-27: one Exchange Rate (no separate selling/buying) and an optional description.
+  description: z.string().trim().max(250),
   active: z.boolean(),
   sellingRate: rateSchema,
   buyingRate: rateSchema,

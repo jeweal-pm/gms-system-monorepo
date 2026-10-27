@@ -17,6 +17,7 @@
 - Bug (recorded in this feature ledger, fixed the same day): photo upload returned 409 after the first photo — `stored_files_one_ready_source_key` allows one ready row per `(source_type, source_id)` and `source_id` was the uploader. Fix: `source_id` = the photo id (uploader stays in `created_by`). Corrective pass 1, verified by tests.
 - SA-QT-04 amended: with no Document Setup row in effect, numbers are plain `1, 2, 3 …` (migration `20261026120000_quotation_plain_numbering`).
 - SA-QT-13 amended: no Cancel Quotation button on the Quotation page (API kept).
+- Owner 2026-10-27: linked Discount (%)/Discount Amt on lines and the document; units inside boxes; currency code on every money value; editable/rebuilt stone code on lines (SA-QT-07b/08b); Currency page has one Exchange Rate and an optional Description.
 - Correction (owner 2026-10-26): Quotation has no approval — Send for Approval button removed; quotations stay DRAFT; status procedures stay in the API unused.
 - Row panel (owner Figma 2026-10-26): photos uploaded in the row panel (≤ 5, set main there), left photo box view + zoom only; line Discount (%) / Discount Amt (one of them, SA-QT-07a/08a, migration `20261026150000_quotation_line_discount`); Amount only in the table.
 

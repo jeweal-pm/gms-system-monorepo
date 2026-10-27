@@ -44,15 +44,22 @@ describe("masterCodeDestinations", () => {
 });
 
 describe("setupLandingTiles", () => {
-  it("UT-NAV-F01 lists the six tiles in the design order with their colors", () => {
+  it("UT-NAV-F01 lists the tiles in the design order with their colors (Decimal Setup added 2026-10-27)", () => {
     expect(setupLandingTiles.map((tile) => [tile.label, tile.kind, tile.color])).toEqual([
       ["Company Profile", "link", "indigo"],
       ["User and Permission", "link", "green"],
       ["Notifications", "link", "red"],
       ["Master Code", "master-code", "neutral"],
       ["Document Setup", "link", "blue"],
+      ["Decimal Setup", "link", "blue"],
       ["Stone Factory", "unavailable", "stone"],
     ]);
+  });
+
+  it("UT-DEC-05 links Decimal Setup to its page, gated by document-setup until it has its own leaf (Q-DEC-05)", () => {
+    const tile = setupLandingTiles.find((entry) => entry.id === "decimal-setup");
+    expect(tile && "href" in tile ? tile.href : null).toBe("/setup/decimal-setup");
+    expect(tile?.permission).toEqual(["document-setup"]);
   });
 
   it("UT-NAV-F02 links Document Setup to its real page, gated by the document-setup leaf (UI rev 1)", () => {

@@ -36,16 +36,16 @@ export function currencyFormSchema(baseCode: string | null) {
     .object({
       code: z.string().trim().regex(CODE_PATTERN, "Enter 3 letters, e.g. USD"),
       name: z.string().trim().min(1, "Name is required").max(NAME_MAX, `Use ${NAME_MAX} characters or fewer`),
-      description: z.string().trim().min(1, "Description is required").max(DESCRIPTION_MAX, `Use ${DESCRIPTION_MAX} characters or fewer`),
+      // Owner 2026-10-27: one Exchange Rate (no separate selling/buying) and an optional description.
+      description: z.string().trim().max(DESCRIPTION_MAX, `Use ${DESCRIPTION_MAX} characters or fewer`),
       active: z.boolean(),
       sellingRate: z.string(),
       buyingRate: z.string(),
     })
     .superRefine((values, ctx) => {
       if (isBaseCode(values.code, baseCode)) return;
-      for (const field of ["sellingRate", "buyingRate"] as const) {
-        const problem = rateProblem(values[field]);
-        if (problem) ctx.addIssue({ code: "custom", path: [field], message: problem });
-      }
+      // The single Exchange Rate is kept in `sellingRate` and saved to both rate columns.
+      const problem = rateProblem(values.sellingRate);
+      if (problem) ctx.addIssue({ code: "custom", path: ["sellingRate"], message: problem });
     });
 }

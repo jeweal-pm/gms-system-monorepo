@@ -1,3 +1,6 @@
+import { amountText, discountAmount, percentText } from "@/features/quotation/lib/discount";
+import { dec } from "@/features/quotation/lib/decimal";
+import { rebuildStoneCode } from "@/features/quotation/lib/stone-code";
 import { describe, expect, it } from "vitest";
 import type { QuotationLine } from "@/features/quotation/schema";
 import { calculateTotals, lineAmount } from "@/features/quotation/lib/calculate";
@@ -78,10 +81,42 @@ describe("calculateTotals", () => {
 
 describe("line discount (owner 2026-10-26)", () => {
   it("is a percent of the line or an amount, capped at the line, and lowers the subtotal", () => {
-    expect(formatMoney(lineAmount(line({ weightCt: "1", unitPrice: "1000", discountPercent: "10" })))).toBe("900.00");
-    expect(formatMoney(lineAmount(line({ weightCt: "1", unitPrice: "1000", discountAmount: "150.50" })))).toBe("849.50");
-    expect(formatMoney(lineAmount(line({ weightCt: "1", unitPrice: "100", discountAmount: "500" })))).toBe("0.00");
-    const totals = calculateTotals({ ...emptyQuotation(), lines: [line({ weightCt: "1", unitPrice: "1000", discountPercent: "10" }), line({ weightCt: "1", unitPrice: "500" })] });
+    expect(formatMoney(lineAmount(line({ weightCt: "1", unitPrice: "1000", discountType: "PERCENT", discountValue: "10" })))).toBe("900.00");
+    expect(formatMoney(lineAmount(line({ weightCt: "1", unitPrice: "1000", discountType: "AMOUNT", discountValue: "150.50" })))).toBe("849.50");
+    expect(formatMoney(lineAmount(line({ weightCt: "1", unitPrice: "100", discountType: "AMOUNT", discountValue: "500" })))).toBe("0.00");
+    const totals = calculateTotals({ ...emptyQuotation(), lines: [line({ weightCt: "1", unitPrice: "1000", discountType: "PERCENT", discountValue: "10" }), line({ weightCt: "1", unitPrice: "500" })] });
     expect(formatMoney(totals.subtotal)).toBe("1,400.00");
+  });
+});
+
+describe("linked discount fields (owner 2026-10-27)", () => {
+  it("fills the amount from a percent and the percent from an amount, against the base", () => {
+    const base = dec("3500");
+    expect(amountText(base, "PERCENT", "10")).toBe("350.00");
+    expect(percentText(base, "PERCENT", "10")).toBe("10");
+    expect(percentText(base, "AMOUNT", "10")).toBe("0.29");
+    expect(amountText(base, "AMOUNT", "10")).toBe("10");
+    expect(amountText(base, "PERCENT", "")).toBe("");
+    expect(percentText(dec("0"), "AMOUNT", "10")).toBe("");
+    expect(formatMoney(discountAmount(base, "AMOUNT", "9999"))).toBe("3,500.00");
+  });
+});
+
+describe("stone code rebuild (owner 2026-10-27)", () => {
+  const lists = {
+    stone: [{ name: "Ruby", code: "RU" }],
+    shape: [{ name: "Oval", code: "OV" }, { name: "Round", code: "RD" }],
+    size: [{ name: "2.0 mm", code: "2.0MM" }],
+    color: [{ name: "Red", code: "R" }],
+  };
+  const names = { stone: "Ruby", shape: "Round", size: "2.0 mm", color: "Red", clarity: "", cutting: "", quality: "" };
+
+  it("uses the parts' codes in the master code's order, or the default order", () => {
+    expect(rebuildStoneCode(names, lists, [])).toEqual({ code: "RU2.0MM-RDR", complete: true });
+    expect(rebuildStoneCode(names, lists, ["color", "shape", "name", "size", "cutting", "clarity", "quality"]).code).toBe("RRD-RU2.0MM");
+    expect(rebuildStoneCode({ ...names, shape: "Oval" }, lists, []).code).toBe("RU2.0MM-OVR");
+    expect(rebuildStoneCode({ stone: "", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "" }, lists, []).code).toBe("");
+    // An old value missing from the active list is skipped and marks the result incomplete (not linkable).
+    expect(rebuildStoneCode({ ...names, color: "Old Red" }, lists, [])).toEqual({ code: "RU2.0MM-RD", complete: false });
   });
 });

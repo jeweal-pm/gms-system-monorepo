@@ -7,42 +7,48 @@ import type { QuotationTotals } from "../../lib/calculate";
 import { formatMoney } from "../../lib/format";
 import { SERVICE_CHARGE_TYPES } from "../../lib/options";
 import type { QuotationFormValues } from "../../schema";
+import { DiscountPair } from "../DiscountPair";
 import { Checkbox, cx, NumberInput, TextInput } from "../ui";
 
 const numberInput = "h-10";
 
 export function SummaryValue({ totals, currency }: { totals: QuotationTotals; currency: string }) {
   const { register, control, setValue } = useFormContext<QuotationFormValues>();
+  /** A money value followed by the document currency (owner 2026-10-27). */
+  const money = (value: Parameters<typeof formatMoney>[0]) => (
+    <>
+      {formatMoney(value)} {currency && <span className="text-xs text-[#6B7480]">{currency}</span>}
+    </>
+  );
   const discount = useWatch({ control, name: "discount" });
   const tax = useWatch({ control, name: "tax" });
   const labor = useWatch({ control, name: "labor" });
 
   return (
     <div className="text-[15px] text-[#1C252E]">
-      <Row label="Subtotal" value={formatMoney(totals.subtotal)} />
+      <Row label="Subtotal" value={money(totals.subtotal)} />
 
       {/* Discount */}
       <div className="border-b border-[#E3E6EA] pb-4">
         <div className="flex items-center justify-between py-3">
           <Checkbox label="Discount" {...register("discount.enabled")} />
-          <span className="text-[#E5484D]">{formatMoney(totals.discountAmount)}</span>
+          <span className="text-[#E5484D]">{money(totals.discountAmount)}</span>
         </div>
+        {/* Owner 2026-10-27: Discount (%) and Discount Amt side by side; typing either fills the other. */}
         {discount.enabled && (
-          <div className="flex items-center gap-3 pl-8">
-            <div className="flex rounded-md bg-[#F3F4F5] p-0.5 text-sm">
-              {(["PERCENT", "AMOUNT"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setValue("discount.type", t, { shouldDirty: true })}
-                  className={cx("rounded px-3 py-1", discount.type === t ? "bg-white font-medium shadow-sm" : "text-[#6B7480]")}
-                >
-                  {t === "PERCENT" ? "%" : currency}
-                </button>
-              ))}
-            </div>
-            <NumberInput compact placeholder="0.00" className={numberInput} {...register("discount.value")} />
-            <span className="w-8 text-sm text-[#6B7480]">{discount.type === "PERCENT" ? "%" : currency}</span>
+          <div className="pl-8">
+            <DiscountPair
+              compact
+              labels={false}
+              type={discount.type}
+              value={discount.value}
+              base={totals.subtotal}
+              currency={currency}
+              onChange={(type, value) => {
+                setValue("discount.type", type, { shouldDirty: true });
+                setValue("discount.value", value, { shouldDirty: true });
+              }}
+            />
           </div>
         )}
       </div>
@@ -53,25 +59,24 @@ export function SummaryValue({ totals, currency }: { totals: QuotationTotals; cu
           label={<span className="font-medium">Total after Discount</span>}
           value={
             <>
-              {formatMoney(totals.totalAfterDiscount)} <span className="text-xs text-[#6B7480]">{currency}</span>
+              {money(totals.totalAfterDiscount)}
             </>
           }
         />
         <div className="flex items-center justify-between gap-4 py-2">
           <Checkbox label="Tax" {...register("tax.enabled")} />
-          <div className="flex w-36 items-center gap-2">
-            <NumberInput compact placeholder="0" disabled={!tax.enabled} aria-label="Tax rate (%)" className={numberInput} {...register("tax.rate")} />
-            <span className="text-sm text-[#6B7480]">%</span>
+          <div className="w-36">
+            <NumberInput compact placeholder="0" suffix="%" disabled={!tax.enabled} aria-label="Tax rate (%)" className={numberInput} {...register("tax.rate")} />
           </div>
         </div>
         {tax.enabled && (
           <>
             <Checkbox label="Include tax in price" className="py-2" {...register("tax.includeInPrice")} />
             <div className="mt-2 ml-8 space-y-2 rounded-xl bg-[#F6F7F8] px-4 py-3 text-sm">
-              <Row compact label="Price before tax" value={formatMoney(totals.priceBeforeTax)} />
-              <Row compact label={`Tax ${tax.rate || 0}%`} value={formatMoney(totals.taxAmount)} />
+              <Row compact label="Price before tax" value={money(totals.priceBeforeTax)} />
+              <Row compact label={`Tax ${tax.rate || 0}%`} value={money(totals.taxAmount)} />
               <div className="border-t border-dashed border-[#D5DADF] pt-2">
-                <Row compact label={<span className="font-medium">Total amount</span>} value={formatMoney(totals.totalWithTax)} />
+                <Row compact label={<span className="font-medium">Total amount</span>} value={money(totals.totalWithTax)} />
               </div>
             </div>
           </>
@@ -81,7 +86,7 @@ export function SummaryValue({ totals, currency }: { totals: QuotationTotals; cu
       {/* Other charge */}
       <div className="border-b border-[#E3E6EA] py-4">
         <h3 className="mb-3 font-medium">Other Charge</h3>
-        <ServiceCharges totalLabel={formatMoney(totals.serviceChargeTotal)} />
+        <ServiceCharges totalLabel={`${formatMoney(totals.serviceChargeTotal)}${currency ? ` ${currency}` : ""}`} currency={currency} />
         <Checkbox label="Labor" className="mt-3" {...register("labor.enabled")} />
         {labor.enabled && (
           <div className="mt-3 ml-8 space-y-3 rounded-xl bg-[#F6F7F8] p-4 text-sm">
@@ -108,16 +113,15 @@ export function SummaryValue({ totals, currency }: { totals: QuotationTotals; cu
                         {...register("labor.qty")}
                       />
                       <span className="shrink-0 text-[#6B7480]">{basis === "PCS" ? "pcs ×" : "cts ×"}</span>
-                      <NumberInput compact placeholder="0.00" className={numberInput} {...register("labor.rate")} />
+                      <NumberInput compact placeholder="0.00" suffix={currency || undefined} className={numberInput} {...register("labor.rate")} />
                     </>
                   ) : (
                     <>
                       <NumberInput compact disabled placeholder={basis === "PCS" ? "0" : "0.00"} className={numberInput} />
                       <span className="shrink-0 text-[#6B7480]">{basis === "PCS" ? "pcs ×" : "cts ×"}</span>
-                      <NumberInput compact disabled placeholder="0.00" className={numberInput} />
+                      <NumberInput compact disabled placeholder="0.00" suffix={currency || undefined} className={numberInput} />
                     </>
                   )}
-                  <span className="w-9 shrink-0 text-[#6B7480]">{currency}</span>
                 </div>
               );
             })}
@@ -128,7 +132,7 @@ export function SummaryValue({ totals, currency }: { totals: QuotationTotals; cu
                   {labor.qty || 0} {labor.basis === "PCS" ? "pcs" : "cts"} × {labor.rate || "0.00"}
                 </span>
               </span>
-              <span className="font-medium">{formatMoney(totals.laborAmount)}</span>
+              <span className="font-medium">{money(totals.laborAmount)}</span>
             </div>
           </div>
         )}
@@ -136,13 +140,15 @@ export function SummaryValue({ totals, currency }: { totals: QuotationTotals; cu
 
       <div className="mt-8 flex items-center justify-between rounded-xl bg-[#1F2530] px-6 py-6 text-white">
         <span className="text-lg font-medium">Grand Total</span>
-        <span className="text-3xl font-semibold tabular-nums">{formatMoney(totals.grandTotal)}</span>
+        <span className="text-3xl font-semibold tabular-nums">
+          {formatMoney(totals.grandTotal)} {currency && <span className="text-base font-medium text-white/70">{currency}</span>}
+        </span>
       </div>
     </div>
   );
 }
 
-function ServiceCharges({ totalLabel }: { totalLabel: string }) {
+function ServiceCharges({ totalLabel, currency }: { totalLabel: string; currency: string }) {
   // ไม่ใช้ useFieldArray เพราะ component นี้ถูก render 2 ที่ (ใต้ตาราง + right rail)
   const { control, register, setValue } = useFormContext<QuotationFormValues>();
   const fields = useWatch({ control, name: "serviceCharges" });
@@ -203,7 +209,7 @@ function ServiceCharges({ totalLabel }: { totalLabel: string }) {
                 {SERVICE_CHARGE_TYPES.find((c) => c.value === f.chargeId)?.label ?? f.chargeId}
               </span>
               <div className="w-36">
-                <NumberInput compact placeholder="0.00" className={numberInput} {...register(`serviceCharges.${i}.amount`)} />
+                <NumberInput compact placeholder="0.00" suffix={currency || undefined} className={numberInput} {...register(`serviceCharges.${i}.amount`)} />
               </div>
               <button type="button" aria-label="Remove charge" onClick={() => remove(i)} className="text-[#6B7480]">
                 <CircleX className="size-5" />

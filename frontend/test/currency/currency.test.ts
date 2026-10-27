@@ -48,14 +48,13 @@ describe("form schema (UT-CUR-01)", () => {
     expect(issuesByPath(schema, values())).toEqual({});
   });
 
-  it("checks code, name, description and both rates", () => {
-    expect(issuesByPath(schema, values({ code: "US", name: " ", description: "", sellingRate: "", buyingRate: "0.0000" }))).toEqual({
+  it("checks code, name and the one exchange rate; description is optional (owner 2026-10-27)", () => {
+    expect(issuesByPath(schema, values({ code: "US", name: " ", description: "", sellingRate: "", buyingRate: "" }))).toEqual({
       code: "Enter 3 letters, e.g. USD",
       name: "Name is required",
-      description: "Description is required",
       sellingRate: "Rate is required",
-      buyingRate: "Enter a rate greater than 0",
     });
+    expect(issuesByPath(schema, values({ sellingRate: "0.0000" })).sellingRate).toBe("Enter a rate greater than 0");
     expect(issuesByPath(schema, values({ description: "x".repeat(251) })).description).toBe("Use 250 characters or fewer");
   });
 
@@ -98,20 +97,21 @@ describe("mapping (UT-CUR-02)", () => {
   });
 
   it("builds create/update input; the base currency sends no rates; update never sends the code", () => {
-    expect(toCreateInput(values(), "THB")).toEqual({ code: "USD", name: "US Dollar", description: "Sales to the US", active: true, sellingRate: "33.2500", buyingRate: "32.9000" });
+    // The one Exchange Rate is saved to both rate columns (owner 2026-10-27).
+    expect(toCreateInput(values(), "THB")).toEqual({ code: "USD", name: "US Dollar", description: "Sales to the US", active: true, sellingRate: "33.2500", buyingRate: "33.2500" });
     expect(toCreateInput(values({ code: "thb" }), "THB")).toMatchObject({ code: "THB", sellingRate: null, buyingRate: null });
     const fields = toUpdateFields(values({ code: "EUR" }), "USD", "THB");
-    expect(fields).toEqual({ name: "US Dollar", description: "Sales to the US", active: true, sellingRate: "33.2500", buyingRate: "32.9000" });
+    expect(fields).toEqual({ name: "US Dollar", description: "Sales to the US", active: true, sellingRate: "33.2500", buyingRate: "33.2500" });
     expect(toUpdateFields(values(), "THB", "THB")).toMatchObject({ sellingRate: null, buyingRate: null });
   });
 });
 
 describe("drawer rows (UT-CUR-03)", () => {
-  it("shows the base, the rates or 'Rates not set'", () => {
+  it("shows the base, the rate or 'Rate not set'", () => {
     expect(rowText(detail({ code: "THB", name: "Thai Baht" }), "THB")).toEqual({ primary: "THB · Thai Baht", secondary: "Base currency" });
-    expect(rowText(detail(), "THB")).toEqual({ primary: "USD · US Dollar", secondary: "Sell 33.2500 · Buy 32.9000 THB" });
-    expect(rowText(detail({ sellingRate: null }), "THB").secondary).toBe("Rates not set");
-    expect(rowText(detail(), null).secondary).toBe("Sell 33.2500 · Buy 32.9000");
+    expect(rowText(detail(), "THB")).toEqual({ primary: "USD · US Dollar", secondary: "Rate 33.2500 THB" });
+    expect(rowText(detail({ sellingRate: null }), "THB").secondary).toBe("Rate not set");
+    expect(rowText(detail(), null).secondary).toBe("Rate 33.2500");
   });
 });
 
