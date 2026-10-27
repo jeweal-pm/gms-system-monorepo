@@ -2,8 +2,8 @@
 
 import { ChevronsUpDown, CircleMinus, Ellipsis, MessageSquare, Plus } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { lineAmount, type QuotationTotals } from "../../lib/calculate";
-import { dec, toFixed } from "../../lib/decimal";
+import { lineAmount, lineDiscount, type QuotationTotals } from "../../lib/calculate";
+import { dec, toFixed, ZERO } from "../../lib/decimal";
 import { formatMoney, formatMoneyText, formatWeight } from "../../lib/format";
 import { visibleRowsHeight } from "../../lib/table-scroll";
 import { isFilledLine, type QuotationLine } from "../../schema";
@@ -179,7 +179,9 @@ export function ItemTable({
               <td className="px-3 py-3 text-right">{toFixed(totals.totalPcs, 0)}</td>
               <td className="px-3 py-3 text-right">{formatWeight(totals.totalWeight)}</td>
               <td />
-              <td className="border-l border-[#E3E6EA] px-3 py-3 text-right">{formatMoney(totals.subtotal)}</td>
+              <td className="border-l border-[#E3E6EA] px-3 py-3 text-right">
+                {formatMoney(totals.subtotal)} {currency}
+              </td>
               <td />
             </tr>
           </tfoot>
@@ -242,7 +244,13 @@ function FilledCells({ line, currency }: { line: QuotationLine; currency: string
         </div>
         <div className="mt-1 text-xs text-[#6B7480]">{line.priceUnit === "PER_CT" ? "per cts" : "per pcs"}</div>
       </td>
-      <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">{formatMoney(lineAmount(line))}</td>
+      {/* Owner 2026-10-27: amounts carry the currency code; a line discount shows under the amount. */}
+      <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">
+        <div>
+          {formatMoney(lineAmount(line))} {currency}
+        </div>
+        {lineDiscount(line) > ZERO && <div className="mt-1 text-xs text-[#E5484D]">Disc −{formatMoney(lineDiscount(line))}</div>}
+      </td>
     </>
   );
 }

@@ -73,9 +73,7 @@ export function toQuotationInput(values: QuotationFormValues) {
       weightCt: orZero(line.weightCt),
       priceUnit: line.priceUnit,
       unitPrice: orZero(line.unitPrice),
-      discount: line.discountPercent.trim() !== ""
-        ? { type: "PERCENT" as const, value: line.discountPercent.trim() }
-        : line.discountAmount.trim() !== "" ? { type: "AMOUNT" as const, value: line.discountAmount.trim() } : { type: "NONE" as const, value: "0" },
+      discount: line.discountValue.trim() === "" ? { type: "NONE" as const, value: "0" } : { type: line.discountType, value: line.discountValue.trim() },
       itemNote: line.itemNote.trim(),
       photoIds: line.photos.map((photo) => photo.id),
     })),
@@ -125,8 +123,9 @@ export function fromQuotation(detail: QuotationDetail): QuotationFormValues {
       weightCt: line.weightCt,
       priceUnit: line.priceUnit,
       unitPrice: line.unitPrice,
-      discountPercent: line.discount.type === "PERCENT" ? line.discount.value : "",
-      discountAmount: line.discount.type === "AMOUNT" ? line.discount.value : "",
+      discountType: line.discount.type === "AMOUNT" ? "AMOUNT" : "PERCENT",
+      discountValue: line.discount.type === "NONE" ? "" : line.discount.value,
+      stonePartOrder: [],
       photos: line.photoIds.map((id, index) => ({ id, name: `Photo ${index + 1}`, url: photoUrl(id) })),
       itemNote: line.itemNote,
     })),

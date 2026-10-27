@@ -38,9 +38,14 @@ export const lineSchema = z.object({
   weightCt: decimalString,
   priceUnit: z.enum(["PER_CT", "PER_PCS"]),
   unitPrice: decimalString,
-  /** Owner 2026-10-26: a per-line discount — a percent or an amount, only one of them is filled. */
-  discountPercent: decimalString,
-  discountAmount: decimalString,
+  /**
+   * Owner 2026-10-27: per-line discount — the field typed last (percent or amount) is the source; the
+   * other is shown computed. `discountValue` "" = no discount.
+   */
+  discountType: z.enum(["PERCENT", "AMOUNT"]),
+  discountValue: decimalString,
+  /** Part order of the chosen master stone code, used to rebuild the code when a part changes (not saved). */
+  stonePartOrder: z.array(z.string()),
   photos: z.array(photoSchema).max(MAX_LINE_PHOTOS),
   itemNote: z.string(),
 });
@@ -95,8 +100,8 @@ export const quotationSchema = z
       ctx.addIssue({ code: "custom", path: ["dueDate"], message: "Due date must be on or after doc date" });
     }
     value.lines.forEach((line, index) => {
-      if (line.discountPercent !== "" && Number(line.discountPercent) > 100) {
-        ctx.addIssue({ code: "custom", path: ["lines", index, "discountPercent"], message: "Up to 100%" });
+      if (line.discountType === "PERCENT" && line.discountValue !== "" && Number(line.discountValue) > 100) {
+        ctx.addIssue({ code: "custom", path: ["lines", index, "discountValue"], message: "Up to 100%" });
       }
     });
     if (!value.lines.some(isFilledLine)) {

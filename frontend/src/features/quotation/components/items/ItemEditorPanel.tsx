@@ -3,7 +3,10 @@
 import { ChevronDown, ChevronUp, Lock, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
+import { lineGross } from "../../lib/calculate";
 import { CER_TYPES, toOptions, type Option } from "../../lib/options";
+import { ATTRIBUTE_KEYS, rebuildStoneCode } from "../../lib/stone-code";
+import { DiscountPair } from "../DiscountPair";
 import { useOptions } from "../../options-context";
 import { isFilledLine, MAX_LINE_PHOTOS, type QuotationFormValues } from "../../schema";
 import { LinePhotosField } from "./LinePhotosField";
@@ -44,26 +47,52 @@ export function ItemEditorPanel({
   const locked = readOnly || fromStock;
   const name = <K extends keyof typeof line>(key: K) => `lines.${index}.${key}` as const;
 
-  // Choosing a Stone Code fills the stone attributes from the stone master (text snapshot, SA-QT-07).
-  const onStoneCodeChange = (id: string) => {
-    const code = stone?.codes.find((x) => x.id === id);
-    if (!code) return;
-    setValue(`lines.${index}.stoneCode`, code.code, { shouldDirty: true });
-    for (const key of ["stone", "shape", "size", "color", "clarity", "cutting", "quality"] as const) {
-      setValue(`lines.${index}.${key}`, code[key], { shouldDirty: true });
-    }
+  const set = (key: keyof typeof line, value: unknown) => setValue(`lines.${index}.${key}` as never, value as never, { shouldDirty: true });
+  const masterByCode = (code: string) => stone?.codes.find((x) => x.code.toUpperCase() === code.trim().toUpperCase());
+
+  // Choosing a master Stone Code fills the stone attributes (text snapshot, SA-QT-07).
+  const applyMasterCode = (code: NonNullable<typeof stone>["codes"][number]) => {
+    set("stoneCodeId", code.id);
+    set("stoneCode", code.code);
+    set("stonePartOrder", code.partOrder);
+    for (const key of ATTRIBUTE_KEYS) set(key, code[key]);
+  };
+
+  // Owner 2026-10-27: the Stone Code can be typed; a master code that matches is linked, anything else
+  // stays a quotation-only code (the stone master is never changed).
+  const onStoneCodeTyped = (text: string) => {
+    const match = masterByCode(text);
+    if (match) return applyMasterCode(match);
+    set("stoneCode", text);
+    set("stoneCodeId", "");
+  };
+
+  // Owner 2026-10-27: changing a part rebuilds the Stone Code from the parts' codes, in the chosen master
+  // code's part order (default order otherwise); it links to a master code only when one matches.
+  const onPartChange = (key: (typeof ATTRIBUTE_KEYS)[number], value: string) => {
+    const lists = { stone: stone?.stones, shape: stone?.shapes, size: stone?.sizes, color: stone?.colors, clarity: stone?.clarities, cutting: stone?.cuttings, quality: stone?.qualities };
+    const names = { ...pick(line, ATTRIBUTE_KEYS), [key]: value };
+    const { code: built, complete } = rebuildStoneCode(names, lists, line.stonePartOrder);
+    if (!built) return;
+    // Link to a master code only when every chosen part was found (a skipped part could match another code).
+    const match = complete ? masterByCode(built) : undefined;
+    set("stoneCode", built);
+    set("stoneCodeId", match?.id ?? "");
   };
 
   /** Active choices, plus the saved value so an old/inactive one still shows. */
   const withCurrent = (options: Option[], current: string) =>
     current && !options.some((option) => option.value === current) ? [{ value: current, label: current }, ...options] : options;
-  const stoneCodeOptions = (stone?.codes ?? []).map((code) => ({ value: code.id, label: code.code }));
-  const savedStoneCode = line.stoneCodeId && !stoneCodeOptions.some((option) => option.value === line.stoneCodeId)
-    ? [{ value: line.stoneCodeId, label: line.stoneCode || "(inactive)" }]
-    : [];
+  const datalistId = `stone-codes-${index}`;
 
-  const select = (key: Parameters<typeof name>[0], values: readonly string[] | undefined) => (
-    <FormSelect<QuotationFormValues> compact disabled={locked} name={name(key)} options={withCurrent(toOptions(values ?? []), String(line[key] ?? ""))} />
+  const select = (key: (typeof ATTRIBUTE_KEYS)[number], items: readonly { name: string }[] | undefined) => (
+    <FormSelect<QuotationFormValues>
+      compact
+      disabled={locked}
+      name={name(key)}
+      options={withCurrent(toOptions((items ?? []).map((item) => item.name)), String(line[key] ?? ""))}
+      onValueChange={(value) => onPartChange(key, value)}
+    />
   );
 
   return (
@@ -111,7 +140,18 @@ export function ItemEditorPanel({
 
         <Section title="Stone">
           <Field label="Stone Code" className="col-span-2">
-            <FormSelect<QuotationFormValues> compact disabled={locked} name={name("stoneCodeId")} options={[...savedStoneCode, ...stoneCodeOptions]} onValueChange={onStoneCodeChange} />
+            <TextInput
+              compact
+              list={datalistId}
+              readOnly={locked}
+              maxLength={60}
+              placeholder="Choose or type a stone code"
+              value={line.stoneCode}
+              onChange={(event) => onStoneCodeTyped(event.target.value.toUpperCase())}
+            />
+            <datalist id={datalistId}>
+              {(stone?.codes ?? []).map((code) => <option key={code.id} value={code.code} />)}
+            </datalist>
           </Field>
           <Field label="Stone">{select("stone", stone?.stones)}</Field>
           <Field label="Shape">{select("shape", stone?.shapes)}</Field>
@@ -146,20 +186,22 @@ export function ItemEditorPanel({
             <FormSelect<QuotationFormValues> compact name={name("priceUnit")} options={PRICE_UNITS} />
           </Field>
           <Field label="Sale Price">
-            <NumberInput compact placeholder="0.00" {...register(name("unitPrice"))} />
+            <NumberInput compact placeholder="0.00" suffix={currency || undefined} {...register(name("unitPrice"))} />
           </Field>
-          {/* Owner 2026-10-26: one of the two only; the Amount shows in the table, not here. */}
-          <Field label="Discount (%)" error={lineErrors?.discountPercent?.message}>
-            <NumberInput compact placeholder="0 %" readOnly={line.discountAmount !== ""} {...register(name("discountPercent"))} />
-          </Field>
-          <Field label={`Discount Amt${currency ? ` (${currency})` : ""}`}>
-            <NumberInput compact placeholder="0" readOnly={line.discountPercent !== ""} {...register(name("discountAmount"))} />
-          </Field>
-          {(line.discountPercent !== "" || line.discountAmount !== "") && (
-            <p className="col-span-2 -mt-3 text-xs text-[#6B7480]">
-              Use either a percent or an amount. Clear one to enter the other.
-            </p>
-          )}
+          {/* Owner 2026-10-27: typing either one fills the other; the Amount shows in the table, not here. */}
+          <DiscountPair
+            compact
+            type={line.discountType}
+            value={line.discountValue}
+            base={lineGross(line)}
+            currency={currency}
+            disabled={readOnly}
+            percentError={lineErrors?.discountValue?.message}
+            onChange={(type, value) => {
+              set("discountType", type);
+              set("discountValue", value);
+            }}
+          />
         </Section>
 
         <Section title={`Photos ${line.photos.length} / ${MAX_LINE_PHOTOS}`}>
@@ -188,6 +230,10 @@ export function ItemEditorPanel({
       </footer>
     </aside>
   );
+}
+
+function pick<T, K extends keyof T>(source: T, keys: readonly K[]): Pick<T, K> {
+  return Object.fromEntries(keys.map((key) => [key, source[key]])) as Pick<T, K>;
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {

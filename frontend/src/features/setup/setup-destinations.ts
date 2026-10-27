@@ -1,4 +1,4 @@
-import { Factory } from "lucide-react";
+import { Calculator, Factory } from "lucide-react";
 import type { IconComponent } from "@/components/ui/design-icon";
 import { MASTER_CODE_MENU_KEYS, menuKeyFor, setupPlaceholderLink } from "@/features/home/navigation";
 import { DEFAULT_STONE_SLUG, STONE_MENU_KEY, stonePageHref } from "@/features/stone-master/kinds";
@@ -53,6 +53,8 @@ export const setupLandingTiles: (SetupLinkDestination | SetupMasterCodeEntry | S
   { kind: "master-code", id: "master-code", label: "Master Code", icon: MasterCodeIcon, color: "neutral", permission: MASTER_CODE_MENU_KEYS },
   // document-setup UI rev 1 (owner 2026-10-23): real page, gated by the new `document-setup` leaf.
   { kind: "link", id: "document-setup", label: "Document Setup", href: "/setup/document-setup", icon: DocumentSetupIcon, color: "blue", permission: ["document-setup"] },
+  // decimal-setup UI rev 1 (owner 2026-10-27): mock data only; gated by `document-setup` until it has its own leaf (Q-DEC-05).
+  { kind: "link", id: "decimal-setup", label: "Decimal Setup", href: "/setup/decimal-setup", icon: Calculator, color: "blue", permission: ["document-setup"] },
   { kind: "unavailable", id: "stone-factory", label: "Stone Factory", icon: Factory, color: "stone" },
 ];
 

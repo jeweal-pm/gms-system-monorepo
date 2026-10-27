@@ -109,7 +109,8 @@ describe("schemas (SA-CUR-04)", () => {
     expect(createCurrencyBodySchema.safeParse({ ...create(), sellingRate: "0.0000" }).success).toBe(false);
     expect(createCurrencyBodySchema.safeParse({ ...create(), buyingRate: "1.12345" }).success).toBe(false);
     expect(createCurrencyBodySchema.safeParse({ ...create(), buyingRate: "-1" }).success).toBe(false);
-    expect(createCurrencyBodySchema.safeParse({ ...create(), description: " " }).success).toBe(false);
+    // Owner 2026-10-27: the description is optional (blank is stored as "").
+    expect(createCurrencyBodySchema.parse({ ...create(), description: " " }).description).toBe("");
     expect(createCurrencyBodySchema.safeParse({ ...create(), sellingRate: null }).success).toBe(true);
     expect(updateCurrencyBodySchema.safeParse({ ...update("2026-10-26T00:00:00.000Z"), code: "EUR" }).success).toBe(false);
   });

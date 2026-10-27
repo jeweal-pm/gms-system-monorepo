@@ -9,6 +9,7 @@ import { prisma } from "../database/prisma-client";
 import { fromDbDate, toDbDate } from "../document-setup/document-setup.service";
 import { DOC_NO_MAX, formatDocNo, nextPlainQuotationRunningNo, nextQuotationRunningNo, numberingInEffect } from "../document-setup/document-numbering";
 import { Prisma } from "../generated/prisma/client";
+import { sizePartCode } from "../stone-master/stone-code";
 import { calculateTotals, oversizeAmounts } from "./quotation.calculate";
 import {
   mapQuotationError,
@@ -238,19 +239,28 @@ export class QuotationService {
    */
   async options(includeCustomerId?: string) {
     try {
-      const names = (rows: { name: string }[]) => [...new Set(rows.map((row) => row.name))];
-      const active = { where: { active: true }, select: { name: true }, orderBy: { name: "asc" as const }, take: CUSTOMER_OPTIONS_LIMIT };
+      // Each part comes as {name, code} so the editor can rebuild a stone code when a part changes
+      // (owner 2026-10-27); a size has no code, so its name stands in (stone master SA-SM-05a).
+      const parts = (rows: { name: string; code?: string }[]) => {
+        const seen = new Set<string>();
+        return rows.flatMap((row) => {
+          if (seen.has(row.name)) return [];
+          seen.add(row.name);
+          return [{ name: row.name, code: row.code ?? sizePartCode(row.name) }];
+        });
+      };
+      const active = { where: { active: true }, select: { name: true, code: true }, orderBy: { name: "asc" as const }, take: CUSTOMER_OPTIONS_LIMIT };
       const part = { select: { name: true } };
       const [stoneCodes, stoneNames, shapes, sizes, colors, clarities, cuttings, qualities] = await Promise.all([
         prisma.stoneCode.findMany({
           where: { active: true },
           orderBy: { code: "asc" },
           take: CUSTOMER_OPTIONS_LIMIT,
-          select: { id: true, code: true, stoneName: part, shape: part, size: part, color: part, clarity: part, cutting: part, quality: part },
+          select: { id: true, code: true, partOrder: true, stoneName: part, shape: part, size: part, color: part, clarity: part, cutting: part, quality: part },
         }),
         prisma.stoneName.findMany(active),
         prisma.stoneShape.findMany(active),
-        prisma.stoneSize.findMany(active),
+        prisma.stoneSize.findMany({ ...active, select: { name: true } }),
         prisma.stoneColor.findMany(active),
         prisma.stoneClarity.findMany(active),
         prisma.stoneCutting.findMany(active),
@@ -260,6 +270,7 @@ export class QuotationService {
         codes: stoneCodes.map((row) => ({
           id: row.id,
           code: row.code,
+          partOrder: row.partOrder,
           stone: row.stoneName?.name ?? "",
           shape: row.shape?.name ?? "",
           size: row.size?.name ?? "",
@@ -268,13 +279,13 @@ export class QuotationService {
           cutting: row.cutting?.name ?? "",
           quality: row.quality?.name ?? "",
         })),
-        stones: names(stoneNames),
-        shapes: names(shapes),
-        sizes: names(sizes),
-        colors: names(colors),
-        clarities: names(clarities),
-        cuttings: names(cuttings),
-        qualities: names(qualities),
+        stones: parts(stoneNames),
+        shapes: parts(shapes),
+        sizes: parts(sizes),
+        colors: parts(colors),
+        clarities: parts(clarities),
+        cuttings: parts(cuttings),
+        qualities: parts(qualities),
       };
       const [customers, company, setup] = await Promise.all([
         prisma.customer.findMany({

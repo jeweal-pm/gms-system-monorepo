@@ -1,5 +1,6 @@
 import { isFilledLine, type QuotationFormValues, type QuotationLine } from "../schema";
 import { add, dec, div, max, min, mul, round, sub, ZERO, type Dec } from "./decimal";
+import { discountAmount as discountOf } from "./discount";
 
 export type QuotationTotals = {
   totalPcs: Dec;
@@ -15,7 +16,7 @@ export type QuotationTotals = {
   grandTotal: Dec;
 };
 
-type LinePrice = Pick<QuotationLine, "priceUnit" | "pcs" | "weightCt" | "unitPrice"> & Partial<Pick<QuotationLine, "discountPercent" | "discountAmount">>;
+type LinePrice = Pick<QuotationLine, "priceUnit" | "pcs" | "weightCt" | "unitPrice"> & Partial<Pick<QuotationLine, "discountType" | "discountValue">>;
 
 /** Weight (per carat) or pieces × unit price. */
 export function lineGross(line: LinePrice): Dec {
@@ -23,12 +24,9 @@ export function lineGross(line: LinePrice): Dec {
   return round(mul(qty, dec(line.unitPrice)));
 }
 
-/** Owner 2026-10-26: the line discount — a percent of the line or an amount — capped at the line (same as the server). */
+/** The line discount — a percent of the line or an amount — capped at the line (same as the server). */
 export function lineDiscount(line: LinePrice): Dec {
-  const gross = lineGross(line);
-  if (line.discountPercent) return min(max(round(div(mul(gross, dec(line.discountPercent)), dec(100))), ZERO), gross);
-  if (line.discountAmount) return min(max(round(dec(line.discountAmount)), ZERO), gross);
-  return ZERO;
+  return discountOf(lineGross(line), line.discountType ?? "PERCENT", line.discountValue ?? "");
 }
 
 /** Line amount after its discount. */

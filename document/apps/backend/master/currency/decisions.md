@@ -1,5 +1,7 @@
 # SA decisions: currency revision 1
 
+> **Owner amendment 2026-10-27:** one Exchange Rate per currency (the UI saves it to both `selling_rate` and `buying_rate`; no schema change) and the Description is optional. Quotation keeps using the selling rate.
+
 - Feature ID / SA revision / source UI revision: `currency` / 1 / UI rev 1 ([ui-spec](../../../frontend/currency/ui-spec.md))
 - Status: **approved and implemented**. Owner 2026-10-26: "uxui ทำ spec Currency ให้เอาไปใช้ใน company profile และทุก currency และ frontend backend ทำต่อเลย". This instruction approved the spec and its implementation in one step, with the defaults in [open-questions.md](../../../frontend/currency/open-questions.md).
 - Service: `backend-api-master` (owns schema `partner`). No new service, container, network, volume or package.

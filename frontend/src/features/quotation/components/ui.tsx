@@ -125,14 +125,14 @@ export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLIn
  * ช่องตัวเลข: กรองตัวอักษรออกก่อนส่งให้ react-hook-form (ห้ามกรอกตัวอักษร)
  * @param decimals จำนวนทศนิยมสูงสุด (0 = จำนวนเต็ม)
  */
-export const NumberInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { compact?: boolean; decimals?: number }>(
-  function NumberInput({ decimals = 2, onChange, className, ...props }, ref) {
-    return (
+export const NumberInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { compact?: boolean; decimals?: number; suffix?: string }>(
+  function NumberInput({ decimals = 2, onChange, className, suffix, ...props }, ref) {
+    const input = (
       <TextInput
         ref={ref}
         inputMode={decimals === 0 ? "numeric" : "decimal"}
         autoComplete="off"
-        className={cx("text-right tabular-nums", className)}
+        className={cx("text-right tabular-nums", suffix && "pr-14", className)}
         onChange={(e) => {
           const clean = sanitizeDecimal(e.target.value, decimals);
           if (clean !== e.target.value) e.target.value = clean;
@@ -140,6 +140,14 @@ export const NumberInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTML
         }}
         {...props}
       />
+    );
+    if (!suffix) return input;
+    // Owner 2026-10-27: the unit (%, currency code) sits inside the box.
+    return (
+      <div className="relative w-full">
+        {input}
+        <span aria-hidden className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-[#6B7480]">{suffix}</span>
+      </div>
     );
   },
 );

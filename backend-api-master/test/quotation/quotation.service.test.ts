@@ -47,10 +47,10 @@ vi.mock("../../src/database/prisma-client", () => {
       findUnique: vi.fn(async () => db.customer),
       findMany: vi.fn(async (args: Row) => { db.findManyArgs.push(args); return []; }),
     },
-    stoneCode: { findMany: vi.fn(async (args?: { where?: { id?: unknown } }) => (args?.where?.id ? db.stoneCodes : [{ id: "sc", code: "RUOV-1", stoneName: { name: "Ruby" }, shape: { name: "Oval" }, size: null, color: null, clarity: null, cutting: null, quality: null }])) },
-    stoneName: { findMany: vi.fn(async () => [{ name: "Ruby" }, { name: "Ruby" }]) },
-    stoneShape: { findMany: vi.fn(async () => [{ name: "Oval" }]) },
-    stoneSize: { findMany: vi.fn(async () => []) },
+    stoneCode: { findMany: vi.fn(async (args?: { where?: { id?: unknown } }) => (args?.where?.id ? db.stoneCodes : [{ id: "sc", code: "RUOV-1", partOrder: ["name", "shape"], stoneName: { name: "Ruby" }, shape: { name: "Oval" }, size: null, color: null, clarity: null, cutting: null, quality: null }])) },
+    stoneName: { findMany: vi.fn(async () => [{ name: "Ruby", code: "RU" }, { name: "Ruby", code: "RU2" }]) },
+    stoneShape: { findMany: vi.fn(async () => [{ name: "Oval", code: "OV" }]) },
+    stoneSize: { findMany: vi.fn(async () => [{ name: "2.0 mm" }]) },
     stoneColor: { findMany: vi.fn(async () => []) },
     stoneClarity: { findMany: vi.fn(async () => []) },
     stoneCutting: { findMany: vi.fn(async () => []) },
@@ -273,8 +273,10 @@ describe("list (SA-QT-11, owner Q-QT-06)", () => {
     const options = await service.options();
     expect(options).toMatchObject({ companyCurrency: "THB", chargeTypes: ["SHIPPING", "HANDLING", "INSURANCE", "CERTIFICATE"], numbering: { configured: false } });
     expect(options.currencies).toEqual(["THB", "USD"]);
-    expect(options.stone.codes).toEqual([{ id: "sc", code: "RUOV-1", stone: "Ruby", shape: "Oval", size: "", color: "", clarity: "", cutting: "", quality: "" }]);
-    expect(options.stone.stones).toEqual(["Ruby"]);
+    expect(options.stone.codes).toEqual([{ id: "sc", code: "RUOV-1", partOrder: ["name", "shape"], stone: "Ruby", shape: "Oval", size: "", color: "", clarity: "", cutting: "", quality: "" }]);
+    // Parts carry their codes for rebuilding a stone code (owner 2026-10-27); a size uses its name.
+    expect(options.stone.stones).toEqual([{ name: "Ruby", code: "RU" }]);
+    expect(options.stone.sizes).toEqual([{ name: "2.0 mm", code: "2.0MM" }]);
   });
 
   it("formats an address snapshot without empty parts", () => {
