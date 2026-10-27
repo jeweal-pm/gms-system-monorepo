@@ -44,6 +44,7 @@ Owner request (verbatim): "เปลี่ยนเป็นการอัป�
 |---|---|
 | SA-QT-07a | Up to **5** photos per line (was 4); CHECK `position BETWEEN 1 AND 5`. |
 | SA-QT-08a | **Line discount:** each line has `discount {type: NONE | PERCENT | AMOUNT, value}` — a percent (0–100) of the line or an amount, never both. Line amount = round(qty × price) − discount, capped to 0…gross, stored as `discount_amount` + `amount`; the subtotal sums line amounts. Migration `20261026150000_quotation_line_discount`. |
+| SA-QT-03a | **No approval step (owner 2026-10-27, replaces the SA-QT-03 flow on the Quotation page):** "quotation ไม่มี approve … สร้างเสร็จเป็นการ approve เลย". `create` saves as `APPROVED` (approvedAt/approvedBy = creator). `update` and `delete` work in any non-cancelled status; an older DRAFT/PENDING_APPROVAL/REJECTED row becomes `APPROVED` on its next save. The UI shows no status badge for a non-cancelled row (owner 2026-10-27: "เอา approved ออก"); only Rejected/Cancelled keep one. The status enum and the `submit`/`approve`/`reject`/`cancel` procedures stay unchanged and unused by the UI; no schema change or migration. |
 
 ## Open questions (owner answers 2026-10-26)
 
@@ -52,8 +53,8 @@ Owner request (verbatim): "เปลี่ยนเป็นการอัป�
 | Q-QT-01 | Currency: are amounts in the document currency? (ADR-0025 OQ1) | **Owner:** yes; the exchange rate is stored for reference. Discount AMOUNT is in the document currency. |
 | Q-QT-02 | May the creator approve their own quotation? | **Owner:** yes, with `quotation:APPROVE`; approving is done on the separate Approve page, not on the Quotation page ("อนุมัติที่หน้า Approve แยก เเต่หน้า quotation ไม่ต้อง approve"). |
 | Q-QT-03 | When is the number issued? | **Owner:** from Document Setup, shown from the start; the saved number = latest in the DB + 1, so deleting the latest reuses it ("ถ้าลบก็เอาตัวล่าสุดใน db +1"); confirmed: a deleted middle number is not reused. |
-| Q-QT-04 | Does VAT include service charges/labor? (ADR-0025 OQ2) | Not answered — default: no, tax on total after discount only (D5). |
-| Q-QT-05 | Location, certificate type, labor work: free text until their masters exist? | Not answered — default: yes. |
+| Q-QT-04 | Does VAT include service charges/labor? (ADR-0025 OQ2) | **Owner 2026-10-27:** no — tax on the total after discount only (D5); service charges and labor are not taxed. |
+| Q-QT-05 | Location, certificate type, labor work: free text until their masters exist? | **Owner 2026-10-27:** yes — free text until their masters exist. |
 | Q-QT-06 | Daybook contents | **Owner:** no cancelled, newest first. |
 | Q-QT-07 | Hide prices without PRICE? | **Owner:** not enforced now. Later: lines added from **From Stock** hide prices from users without PRICE, once the load-to-stock page and inventory exist. |
 | Q-QT-08 | Due date default | **Owner:** chosen by the user (no default). |

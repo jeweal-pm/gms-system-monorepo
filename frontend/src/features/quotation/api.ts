@@ -35,7 +35,8 @@ export function useQuotationAccess(): QuotationAccess | undefined {
 }
 
 /** Edit/Submit are allowed only before approval (SA-QT-03). */
-export const isEditableStatus = (status: QuotationStatus | undefined) => status === "DRAFT" || status === "REJECTED";
+/** Quotation has no approval step (owner 2026-10-27): every saved, non-cancelled quotation can be edited or deleted. */
+export const isEditableStatus = (status: QuotationStatus | undefined) => status !== undefined && status !== "CANCELLED";
 
 // ---- form ↔ contract ----
 

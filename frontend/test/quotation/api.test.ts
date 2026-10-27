@@ -103,7 +103,8 @@ describe("permissions and status (SA-QT-02/03)", () => {
     expect(quotationAccess({ isSuperAdmin: false, permissions: ["quotation:VIEW", "quotation:CANCEL"] })).toMatchObject({ view: true, add: false, edit: false, cancel: true, approve: false });
     expect(quotationAccess({ isSuperAdmin: true, permissions: [] }).delete).toBe(true);
     expect(quotationAccess(undefined).view).toBe(false);
-    expect(["DRAFT", "REJECTED", "PENDING_APPROVAL", "APPROVED", "CANCELLED"].map((status) => isEditableStatus(status as never))).toEqual([true, true, false, false, false]);
+    expect(["DRAFT", "REJECTED", "PENDING_APPROVAL", "APPROVED", "CANCELLED"].map((status) => isEditableStatus(status as never))).toEqual([true, true, true, true, false]);
+    expect(isEditableStatus(undefined)).toBe(false);
   });
 });
 

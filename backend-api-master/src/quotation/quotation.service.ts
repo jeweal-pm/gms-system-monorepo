@@ -22,8 +22,11 @@ import {
 import { QUOTATION_PHOTO_SOURCE } from "./quotation-photo.storage";
 import { CHARGE_TYPES, type QuotationInput, type QuotationListInput, type QuotationStatus } from "./quotation.schemas";
 
-/** Statuses in which the document can still be edited (SA-QT-03). */
-const EDITABLE: readonly QuotationStatus[] = ["DRAFT", "REJECTED"];
+/**
+ * Quotation has no approval step (owner 2026-10-27): it is saved as APPROVED and stays editable and deletable
+ * until cancelled. DRAFT/PENDING_APPROVAL/REJECTED remain only for rows saved before this change.
+ */
+const EDITABLE: readonly QuotationStatus[] = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED"];
 const COMPANY_PROFILE_ID = 1;
 const CUSTOMER_OPTIONS_LIMIT = 1_000;
 const COUNTRY_NAME = new Map(COUNTRY_OPTIONS.map((item) => [item.code, item.name]));
@@ -337,7 +340,9 @@ export class QuotationService {
             numberingId,
             runningNo,
             docNo,
-            status: "DRAFT",
+            status: "APPROVED",
+            approvedAt: now,
+            approvedBy: actorId,
             ...this.headerData(input, snapshot),
             createdAt: now,
             createdBy: actorId,
@@ -374,7 +379,14 @@ export class QuotationService {
         });
         const result = await tx.quotation.updateMany({
           where: { id, version: expectedVersion, status: { in: [...EDITABLE] } },
-          data: { ...this.headerData(input, snapshot), version: { increment: 1 }, updatedAt: new Date(), updatedBy: actorId },
+          data: {
+            ...this.headerData(input, snapshot),
+            // An older row is approved by its first save after the change.
+            ...(stored.status === "APPROVED" ? {} : { status: "APPROVED" as const, approvedAt: new Date(), approvedBy: actorId, statusReason: null }),
+            version: { increment: 1 },
+            updatedAt: new Date(),
+            updatedBy: actorId,
+          },
         });
         if (result.count === 0) throw quotationChanged();
         await tx.quotationLine.deleteMany({ where: { quotationId: id } });
@@ -406,10 +418,10 @@ export class QuotationService {
     return this.transition(actorId, id, expectedVersion, ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED"], "CANCELLED", { statusReason: reason }, "cancelled");
   }
 
-  /** Only drafts can be deleted (SA-QT-03); the next save may reuse the latest number (Q-QT-03). */
+  /** Any non-cancelled quotation can be deleted (owner 2026-10-27); the next save may reuse the latest number (Q-QT-03). */
   async delete(actorId: string, id: string, expectedVersion: number) {
     try {
-      const result = await prisma.quotation.deleteMany({ where: { id, version: expectedVersion, status: "DRAFT" } });
+      const result = await prisma.quotation.deleteMany({ where: { id, version: expectedVersion, status: { in: [...EDITABLE] } } });
       if (result.count === 0) await this.explainMiss(prisma, id, expectedVersion);
     } catch (error) {
       throw mapQuotationError(error, "delete");
