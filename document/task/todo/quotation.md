@@ -10,7 +10,7 @@
 - approved-revision: SA quotation revision 1 + ADR-0032 revision 1
 - approved-by: project owner
 - approval-evidence: owner 2026-10-26 "อนุมัติ SA quotation rev 1"
-- updated-at: 2026-10-26
+- updated-at: 2026-10-27
 
 ## Changes after delivery (owner 2026-10-26)
 
@@ -18,7 +18,11 @@
 - SA-QT-04 amended: with no Document Setup row in effect, numbers are plain `1, 2, 3 …` (migration `20261026120000_quotation_plain_numbering`).
 - SA-QT-13 amended: no Cancel Quotation button on the Quotation page (API kept).
 - Owner 2026-10-27: linked Discount (%)/Discount Amt on lines and the document; units inside boxes; currency code on every money value; editable/rebuilt stone code on lines (SA-QT-07b/08b); Currency page has one Exchange Rate and an optional Description.
-- Correction (owner 2026-10-26): Quotation has no approval — Send for Approval button removed; quotations stay DRAFT; status procedures stay in the API unused.
+- Correction (owner 2026-10-26): Quotation has no approval — Send for Approval button removed; status procedures stay in the API unused.
+- Owner 2026-10-27 (SA-QT-03a, supersedes "quotations stay DRAFT"): create saves as `APPROVED` (approvedAt/approvedBy = creator); edit and delete in any non-cancelled status; an older DRAFT/PENDING_APPROVAL/REJECTED row becomes APPROVED on its next save; no status badge on the page for non-cancelled rows (only Rejected/Cancelled). No schema change. Commit 11981aa; frontend 425 + master 384 tests pass; sec-auditor + security-auditor clear (advisory only).
+- Owner 2026-10-27 (Figma 140:57207): Tax and Include tax in price on separate lines; the tax rate (%) is keyed on the Tax row inside the breakdown box.
+- Owner 2026-10-27: Q-QT-04 answered — tax excludes service charges and labor; Q-QT-05 answered — location, certificate type and labor work stay free text until their masters exist.
+- INV-20261026-002 resolved 2026-10-27 (owner "แก้ INV-20261026-002"): an oversize line with a 100 % line discount is `VALIDATION_ERROR` at `lines.<i>.unitPrice` (UT-QT-B14c); master 385 tests pass.
 - Row panel (owner Figma 2026-10-26): photos uploaded in the row panel (≤ 5, set main there), left photo box view + zoom only; line Discount (%) / Discount Amt (one of them, SA-QT-07a/08a, migration `20261026150000_quotation_line_discount`); Amount only in the table.
 
 ## Backend (after SA approval)
@@ -48,4 +52,4 @@
 
 ## Decisions needed from the owner
 
-1. Approve **SA quotation revision 1 + ADR-0032** with the 2026-10-26 answers (Q-QT-01/02/03/06/07/08 answered; Q-QT-04/05 use the defaults), or name an SA-QT ID to change.
+1. Approve **SA quotation revision 1 + ADR-0032** with the 2026-10-26 answers (Q-QT-01/02/03/06/07/08 answered; Q-QT-04/05 answered 2026-10-27, same as the defaults) — done, or name an SA-QT ID to change.

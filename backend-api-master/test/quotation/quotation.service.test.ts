@@ -203,6 +203,14 @@ describe("create and references (SA-QT-06/07/08/10)", () => {
     expect(createQuotationSchema.safeParse({ ...body, discount: { type: "AMOUNT", value: "123456789012345" } }).success).toBe(false);
   });
 
+  it("UT-QT-B14c an oversize line with a 100 % line discount is VALIDATION_ERROR, not a database failure (INV-20261026-002)", async () => {
+    const huge = input().lines[0];
+    const line = { ...huge, weightCt: "99999.999", unitPrice: "9999999999999999.99", photoIds: [], discount: { type: "PERCENT" as const, value: "100" } };
+    expect(await failure(service.create("a", input({ lines: [line] })))).toMatchObject({ status: 400, code: "VALIDATION_ERROR", path: "lines.0.unitPrice" });
+    expect(db.created).toHaveLength(0);
+    expect(db.lines).toHaveLength(0);
+  });
+
   it("UT-QT-B14 a foreign currency needs an exchange rate to the company currency", async () => {
     expect(await failure(service.create("a", input({ currency: "USD" })))).toMatchObject({ code: "VALIDATION_ERROR", path: "exchangeRate" });
     await expect(service.create("a", input({ currency: "USD", exchangeRate: "36.25" }))).resolves.toMatchObject({ docNo: "QT-26001" });

@@ -41,6 +41,7 @@ for location, certificate type, labor name and service-charge type.
    CANCEL, DELETE). Approve/Reject are used from the separate **Approve** page (later); the Quotation
    page has no approve buttons. The creator may approve with `quotation:APPROVE` (owner 2026-10-26).
    **Corrected by the owner 2026-10-26** ("ลบปุ่ม send of approval ไปเลยบอกเเล้วว่า quotation ไม่มี approve"): Quotation has **no approval step**. Quotations stay `DRAFT` (editable and deletable by permission); the Quotation page has no Send for Approval / Approve / Reject / Cancel buttons. The `submit`/`approve`/`reject`/`cancel` procedures remain in the API but are not used by the UI.
+   **Amended by the owner 2026-10-27** ("สร้างเสร็จเป็นการ approve เลย", SA-QT-03a): `create` saves as `APPROVED` (approvedAt/approvedBy = creator) instead of `DRAFT`; `update` and `delete` are allowed in any non-cancelled status, and an older DRAFT/PENDING_APPROVAL/REJECTED row becomes `APPROVED` on its next save. The page shows no status badge for non-cancelled rows. The status enum is unchanged; no migration.
 4. **Document number:** issued by the server on the first save from the Document Setup row in effect on
    the document date (`prefix + separator + running number`). The running number is the highest one
    stored for that numbering row + 1, read while the row is locked, so deleting the latest quotation

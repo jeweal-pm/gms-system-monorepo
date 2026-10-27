@@ -49,9 +49,14 @@ export type QuotationTotals = {
 /** Largest amount a DECIMAL(18,2) column holds. */
 export const AMOUNT_MAX = new Decimal("9999999999999999.99");
 
-/** Paths of amounts too large to store (each line amount and the document totals), for `VALIDATION_ERROR`. */
+/**
+ * Paths of amounts too large to store (each line amount and line discount, and the document totals), for
+ * `VALIDATION_ERROR`. The discount is checked too: a 100 % discount leaves the amount at 0 (INV-20261026-002).
+ */
 export function oversizeAmounts(totals: QuotationTotals): string[] {
-  const paths = totals.lineAmounts.flatMap((amount, index) => (amount.greaterThan(AMOUNT_MAX) ? [`lines.${index}.unitPrice`] : []));
+  const paths = totals.lineAmounts.flatMap((amount, index) =>
+    amount.greaterThan(AMOUNT_MAX) || totals.lineDiscounts[index].greaterThan(AMOUNT_MAX) ? [`lines.${index}.unitPrice`] : [],
+  );
   const { subtotal, priceBeforeTax, taxAmount, chargesAmount, laborAmount, grandTotal } = totals;
   if ([subtotal, priceBeforeTax, taxAmount, chargesAmount, laborAmount, grandTotal].some((amount) => amount.greaterThan(AMOUNT_MAX))) paths.push("lines");
   return paths;
