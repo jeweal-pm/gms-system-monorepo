@@ -14,10 +14,8 @@ export type HeaderActions = {
   onRefresh: () => void;
 };
 
-const STATUS_LABEL: Record<QuotationStatus, { label: string; tone: string }> = {
-  DRAFT: { label: "Draft", tone: "bg-[#EEF0F2] text-[#4B5563]" },
-  PENDING_APPROVAL: { label: "Pending Approval", tone: "bg-[#FFF4E0] text-[#B45309]" },
-  APPROVED: { label: "Approved", tone: "bg-[#E7F7EE] text-[#15803D]" },
+/** No approval step (owner 2026-10-27): a saved quotation shows no status badge; only rejected/cancelled rows do. */
+const STATUS_LABEL: Partial<Record<QuotationStatus, { label: string; tone: string }>> = {
   REJECTED: { label: "Rejected", tone: "bg-[#FDECEC] text-[#B42318]" },
   CANCELLED: { label: "Cancelled", tone: "bg-[#EEF0F2] text-[#6B7480] line-through" },
 };

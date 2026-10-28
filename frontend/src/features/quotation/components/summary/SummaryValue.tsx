@@ -63,18 +63,29 @@ export function SummaryValue({ totals, currency }: { totals: QuotationTotals; cu
             </>
           }
         />
-        <div className="flex items-center justify-between gap-4 py-2">
+        <div className="py-2">
           <Checkbox label="Tax" {...register("tax.enabled")} />
-          <div className="w-36">
-            <NumberInput compact placeholder="0" suffix="%" disabled={!tax.enabled} aria-label="Tax rate (%)" className={numberInput} {...register("tax.rate")} />
-          </div>
         </div>
+        {/* Figma 140:57207: the tax rate is keyed on the Tax row inside the breakdown box. */}
         {tax.enabled && (
           <>
-            <Checkbox label="Include tax in price" className="py-2" {...register("tax.includeInPrice")} />
-            <div className="mt-2 ml-8 space-y-2 rounded-xl bg-[#F6F7F8] px-4 py-3 text-sm">
+            <div className="py-2">
+              <Checkbox label="Include tax in price" {...register("tax.includeInPrice")} />
+            </div>
+            <div className="mt-2 ml-6 space-y-2 rounded-xl bg-[#F6F7F8] px-4 py-3 text-sm">
               <Row compact label="Price before tax" value={money(totals.priceBeforeTax)} />
-              <Row compact label={`Tax ${tax.rate || 0}%`} value={money(totals.taxAmount)} />
+              <Row
+                compact
+                label={
+                  <span className="flex items-center gap-3">
+                    Tax
+                    <span className="block w-24">
+                      <NumberInput compact placeholder="0" suffix="%" aria-label="Tax rate (%)" className="h-9" {...register("tax.rate")} />
+                    </span>
+                  </span>
+                }
+                value={money(totals.taxAmount)}
+              />
               <div className="border-t border-dashed border-[#D5DADF] pt-2">
                 <Row compact label={<span className="font-medium">Total amount</span>} value={money(totals.totalWithTax)} />
               </div>

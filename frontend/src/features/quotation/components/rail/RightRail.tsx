@@ -59,8 +59,9 @@ export function RailPanelView({
 }
 
 const DOT: Record<QuotationStatus, string> = {
-  DRAFT: "bg-[#A9B1B9]",
-  PENDING_APPROVAL: "bg-[#F5A524]",
+  // No approval step (owner 2026-10-27): older Draft/Pending rows show as approved.
+  DRAFT: "bg-[#22C55E]",
+  PENDING_APPROVAL: "bg-[#22C55E]",
   APPROVED: "bg-[#22C55E]",
   REJECTED: "bg-[#E5484D]",
   CANCELLED: "bg-[#D5DADF]",

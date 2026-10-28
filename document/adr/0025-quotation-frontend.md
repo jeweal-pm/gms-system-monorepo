@@ -11,7 +11,7 @@
 
 ระบบ GMS ต้องมีหน้า **Quotation** ใต้เมนู Pre-Sale สำหรับออกใบเสนอราคาพลอย ใน concept UI หน้านี้ประกอบด้วย
 
-- **Header:** Quotation No. (`QTGMS2609001`) + status stepper `Save → Pending Approval → Approve → Approved` + action bar (Print, Excel, Duplicate, Refresh, Cancel, Save, Edit, Delete)
+- **Header:** Quotation No. (`QTGMS2609001`) + status stepper `Save → Pending Approval → Approve → Approved` _(superseded 2026-10-27: Quotation has no approval step and no status stepper/badge for non-cancelled rows — see ADR-0032 decision 3 and SA-QT-03a)_ + action bar (Print, Excel, Duplicate, Refresh, Cancel, Save, Edit, Delete)
 - **Info form:** Doc Date, Due Date, Customer, Shipping Address, Invoice Address, Currency, Exchange Rate, Ref.
 - **Items:** ตารางพลอย (Stone Code / Location / Stone / Color · Clarity / Cer / PCS / Weight / Sale Price / Amount / More) มีแถวว่างเริ่มต้น 5 แถว เพิ่มได้ 2 ทาง
   1. คลิกแถว → **side panel "New item"** (Row x of N, prev / next, Remove row, Next row)

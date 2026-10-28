@@ -29,6 +29,7 @@ const db = vi.hoisted(() => ({
   linePhotos: [] as Row[],
   charges: [] as Row[],
   findManyArgs: [] as Row[],
+  deletes: [] as Row[],
 }));
 
 vi.mock("@gms/storage", () => ({
@@ -68,7 +69,7 @@ vi.mock("../../src/database/prisma-client", () => {
       create: vi.fn(async ({ data }: { data: Row }) => { db.created.push(data); return data; }),
       findUnique: vi.fn(async () => db.stored),
       updateMany: vi.fn(async (args: Row) => { db.updates.push(args); return { count: db.writeCount }; }),
-      deleteMany: vi.fn(async () => ({ count: db.writeCount })),
+      deleteMany: vi.fn(async (args: Row) => { db.deletes.push(args); return { count: db.writeCount }; }),
       findMany: vi.fn(async (args: Row) => { db.findManyArgs.push(args); return []; }),
       count: vi.fn(async () => 0),
     },
@@ -127,14 +128,15 @@ beforeEach(() => {
     companyCurrency: "THB",
     stored: null,
     writeCount: 1,
-    rawSql: [], created: [], updates: [], lines: [], linePhotos: [], charges: [], findManyArgs: [],
+    rawSql: [], created: [], updates: [], lines: [], linePhotos: [], charges: [], findManyArgs: [], deletes: [],
   });
 });
 
 describe("numbering (SA-QT-04, owner Q-QT-03)", () => {
   it("UT-QT-B01 the first quotation of a numbering row gets its start number, under a row lock", async () => {
     await expect(service.create("actor", input())).resolves.toMatchObject({ docNo: "QT-26001", version: 1 });
-    expect(db.created[0]).toMatchObject({ numberingId: NUMBERING, runningNo: 26001, docNo: "QT-26001", status: "DRAFT", createdBy: "actor" });
+    expect(db.created[0]).toMatchObject({ numberingId: NUMBERING, runningNo: 26001, docNo: "QT-26001", status: "APPROVED", approvedBy: "actor", createdBy: "actor" });
+    expect(db.created[0].approvedAt).toBeInstanceOf(Date);
     expect(db.rawSql[0]).toContain("FOR UPDATE");
   });
 
@@ -201,6 +203,14 @@ describe("create and references (SA-QT-06/07/08/10)", () => {
     expect(createQuotationSchema.safeParse({ ...body, discount: { type: "AMOUNT", value: "123456789012345" } }).success).toBe(false);
   });
 
+  it("UT-QT-B14c an oversize line with a 100 % line discount is VALIDATION_ERROR, not a database failure (INV-20261026-002)", async () => {
+    const huge = input().lines[0];
+    const line = { ...huge, weightCt: "99999.999", unitPrice: "9999999999999999.99", photoIds: [], discount: { type: "PERCENT" as const, value: "100" } };
+    expect(await failure(service.create("a", input({ lines: [line] })))).toMatchObject({ status: 400, code: "VALIDATION_ERROR", path: "lines.0.unitPrice" });
+    expect(db.created).toHaveLength(0);
+    expect(db.lines).toHaveLength(0);
+  });
+
   it("UT-QT-B14 a foreign currency needs an exchange rate to the company currency", async () => {
     expect(await failure(service.create("a", input({ currency: "USD" })))).toMatchObject({ code: "VALIDATION_ERROR", path: "exchangeRate" });
     await expect(service.create("a", input({ currency: "USD", exchangeRate: "36.25" }))).resolves.toMatchObject({ docNo: "QT-26001" });
@@ -210,17 +220,24 @@ describe("create and references (SA-QT-06/07/08/10)", () => {
 describe("edit and status guards (SA-QT-03/09)", () => {
   const stored = (status: string, version = 3) => ({ status, version, customerId: CUSTOMER, shippingAddressId: SHIP, invoiceAddressId: INVOICE, lines: [{ stoneCodeId: STONE }] });
 
-  it("UT-QT-B15 update replaces children in DRAFT/REJECTED; a stored inactive customer or stone code may stay", async () => {
+  it("UT-QT-B15 update replaces children in any non-cancelled status and approves an older row; a stored inactive customer or stone code may stay", async () => {
     db.stored = stored("REJECTED");
     db.customer = { ...db.customer!, active: false };
     db.stoneCodes = [{ id: STONE, active: false }];
     await expect(service.update("editor", QT, 3, input())).resolves.toEqual({ id: QT, version: 4 });
-    expect(db.updates[0]).toMatchObject({ where: { id: QT, version: 3, status: { in: ["DRAFT", "REJECTED"] } }, data: { updatedBy: "editor", version: { increment: 1 } } });
+    expect(db.updates[0]).toMatchObject({
+      where: { id: QT, version: 3, status: { in: ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED"] } },
+      data: { updatedBy: "editor", version: { increment: 1 }, status: "APPROVED", approvedBy: "editor", statusReason: null },
+    });
     expect(db.lines).toHaveLength(1);
+    db.stored = stored("APPROVED", 4);
+    await expect(service.update("editor", QT, 4, input())).resolves.toEqual({ id: QT, version: 5 });
+    expect(db.updates[1].data).not.toHaveProperty("status");
+    expect(db.updates[1].data).not.toHaveProperty("approvedBy");
   });
 
-  it("UT-QT-B16 update outside DRAFT/REJECTED is STATUS_INVALID; a stale version is CHANGED; missing is NOT_FOUND", async () => {
-    db.stored = stored("APPROVED");
+  it("UT-QT-B16 update of a cancelled quotation is STATUS_INVALID; a stale version is CHANGED; missing is NOT_FOUND", async () => {
+    db.stored = stored("CANCELLED");
     expect(await failure(service.update("a", QT, 3, input()))).toMatchObject({ status: 409, code: "QUOTATION_STATUS_INVALID" });
     db.stored = stored("DRAFT", 4);
     expect(await failure(service.update("a", QT, 3, input()))).toMatchObject({ status: 409, code: "QUOTATION_CHANGED" });
@@ -248,8 +265,9 @@ describe("edit and status guards (SA-QT-03/09)", () => {
     expect(await failure(service.cancel("a", QT, 1, "x"))).toMatchObject({ code: "QUOTATION_NOT_FOUND" });
   });
 
-  it("UT-QT-B19 delete is only for drafts at the expected version", async () => {
+  it("UT-QT-B19 delete is for non-cancelled quotations at the expected version", async () => {
     await expect(service.delete("a", QT, 1)).resolves.toEqual({ ok: true });
+    expect(db.deletes[0]).toEqual({ where: { id: QT, version: 1, status: { in: ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED"] } } });
     db.writeCount = 0;
     db.stored = { version: 1 };
     expect(await failure(service.delete("a", QT, 1))).toMatchObject({ code: "QUOTATION_STATUS_INVALID" });

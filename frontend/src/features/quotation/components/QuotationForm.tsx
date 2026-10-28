@@ -232,7 +232,7 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
             canSave={saved ? access.edit : access.add}
             canCreate={access.add}
             canEdit={Boolean(saved) && access.edit && isEditableStatus(status)}
-            canDelete={Boolean(saved) && access.delete && status === "DRAFT"}
+            canDelete={Boolean(saved) && access.delete && isEditableStatus(status)}
             actions={{
               onCancel,
               onSave: () => void onSave(),

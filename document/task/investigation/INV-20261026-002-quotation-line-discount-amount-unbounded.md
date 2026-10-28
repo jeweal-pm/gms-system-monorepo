@@ -3,7 +3,7 @@
 ## Tracking
 
 - Ticket revision: 1
-- Status: pending-review
+- Status: resolved
 - Owner: backend (api-master)
 - Priority: awaiting user review
 - Auditor / mode / run ID: sec-auditor / focused pre-handoff review (read-only, static) / no run ID
@@ -40,18 +40,18 @@ security-auditor traced the same root cause independently (same file hashes) and
 
 ## User selection and approval
 
-- Approved ticket revision:
-- Actual user instruction / approval evidence:
-- Approval date:
-- Separate approved SA bundle/revision, if required:
+- Approved ticket revision: 1
+- Actual user instruction / approval evidence: owner 2026-10-27 "แก้ INV-20261026-002"
+- Approval date: 2026-10-27
+- Separate approved SA bundle/revision, if required: none (existing VALIDATION_ERROR contract)
 
 Do not infer approval from creation of this ticket or approval of a different revision.
 
 ## Implementation and resolution
 
-- Selected work ID / root-cause fingerprint:
+- Selected work ID / root-cause fingerprint: INV-20261026-002 / `quotation-amounts:oversize-check-misses-line-discount`
 - Corrective pass limit: 3 (initial fix included)
-- Passes allocated: 0
+- Passes allocated: 1
 - Active pass: none
 - User-authorized extension and new limit: none
 - Stop reason / missing prerequisite: none
@@ -59,5 +59,6 @@ Do not infer approval from creation of this ticket or approval of a different re
 
 | Pass | Owner(s) / input revision or hash | Causal hypothesis / new evidence | Meaningful change | Authorized verification / result / failure signature | Next fact or terminal decision |
 |---|---|---|---|---|---|
+| 1 | backend (parent, sequential) / branch fix/27-10-26-quotation-decimal-setup @ 11981aa | `oversizeAmounts` checked only the amount after discount; a 100 % discount makes it 0 | `oversizeAmounts` also flags `lineDiscounts[i] > AMOUNT_MAX` as `lines.<i>.unitPrice` `too_big` (`quotation.calculate.ts`); test UT-QT-B14c | UT-QT-B14c fails before the fix, passes after; api-master 385 passed / 19 skipped; tsc + eslint clean | resolved |
 
-- Final status / date:
+- Final status / date: resolved 2026-10-27 (no DB write is attempted; the possible raw DB message path is no longer reachable from this input)
