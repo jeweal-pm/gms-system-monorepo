@@ -6,13 +6,14 @@ import { lineAmount, lineDiscount, type QuotationTotals } from "../../lib/calcul
 import { dec, toFixed, ZERO } from "../../lib/decimal";
 import { formatMoney, formatMoneyText, formatWeight } from "../../lib/format";
 import { visibleRowsHeight } from "../../lib/table-scroll";
+import { useDocumentKind } from "../../document-kind";
 import { isFilledLine, type QuotationLine } from "../../schema";
 import { Badge, Button, cx } from "../ui";
 
 type Column = { title: string; sub?: string; align?: "right"; className?: string };
 
-const COLUMNS: Column[] = [
-  { title: "Stone Code", sub: "STOCK ID · LOT", className: "w-[200px]" },
+const columns = (stoneCode: boolean): Column[] => [
+  stoneCode ? { title: "Stone Code", sub: "STOCK ID · LOT", className: "w-[200px]" } : { title: "STOCK ID", sub: "LOT", className: "w-[200px]" },
   { title: "LOCATION", className: "w-[96px]" },
   { title: "STONE", sub: "SHAPE · SIZE", className: "w-[150px]" },
   { title: "COLOR · CLARITY", sub: "CUTTING · QUALITY", className: "w-[150px]" },
@@ -50,6 +51,8 @@ export function ItemTable({
   onRowAction: (index: number, action: RowAction) => void;
   onAddRow: () => void;
 }) {
+  const kind = useDocumentKind();
+  const COLUMNS = columns(kind.stoneCode);
   const allChecked = lines.length > 0 && lines.every((l) => checkedKeys.has(l.key));
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -154,11 +157,11 @@ export function ItemTable({
                   <td className="px-2 py-4 text-center text-[#6B7480]">{index + 1}</td>
 
                   {filled ? (
-                    <FilledCells line={line} currency={currency} />
+                    <FilledCells line={line} currency={currency} stoneCode={kind.stoneCode} />
                   ) : (
                     <>
                       <td colSpan={COLUMNS.length - 1} className="px-3 py-4 text-[#A9B1B9]">
-                        Empty row · click to key in, or use From Stock to fill it
+                        {kind.emptyRowText}
                       </td>
                       <td className="border-l border-[#E3E6EA]" />
                     </>
@@ -208,15 +211,29 @@ function fitVisibleRows(box: HTMLDivElement) {
   box.style.maxHeight = height === null ? "" : `${height}px`;
 }
 
-function FilledCells({ line, currency }: { line: QuotationLine; currency: string }) {
+function FilledCells({ line, currency, stoneCode }: { line: QuotationLine; currency: string; stoneCode: boolean }) {
   return (
     <>
       <td className="px-3 py-4">
-        <div className="font-medium">{line.stoneCode || "—"}</div>
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6B7480]">
-          {line.stockId && <span>{line.stockId}</span>}
-          {line.lot && <Badge variant="lot">{line.lot}</Badge>}
-        </div>
+        {stoneCode ? (
+          <>
+            <div className="font-medium">{line.stoneCode || "—"}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6B7480]">
+              {line.stockId && <span>{line.stockId}</span>}
+              {line.lot && <Badge variant="lot">{line.lot}</Badge>}
+            </div>
+          </>
+        ) : (
+          // Memo Receive (owner 2026-10-28): the running Stock ID leads; it is assigned on save.
+          <>
+            <div className={cx("font-medium", !line.stockId && "text-[#A9B1B9]")}>{line.stockId || "Auto"}</div>
+            {line.lot && (
+              <div className="mt-1">
+                <Badge variant="lot">{line.lot}</Badge>
+              </div>
+            )}
+          </>
+        )}
         {line.itemNote && (
           <div className="mt-1 flex items-center gap-1.5 text-xs text-[#6B7480]">
             <MessageSquare className="size-3" /> {line.itemNote}

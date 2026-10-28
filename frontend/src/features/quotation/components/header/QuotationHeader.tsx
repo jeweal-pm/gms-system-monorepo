@@ -15,7 +15,9 @@ export type HeaderActions = {
 };
 
 /** No approval step (owner 2026-10-27): a saved quotation shows no status badge; only rejected/cancelled rows do. */
-const STATUS_LABEL: Partial<Record<QuotationStatus, { label: string; tone: string }>> = {
+export type StatusLabels = Partial<Record<QuotationStatus, { label: string; tone: string }>>;
+
+const STATUS_LABEL: StatusLabels = {
   REJECTED: { label: "Rejected", tone: "bg-[#FDECEC] text-[#B42318]" },
   CANCELLED: { label: "Cancelled", tone: "bg-[#EEF0F2] text-[#6B7480] line-through" },
 };
@@ -32,6 +34,9 @@ export function QuotationHeader({
   canEdit,
   canDelete,
   actions,
+  title = "Quotation No.:",
+  createHref = "/pre-sale/quotation",
+  statusLabels = STATUS_LABEL,
 }: {
   docNo: string;
   isPreview: boolean;
@@ -45,13 +50,17 @@ export function QuotationHeader({
   canEdit: boolean;
   canDelete: boolean;
   actions: HeaderActions;
+  /** Reused by Memo Receive (ADR-0033 D5); the defaults are the Quotation page. */
+  title?: string;
+  createHref?: string;
+  statusLabels?: StatusLabels;
 }) {
   const editing = mode === "edit";
-  const badge = status ? STATUS_LABEL[status] : undefined;
+  const badge = status ? statusLabels[status] : undefined;
   return (
     <div className="flex flex-wrap items-start justify-between gap-4 px-6 pt-6 pb-2">
       <div>
-        <p className="text-xs text-[#6B7480]">Quotation No.:</p>
+        <p className="text-xs text-[#6B7480]">{title}</p>
         <div className="mt-1 flex flex-wrap items-center gap-3">
           <h1 className={cx("text-[28px] leading-none font-medium", isPreview ? "text-[#6B7480]" : "text-[#1C252E]")}>
             {docNo}
@@ -87,7 +96,7 @@ export function QuotationHeader({
         <div className="flex flex-wrap items-center gap-2">
           {canCreate && (
             <Link
-              href="/pre-sale/quotation"
+              href={createHref}
               className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#E3E6EA] px-4 text-sm text-[#6B7480] hover:bg-[#F6F7F8]"
             >
               <Plus className="size-4" /> Create New

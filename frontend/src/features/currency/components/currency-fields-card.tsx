@@ -3,7 +3,7 @@
 import { Controller, useFormState, useWatch, type UseFormReturn } from "react-hook-form";
 import { cx } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { FieldShell, fieldFocusClass, fieldFocusWithinClass, readOnlyControlClass, TextField } from "@/components/ui/outlined-field";
+import { FieldShell, fieldFocusClass, readOnlyControlClass, TextField } from "@/components/ui/outlined-field";
 import { Switch } from "@/components/ui/switch";
 import { formatRate, sanitizeRate } from "../rates";
 import { DESCRIPTION_MAX, type CurrencyFormValues } from "../schema";
@@ -23,7 +23,7 @@ const ID = "currency";
 /** Same 404 px field column as Stone Master (ui-spec "Page structure"). */
 const column = "flex w-full max-w-[404px] flex-col gap-5";
 
-/** Currency card (ui-spec C-02…C-06): Active in the header, Code Name, Name, Description, Exchange Rate panel. */
+/** Currency card (ui-spec C-02…C-06): Active in the header, Code Name, Name, Description, Exchange Rate. */
 export function CurrencyFieldsCard({ form, readOnly, codeLocked, baseCode, isBase }: CurrencyFieldsCardProps) {
   const { control, register } = form;
   const { errors } = useFormState({ control });
@@ -98,88 +98,43 @@ export function CurrencyFieldsCard({ form, readOnly, codeLocked, baseCode, isBas
           </div>
         </FieldShell>
 
-        <section aria-labelledby={`${ID}-rate-title`} className="rounded-gms-lg bg-gms-surface-sunken p-5">
-          <h3 id={`${ID}-rate-title`} className="text-base font-medium text-gms-text">Exchange Rate</h3>
-          {isBase ? (
-            <p className="mt-3 text-gms-body text-gms-text-secondary">
-              {`Base currency — other currencies' rates are set against ${baseCode}. Change it in Company Profile.`}
-            </p>
-          ) : (
-            <>
-              <div className="mt-3 grid max-w-[260px] grid-cols-1 gap-4">
-                {/* Owner 2026-10-27: one Exchange Rate (no separate selling/buying) and an optional description. */}
-                <RateField form={form} name="sellingRate" label="Exchange Rate" baseCode={baseCode} readOnly={readOnly} help={`1 unit of this currency in ${baseCode ?? "the company currency"}.`} />
-              </div>
-              {!baseCode && <p className="mt-3 text-gms-label text-gms-text-secondary">Set the company currency in Company Profile.</p>}
-            </>
-          )}
-        </section>
-      </div>
-    </Card>
-  );
-}
-
-type RateFieldProps = {
-  form: UseFormReturn<CurrencyFormValues>;
-  name: "sellingRate" | "buyingRate";
-  label: string;
-  baseCode: string | null;
-  readOnly: boolean;
-  help: string;
-};
-
-/** "[rate] THB" (ui-spec C-06; owner 2026-10-26: no "1 =" prefix): digits and one dot, ≤ 4 decimals, shown with 4 decimals after blur. */
-function RateField({ form, name, label, baseCode, readOnly, help }: RateFieldProps) {
-  const id = `${ID}-${name}`;
-  const { errors } = useFormState({ control: form.control, name });
-  const error = errors[name]?.message;
-  return (
-    <div>
-      <label htmlFor={id} className="text-gms-body font-medium text-gms-text">
-        {label}
-        <span aria-hidden className="ml-0.5 text-gms-danger">*</span>
-      </label>
-      <Controller
-        control={form.control}
-        name={name}
-        render={({ field }) => (
-          <div
-            className={cx(
-              "mt-2 flex h-10 items-center gap-2 rounded-gms-md border px-3 text-gms-body transition-colors",
-              error ? "border-gms-danger bg-gms-danger-subtle" : readOnly ? "border-gms-border bg-gms-field-disabled" : "border-gms-border bg-gms-surface hover:border-gms-text-placeholder",
-              !readOnly && fieldFocusWithinClass,
-            )}
-          >
-            <input
-              ref={field.ref}
-              id={id}
-              name={field.name}
-              inputMode="decimal"
-              autoComplete="off"
-              placeholder="0.0000"
-              aria-required
-              aria-invalid={error ? true : undefined}
-              aria-describedby={`${id}-help${error ? ` ${id}-error` : ""}`}
-              readOnly={readOnly}
-              disabled={readOnly}
-              value={field.value}
-              onChange={(event) => field.onChange(sanitizeRate(event.target.value))}
-              onBlur={() => {
-                field.onChange(formatRate(field.value));
-                field.onBlur();
-              }}
-              className={cx("min-w-0 flex-1 bg-transparent text-right tabular-nums text-gms-text outline-none placeholder:text-gms-text-placeholder", readOnly && readOnlyControlClass)}
+        {/* Owner 2026-10-27: one Exchange Rate (no separate selling/buying); 2026-10-28: a plain outlined field like Name. */}
+        {isBase ? (
+          <p className="pl-4 text-gms-label text-gms-text-secondary">
+            {`Base currency — other currencies' rates are set against ${baseCode}. Change it in Company Profile.`}
+          </p>
+        ) : (
+          <div>
+            <Controller
+              control={control}
+              name="sellingRate"
+              render={({ field }) => (
+                <TextField
+                  id={`${ID}-sellingRate`}
+                  label="Exchange Rate"
+                  required
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder="0.0000"
+                  readOnly={readOnly}
+                  error={errors.sellingRate?.message}
+                  ref={field.ref}
+                  name={field.name}
+                  value={field.value}
+                  onChange={(event) => field.onChange(sanitizeRate(event.target.value))}
+                  onBlur={() => {
+                    field.onChange(formatRate(field.value));
+                    field.onBlur();
+                  }}
+                />
+              )}
             />
-            <span className="shrink-0 text-gms-label font-medium text-gms-text">{baseCode ?? "base"}</span>
+            <p className="mt-1 pl-4 text-gms-label text-gms-text-secondary">
+              {baseCode ? `1 unit of this currency in ${baseCode}` : "Set the company currency in Company Profile."}
+            </p>
           </div>
         )}
-      />
-      {error && (
-        <p id={`${id}-error`} className="mt-1 text-gms-label italic text-gms-danger">
-          {error}
-        </p>
-      )}
-      <p id={`${id}-help`} className="mt-2 text-gms-label text-gms-text-secondary">{help}</p>
-    </div>
+      </div>
+    </Card>
   );
 }

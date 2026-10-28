@@ -47,6 +47,7 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   "document-setup": "/setup/document-setup",
   currency: "/setup/currency",
   quotation: "/pre-sale/quotation",
+  "memo-receive": "/memo/memo-receive",
 };
 
 export function navigationHref(item: NavigationItem): string {
@@ -195,7 +196,8 @@ export const sidebarSections: NavSection[] = [
     id: "memo",
     title: "Memo",
     items: [
-      link("memo-receive", "Memo Receive", MemoReceiveIcon),
+      // memo-receive (ADR-0033, mock documents): real page; stays active on /memo/memo-receive/[id].
+      { ...link("memo-receive", "Memo Receive", MemoReceiveIcon, REAL_PAGE_HREFS["memo-receive"]), activePrefix: REAL_PAGE_HREFS["memo-receive"] },
       link("memo-return", "Memo Return", MemoReturnIcon),
       link("memo-out", "Memo Out", MemoOutIcon),
       link("memo-out-return", "Memo Out Return", MemoOutReturnIcon),

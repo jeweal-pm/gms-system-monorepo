@@ -3,7 +3,8 @@
 import { Crown, Plus, X } from "lucide-react";
 import { useRef, useState, type DragEvent } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
-import { PhotoUploadError, photoUrl, PHOTO_TYPES, uploadQuotationPhoto } from "../../api";
+import { PhotoUploadError, PHOTO_TYPES } from "../../api";
+import { useDocumentKind } from "../../document-kind";
 import { MAX_LINE_PHOTOS, type PhotoRef, type QuotationFormValues } from "../../schema";
 import { cx } from "../ui";
 
@@ -14,6 +15,7 @@ import { cx } from "../ui";
  */
 export function LinePhotosField({ index, readOnly }: { index: number; readOnly: boolean }) {
   const { control, setValue } = useFormContext<QuotationFormValues>();
+  const { uploadPhoto } = useDocumentKind();
   const photos = useWatch({ control, name: `lines.${index}.photos` }) ?? [];
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -31,8 +33,7 @@ export function LinePhotosField({ index, readOnly }: { index: number; readOnly: 
     const added: PhotoRef[] = [];
     try {
       for (const file of picked) {
-        const id = await uploadQuotationPhoto(file);
-        added.push({ id, name: file.name, url: photoUrl(id) });
+        added.push(await uploadPhoto(file));
       }
     } catch (cause) {
       setError(cause instanceof PhotoUploadError ? cause.message : "Couldn't upload the photo. Try again.");
