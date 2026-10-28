@@ -110,8 +110,9 @@ function MemoOutReturnDaybook() {
 }
 
 /**
- * memo-out-return UI rev 2 + SA rev 1 (owner 2026-10-28): vendor document; number from Document Setup › Memo Out
- * Return. Memo Outstanding waits for a vendor memo source, so lines are typed by hand.
+ * memo-out-return UI rev 3 + SA rev 1 (owner 2026-10-28): vendor document; number from Document Setup › Memo Out
+ * Return. Rows are picked from Memo Stock and only their Return quantity is edited, so there is no row editor;
+ * the Memo Stock / Memo Outstanding picker waits for a vendor memo source.
  */
 const CONFIG: DocumentFormConfig<MemoOutReturnFormValues, MemoOutReturnInput, MemoOutReturnOptions> = {
   noun: "memo out return",
@@ -126,9 +127,11 @@ const CONFIG: DocumentFormConfig<MemoOutReturnFormValues, MemoOutReturnInput, Me
   header: ({ options }) => <MemoOutReturnInfoForm options={options} />,
   mapSaveError: mapMemoOutReturnSaveError,
   pickLabel: "Memo Outstanding",
-  pickHint: "Memo Outstanding isn't available yet — add rows by hand",
-  emptyRowText: "Empty row · click to pick from Memo Outstanding",
+  pickHint: "Memo Outstanding isn't available yet",
+  emptyRowText: "Empty row · click to pick from Memo Stock",
   itemTable: ReturnItemTable,
+  rowEditor: false,
+  emptyRowNotice: "Memo Stock isn't available yet",
   noteMax: MEMO_OUT_RETURN_NOTE_MAX,
   notePlaceholder: "e.g. Returned in good condition; 1 stone kept for decision.",
   noteHint: "Printed on the memo out return",

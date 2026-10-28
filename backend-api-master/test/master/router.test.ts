@@ -253,7 +253,7 @@ describe("staged master domain tRPC boundary", () => {
     const shared = { docDate: "2026-10-28", dueDate: "2026-11-28", currency: "THB", exchangeRate: null, ref: "", documentNote: "", lines: [line],
       discount: { type: "NONE" as const, value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null };
     const out = { ...shared, customerId: ID, shippingAddressId: ID2, invoiceAddressId: ID2 };
-    const back = { ...shared, vendorId: ID, addressId: ID2 };
+    const back = { ...shared, lines: [{ ...line, outstandingPcs: 1, outstandingWeightCt: "1" }], vendorId: ID, addressId: ID2 };
 
     const outCaller = router.createCaller(context(["memo-out:VIEW", "memo-out:ADD", "memo-out:EDIT", "memo-out:DELETE"]));
     await outCaller.memoOut.list({ q: "gem", partyId: ID });

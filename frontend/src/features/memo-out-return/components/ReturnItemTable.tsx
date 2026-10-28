@@ -1,39 +1,44 @@
 "use client";
 
-import { ChevronsUpDown, CircleMinus, Ellipsis, Plus } from "lucide-react";
+import { ChevronsUpDown, Plus } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { useFormContext, type FieldError } from "react-hook-form";
 import type { ItemTable } from "@/features/quotation/components/items/ItemTable";
 import { Badge, Button, cx } from "@/features/quotation/components/ui";
 import { lineAmount } from "@/features/quotation/lib/calculate";
 import { formatMoney, formatMoneyText, formatWeight } from "@/features/quotation/lib/format";
-import { dec, toFixed } from "@/features/quotation/lib/decimal";
+import { add, dec, toFixed, ZERO } from "@/features/quotation/lib/decimal";
 import { visibleRowsHeight } from "@/features/quotation/lib/table-scroll";
 import { isFilledLine, type QuotationLine } from "@/features/quotation/schema";
+import type { MemoOutReturnLine } from "../api";
 
-/** Same props as the Quotation item table, so the shared document preview frame can use either. */
+/** Same props as the Quotation item table, so the shared document form can use either. */
 export type ReturnItemTableProps = Parameters<typeof ItemTable>[0];
 
 type Column = { title: string; sub?: string; className: string };
 
-/** memo-out-return source 01: item columns, then the Pending and Return groups (Pcs, Weight), then price. */
+/** memo-out-return UI rev 3 (owner design 2026-10-28): item columns, Outstanding and Return (Pcs, Weight), price. */
 const LEFT: Column[] = [
-  { title: "Stone Code", sub: "STOCK ID · LOT", className: "w-[180px]" },
-  { title: "LOCATION", className: "w-[110px]" },
-  { title: "STONE", sub: "SHAPE · SIZE", className: "w-[136px]" },
+  { title: "STOCK ID", sub: "LOT", className: "w-[180px]" },
+  { title: "LOCATION", className: "w-[120px]" },
+  { title: "STONE", sub: "SHAPE · SIZE", className: "w-[140px]" },
   { title: "COLOR · CLARITY", sub: "CUTTING · QUALITY", className: "w-[150px]" },
   { title: "CER TYPE", sub: "CER NO.", className: "w-[120px]" },
 ];
-/** The Return group is tinted (source 01) so the quantity being returned stands out. */
-const RETURN_TINT = "bg-[#E3F0F0]";
 const QTY = "w-[108px] px-3 text-right";
+const DIVIDER = "border-l border-[#E3E6EA]";
 
 /**
- * Memo Out Return item table (memo-out-return UI rev 2, source 01). Rows are picked from Memo Outstanding:
- * Pending = what is still out on the memo, Return = what comes back now. Five rows show; the rest scroll.
+ * Memo Out Return item table (memo-out-return UI rev 3). Rows come from Memo Stock with their Outstanding
+ * quantity; only the Return Pcs / Weight are keyed in here (owner 2026-10-28: "สามารถแก้ไขได้แค่ column return"),
+ * so there is no row menu, checkbox or remove button. Five rows show; the rest scroll.
  */
-export function ReturnItemTable({ lines, currency, totals, selectedIndex, checkedKeys, readOnly, emptyRowText, onSelectRow, onToggleCheck, onToggleAll, onRowAction, onAddRow }: ReturnItemTableProps) {
-  const allChecked = lines.length > 0 && lines.every((l) => checkedKeys.has(l.key));
+export function ReturnItemTable({ lines, currency, totals, selectedIndex, readOnly, emptyRowText, onSelectRow, onAddRow }: ReturnItemTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const returnLines = lines as MemoOutReturnLine[];
+  const filledLines = returnLines.filter(isFilledLine);
+  const outstandingPcs = add(ZERO, ...filledLines.map((line) => dec(line.outstandingPcs)));
+  const outstandingWeight = add(ZERO, ...filledLines.map((line) => dec(line.outstandingWeightCt)));
 
   // Fixed at 5 rows, the rest scroll (same rule as the Quotation table).
   useEffect(() => {
@@ -61,11 +66,7 @@ export function ReturnItemTable({ lines, currency, totals, selectedIndex, checke
         <table className="w-full min-w-[1400px] border-collapse text-sm text-[#1C252E]">
           <thead className="sticky top-0 z-10 bg-[#F6F7F8] text-left">
             <tr>
-              <th rowSpan={2} className="w-10 px-3 py-3">
-                <input type="checkbox" aria-label="Select all rows" className="size-5 accent-[#0E5E63]" checked={allChecked} disabled={readOnly} onChange={(e) => onToggleAll(e.target.checked)} />
-              </th>
-              <th rowSpan={2} className="w-9" />
-              <th rowSpan={2} className="w-8 px-2 text-center font-normal text-[#6B7480]">#</th>
+              <th rowSpan={2} className="w-10 px-3 text-center font-normal text-[#6B7480]">#</th>
               {LEFT.map((c) => (
                 <th key={c.title} rowSpan={2} className={cx("px-3 py-3 font-medium", c.className)}>
                   <span className="inline-flex items-center gap-1.5">
@@ -77,29 +78,28 @@ export function ReturnItemTable({ lines, currency, totals, selectedIndex, checke
                   </span>
                 </th>
               ))}
-              <th colSpan={2} className="border-b border-l border-[#E3E6EA] px-3 py-3 text-center font-medium">Pending</th>
-              <th colSpan={2} className={cx("border-b border-[#E3E6EA] px-3 py-3 text-center font-medium", RETURN_TINT)}>Return</th>
-              <th rowSpan={2} className="w-[130px] border-l border-[#E3E6EA] px-3 py-3 text-right font-medium">
+              <th colSpan={2} className={cx("border-b border-[#E3E6EA] px-3 py-3 text-center font-medium", DIVIDER)}>Outstanding</th>
+              <th colSpan={2} className={cx("border-b border-[#E3E6EA] px-3 py-3 text-center font-medium", DIVIDER)}>Return</th>
+              <th rowSpan={2} className={cx("w-[130px] px-3 py-3 text-right font-medium", DIVIDER)}>
                 <span className="inline-flex flex-row-reverse items-center gap-1.5">
                   <span className="leading-tight">
-                    <span className="block whitespace-nowrap">SALE PRICE</span>
+                    <span className="block whitespace-nowrap">Memo PRICE</span>
                     <span className="block text-[11px] font-normal text-[#6B7480]">UNIT</span>
                   </span>
                   <ChevronsUpDown className="size-3 text-[#95A0A9]" />
                 </span>
               </th>
-              <th rowSpan={2} className="w-[120px] px-3 py-3 text-right font-medium">Amount</th>
-              <th rowSpan={2} className="w-14 px-3 font-medium">More</th>
+              <th rowSpan={2} className="w-[130px] px-3 py-3 text-right font-medium">Amount</th>
             </tr>
             <tr>
-              <th className={cx("border-l border-[#E3E6EA] py-2.5 font-medium", QTY)}>Pcs</th>
+              <th className={cx("py-2.5 font-medium", QTY, DIVIDER)}>Pcs</th>
               <th className={cx("py-2.5 font-medium", QTY)}>Weight</th>
-              <th className={cx("py-2.5 font-medium", QTY, RETURN_TINT)}>Pcs</th>
-              <th className={cx("py-2.5 font-medium", QTY, RETURN_TINT)}>Weight</th>
+              <th className={cx("py-2.5 font-medium", QTY, DIVIDER)}>Pcs</th>
+              <th className={cx("py-2.5 font-medium", QTY)}>Weight</th>
             </tr>
           </thead>
           <tbody>
-            {lines.map((line, index) => {
+            {returnLines.map((line, index) => {
               const filled = isFilledLine(line);
               return (
                 <tr
@@ -107,24 +107,7 @@ export function ReturnItemTable({ lines, currency, totals, selectedIndex, checke
                   onClick={() => onSelectRow(index)}
                   className={cx("cursor-pointer border-b border-[#EEF0F2] align-top", index === selectedIndex ? "bg-[#E6F1F1]" : "hover:bg-[#FAFBFB]")}
                 >
-                  <td className="px-3 py-4" onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" aria-label={`Select row ${index + 1}`} className="size-5 accent-[#0E5E63]" checked={checkedKeys.has(line.key)} disabled={readOnly} onChange={() => onToggleCheck(line.key)} />
-                  </td>
-                  <td className="py-4">
-                    <button
-                      type="button"
-                      aria-label={`Remove row ${index + 1}`}
-                      disabled={readOnly}
-                      className="text-[#E5484D] disabled:text-[#F3A5A7]"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onRowAction(index, "remove");
-                      }}
-                    >
-                      <CircleMinus className="size-5" />
-                    </button>
-                  </td>
-                  <td className="px-2 py-4 text-center text-[#6B7480]">{index + 1}</td>
+                  <td className="px-3 py-4 text-center text-[#6B7480]">{index + 1}</td>
                   {filled ? (
                     <FilledCells line={line} />
                   ) : (
@@ -132,35 +115,32 @@ export function ReturnItemTable({ lines, currency, totals, selectedIndex, checke
                       {emptyRowText}
                     </td>
                   )}
-                  {/* Pending comes from Memo Outstanding (not available yet); Return = the row pieces/weight. */}
-                  <td className={cx("border-l border-[#E3E6EA] py-4 text-[#A9B1B9]", QTY)}>{filled ? "—" : ""}</td>
-                  <td className={cx("py-4 text-[#A9B1B9]", QTY)}>{filled ? "—" : ""}</td>
-                  <td className={cx("py-4", QTY, RETURN_TINT)}>{filled ? line.pcs || "0" : ""}</td>
-                  <td className={cx("py-4", QTY, RETURN_TINT)}>{filled ? formatWeight(dec(line.weightCt)) : ""}</td>
-                  <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">{filled ? `${formatMoneyText(line.unitPrice)} ${currency}` : ""}</td>
-                  <td className="px-3 py-4 text-right">{filled ? formatMoney(lineAmount(line)) : ""}</td>
-                  <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                    <button type="button" aria-label="More" disabled={readOnly} className="rounded p-1 hover:bg-[#EEF0F2]" onClick={() => onRowAction(index, "edit")}>
-                      <Ellipsis className="size-5" />
-                    </button>
+                  <td className={cx("py-4", QTY, DIVIDER)}>{filled ? line.outstandingPcs || "0" : ""}</td>
+                  <td className={cx("py-4", QTY)}>{filled ? formatWeight(dec(line.outstandingWeightCt)) : ""}</td>
+                  <td className={cx("py-2", QTY, DIVIDER)} onClick={(e) => filled && e.stopPropagation()}>
+                    {filled && <ReturnInput index={index} field="pcs" label={`Return pcs, row ${index + 1}`} readOnly={readOnly} />}
                   </td>
+                  <td className={cx("py-2", QTY)} onClick={(e) => filled && e.stopPropagation()}>
+                    {filled && <ReturnInput index={index} field="weightCt" label={`Return weight, row ${index + 1}`} readOnly={readOnly} />}
+                  </td>
+                  <td className={cx("px-3 py-4 text-right", DIVIDER)}>{filled ? `${formatMoneyText(line.unitPrice)} ${currency}` : ""}</td>
+                  <td className="px-3 py-4 text-right">{filled ? formatMoney(lineAmount(line)) : ""}</td>
                 </tr>
               );
             })}
           </tbody>
           <tfoot className="sticky bottom-0 z-10">
             <tr className="bg-[#F6F7F8] font-medium">
-              <td colSpan={3} />
-              <td className="px-3 py-3">Totals</td>
+              <td colSpan={2} className="px-3 py-3">Totals</td>
               <td colSpan={LEFT.length - 1} />
-              <td colSpan={2} className="border-l border-[#E3E6EA]" />
-              <td className={cx("border-l border-[#E3E6EA] py-3", QTY)}>{toFixed(totals.totalPcs, 0)}</td>
+              <td className={cx("py-3", QTY, DIVIDER)}>{toFixed(outstandingPcs, 0)}</td>
+              <td className={cx("py-3", QTY)}>{formatWeight(outstandingWeight)}</td>
+              <td className={cx("py-3", QTY, DIVIDER)}>{toFixed(totals.totalPcs, 0)}</td>
               <td className={cx("py-3", QTY)}>{formatWeight(totals.totalWeight)}</td>
-              <td className="border-l border-[#E3E6EA]" />
+              <td className={DIVIDER} />
               <td className="px-3 py-3 text-right">
                 {formatMoney(totals.subtotal)} {currency}
               </td>
-              <td />
             </tr>
           </tfoot>
         </table>
@@ -174,15 +154,36 @@ export function ReturnItemTable({ lines, currency, totals, selectedIndex, checke
   );
 }
 
+/** Return Pcs / Weight of one row — the only editable cells (≤ Outstanding, checked by the form schema). */
+function ReturnInput({ index, field, label, readOnly }: { index: number; field: "pcs" | "weightCt"; label: string; readOnly: boolean }) {
+  const { register, formState } = useFormContext();
+  const error = (formState.errors.lines as unknown as Record<string, FieldError | undefined>[] | undefined)?.[index]?.[field] as FieldError | undefined;
+  return (
+    <input
+      {...register(`lines.${index}.${field}`)}
+      aria-label={label}
+      aria-invalid={error ? true : undefined}
+      title={error?.message}
+      inputMode="decimal"
+      readOnly={readOnly}
+      className={cx(
+        "h-9 w-full rounded-md border bg-white px-2 text-right outline-none focus:border-[#0E5E63] read-only:border-transparent read-only:bg-transparent",
+        error ? "border-[#E5484D]" : "border-[#DFE3E8]",
+      )}
+    />
+  );
+}
+
 function FilledCells({ line }: { line: QuotationLine }) {
   return (
     <>
       <td className="px-3 py-4">
-        <div className="font-medium">{line.stoneCode || "—"}</div>
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6B7480]">
-          {line.stockId && <span>{line.stockId}</span>}
-          {line.lot && <Badge variant="lot">{line.lot}</Badge>}
-        </div>
+        <div className="font-medium">{line.stockId || line.stoneCode || "—"}</div>
+        {line.lot && (
+          <div className="mt-1">
+            <Badge variant="lot">{line.lot}</Badge>
+          </div>
+        )}
       </td>
       <td className="px-3 py-4">{line.locationId}</td>
       <td className="px-3 py-4">

@@ -59,6 +59,7 @@ export class MemoOutReturnService {
     parentKey: "memoOutReturnId",
     errors: memoOutReturnErrors,
     party: vendorParty,
+    outstanding: true,
   });
 
   list(input: DocumentListInput) {

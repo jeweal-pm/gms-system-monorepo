@@ -13,7 +13,7 @@ export const PHOTOS_PER_LINE_MAX = 5;
 export const QUOTATION_LIST_LIMIT = 50;
 
 /** Non-negative decimal string with at most `whole` integer digits and `scale` decimals. */
-const decimal = (whole: number, scale: number) =>
+export const decimal = (whole: number, scale: number) =>
   z.string().trim().regex(new RegExp(`^\\d{1,${whole}}(\\.\\d{1,${scale}})?$`));
 const text = (max: number) => z.string().trim().max(max);
 const isoDate = z.iso.date();

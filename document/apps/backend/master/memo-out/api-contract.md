@@ -7,10 +7,12 @@ type Status = "DRAFT";                                      // SA-MO-03
 type MemoLineInput = QuotationLineInput & { photoIds: [] }; // no photos in rev 1
 
 type MemoOutInput = Omit<QuotationInput, "lines"> & { lines: MemoLineInput[] };   // customerId + shippingAddressId + invoiceAddressId
-type MemoOutReturnInput = Omit<MemoOutInput, "customerId" | "shippingAddressId" | "invoiceAddressId"> & { vendorId: string; addressId: string };
+type MemoOutReturnLineInput = MemoLineInput & { outstandingPcs: number; outstandingWeightCt: string }; // UI rev 3: pcs/weightCt = Return, ≤ outstanding (else VALIDATION_ERROR lines.N.pcs|weightCt "exceeds_outstanding")
+type MemoOutReturnInput = Omit<MemoOutInput, "customerId" | "shippingAddressId" | "invoiceAddressId" | "lines"> & { vendorId: string; addressId: string; lines: MemoOutReturnLineInput[] };
 
 type MemoOut = MemoOutInput & { id; docNo; status: Status; version; customer: { code; name }; shippingAddressText; invoiceAddressText; lines (+ id, discountAmount, amount); totals; createdAt; createdBy; updatedAt };
 type MemoOutReturn = MemoOutReturnInput & { id; docNo; status: Status; version; vendor: { code; name }; addressText; lines; totals; createdAt; createdBy; updatedAt };
+// Detail lines of both documents carry outstandingPcs / outstandingWeightCt: numbers on memo out return, null on memo out.
 ```
 
 | Procedure | Permission | Input | Output |

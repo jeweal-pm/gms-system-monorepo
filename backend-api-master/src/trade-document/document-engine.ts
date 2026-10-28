@@ -77,7 +77,12 @@ export type EngineConfig<Input extends TradeDocumentInput, Out extends Row = Row
   parentKey: string;
   errors: DocumentErrors;
   party: PartyAdapter<Input, Out>;
+  /** Lines keep an Outstanding quantity (memo out return UI rev 3); pcs / weightCt are then the Return quantity. */
+  outstanding?: boolean;
 };
+
+/** A line input of a document with `outstanding` lines. */
+type OutstandingLine = LineInput & { outstandingPcs: number; outstandingWeightCt: string };
 
 export const documentListSchema = z.object({
   q: z.string().trim().max(100).optional(),
@@ -349,6 +354,9 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
       discountAmount: lineDiscounts[index],
       amount: lineAmounts[index],
       itemNote: line.itemNote,
+      ...(this.config.outstanding
+        ? { outstandingPcs: (line as OutstandingLine).outstandingPcs, outstandingWeightCt: (line as OutstandingLine).outstandingWeightCt }
+        : {}),
     }));
     await this.child(tx, lineModel).createMany({ data: lines });
     if (input.serviceCharges.length > 0) {
@@ -397,6 +405,9 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
         amount: money(line.amount),
         itemNote: line.itemNote as string,
         photoIds: [] as string[],
+        // Only documents with `outstanding` lines (memo out return) have these columns.
+        outstandingPcs: line.outstandingPcs === undefined ? null : (line.outstandingPcs as number),
+        outstandingWeightCt: line.outstandingWeightCt === undefined ? null : (line.outstandingWeightCt as Dec).toFixed(3),
       })),
       discount: { type: row.discountType as "NONE" | "PERCENT" | "AMOUNT", value: (row.discountValue as Dec).toString() },
       tax: { enabled: row.taxEnabled as boolean, rate: (row.taxRate as Dec).toString(), includeInPrice: row.taxIncluded as boolean },

@@ -17,7 +17,7 @@ import { Button, IconButton, Toast } from "@/features/quotation/components/ui";
 import { calculateTotals } from "@/features/quotation/lib/calculate";
 import { emptyLine, newKey } from "@/features/quotation/lib/defaults";
 import { LineOptionsContext, LinePhotoContext, type LineOptions } from "@/features/quotation/options-context";
-import type { QuotationFormValues, QuotationLine } from "@/features/quotation/schema";
+import { isFilledLine, type QuotationFormValues, type QuotationLine } from "@/features/quotation/schema";
 
 /** Everything the form needs from a document's API, read through the document's own hooks. */
 export type DocumentApi<Input, Options extends LineOptions = LineOptions> = {
@@ -54,6 +54,10 @@ export type DocumentFormConfig<V extends FieldValues & Saved, Input, Options ext
   pickHint: string;
   emptyRowText?: string;
   itemTable?: ComponentType<Parameters<typeof ItemTable>[0]>;
+  /** false: rows aren't edited in the row panel (memo out return edits only its Return cells in the table). */
+  rowEditor?: boolean;
+  /** Shown when an empty row is clicked and there is no row editor (e.g. its picker isn't available yet). */
+  emptyRowNotice?: string;
   noteMax?: number;
   notePlaceholder: string;
   noteHint: string;
@@ -161,6 +165,10 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
 
   const openRow = (index: number) => {
     setSelectedIndex(index);
+    if (config.rowEditor === false) {
+      if (config.emptyRowNotice && !readOnly && lines[index] && !isFilledLine(lines[index])) setToast(config.emptyRowNotice);
+      return;
+    }
     setEditorOpen(true);
     setRailPanel(null);
   };

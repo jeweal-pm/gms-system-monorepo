@@ -7,7 +7,7 @@ import { MemoOutReturnService } from "../../src/trade-document/memo-out-return.s
 import { createMemoOutReturnSchema, createMemoOutSchema } from "../../src/trade-document/memo-schemas";
 
 /**
- * UT-MO-B01…B09: memo out / memo out return SA rev 1 (ADR-0033, owner 2026-10-28) — the shared engine against a
+ * UT-MO-B01…B09, B11: memo out / memo out return SA rev 1 (ADR-0033, owner 2026-10-28) — the shared engine against a
  * mocked Prisma: Document Setup keys, party references and snapshots, server totals, version/draft guards,
  * list and options. Real SQL (row lock, CHECKs) is covered by the live checks.
  */
@@ -103,7 +103,8 @@ const shared = (patch: Row = {}) => ({
   ...patch,
 });
 const outInput = (patch: Row = {}) => createMemoOutSchema.parse({ ...shared(), customerId: CUSTOMER, shippingAddressId: SHIP, invoiceAddressId: INVOICE, ...patch });
-const returnInput = (patch: Row = {}) => createMemoOutReturnSchema.parse({ ...shared(), vendorId: VENDOR, addressId: VADDR, ...patch });
+const returnLine = (patch: Row = {}) => ({ ...shared().lines[0], outstandingPcs: 2, outstandingWeightCt: "2.5", ...patch });
+const returnInput = (patch: Row = {}) => createMemoOutReturnSchema.parse({ ...shared(), lines: [returnLine()], vendorId: VENDOR, addressId: VADDR, ...patch });
 
 async function failure(promise: Promise<unknown>) {
   try { await promise; } catch (error) {
@@ -180,7 +181,19 @@ describe("party references, snapshots and totals (SA-MO-05/06)", () => {
     await memoOutReturn.create("actor", returnInput());
     expect(db.created[0]).toMatchObject({ model: "memoOutReturn", data: { vendorId: VENDOR, vendorCodeSnapshot: "V001", vendorNameSnapshot: "Bangkok Gems", addressId: VADDR } });
     expect(String(db.created[0].data.addressSnapshot)).toContain("88 Silom Rd");
-    expect(db.lines[0]).toMatchObject({ model: "memoOutReturnLine" });
+    expect(db.lines[0]).toMatchObject({ model: "memoOutReturnLine", data: [expect.objectContaining({ pcs: 1, weightCt: "1.12", outstandingPcs: 2, outstandingWeightCt: "2.5" })] });
+  });
+
+  it("UT-MO-B11 memo out return lines need an Outstanding quantity and may not return more than it (UI rev 3)", () => {
+    const parse = (line: Row) => createMemoOutReturnSchema.safeParse({ ...shared(), lines: [line], vendorId: VENDOR, addressId: VADDR });
+    expect(parse(returnLine({ pcs: 2, weightCt: "2.5" })).success).toBe(true);
+    expect(parse(shared().lines[0]).success).toBe(false);
+    const tooMany = parse(returnLine({ pcs: 3 }));
+    expect(tooMany.success ? [] : tooMany.error.issues.map((issue) => issue.path.join("."))).toEqual(["lines.0.pcs"]);
+    const tooHeavy = parse(returnLine({ weightCt: "2.501" }));
+    expect(tooHeavy.success ? [] : tooHeavy.error.issues.map((issue) => issue.path.join("."))).toEqual(["lines.0.weightCt"]);
+    // Memo out lines have no Outstanding quantity.
+    expect(createMemoOutSchema.safeParse({ ...outInput(), lines: [returnLine()] }).success).toBe(false);
   });
 
   it("UT-MO-B06 rejects an inactive party, a wrong address, an inactive currency and a missing exchange rate", async () => {
