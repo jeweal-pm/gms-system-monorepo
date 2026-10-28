@@ -434,7 +434,7 @@ const placeholderCatalog: ReadonlyMap<string, PlaceholderEntry> = (() => {
   return catalog;
 })();
 
-/** Breadcrumbs for a `/modules/<slug>` placeholder; unknown slugs keep `label: null` ("ไม่พบเมนู"). */
+/** Breadcrumbs for a `/modules/<slug>` placeholder; unknown slugs keep `label: null` ("Menu not found"). */
 export function moduleBreadcrumbs(slug: string): { label: string | null; breadcrumbs: Breadcrumb[] } {
   const entry = placeholderCatalog.get(slug);
   if (entry) return { label: entry.label, breadcrumbs: entry.breadcrumbs };

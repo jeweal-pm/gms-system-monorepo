@@ -7,7 +7,7 @@ import { retryTransient } from "@/lib/trpc-error";
 import { quotationCurrencyOptions, quotationExchangeRate } from "../../lib/currency";
 import { useOptions } from "../../options-context";
 import type { QuotationFormValues } from "../../schema";
-import { Field, FormSelect, TextInput } from "../ui";
+import { Field, FormDateInput, FormSelect, TextInput } from "../ui";
 
 /**
  * Header fields (ADR-0025 §1): customers and addresses from `quotation.options` (SA-QT-06); currencies and
@@ -63,7 +63,7 @@ export function QuotationInfoForm() {
   return (
     <div className="grid grid-cols-1 gap-x-4 gap-y-5 px-6 py-6 md:grid-cols-[200px_1fr_1fr_1fr]">
       <Field label="Doc Date" required error={errors.docDate?.message}>
-        <TextInput type="date" {...register("docDate")} />
+        <FormDateInput<QuotationFormValues> name="docDate" />
       </Field>
       <Field label="Customer" required error={errors.customerId?.message}>
         <FormSelect<QuotationFormValues> name="customerId" options={customerOptions} onValueChange={onCustomerChange} />
@@ -76,7 +76,7 @@ export function QuotationInfoForm() {
       </Field>
 
       <Field label="Due Date" required error={errors.dueDate?.message}>
-        <TextInput type="date" {...register("dueDate")} />
+        <FormDateInput<QuotationFormValues> name="dueDate" />
       </Field>
       <Field label="Currency" required error={errors.currency?.message}>
         <FormSelect<QuotationFormValues> name="currency" options={quotationCurrencyOptions(items, currency)} onValueChange={onCurrencyChange} />

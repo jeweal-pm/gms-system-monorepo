@@ -1,5 +1,5 @@
 import { z } from "zod";
 
 export const passwordSchema = z.string()
-  .min(4, "รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร")
-  .max(64, "รหัสผ่านต้องมีไม่เกิน 64 ตัวอักษร")
+  .min(4, "Password must be at least 4 characters")
+  .max(64, "Password must be at most 64 characters")

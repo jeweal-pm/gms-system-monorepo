@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
-import { Field, FormSelect, TextInput } from "@/features/quotation/components/ui";
+import { Field, FormDateInput, FormSelect, TextInput } from "@/features/quotation/components/ui";
 import { quotationCurrencyOptions, quotationExchangeRate } from "@/features/quotation/lib/currency";
 import { DocumentDaybook, useDocumentAccess } from "@/features/trade-document/document-api";
 import { DocumentForm, type DocumentFormConfig } from "@/features/trade-document/document-form";
@@ -66,7 +66,7 @@ export function MemoOutReturnInfoForm({ options }: { options: MemoOutReturnOptio
     <div className="flex flex-col gap-5 px-6 py-6">
       <div className="grid grid-cols-1 gap-x-4 gap-y-5 md:grid-cols-[200px_1fr_1fr]">
         <Field label="Doc Date" required error={errors.docDate?.message}>
-          <TextInput type="date" {...register("docDate")} />
+          <FormDateInput<MemoOutReturnFormValues> name="docDate" />
         </Field>
         <Field label="Vendor" required error={errors.vendorId?.message}>
           <FormSelect<MemoOutReturnFormValues> name="vendorId" options={vendorOptions} onValueChange={onVendorChange} />
@@ -77,7 +77,7 @@ export function MemoOutReturnInfoForm({ options }: { options: MemoOutReturnOptio
       </div>
       <div className="grid grid-cols-1 gap-x-4 gap-y-5 md:grid-cols-[200px_1fr_1fr_1fr]">
         <Field label="Due Date" required error={errors.dueDate?.message}>
-          <TextInput type="date" {...register("dueDate")} />
+          <FormDateInput<MemoOutReturnFormValues> name="dueDate" />
         </Field>
         <Field label="Currency" required error={errors.currency?.message}>
           <FormSelect<MemoOutReturnFormValues> name="currency" options={quotationCurrencyOptions(items, currency)} onValueChange={onCurrencyChange} />

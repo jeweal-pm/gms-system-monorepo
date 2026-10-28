@@ -54,7 +54,7 @@ Replaces the item table row above where they differ.
 | Memo PRICE (UNIT) | price per unit, document currency (was "SALE PRICE") | no |
 | Amount | price × Return quantity | no |
 
-- No checkbox, remove or **More** column, and no row panel: rows come only from Memo Stock (Memo Outstanding). Empty row text: "Empty row · click to pick from Memo Stock"; clicking one shows "Memo Stock isn't available yet" until the picker exists.
+- No checkbox, remove or **More** column, no **Add row** button (owner 2026-10-28: "frontend Memo Out Return เอาปุ่ม add row ออก"), and no row panel: rows come only from Memo Stock (Memo Outstanding). Empty row text: "Empty row · click to pick from Memo Stock"; clicking one shows "Memo Stock isn't available yet" until the picker exists.
 - No tint on the Return group; dividers separate Outstanding, Return and price, in the header and the Totals row.
 - Totals: Outstanding Pcs/Weight, Return Pcs/Weight, Amount.
 - In view mode the Return cells are read-only.

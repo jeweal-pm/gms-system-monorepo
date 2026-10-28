@@ -1,10 +1,10 @@
 "use client";
 
-import { ChevronsUpDown, Plus } from "lucide-react";
+import { ChevronsUpDown } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useFormContext, type FieldError } from "react-hook-form";
 import type { ItemTable } from "@/features/quotation/components/items/ItemTable";
-import { Badge, Button, cx } from "@/features/quotation/components/ui";
+import { Badge, cx } from "@/features/quotation/components/ui";
 import { lineAmount } from "@/features/quotation/lib/calculate";
 import { formatMoney, formatMoneyText, formatWeight } from "@/features/quotation/lib/format";
 import { add, dec, toFixed, ZERO } from "@/features/quotation/lib/decimal";
@@ -31,9 +31,9 @@ const DIVIDER = "border-l border-[#E3E6EA]";
 /**
  * Memo Out Return item table (memo-out-return UI rev 3). Rows come from Memo Stock with their Outstanding
  * quantity; only the Return Pcs / Weight are keyed in here (owner 2026-10-28: "สามารถแก้ไขได้แค่ column return"),
- * so there is no row menu, checkbox or remove button. Five rows show; the rest scroll.
+ * so there is no row menu, checkbox, remove or Add row button (owner 2026-10-28). Five rows show; the rest scroll.
  */
-export function ReturnItemTable({ lines, currency, totals, selectedIndex, readOnly, emptyRowText, onSelectRow, onAddRow }: ReturnItemTableProps) {
+export function ReturnItemTable({ lines, currency, totals, selectedIndex, readOnly, emptyRowText, onSelectRow }: ReturnItemTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const returnLines = lines as MemoOutReturnLine[];
   const filledLines = returnLines.filter(isFilledLine);
@@ -145,11 +145,6 @@ export function ReturnItemTable({ lines, currency, totals, selectedIndex, readOn
           </tfoot>
         </table>
       </div>
-      {!readOnly && (
-        <Button size="sm" className="mt-3 bg-[#F6F7F8]" onClick={onAddRow}>
-          <Plus className="size-4" /> Add row
-        </Button>
-      )}
     </div>
   );
 }

@@ -71,7 +71,7 @@ describe("return item table (UT-MOR-02/03, design rev 3)", () => {
     for (const title of ["STOCK ID", "LOT", "LOCATION", "SHAPE · SIZE", "COLOR · CLARITY", "CUTTING · QUALITY", "CER TYPE", "CER NO.", "Memo PRICE", "UNIT", "Amount"]) expect(html).toContain(`>${title}<`);
     expect(html).toMatch(/colSpan="2"[^>]*>Outstanding<\/th>/i);
     expect(html).toMatch(/colSpan="2"[^>]*>Return<\/th>/i);
-    expect(html).not.toMatch(/>More<|>Pending<|>SALE PRICE<|Stone Code|type="checkbox"|Remove row|#E3F0F0/);
+    expect(html).not.toMatch(/>More<|>Pending<|>SALE PRICE<|Stone Code|type="checkbox"|Remove row|#E3F0F0|Add row/);
     expect(html.match(/Empty row · click to pick from Memo Stock/g)).toHaveLength(2);
     expect(html).not.toContain("<input");
   });
