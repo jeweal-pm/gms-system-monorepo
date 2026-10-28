@@ -145,6 +145,84 @@ export function toQuotation(row: DetailRow) {
   };
 }
 
+/**
+ * Active stone codes and part names for a document's item editor (SA-QT-11), so document users don't need
+ * `stone-master:VIEW`. Shared by quotation and memo out / memo out return (ADR-0033). Each list ≤ 1,000 rows.
+ */
+export async function stoneLineOptions() {
+  // Each part comes as {name, code} so the editor can rebuild a stone code when a part changes
+  // (owner 2026-10-27); a size has no code, so its name stands in (stone master SA-SM-05a).
+  const parts = (rows: { name: string; code?: string }[]) => {
+    const seen = new Set<string>();
+    return rows.flatMap((row) => {
+      if (seen.has(row.name)) return [];
+      seen.add(row.name);
+      return [{ name: row.name, code: row.code ?? sizePartCode(row.name) }];
+    });
+  };
+  const active = { where: { active: true }, select: { name: true, code: true }, orderBy: { name: "asc" as const }, take: CUSTOMER_OPTIONS_LIMIT };
+  const part = { select: { name: true } };
+  const [stoneCodes, stoneNames, shapes, sizes, colors, clarities, cuttings, qualities] = await Promise.all([
+    prisma.stoneCode.findMany({
+      where: { active: true },
+      orderBy: { code: "asc" },
+      take: CUSTOMER_OPTIONS_LIMIT,
+      select: { id: true, code: true, partOrder: true, stoneName: part, shape: part, size: part, color: part, clarity: part, cutting: part, quality: part },
+    }),
+    prisma.stoneName.findMany(active),
+    prisma.stoneShape.findMany(active),
+    prisma.stoneSize.findMany({ ...active, select: { name: true } }),
+    prisma.stoneColor.findMany(active),
+    prisma.stoneClarity.findMany(active),
+    prisma.stoneCutting.findMany(active),
+    prisma.stoneQuality.findMany(active),
+  ]);
+  return {
+    codes: stoneCodes.map((row) => ({
+      id: row.id,
+      code: row.code,
+      partOrder: row.partOrder,
+      stone: row.stoneName?.name ?? "",
+      shape: row.shape?.name ?? "",
+      size: row.size?.name ?? "",
+      color: row.color?.name ?? "",
+      clarity: row.clarity?.name ?? "",
+      cutting: row.cutting?.name ?? "",
+      quality: row.quality?.name ?? "",
+    })),
+    stones: parts(stoneNames),
+    shapes: parts(shapes),
+    sizes: parts(sizes),
+    colors: parts(colors),
+    clarities: parts(clarities),
+    cuttings: parts(cuttings),
+    qualities: parts(qualities),
+  };
+}
+
+/** Active customers (plus a stored inactive one) with their addresses, ≤ 1,000 (SA-QT-11; memo out reuses it). */
+export async function customerLineOptions(includeCustomerId?: string) {
+  const customers = await prisma.customer.findMany({
+    where: includeCustomerId ? { OR: [{ active: true }, { id: includeCustomerId }] } : { active: true },
+    orderBy: [{ nameKey: "asc" }, { id: "asc" }],
+    take: CUSTOMER_OPTIONS_LIMIT,
+    select: { id: true, code: true, name: true, active: true, currencyCode: true, addresses: { orderBy: [{ type: "asc" }, { position: "asc" }] } },
+  });
+  return customers.map((customer) => ({
+    id: customer.id,
+    code: customer.code,
+    name: customer.name,
+    active: customer.active,
+    currency: customer.currencyCode,
+    addresses: customer.addresses.map((address) => ({
+      id: address.id,
+      type: address.type,
+      label: formatAddress(address).split("\n").slice(0, 2).join(" · "),
+      isDefault: address.isDefault,
+    })),
+  }));
+}
+
 @Injectable()
 export class QuotationService {
   private readonly logger = new Logger(QuotationService.name);
@@ -242,78 +320,14 @@ export class QuotationService {
    */
   async options(includeCustomerId?: string) {
     try {
-      // Each part comes as {name, code} so the editor can rebuild a stone code when a part changes
-      // (owner 2026-10-27); a size has no code, so its name stands in (stone master SA-SM-05a).
-      const parts = (rows: { name: string; code?: string }[]) => {
-        const seen = new Set<string>();
-        return rows.flatMap((row) => {
-          if (seen.has(row.name)) return [];
-          seen.add(row.name);
-          return [{ name: row.name, code: row.code ?? sizePartCode(row.name) }];
-        });
-      };
-      const active = { where: { active: true }, select: { name: true, code: true }, orderBy: { name: "asc" as const }, take: CUSTOMER_OPTIONS_LIMIT };
-      const part = { select: { name: true } };
-      const [stoneCodes, stoneNames, shapes, sizes, colors, clarities, cuttings, qualities] = await Promise.all([
-        prisma.stoneCode.findMany({
-          where: { active: true },
-          orderBy: { code: "asc" },
-          take: CUSTOMER_OPTIONS_LIMIT,
-          select: { id: true, code: true, partOrder: true, stoneName: part, shape: part, size: part, color: part, clarity: part, cutting: part, quality: part },
-        }),
-        prisma.stoneName.findMany(active),
-        prisma.stoneShape.findMany(active),
-        prisma.stoneSize.findMany({ ...active, select: { name: true } }),
-        prisma.stoneColor.findMany(active),
-        prisma.stoneClarity.findMany(active),
-        prisma.stoneCutting.findMany(active),
-        prisma.stoneQuality.findMany(active),
-      ]);
-      const stone = {
-        codes: stoneCodes.map((row) => ({
-          id: row.id,
-          code: row.code,
-          partOrder: row.partOrder,
-          stone: row.stoneName?.name ?? "",
-          shape: row.shape?.name ?? "",
-          size: row.size?.name ?? "",
-          color: row.color?.name ?? "",
-          clarity: row.clarity?.name ?? "",
-          cutting: row.cutting?.name ?? "",
-          quality: row.quality?.name ?? "",
-        })),
-        stones: parts(stoneNames),
-        shapes: parts(shapes),
-        sizes: parts(sizes),
-        colors: parts(colors),
-        clarities: parts(clarities),
-        cuttings: parts(cuttings),
-        qualities: parts(qualities),
-      };
-      const [customers, company, setup] = await Promise.all([
-        prisma.customer.findMany({
-          where: includeCustomerId ? { OR: [{ active: true }, { id: includeCustomerId }] } : { active: true },
-          orderBy: [{ nameKey: "asc" }, { id: "asc" }],
-          take: CUSTOMER_OPTIONS_LIMIT,
-          select: { id: true, code: true, name: true, active: true, currencyCode: true, addresses: { orderBy: [{ type: "asc" }, { position: "asc" }] } },
-        }),
+      const [stone, customers, company, setup] = await Promise.all([
+        stoneLineOptions(),
+        customerLineOptions(includeCustomerId),
         prisma.companyProfile.findUnique({ where: { id: COMPANY_PROFILE_ID }, select: { currencyCode: true } }),
         prisma.documentSetup.findUnique({ where: { transactionKey: "quotation" }, select: { transactionKey: true } }),
       ]);
       return {
-        customers: customers.map((customer) => ({
-          id: customer.id,
-          code: customer.code,
-          name: customer.name,
-          active: customer.active,
-          currency: customer.currencyCode,
-          addresses: customer.addresses.map((address) => ({
-            id: address.id,
-            type: address.type,
-            label: formatAddress(address).split("\n").slice(0, 2).join(" · "),
-            isDefault: address.isDefault,
-          })),
-        })),
+        customers,
         // Setup › Currency (currency SA-CUR-05): active currencies only.
         currencies: (await currencyOptions(prisma)).filter((item) => item.active).map((item) => item.code),
         companyCurrency: company?.currencyCode ?? null,

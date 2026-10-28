@@ -45,12 +45,13 @@ export const lineInputSchema = z.object({
   photoIds: z.array(uuid).max(PHOTOS_PER_LINE_MAX).refine((ids) => new Set(ids).size === ids.length, { params: { code: "duplicate" } }),
 }).strict();
 
-const quotationFields = {
+/**
+ * Fields every trade document shares (quotation ADR-0032; memo out, memo out return ADR-0033): dates, currency,
+ * lines and the summary. Each document adds its own party fields (and may narrow the lines).
+ */
+export const tradeDocumentFields = {
   docDate: isoDate,
   dueDate: isoDate,
-  customerId: uuid,
-  shippingAddressId: uuid,
-  invoiceAddressId: uuid,
   currency: z.string().regex(/^[A-Z]{3}$/),
   exchangeRate: decimal(12, 6).nullable(),
   ref: text(100),
@@ -63,10 +64,12 @@ const quotationFields = {
   labor: z.object({ work: text(120), basis: z.enum(["PCS", "WEIGHT"]), qty: decimal(15, 3), rate: decimal(16, 2) }).strict().nullable(),
 };
 
-type Fields = z.output<z.ZodObject<typeof quotationFields>>;
+const quotationFields = { ...tradeDocumentFields, customerId: uuid, shippingAddressId: uuid, invoiceAddressId: uuid };
 
-/** Cross-field rules, reported on their fields (`VALIDATION_ERROR`). */
-function quotationRules(value: Fields, ctx: z.RefinementCtx) {
+type TradeDocumentValues = z.output<z.ZodObject<typeof tradeDocumentFields>>;
+
+/** Cross-field rules every trade document shares, reported on their fields (`VALIDATION_ERROR`). */
+export function tradeDocumentRules(value: TradeDocumentValues, ctx: z.RefinementCtx) {
   const issue = (path: (string | number)[], code: string) => ctx.addIssue({ code: "custom", path, params: { code }, message: code });
   if (value.dueDate < value.docDate) issue(["dueDate"], "before_doc_date");
   if (value.discount.type === "PERCENT" && Number(value.discount.value) > 100) issue(["discount", "value"], "too_big");
@@ -79,8 +82,8 @@ function quotationRules(value: Fields, ctx: z.RefinementCtx) {
   if (new Set(types).size !== types.length) issue(["serviceCharges"], "duplicate");
 }
 
-export const createQuotationSchema = z.object(quotationFields).strict().superRefine(quotationRules);
-export const updateQuotationSchema = z.object({ ...quotationFields, id: uuid, expectedVersion: z.number().int().min(1) }).strict().superRefine(quotationRules);
+export const createQuotationSchema = z.object(quotationFields).strict().superRefine(tradeDocumentRules);
+export const updateQuotationSchema = z.object({ ...quotationFields, id: uuid, expectedVersion: z.number().int().min(1) }).strict().superRefine(tradeDocumentRules);
 export const versionedIdSchema = z.object({ id: uuid, expectedVersion: z.number().int().min(1) }).strict();
 export const reasonedIdSchema = z.object({ id: uuid, expectedVersion: z.number().int().min(1), reason: z.string().trim().min(1).max(500) }).strict();
 export const nextNumberSchema = z.object({ docDate: isoDate }).strict();

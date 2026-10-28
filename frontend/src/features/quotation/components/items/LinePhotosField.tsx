@@ -3,7 +3,8 @@
 import { Crown, Plus, X } from "lucide-react";
 import { useRef, useState, type DragEvent } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
-import { PhotoUploadError, photoUrl, PHOTO_TYPES, uploadQuotationPhoto } from "../../api";
+import { PhotoUploadError, PHOTO_TYPES } from "../../api";
+import { useLinePhotoTarget } from "../../options-context";
 import { MAX_LINE_PHOTOS, type PhotoRef, type QuotationFormValues } from "../../schema";
 import { cx } from "../ui";
 
@@ -19,7 +20,10 @@ export function LinePhotosField({ index, readOnly }: { index: number; readOnly: 
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const canAdd = !readOnly && !uploading && photos.length < MAX_LINE_PHOTOS;
+  // Quotation photo route, or none yet on memo documents (ADR-0033 rev 1).
+  const target = useLinePhotoTarget();
+  const upload = target.upload;
+  const canAdd = Boolean(upload) && !readOnly && !uploading && photos.length < MAX_LINE_PHOTOS;
 
   const setPhotos = (next: PhotoRef[]) => setValue(`lines.${index}.photos`, next, { shouldDirty: true });
 
@@ -31,8 +35,9 @@ export function LinePhotosField({ index, readOnly }: { index: number; readOnly: 
     const added: PhotoRef[] = [];
     try {
       for (const file of picked) {
-        const id = await uploadQuotationPhoto(file);
-        added.push({ id, name: file.name, url: photoUrl(id) });
+        if (!upload) break;
+        const id = await upload(file);
+        added.push({ id, name: file.name, url: target.url(id) });
       }
     } catch (cause) {
       setError(cause instanceof PhotoUploadError ? cause.message : "Couldn't upload the photo. Try again.");
@@ -104,6 +109,7 @@ export function LinePhotosField({ index, readOnly }: { index: number; readOnly: 
       </div>
       {uploading && main && <p className="mt-2 text-xs text-[#6B7480]">Uploading…</p>}
       {error && <p role="alert" className="mt-2 text-xs text-[#E5484D]">{error}</p>}
+      {!upload && <p className="mt-2 text-xs text-[#6B7480]">Photos for this document come in a later update.</p>}
       <input
         ref={inputRef}
         type="file"

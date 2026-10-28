@@ -32,6 +32,9 @@ export function QuotationHeader({
   canEdit,
   canDelete,
   actions,
+  noLabel = "Quotation No.:",
+  newHref = "/pre-sale/quotation",
+  previewNote = "Number preview — the number is issued when you save.",
 }: {
   docNo: string;
   isPreview: boolean;
@@ -45,13 +48,17 @@ export function QuotationHeader({
   canEdit: boolean;
   canDelete: boolean;
   actions: HeaderActions;
+  /** Label above the number, Create New target and the note under a preview number (memo-out reuses this header). */
+  noLabel?: string;
+  newHref?: string;
+  previewNote?: string;
 }) {
   const editing = mode === "edit";
   const badge = status ? STATUS_LABEL[status] : undefined;
   return (
     <div className="flex flex-wrap items-start justify-between gap-4 px-6 pt-6 pb-2">
       <div>
-        <p className="text-xs text-[#6B7480]">Quotation No.:</p>
+        <p className="text-xs text-[#6B7480]">{noLabel}</p>
         <div className="mt-1 flex flex-wrap items-center gap-3">
           <h1 className={cx("text-[28px] leading-none font-medium", isPreview ? "text-[#6B7480]" : "text-[#1C252E]")}>
             {docNo}
@@ -62,7 +69,7 @@ export function QuotationHeader({
             <ScanLine className="size-4" />
           </IconButton>
         </div>
-        {isPreview && <p className="mt-1 text-xs text-[#6B7480]">Number preview — the number is issued when you save.</p>}
+        {isPreview && <p className="mt-1 text-xs text-[#6B7480]">{previewNote}</p>}
         {statusReason && (status === "REJECTED" || status === "CANCELLED") && (
           <p className="mt-1 max-w-xl text-xs break-words text-[#B42318]">Reason: {statusReason}</p>
         )}
@@ -87,7 +94,7 @@ export function QuotationHeader({
         <div className="flex flex-wrap items-center gap-2">
           {canCreate && (
             <Link
-              href="/pre-sale/quotation"
+              href={newHref}
               className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#E3E6EA] px-4 text-sm text-[#6B7480] hover:bg-[#F6F7F8]"
             >
               <Plus className="size-4" /> Create New

@@ -37,6 +37,7 @@ export function ItemTable({
   onToggleAll,
   onRowAction,
   onAddRow,
+  emptyRowText = "Empty row · click to key in, or use From Stock to fill it",
 }: {
   lines: QuotationLine[];
   currency: string;
@@ -49,6 +50,8 @@ export function ItemTable({
   onToggleAll: (checked: boolean) => void;
   onRowAction: (index: number, action: RowAction) => void;
   onAddRow: () => void;
+  /** Placeholder of an empty row (memo out return fills rows From Memo Out). */
+  emptyRowText?: string;
 }) {
   const allChecked = lines.length > 0 && lines.every((l) => checkedKeys.has(l.key));
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -158,7 +161,7 @@ export function ItemTable({
                   ) : (
                     <>
                       <td colSpan={COLUMNS.length - 1} className="px-3 py-4 text-[#A9B1B9]">
-                        Empty row · click to key in, or use From Stock to fill it
+                        {emptyRowText}
                       </td>
                       <td className="border-l border-[#E3E6EA]" />
                     </>

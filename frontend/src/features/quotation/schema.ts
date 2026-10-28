@@ -57,57 +57,70 @@ export const serviceChargeSchema = z.object({
 });
 export type ServiceChargeValue = z.infer<typeof serviceChargeSchema>;
 
+/**
+ * Fields every trade document form shares (quotation; memo out, memo out return ADR-0033): number/version,
+ * dates, currency, lines and the summary. Each document adds its own party fields and status.
+ */
+export const tradeDocumentShape = {
+  id: z.string().optional(),
+  docNo: z.string().optional(),
+  /** Server optimistic version of a saved document (SA-QT-09). */
+  version: z.number().optional(),
+  docDate: z.string().min(1, "Required"),
+  dueDate: z.string().min(1, "Required"),
+  currency: z.string().min(1, "Required"),
+  exchangeRate: decimalString,
+  ref: z.string().max(100, "Up to 100 characters"),
+  lines: z.array(lineSchema),
+  discount: z.object({
+    enabled: z.boolean(),
+    type: z.enum(["PERCENT", "AMOUNT"]),
+    value: decimalString,
+  }),
+  tax: z.object({
+    enabled: z.boolean(),
+    /** อัตราภาษีเป็น % เช่น "7" */
+    rate: decimalString,
+    includeInPrice: z.boolean(),
+  }),
+  serviceCharges: z.array(serviceChargeSchema),
+  labor: z.object({
+    enabled: z.boolean(),
+    work: z.string(),
+    basis: z.enum(["PCS", "WEIGHT"]),
+    qty: decimalString,
+    rate: decimalString,
+  }),
+  documentNote: z.string().max(MAX_DOCUMENT_NOTE),
+};
+
+type TradeDocumentValues = z.infer<z.ZodObject<typeof tradeDocumentShape>>;
+
+/** Cross-field rules every trade document form shares. */
+export function tradeDocumentRules(value: TradeDocumentValues, ctx: z.RefinementCtx) {
+  if (value.dueDate && value.docDate && value.dueDate < value.docDate) {
+    ctx.addIssue({ code: "custom", path: ["dueDate"], message: "Due date must be on or after doc date" });
+  }
+  value.lines.forEach((line, index) => {
+    if (line.discountType === "PERCENT" && line.discountValue !== "" && Number(line.discountValue) > 100) {
+      ctx.addIssue({ code: "custom", path: ["lines", index, "discountValue"], message: "Up to 100%" });
+    }
+  });
+  if (!value.lines.some(isFilledLine)) {
+    ctx.addIssue({ code: "custom", path: ["lines"], message: "Add at least one item" });
+  }
+}
+
 export const quotationSchema = z
   .object({
-    id: z.string().optional(),
-    docNo: z.string().optional(),
-    /** Server optimistic version of a saved quotation (SA-QT-09). */
-    version: z.number().optional(),
+    ...tradeDocumentShape,
     statusReason: z.string().optional(),
     status: z.enum(QUOTATION_STATUSES),
-    docDate: z.string().min(1, "Required"),
-    dueDate: z.string().min(1, "Required"),
     customerId: z.string().min(1, "Required"),
     shippingAddressId: z.string().min(1, "Required"),
     invoiceAddressId: z.string().min(1, "Required"),
-    currency: z.string().min(1, "Required"),
-    exchangeRate: decimalString,
-    ref: z.string().max(100, "Up to 100 characters"),
-    lines: z.array(lineSchema),
-    discount: z.object({
-      enabled: z.boolean(),
-      type: z.enum(["PERCENT", "AMOUNT"]),
-      value: decimalString,
-    }),
-    tax: z.object({
-      enabled: z.boolean(),
-      /** อัตราภาษีเป็น % เช่น "7" */
-      rate: decimalString,
-      includeInPrice: z.boolean(),
-    }),
-    serviceCharges: z.array(serviceChargeSchema),
-    labor: z.object({
-      enabled: z.boolean(),
-      work: z.string(),
-      basis: z.enum(["PCS", "WEIGHT"]),
-      qty: decimalString,
-      rate: decimalString,
-    }),
-    documentNote: z.string().max(MAX_DOCUMENT_NOTE),
   })
-  .superRefine((value, ctx) => {
-    if (value.dueDate && value.docDate && value.dueDate < value.docDate) {
-      ctx.addIssue({ code: "custom", path: ["dueDate"], message: "Due date must be on or after doc date" });
-    }
-    value.lines.forEach((line, index) => {
-      if (line.discountType === "PERCENT" && line.discountValue !== "" && Number(line.discountValue) > 100) {
-        ctx.addIssue({ code: "custom", path: ["lines", index, "discountValue"], message: "Up to 100%" });
-      }
-    });
-    if (!value.lines.some(isFilledLine)) {
-      ctx.addIssue({ code: "custom", path: ["lines"], message: "Add at least one item" });
-    }
-  });
+  .superRefine(tradeDocumentRules);
 
 export type QuotationFormValues = z.infer<typeof quotationSchema>;
 

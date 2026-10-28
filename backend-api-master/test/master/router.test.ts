@@ -9,6 +9,8 @@ import type { CompanyProfileService } from "../../src/company-profile/company-pr
 import type { StoneMasterService } from "../../src/stone-master/stone-master.service";
 import type { CurrencyService } from "../../src/currency/currency.service";
 import type { QuotationService } from "../../src/quotation/quotation.service";
+import type { MemoOutService } from "../../src/trade-document/memo-out.service";
+import type { MemoOutReturnService } from "../../src/trade-document/memo-out-return.service";
 import { customerBody, withVersion } from "../partner-shared/fixtures";
 
 vi.mock("../../src/database/prisma-client", async () => (await import("../partner-shared/prisma-fake")).prismaModule);
@@ -28,6 +30,8 @@ const quotation = {
   list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(),
   submit: vi.fn(), approve: vi.fn(), reject: vi.fn(), cancel: vi.fn(), delete: vi.fn(),
 };
+const memoOut = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
+const memoOutReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
 const router = createMasterRouter({
   customer: customer as unknown as CustomerService,
   vendor: vendor as unknown as VendorService,
@@ -36,6 +40,8 @@ const router = createMasterRouter({
   documentSetup: documentSetup as unknown as DocumentSetupService,
   currency: currency as unknown as CurrencyService,
   quotation: quotation as unknown as QuotationService,
+  memoOut: memoOut as unknown as MemoOutService,
+  memoOutReturn: memoOutReturn as unknown as MemoOutReturnService,
 });
 
 function context(grants: string[], overrides: Partial<MasterContext> = {}): MasterContext {
@@ -46,7 +52,7 @@ function context(grants: string[], overrides: Partial<MasterContext> = {}): Mast
 }
 
 beforeEach(() => {
-  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(currency), ...Object.values(quotation)]) fn.mockReset().mockResolvedValue({ ok: true });
+  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(currency), ...Object.values(quotation), ...Object.values(memoOut), ...Object.values(memoOutReturn)]) fn.mockReset().mockResolvedValue({ ok: true });
 });
 
 describe("staged master domain tRPC boundary", () => {
@@ -238,5 +244,43 @@ describe("staged master domain tRPC boundary", () => {
 
     quotation.create.mockRejectedValueOnce(new HttpException({ error: { code: "QUOTATION_REFERENCE_INVALID", message: "x" } }, 422));
     await expect(as(["ADD"]).quotation.create(body)).rejects.toMatchObject({ code: "UNPROCESSABLE_CONTENT", message: "QUOTATION_REFERENCE_INVALID" });
+  });
+
+  it("GP-MT-MO memo out / memo out return: exact grants, CSRF on writes, strict party fields, no photos", async () => {
+    const ID2 = "0b9f3c4e-1d2a-4b3c-8d4e-5f6a7b8c9d0f";
+    const line = { source: "MANUAL" as const, stoneCodeId: null, stoneCode: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "",
+      lot: "", location: "", cerType: "", cerNo: "", pcs: 1, weightCt: "1", priceUnit: "PER_CT" as const, unitPrice: "100", discount: { type: "NONE" as const, value: "0" }, itemNote: "", photoIds: [] as string[] };
+    const shared = { docDate: "2026-10-28", dueDate: "2026-11-28", currency: "THB", exchangeRate: null, ref: "", documentNote: "", lines: [line],
+      discount: { type: "NONE" as const, value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null };
+    const out = { ...shared, customerId: ID, shippingAddressId: ID2, invoiceAddressId: ID2 };
+    const back = { ...shared, vendorId: ID, addressId: ID2 };
+
+    const outCaller = router.createCaller(context(["memo-out:VIEW", "memo-out:ADD", "memo-out:EDIT", "memo-out:DELETE"]));
+    await outCaller.memoOut.list({ q: "gem", partyId: ID });
+    await outCaller.memoOut.get({ id: ID });
+    await outCaller.memoOut.nextNumber({ docDate: "2026-10-28" });
+    await outCaller.memoOut.options({ customerId: ID });
+    await outCaller.memoOut.create(out);
+    await outCaller.memoOut.update({ ...out, id: ID, expectedVersion: 1 });
+    await outCaller.memoOut.delete({ id: ID, expectedVersion: 2 });
+    expect(memoOut.list).toHaveBeenCalledWith(expect.objectContaining({ q: "gem", partyId: ID, limit: 50 }));
+    expect(memoOut.options).toHaveBeenCalledWith(ID);
+    expect(memoOut.update).toHaveBeenCalledWith("user-1", ID, 1, expect.objectContaining({ customerId: ID }));
+    await expect(outCaller.memoOut.create({ ...out, lines: [{ ...line, photoIds: [ID] }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(outCaller.memoOut.create({ ...back } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(router.createCaller(context(["memo-out:VIEW"])).memoOut.create(out)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["memo-out:ADD"], { csrfVerified: false })).memoOut.create(out)).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    const backCaller = router.createCaller(context(["memo-out-return:VIEW", "memo-out-return:ADD"]));
+    await backCaller.memoOutReturn.options({ vendorId: ID });
+    await backCaller.memoOutReturn.create(back);
+    expect(memoOutReturn.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ vendorId: ID, addressId: ID2 }));
+    await expect(backCaller.memoOutReturn.create(out as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(router.createCaller(context(["memo-out:VIEW"])).memoOutReturn.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["memo-out-return:VIEW"])).memoOutReturn.delete({ id: ID, expectedVersion: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    await router.createCaller(context(["memo-out-return:VIEW"])).currency.options();
+    await router.createCaller(context(["memo-out:VIEW"])).currency.options();
+    expect(currency.options).toHaveBeenCalledTimes(2);
   });
 });

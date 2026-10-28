@@ -52,8 +52,8 @@ export const PERMISSION_CATALOG: readonly CatalogNode[] = [
     leaf("memo-out", "Memo Out"),
     leaf("memo-out-return", "Memo Out-Return"),
     group("memo-outstanding", "Memo Outstanding", [
-      leaf("memo-outstanding-vendor", "From Vendor"),
-      leaf("memo-outstanding-customer", "From Customer"),
+      leaf("memo-outstanding-vendor", "Vendor"),
+      leaf("memo-outstanding-customer", "Customer"),
     ]),
   ]),
   section("purchase", "PURCHASE", [

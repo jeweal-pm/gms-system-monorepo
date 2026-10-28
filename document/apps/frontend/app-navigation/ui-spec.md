@@ -148,8 +148,8 @@ Kinds: **link** (existing page), **landing** (new page in this feature), **place
 | | Memo Out | placeholder | `/modules/memo-out` | `FileUp` | existing slug |
 | | Memo Out Return | placeholder | `/modules/memo-out-return` | `RefreshCcwDot` | existing slug |
 | | Memo Outstanding | disclosure | — | `FileClock` | children below |
-| | ↳ From Vendor | placeholder | `/modules/memo-outstanding-from-vendor` | — | new; design text "From Vender" corrected (DV-03) |
-| | ↳ From Customer | placeholder | `/modules/memo-outstanding-from-customer` | — | new |
+| | ↳ Vendor | placeholder | `/modules/memo-outstanding-from-vendor` | — | owner 2026-10-28: label without "From"; design text "Vender" corrected (DV-03) |
+| | ↳ Customer | placeholder | `/modules/memo-outstanding-from-customer` | — | owner 2026-10-28: label without "From" |
 | Purchase Order | Purchase Order (PO) | placeholder | `/modules/purchase-order` | `ReceiptText` | existing slug |
 | | Purchase (PU) | placeholder | `/modules/purchase` | `ShoppingBasket` | existing slug; source glyph = cart with down arrow |
 | | Purchase Outstanding | placeholder | `/modules/purchase-outstanding` | `ClipboardClock` | new |

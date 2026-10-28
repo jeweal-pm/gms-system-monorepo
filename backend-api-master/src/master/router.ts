@@ -15,6 +15,17 @@ import type { StoneKind } from "../stone-master/stone-master.kinds";
 import type { CurrencyService } from "../currency/currency.service";
 import { createCurrencyBodySchema, updateCurrencyBodySchema } from "../currency/currency.schemas";
 import type { QuotationService } from "../quotation/quotation.service";
+import { documentListSchema } from "../trade-document/document-engine";
+import type { MemoOutService } from "../trade-document/memo-out.service";
+import type { MemoOutReturnService } from "../trade-document/memo-out-return.service";
+import {
+  createMemoOutReturnSchema,
+  createMemoOutSchema,
+  memoNextNumberSchema,
+  memoVersionedIdSchema,
+  updateMemoOutReturnSchema,
+  updateMemoOutSchema,
+} from "../trade-document/memo-schemas";
 import {
   createQuotationSchema,
   nextNumberSchema,
@@ -107,7 +118,9 @@ export type MasterServices = Pick<{
   documentSetup: DocumentSetupService;
   currency: CurrencyService;
   quotation: QuotationService;
-}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "currency" | "quotation">;
+  memoOut: MemoOutService;
+  memoOutReturn: MemoOutReturnService;
+}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "currency" | "quotation" | "memoOut" | "memoOutReturn">;
 
 function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
   const schemas = bodySchemasFor(kind);
@@ -124,7 +137,7 @@ function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
 }
 
 /** Direct service calls preserve IDs, transaction behavior and existing partner/stone schemas. */
-export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, currency, quotation }: MasterServices) {
+export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, currency, quotation, memoOut, memoOutReturn }: MasterServices) {
   return t.router({
     customer: t.router({
       list: permitted("customer", "VIEW").input(listInput).query(({ input }) => domainCall(() => customer.list(toListQuery(input)))),
@@ -180,7 +193,8 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
     currency: t.router({
       list: permitted("currency", "VIEW").input(listInput).query(({ input }) => domainCall(() => currency.list({ q: input.q, cursor: input.cursor, limit: input.limit }))),
       get: permitted("currency", "VIEW").input(idInput).query(({ input }) => domainCall(() => currency.get(input.id))),
-      options: permittedAny(["currency", "quotation"], "VIEW").query(() => domainCall(() => currency.options())),
+      // Read by the document pages for currency choices and rates (currency SA-CUR-07, memo out ADR-0033).
+      options: permittedAny(["currency", "quotation", "memo-out", "memo-out-return"], "VIEW").query(() => domainCall(() => currency.options())),
       create: permitted("currency", "ADD", true).input(createCurrencyBodySchema).mutation(({ ctx, input }) => domainCall(() => currency.create(ctx.userId, input))),
       update: permitted("currency", "EDIT", true).input(updateCurrencyBodySchema.extend({ id: z.uuid() })).mutation(({ ctx, input }) => {
         const { id, ...body } = input;
@@ -205,6 +219,33 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       reject: permitted("quotation", "APPROVE", true).input(reasonedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.reject(ctx.userId, input.id, input.expectedVersion, input.reason))),
       cancel: permitted("quotation", "CANCEL", true).input(reasonedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.cancel(ctx.userId, input.id, input.expectedVersion, input.reason))),
       delete: permitted("quotation", "DELETE", true).input(versionedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.delete(ctx.userId, input.id, input.expectedVersion))),
+    }),
+    // memo-out / memo-out-return SA rev 1 / ADR-0033 (owner 2026-10-28): numbers from Document Setup, drafts only.
+    memoOut: t.router({
+      list: permitted("memo-out", "VIEW").input(documentListSchema).query(({ input }) => domainCall(() => memoOut.list(input))),
+      get: permitted("memo-out", "VIEW").input(idInput).query(({ input }) => domainCall(() => memoOut.get(input.id))),
+      nextNumber: permitted("memo-out", "VIEW").input(memoNextNumberSchema).query(({ input }) => domainCall(() => memoOut.nextNumber(input.docDate))),
+      options: permitted("memo-out", "VIEW").input(z.object({ customerId: z.uuid().optional() }).strict())
+        .query(({ input }) => domainCall(() => memoOut.options(input.customerId))),
+      create: permitted("memo-out", "ADD", true).input(createMemoOutSchema).mutation(({ ctx, input }) => domainCall(() => memoOut.create(ctx.userId, input))),
+      update: permitted("memo-out", "EDIT", true).input(updateMemoOutSchema).mutation(({ ctx, input }) => {
+        const { id, expectedVersion, ...body } = input;
+        return domainCall(() => memoOut.update(ctx.userId, id, expectedVersion, body));
+      }),
+      delete: permitted("memo-out", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOut.delete(ctx.userId, input.id, input.expectedVersion))),
+    }),
+    memoOutReturn: t.router({
+      list: permitted("memo-out-return", "VIEW").input(documentListSchema).query(({ input }) => domainCall(() => memoOutReturn.list(input))),
+      get: permitted("memo-out-return", "VIEW").input(idInput).query(({ input }) => domainCall(() => memoOutReturn.get(input.id))),
+      nextNumber: permitted("memo-out-return", "VIEW").input(memoNextNumberSchema).query(({ input }) => domainCall(() => memoOutReturn.nextNumber(input.docDate))),
+      options: permitted("memo-out-return", "VIEW").input(z.object({ vendorId: z.uuid().optional() }).strict())
+        .query(({ input }) => domainCall(() => memoOutReturn.options(input.vendorId))),
+      create: permitted("memo-out-return", "ADD", true).input(createMemoOutReturnSchema).mutation(({ ctx, input }) => domainCall(() => memoOutReturn.create(ctx.userId, input))),
+      update: permitted("memo-out-return", "EDIT", true).input(updateMemoOutReturnSchema).mutation(({ ctx, input }) => {
+        const { id, expectedVersion, ...body } = input;
+        return domainCall(() => memoOutReturn.update(ctx.userId, id, expectedVersion, body));
+      }),
+      delete: permitted("memo-out-return", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOutReturn.delete(ctx.userId, input.id, input.expectedVersion))),
     }),
   });
 }
