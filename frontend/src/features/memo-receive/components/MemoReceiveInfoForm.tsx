@@ -2,7 +2,7 @@
 
 import { useEffect, type ReactNode } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
-import { Field, FormSelect, TextInput } from "@/features/quotation/components/ui";
+import { Field, FormDateInput, FormSelect, TextInput } from "@/features/quotation/components/ui";
 import { quotationCurrencyOptions, quotationExchangeRate } from "@/features/quotation/lib/currency";
 import { memoReceiveLoadError, useCurrencyRates, type MemoReceiveOptions } from "../api";
 import { MAX_REF, type MemoReceiveFormValues } from "../schema";
@@ -56,7 +56,7 @@ export function MemoReceiveInfoForm({ options, optionsError }: { options: MemoRe
   return (
     <div className="grid grid-cols-1 gap-x-4 gap-y-5 px-6 py-6 md:grid-cols-[200px_1fr_1fr_1fr]">
       <Field label="Doc Date" required error={errors.docDate?.message}>
-        <TextInput type="date" {...register("docDate")} />
+        <FormDateInput<MemoReceiveFormValues> name="docDate" />
       </Field>
       <LoadNote message={optionsMessage}>
         <Field label="Vendor" required error={errors.vendorId?.message}>
@@ -70,7 +70,7 @@ export function MemoReceiveInfoForm({ options, optionsError }: { options: MemoRe
       </div>
 
       <Field label="Due Date" required error={errors.dueDate?.message}>
-        <TextInput type="date" {...register("dueDate")} />
+        <FormDateInput<MemoReceiveFormValues> name="dueDate" />
       </Field>
       <LoadNote message={rates.error ? memoReceiveLoadError(rates.error, "currencies") : undefined}>
         <Field label="Currency" required error={errors.currency?.message}>
