@@ -13,6 +13,8 @@ import { MasterLicenseClient } from "./license-client";
 import { QuotationService } from "../quotation/quotation.service";
 import { MemoOutService } from "../trade-document/memo-out.service";
 import { MemoOutReturnService } from "../trade-document/memo-out-return.service";
+import { MemoReceiveService } from "../trade-document/memo-receive.service";
+import { MemoStockService } from "../trade-document/memo-stock.service";
 import { createMasterRouter } from "./router";
 
 /** Express-compatible handler for parent-owned `/api/master/trpc` composition. */
@@ -21,7 +23,7 @@ export class MasterTrpcHandler {
   private readonly handler: ReturnType<typeof createExpressMiddleware>;
   private readonly authContext: MasterAuthContextAdapter;
 
-  constructor(customer: CustomerService, vendor: VendorService, companyProfile: CompanyProfileService, stoneMaster: StoneMasterService, authz: MasterAuthzDatabase, license: MasterLicenseClient, documentSetup: DocumentSetupService, currency: CurrencyService, quotation: QuotationService, memoOut: MemoOutService, memoOutReturn: MemoOutReturnService) {
+  constructor(customer: CustomerService, vendor: VendorService, companyProfile: CompanyProfileService, stoneMaster: StoneMasterService, authz: MasterAuthzDatabase, license: MasterLicenseClient, documentSetup: DocumentSetupService, currency: CurrencyService, quotation: QuotationService, memoOut: MemoOutService, memoOutReturn: MemoOutReturnService, memoReceive: MemoReceiveService, memoStock: MemoStockService) {
     const issuer = process.env.AUTH_ACCESS_JWT_ISSUER;
     const trustedOrigin = process.env.FRONTEND_URL;
     const authService = process.env.AUTH_SERVICE_URL;
@@ -35,7 +37,7 @@ export class MasterTrpcHandler {
       authorizationReader: (userId, sessionId) => authz.read(userId, sessionId),
       checkLicense: (userId, sessionId) => license.check(userId, sessionId),
     });
-    const router = createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, currency, quotation, memoOut, memoOutReturn });
+    const router = createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, currency, quotation, memoOut, memoOutReturn, memoReceive, memoStock });
     this.handler = createExpressMiddleware({ router, createContext: ({ req }) => this.authContext.create(req) });
   }
 

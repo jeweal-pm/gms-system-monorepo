@@ -107,3 +107,18 @@ menus reuse the existing Quotation components.
 
 Memo Receive API/database, stock posting, memo return/payable flow, From Stock, Print/Excel, the Approve
 page, cancel, permission catalog changes, Decimal Setup use, a location master.
+
+## Revision 3 (owner 2026-10-29, approved with SA revision 1)
+
+Owner (verbatim in [ADR-0034](../../../adr/0034-memo-receive-approval-and-memo-stock.md)). This revision changes these items. Everything else stays as revision 2.
+
+- **Data**: real API (`memoReceive.*`), and the mock store is removed. Field lists come from `memoReceive.options`.
+- **Stock ID**: the server assigns `YY####` (e.g. `260001`) on save. Before save the field shows "Auto", and a line keeps its number when the document is edited.
+- **Location**: removed from the item table column and from the row panel (P-03). It is stored as `Memo` on Memo Stock.
+- **Approve** (header, temporary until the Approve page): shown when the status is Pending Approval, the document is saved with no unsaved changes, and the user has `memo-receive:APPROVE`. Confirm dialog "Approve this Memo Receive? Its N items move to Memo Stock and it can no longer be edited." → toast "Approved". Then the status badge reads Approved, and Edit, Delete and Approve are hidden.
+- **Photos**: the row-panel photo box shows "Photos come in a later update", as on Memo Out (no upload in this revision).
+- Questions: Q-MR-08…13 in [open-questions.md](open-questions.md).
+
+## Revision 4 (owner 2026-10-29, approved with SA revision 2)
+
+Owner: "ทำให้เพิ่มรูปได้เลยได้ไหม". The row-panel photo box works as it does on Quotation: Add files or drag and drop, up to 5 JPEG/PNG per item at 5 MB each, the first photo is the main photo, click to enlarge, and remove. The "come in a later update" note is removed. The left item card shows the main photo of the selected row. Photos become read-only once the document is Approved.

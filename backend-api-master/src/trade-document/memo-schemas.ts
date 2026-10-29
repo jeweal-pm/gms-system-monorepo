@@ -1,5 +1,8 @@
 import { z } from "zod";
+import { Prisma } from "../generated/prisma/client";
+import { lineAmount, lineGross } from "../quotation/quotation.calculate";
 import { LINES_MAX, decimal, lineInputSchema, tradeDocumentFields, tradeDocumentRules } from "../quotation/quotation.schemas";
+import { documentListFields } from "./document-engine";
 
 /**
  * Inputs of memo out (customer + shipping/invoice address) and memo out return (vendor + address), ADR-0033:
@@ -37,3 +40,64 @@ export type MemoOutReturnInput = z.output<typeof createMemoOutReturnSchema>;
 
 export const memoVersionedIdSchema = z.object(versioned).strict();
 export const memoNextNumberSchema = z.object({ docDate: z.iso.date() }).strict();
+
+/**
+ * memo-receive SA rev 1 / ADR-0034: the vendor fields of memo out return, lines without stone code id and location
+ * (SA-MR-07). A line may carry the `id` of a saved line so it keeps its Stock ID (SA-MR-04). SA rev 2 (SA-MR-17): up to
+ * 5 distinct photo ids per line in order, the quotation rule (the first is the main photo). Server discount bounds
+ * (SA-MR-09): line % ≤ 100 (shared rule), line amount discount ≤ the line gross, document amount discount ≤ subtotal.
+ */
+const receiveLineSchema = memoLineSchema.omit({ stoneCodeId: true, location: true }).extend({ id: uuid.optional(), photoIds: lineInputSchema.shape.photoIds });
+const memoReceiveFields = { ...memoFields, lines: z.array(receiveLineSchema).min(1).max(LINES_MAX), vendorId: uuid, addressId: uuid };
+type ReceiveValues = z.output<z.ZodObject<typeof memoReceiveFields>>;
+function receiveRules(value: ReceiveValues, ctx: z.RefinementCtx) {
+  tradeDocumentRules(value as unknown as Parameters<typeof tradeDocumentRules>[0], ctx);
+  const issue = (path: (string | number)[], code: string) => ctx.addIssue({ code: "custom", path, params: { code }, message: code });
+  value.lines.forEach((line, index) => {
+    if (line.discount.type === "AMOUNT" && new Prisma.Decimal(line.discount.value).greaterThan(lineGross(line))) issue(["lines", index, "discount", "value"], "exceeds_gross");
+  });
+  if (value.discount.type === "AMOUNT") {
+    const subtotal = value.lines.reduce((total, line) => total.plus(lineAmount(line)), new Prisma.Decimal(0));
+    if (new Prisma.Decimal(value.discount.value).greaterThan(subtotal)) issue(["discount", "value"], "exceeds_subtotal");
+  }
+  const ids = value.lines.flatMap((line) => (line.id ? [line.id] : []));
+  if (new Set(ids).size !== ids.length) {
+    const seen = new Set<string>();
+    value.lines.forEach((line, index) => {
+      if (!line.id) return;
+      if (seen.has(line.id)) issue(["lines", index, "id"], "duplicate");
+      seen.add(line.id);
+    });
+  }
+}
+export const createMemoReceiveSchema = z.object({ ...memoReceiveFields, lines: z.array(receiveLineSchema.omit({ id: true }).strict()).min(1).max(LINES_MAX) })
+  .strict().superRefine((value, ctx) => receiveRules(value, ctx));
+export const updateMemoReceiveSchema = z.object({ ...memoReceiveFields, ...versioned }).strict().superRefine(receiveRules);
+export type MemoReceiveInput = z.output<typeof updateMemoReceiveSchema> extends infer U ? Omit<U, "id" | "expectedVersion"> : never;
+export type MemoReceiveLineInput = z.output<typeof receiveLineSchema>;
+
+export const MEMO_RECEIVE_STATUSES = ["PENDING_APPROVAL", "APPROVED"] as const;
+export type MemoReceiveStatus = (typeof MEMO_RECEIVE_STATUSES)[number];
+export const memoReceiveListSchema = z.object({ ...documentListFields, status: z.enum(MEMO_RECEIVE_STATUSES).optional() }).strict();
+export type MemoReceiveListInput = z.output<typeof memoReceiveListSchema>;
+
+/**
+ * memoStock.list (SA-MR-11): a vendor's pending items for the Memo Return "Add Memo Stock" dialog. `from`/`to`
+ * filter the memo receive Doc Date, from ≤ to, range ≤ 366 days.
+ */
+const DAY_MS = 86_400_000;
+export const memoStockListSchema = z.object({
+  vendorId: uuid,
+  q: z.string().trim().max(100).optional(),
+  from: z.iso.date().optional(),
+  to: z.iso.date().optional(),
+  cursor: z.string().max(200).nullish(),
+  limit: z.number().int().min(1).max(50).default(50),
+}).strict().superRefine((value, ctx) => {
+  if (value.from && value.to) {
+    const days = (Date.parse(value.to) - Date.parse(value.from)) / DAY_MS;
+    if (days < 0) ctx.addIssue({ code: "custom", path: ["to"], params: { code: "before_from" }, message: "before_from" });
+    else if (days > 366) ctx.addIssue({ code: "custom", path: ["to"], params: { code: "range_too_long" }, message: "range_too_long" });
+  }
+});
+export type MemoStockListInput = z.output<typeof memoStockListSchema>;

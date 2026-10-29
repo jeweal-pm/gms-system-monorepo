@@ -22,7 +22,7 @@ export function LinePhotosField({ index, readOnly }: { index: number; readOnly: 
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  // Quotation photo route, Memo Receive's in-memory photos (its document kind), or none yet on memo out.
+  // The document kind's photo route (Quotation, Memo Receive rev 4), or none yet on memo out / memo out return.
   const upload = useLinePhotoTarget().upload ? uploadPhoto : null;
   const canAdd = Boolean(upload) && !readOnly && !uploading && photos.length < MAX_LINE_PHOTOS;
 

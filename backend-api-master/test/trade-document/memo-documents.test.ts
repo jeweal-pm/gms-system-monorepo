@@ -222,7 +222,7 @@ describe("update and delete (SA-MO-07)", () => {
   it("UT-MO-B08 delete needs the current version of a draft", async () => {
     await expect(memoOut.delete("actor", DOC, 1)).resolves.toEqual({ ok: true });
     db.writeCount = 0;
-    db.stored = { version: 4 };
+    db.stored = { status: "DRAFT", version: 4 };
     expect(await failure(memoOut.delete("actor", DOC, 1))).toMatchObject({ status: 409, code: "MEMO_OUT_CHANGED" });
     db.stored = null;
     expect(await failure(memoOutReturn.delete("actor", DOC, 1))).toMatchObject({ status: 404, code: "MEMO_OUT_RETURN_NOT_FOUND" });

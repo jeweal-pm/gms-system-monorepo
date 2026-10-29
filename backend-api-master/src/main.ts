@@ -9,8 +9,9 @@ import { loadDatabaseUrl, loadServiceTokenDigest } from "./config";
 import { serviceTokenMatches } from "./internal-auth/service-token.guard";
 import { MasterTrpcHandler } from "./master/trpc-handler";
 import { createPublicLogoAccessCheck, publicLogoMethodCheck } from "./company-profile/company-logo.http";
-import { createQuotationPhotoAccessCheck, QUOTATION_PHOTO_ROUTE, quotationPhotoMethodCheck } from "./quotation/quotation-photo.http";
-import { QUOTATION_PHOTO_MAX_BYTES, QUOTATION_PHOTO_TYPES } from "./quotation/quotation-photo.storage";
+import { createPhotoAccessCheck, photoMethodCheck, QUOTATION_PHOTO_ROUTE, sharedPhotoLimiters } from "./quotation/quotation-photo.http";
+import { PHOTO_MAX_BYTES, PHOTO_TYPES } from "./quotation/quotation-photo.storage";
+import { MEMO_RECEIVE_PHOTO_ROUTE } from "./trade-document/memo-receive-photo.public.controller";
 
 /** Maps body-parser failures to the partner envelope (413 over 256 KB, 400 malformed JSON). */
 const bodyErrorHandler: ErrorRequestHandler = (error: unknown, _request, response, next) => {
@@ -57,8 +58,11 @@ async function bootstrap() {
   expressApp.disable("x-powered-by");
   expressApp.use(LOGO_ROUTE, logoTokenCheck(tokenDigest), express.raw({ type: [...LOGO_TYPES], limit: LOGO_MAX_BYTES }));
   expressApp.use(PUBLIC_LOGO_ROUTE, publicLogoMethodCheck, createPublicLogoAccessCheck(masterTrpc), express.raw({ type: [...LOGO_TYPES], limit: LOGO_MAX_BYTES }), bodyErrorHandler);
-  // Quotation line photos (SA-QT-10): authorize first, then buffer ≤ 5 MB of JPEG/PNG.
-  expressApp.use(QUOTATION_PHOTO_ROUTE, quotationPhotoMethodCheck, createQuotationPhotoAccessCheck(masterTrpc), express.raw({ type: [...QUOTATION_PHOTO_TYPES], limit: QUOTATION_PHOTO_MAX_BYTES }), bodyErrorHandler);
+  // Line photos (Quotation SA-QT-10, Memo Receive SA-MR-15): authorize first, then buffer ≤ 5 MB of JPEG/PNG. Both
+  // routes take slots from the same process-wide limiters (3 uploads, 6 downloads; INV-20261026-001).
+  const photoBody = express.raw({ type: [...PHOTO_TYPES], limit: PHOTO_MAX_BYTES });
+  expressApp.use(QUOTATION_PHOTO_ROUTE, photoMethodCheck, createPhotoAccessCheck(masterTrpc, "quotation", sharedPhotoLimiters), photoBody, bodyErrorHandler);
+  expressApp.use(MEMO_RECEIVE_PHOTO_ROUTE, photoMethodCheck, createPhotoAccessCheck(masterTrpc, "memo-receive", sharedPhotoLimiters), photoBody, bodyErrorHandler);
   expressApp.use(express.json({ limit: "256kb" }));
   expressApp.use(bodyErrorHandler);
   expressApp.use("/api/master/trpc", masterTrpc.handle.bind(masterTrpc));

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { isFilledLine, lineSchema, serviceChargeSchema } from "@/features/quotation/schema";
 
-/** Memo Receive (ADR-0033): lines, discounts and totals use the Quotation shape (D6, rev 2). */
+/** Memo Receive (ADR-0033, ADR-0034): lines, discounts and totals use the Quotation shape (D6, rev 2). */
 export const MEMO_RECEIVE_STATUSES = ["PENDING_APPROVAL", "APPROVED"] as const;
 export type MemoReceiveStatus = (typeof MEMO_RECEIVE_STATUSES)[number];
 
@@ -16,6 +16,8 @@ export const memoReceiveSchema = z
     id: z.string().optional(),
     docNo: z.string().optional(),
     status: z.enum(MEMO_RECEIVE_STATUSES).optional(),
+    /** Server optimistic version of a saved document (SA rev 1). */
+    version: z.number().optional(),
     docDate: z.string().min(1, "Required"),
     dueDate: z.string().min(1, "Required"),
     vendorId: z.string().min(1, "Required"),
@@ -47,5 +49,5 @@ export const memoReceiveSchema = z
 
 export type MemoReceiveFormValues = z.infer<typeof memoReceiveSchema>;
 
-/** Pending documents can still be edited or deleted; approval happens on the future Approve page (Q-MR-05). */
+/** Pending documents can still be edited, deleted or approved; an approved one is read-only (rev 3, Q-MR-12). */
 export const isEditableMemo = (status: MemoReceiveStatus | undefined) => status !== "APPROVED";

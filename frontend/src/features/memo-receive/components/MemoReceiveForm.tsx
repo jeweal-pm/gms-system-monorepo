@@ -1,12 +1,12 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { FileSearch, ScanLine, Trash2 } from "lucide-react";
+import { CircleCheck, FileSearch, ScanLine, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { FormProvider, useFieldArray, useForm, useWatch } from "react-hook-form";
-import type { PartnerAccess } from "@/features/partner/access";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { QuotationHeader, type StatusLabels } from "@/features/quotation/components/header/QuotationHeader";
 import { ItemEditorPanel } from "@/features/quotation/components/items/ItemEditorPanel";
 import { ItemPhotoBox } from "@/features/quotation/components/items/ItemPhotoBox";
@@ -19,42 +19,68 @@ import { DocumentKindContext } from "@/features/quotation/document-kind";
 import { calculateTotals } from "@/features/quotation/lib/calculate";
 import { emptyLine, newKey } from "@/features/quotation/lib/defaults";
 import { formatDate } from "@/features/quotation/lib/format";
+import { LinePhotoContext, type LinePhotoTarget } from "@/features/quotation/options-context";
+import { isFilledLine } from "@/features/quotation/schema";
+import { readDomainError } from "@/lib/trpc-error";
 import {
-  masterLoadMessage,
-  previewDocNo,
-  saveErrorMessage,
-  useMemoReceiveList,
-  useMemoReceiveMutations,
-  useNumberingRows,
-  useStoneChoices,
-  useVendor,
+  fromMemoReceive,
+  isPendingApproval,
+  mapMemoReceiveError,
+  memoReceiveLoadError,
+  memoReceivePhotoUrl,
+  removeLegacyStore,
+  savedLineIds,
+  stoneChoices,
+  toMemoReceiveInput,
+  uploadMemoReceivePhoto,
+  useMemoReceiveDaybook,
+  useMemoReceiveOptions,
+  useMemoReceiveWrites,
+  useNextMemoReceiveNo,
+  type MemoReceiveAccess,
+  type MemoReceiveDetail,
 } from "../api";
 import { emptyMemoReceive, MEMO_RECEIVE_KIND } from "../defaults";
 import { isEditableMemo, MAX_MEMO_LINES, memoReceiveSchema, type MemoReceiveFormValues } from "../schema";
-import type { SavedMemoReceive } from "../store";
 import { MemoReceiveInfoForm } from "./MemoReceiveInfoForm";
 
 export const MEMO_RECEIVE_HREF = "/memo/memo-receive";
+export const memoReceiveHref = (id: string) => `${MEMO_RECEIVE_HREF}/${id}`;
 
-/** Q-MR-05: saving sends the document to the (future) Approve page. */
-const STATUS_LABELS: StatusLabels = {
+/** Saving sends the document to approval (Q-MR-05); Approve makes it read-only (rev 3). */
+export const STATUS_LABELS: StatusLabels = {
   PENDING_APPROVAL: { label: "Pending Approval", tone: "bg-[#FFF4E0] text-[#B45309]" },
   APPROVED: { label: "Approved", tone: "bg-[#E7F7EE] text-[#15803D]" },
 };
 
-/** One Memo Receive document (ADR-0033): Quotation's layout and components, Memo Receive's data. */
-export function MemoReceiveForm({ initial, access }: { initial?: SavedMemoReceive; access: PartnerAccess }) {
+/** Row photos (rev 4, SA revision 2): the row panel uploads to and reads from the Memo Receive photo route. */
+export const MEMO_RECEIVE_PHOTOS: LinePhotoTarget = { upload: uploadMemoReceivePhoto, url: memoReceivePhotoUrl };
+
+/**
+ * Approve shows for a saved Pending Approval document with no unsaved changes, to users with `memo-receive:APPROVE`
+ * (ui-spec rev 3; UX only, the server checks every call).
+ */
+export function canApproveMemo(args: { saved: boolean; status: MemoReceiveFormValues["status"]; editing: boolean; dirty: boolean; approve: boolean }): boolean {
+  return args.saved && isPendingApproval(args.status) && !args.editing && !args.dirty && args.approve;
+}
+
+export const approveMessage = (count: number) =>
+  `Approve this Memo Receive? Its ${count} ${count === 1 ? "item moves" : "items move"} to Memo Stock and it can no longer be edited.`;
+
+/** One Memo Receive document (ADR-0033/0034): Quotation's layout and components, Memo Receive's data. */
+export function MemoReceiveForm({ initial, access }: { initial?: MemoReceiveFormValues; access: MemoReceiveAccess }) {
   const router = useRouter();
-  const [saved, setSaved] = useState<SavedMemoReceive | undefined>(initial);
+  const [saved, setSaved] = useState<MemoReceiveFormValues | undefined>(initial);
   const [mode, setMode] = useState<"view" | "edit">(initial ? "view" : "edit");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [railPanel, setRailPanel] = useState<RailPanel>(null);
   const [checkedKeys, setCheckedKeys] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
 
   const form = useForm<MemoReceiveFormValues>({ resolver: zodResolver(memoReceiveSchema), defaultValues: initial ?? emptyMemoReceive() });
-  const { control, reset, getValues, handleSubmit, formState } = form;
+  const { control, reset, getValues, handleSubmit, formState, setError } = form;
   const lineArray = useFieldArray({ control, name: "lines", keyName: "_rhfId" });
   const values = useWatch({ control }) as MemoReceiveFormValues;
   const lines = useMemo(() => values.lines ?? [], [values.lines]);
@@ -62,14 +88,16 @@ export function MemoReceiveForm({ initial, access }: { initial?: SavedMemoReceiv
 
   const readOnly = mode === "view";
   const status = saved?.status;
-  const editable = Boolean(saved) && isEditableMemo(status);
-  const numbering = useNumberingRows();
-  const vendor = useVendor(values.vendorId ?? "");
-  const { stone, error: stoneError } = useStoneChoices();
-  const mutations = useMemoReceiveMutations();
-  const busy = mutations.create.isPending || mutations.update.isPending || mutations.remove.isPending;
-  const docNo = saved?.docNo ?? (numbering.data ? previewDocNo(numbering.data, values.docDate ?? "") : "—");
-  const kind = useMemo(() => ({ ...MEMO_RECEIVE_KIND, stone }), [stone]);
+  const editable = Boolean(saved?.id) && isEditableMemo(status);
+  const options = useMemoReceiveOptions(saved?.vendorId);
+  const next = useNextMemoReceiveNo(values.docDate ?? "", !saved?.id);
+  const writes = useMemoReceiveWrites();
+  const docNo = saved?.docNo ?? next.data?.docNo ?? "—";
+  const kind = useMemo(() => ({ ...MEMO_RECEIVE_KIND, stone: stoneChoices(options.data) }), [options.data]);
+  const showApprove = canApproveMemo({ saved: Boolean(saved?.id), status, editing: !readOnly, dirty: formState.isDirty, approve: access.approve });
+
+  // Rev 3: the mock store is gone; drop what it left in this browser.
+  useEffect(() => removeLegacyStore(), []);
 
   useEffect(() => {
     if (!toast) return;
@@ -77,27 +105,54 @@ export function MemoReceiveForm({ initial, access }: { initial?: SavedMemoReceiv
     return () => clearTimeout(timer);
   }, [toast]);
 
+  /** Shows the server's latest copy, read-only. */
+  const show = (detail: MemoReceiveDetail) => {
+    const latest = fromMemoReceive(detail);
+    setSaved(latest);
+    reset(latest);
+    setMode("view");
+    setEditorOpen(false);
+    setCheckedKeys(new Set());
+  };
+
+  const reloadSaved = async () => {
+    if (!saved?.id) return;
+    try {
+      show(await writes.reload(saved.id));
+    } catch (error) {
+      setToast(memoReceiveLoadError(error));
+    }
+  };
+
+  const showError = async (error: unknown) => {
+    const outcome = mapMemoReceiveError(error);
+    for (const field of outcome.fieldErrors) setError(field.name as never, { type: "server", message: field.message });
+    setToast(outcome.message);
+    if (outcome.gone) {
+      await writes.invalidate();
+      router.push(MEMO_RECEIVE_HREF);
+    } else if (outcome.reload) {
+      await reloadSaved();
+      setToast(outcome.message);
+    }
+  };
+
   /* ---------- document actions ---------- */
 
   const onSave = handleSubmit(
     async (input) => {
-      const vendorName = vendor.data?.label ?? "";
       try {
-        if (saved) {
-          const updated = await mutations.update.mutateAsync({ id: saved.id, values: input, vendorName });
-          await mutations.invalidate();
-          setSaved(updated);
-          reset(updated);
-          setMode("view");
-          setToast(`Saved ${saved.docNo}`);
+        if (saved?.id && saved.version) {
+          await writes.update({ ...toMemoReceiveInput(input, savedLineIds(saved)), id: saved.id, expectedVersion: saved.version });
+          show(await writes.reload(saved.id));
+          setToast(`Saved ${saved.docNo ?? ""}`.trim());
         } else {
-          if (!numbering.data) return setToast(numbering.error ? masterLoadMessage(numbering.error, "Document Setup") : "Loading the document number…");
-          const created = await mutations.create.mutateAsync({ values: input, rows: numbering.data, vendorName });
-          await mutations.invalidate();
-          router.replace(`${MEMO_RECEIVE_HREF}/${created.id}`);
+          const created = await writes.create(toMemoReceiveInput(input));
+          await writes.invalidate();
+          router.replace(memoReceiveHref(created.id));
         }
       } catch (error) {
-        setToast(saveErrorMessage(error));
+        await showError(error);
       }
     },
     () => setToast("Please complete the required fields"),
@@ -112,21 +167,47 @@ export function MemoReceiveForm({ initial, access }: { initial?: SavedMemoReceiv
   };
 
   const onDelete = async () => {
-    if (!saved || !window.confirm(`Delete ${saved.docNo}?`)) return;
+    if (!saved?.id || !saved.version || !window.confirm(`Delete ${saved.docNo}?`)) return;
     try {
-      await mutations.remove.mutateAsync(saved.id);
-      await mutations.invalidate();
+      await writes.remove({ id: saved.id, expectedVersion: saved.version });
+      await writes.invalidate();
       router.push(MEMO_RECEIVE_HREF);
     } catch (error) {
-      setToast(saveErrorMessage(error));
+      await showError(error);
     }
   };
 
-  // A copy is a new document: Stock IDs are assigned again when it is saved (ui-spec H-03).
+  const onApprove = async () => {
+    if (!saved?.id || !saved.version) return;
+    try {
+      await writes.approve({ id: saved.id, expectedVersion: saved.version });
+      show(await writes.reload(saved.id));
+      setApproving(false);
+      setToast("Approved");
+    } catch (error) {
+      setApproving(false);
+      const { domainCode } = readDomainError(error);
+      if (domainCode === "MEMO_RECEIVE_CHANGED") {
+        await reloadSaved();
+        setToast("This memo receive changed. Check it and approve again.");
+        return;
+      }
+      await showError(error);
+    }
+  };
+
+  const onRefresh = async () => {
+    if (!readOnly && formState.isDirty && !window.confirm("Discard unsaved changes?")) return;
+    await reloadSaved();
+    setToast("Refreshed");
+  };
+
+  // A copy is a new document: the server gives its rows new Stock IDs when it is saved (ui-spec H-03); its rows keep
+  // their photos, as a Quotation copy does (rev 4).
   const onDuplicate = () => {
     const current = getValues();
     setSaved(undefined);
-    reset({ ...current, id: undefined, docNo: undefined, status: undefined, lines: current.lines.map((l) => ({ ...l, key: newKey(), stockId: "" })) });
+    reset({ ...current, id: undefined, docNo: undefined, status: undefined, version: undefined, lines: current.lines.map((l) => ({ ...l, key: newKey(), stockId: "" })) });
     setMode("edit");
     setToast("Duplicated as a new memo receive");
   };
@@ -179,130 +260,151 @@ export function MemoReceiveForm({ initial, access }: { initial?: SavedMemoReceiv
   };
 
   const editorIndex = editorOpen && selectedIndex !== null && selectedIndex < lines.length ? selectedIndex : null;
+  const itemCount = (saved?.lines ?? []).filter(isFilledLine).length;
 
   return (
     <DocumentKindContext.Provider value={kind}>
-      <FormProvider {...form}>
-        <div className="relative flex h-full bg-white">
-          <div className="min-w-0 flex-1 overflow-y-auto">
-            <QuotationHeader
-              noLabel="Memo Receive No.:"
-              newHref={MEMO_RECEIVE_HREF}
-              statusLabels={STATUS_LABELS}
-              docNo={docNo}
-              isPreview={!saved}
-              status={status}
-              mode={mode}
-              saving={busy}
-              canSave={saved ? access.edit : access.add}
-              canCreate={access.add}
-              canEdit={editable && access.edit}
-              canDelete={editable && access.delete}
-              actions={{
-                onCancel,
-                onSave: () => void onSave(),
-                onEdit: () => setMode("edit"),
-                onDelete: () => void onDelete(),
-                onDuplicate,
-                onRefresh: () => void mutations.invalidate().then(() => setToast("Refreshed")),
-              }}
-            />
-            <p className="px-6 text-xs text-[#6B7480]">Preview: memo receives are kept in this browser only.</p>
-
-            <fieldset disabled={readOnly}>
-              <MemoReceiveInfoForm />
-            </fieldset>
-
-            <hr className="border-[#E3E6EA]" />
-
-            <div className="flex gap-4 px-6 py-6">
-              <div className="min-w-0 flex-1">
-                <div className="mb-4 flex flex-wrap items-center gap-3">
-                  <h2 className="text-lg font-medium text-[#1C252E]">Item</h2>
-                  <span className="text-xs text-[#6B7480]">{lines.length} rows</span>
-                  <IconButton label="Scan to add" disabled={readOnly} className="bg-[#F6F7F8]">
-                    <ScanLine className="size-4" />
-                  </IconButton>
-                  {checkedKeys.size > 0 && !readOnly && (
-                    <Button size="sm" variant="danger-outline" onClick={removeChecked}>
-                      <Trash2 className="size-4" /> Remove {checkedKeys.size} selected
+      <LinePhotoContext.Provider value={MEMO_RECEIVE_PHOTOS}>
+        <FormProvider {...form}>
+          <div className="relative flex h-full bg-white">
+            <div className="min-w-0 flex-1 overflow-y-auto">
+              <QuotationHeader
+                noLabel="Memo Receive No.:"
+                newHref={MEMO_RECEIVE_HREF}
+                statusLabels={STATUS_LABELS}
+                docNo={docNo}
+                isPreview={!saved?.docNo}
+                status={status}
+                mode={mode}
+                saving={writes.busy}
+                canSave={saved?.id ? access.edit : access.add}
+                canCreate={access.add}
+                canEdit={editable && access.edit}
+                canDelete={editable && access.delete}
+                hideEditDelete={status === "APPROVED"}
+                extraActions={
+                  showApprove && (
+                    <Button variant="primary" onClick={() => setApproving(true)} disabled={writes.busy} className="min-w-24">
+                      <CircleCheck className="size-4" /> Approve
                     </Button>
-                  )}
-                  {formState.errors.lines?.message && <span className="text-sm text-[#E5484D]">{formState.errors.lines.message}</span>}
-                  {stoneError && <span className="text-xs text-[#E5484D]">{masterLoadMessage(stoneError, "the stone master")}</span>}
-                </div>
+                  )
+                }
+                actions={{
+                  onCancel,
+                  onSave: () => void onSave(),
+                  onEdit: () => setMode("edit"),
+                  onDelete: () => void onDelete(),
+                  onDuplicate,
+                  onRefresh: () => void onRefresh(),
+                }}
+              />
 
-                <div className="flex items-start gap-4">
-                  <ItemPhotoBox index={selectedIndex} />
-                  <fieldset disabled={readOnly} className="min-w-0 flex-1">
-                    <ItemTable
-                      lines={lines}
-                      currency={values.currency ?? ""}
-                      totals={totals}
-                      selectedIndex={selectedIndex}
-                      checkedKeys={checkedKeys}
-                      readOnly={readOnly}
-                      onSelectRow={openRow}
-                      onToggleCheck={(key) =>
-                        setCheckedKeys((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(key)) next.delete(key);
-                          else next.add(key);
-                          return next;
-                        })
-                      }
-                      onToggleAll={(checked) => setCheckedKeys(checked ? new Set(lines.map((l) => l.key)) : new Set())}
-                      onRowAction={onRowAction}
-                      onAddRow={addRow}
-                    />
+              <fieldset disabled={readOnly}>
+                <MemoReceiveInfoForm options={options.data} optionsError={options.error} />
+              </fieldset>
+
+              <hr className="border-[#E3E6EA]" />
+
+              <div className="flex gap-4 px-6 py-6">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-4 flex flex-wrap items-center gap-3">
+                    <h2 className="text-lg font-medium text-[#1C252E]">Item</h2>
+                    <span className="text-xs text-[#6B7480]">{lines.length} rows</span>
+                    <IconButton label="Scan to add" disabled={readOnly} className="bg-[#F6F7F8]">
+                      <ScanLine className="size-4" />
+                    </IconButton>
+                    {checkedKeys.size > 0 && !readOnly && (
+                      <Button size="sm" variant="danger-outline" onClick={removeChecked}>
+                        <Trash2 className="size-4" /> Remove {checkedKeys.size} selected
+                      </Button>
+                    )}
+                    {formState.errors.lines?.message && <span className="text-sm text-[#E5484D]">{formState.errors.lines.message}</span>}
+                  </div>
+
+                  <div className="flex items-start gap-4">
+                    <ItemPhotoBox index={selectedIndex} />
+                    <fieldset disabled={readOnly} className="min-w-0 flex-1">
+                      <ItemTable
+                        lines={lines}
+                        currency={values.currency ?? ""}
+                        totals={totals}
+                        selectedIndex={selectedIndex}
+                        checkedKeys={checkedKeys}
+                        readOnly={readOnly}
+                        onSelectRow={openRow}
+                        onToggleCheck={(key) =>
+                          setCheckedKeys((prev) => {
+                            const nextKeys = new Set(prev);
+                            if (nextKeys.has(key)) nextKeys.delete(key);
+                            else nextKeys.add(key);
+                            return nextKeys;
+                          })
+                        }
+                        onToggleAll={(checked) => setCheckedKeys(checked ? new Set(lines.map((l) => l.key)) : new Set())}
+                        onRowAction={onRowAction}
+                        onAddRow={addRow}
+                      />
+                    </fieldset>
+                  </div>
+
+                  <fieldset disabled={readOnly} className="mt-6 flex flex-col gap-10 pb-6 lg:flex-row">
+                    <DocumentNote />
+                    <div className="w-full shrink-0 lg:w-[440px]">
+                      <h2 className="mb-2 text-lg font-medium text-[#1C252E]">Summary Value</h2>
+                      <SummaryValue totals={totals} currency={values.currency ?? ""} />
+                    </div>
                   </fieldset>
                 </div>
 
-                <fieldset disabled={readOnly} className="mt-6 flex flex-col gap-10 pb-6 lg:flex-row">
-                  <DocumentNote />
-                  <div className="w-full shrink-0 lg:w-[440px]">
-                    <h2 className="mb-2 text-lg font-medium text-[#1C252E]">Summary Value</h2>
-                    <SummaryValue totals={totals} currency={values.currency ?? ""} />
-                  </div>
-                </fieldset>
+                {editorIndex === null && <RailButtons active={railPanel} onChange={setRailPanel} />}
               </div>
-
-              {editorIndex === null && <RailButtons active={railPanel} onChange={setRailPanel} />}
             </div>
+
+            {editorIndex !== null && (
+              <div className="h-full">
+                <ItemEditorPanel
+                  index={editorIndex}
+                  total={lines.length}
+                  readOnly={readOnly}
+                  onPrev={() => setSelectedIndex(Math.max(0, editorIndex - 1))}
+                  onNext={() => setSelectedIndex(Math.min(lines.length - 1, editorIndex + 1))}
+                  onNextRow={() => setSelectedIndex(editorIndex < lines.length - 1 ? editorIndex + 1 : addRow())}
+                  onRemove={() => removeRow(editorIndex)}
+                  onClose={() => setEditorOpen(false)}
+                />
+              </div>
+            )}
+
+            {railPanel && editorIndex === null && (
+              <fieldset disabled={readOnly && railPanel === "summary"} className="absolute top-4 right-16 bottom-4 z-30 w-[440px]">
+                <RailPanelView panel={railPanel} totals={totals} currency={values.currency ?? ""} onClose={() => setRailPanel(null)} daybook={<MemoDaybook />} />
+              </fieldset>
+            )}
           </div>
-
-          {editorIndex !== null && (
-            <div className="h-full">
-              <ItemEditorPanel
-                index={editorIndex}
-                total={lines.length}
-                readOnly={readOnly}
-                onPrev={() => setSelectedIndex(Math.max(0, editorIndex - 1))}
-                onNext={() => setSelectedIndex(Math.min(lines.length - 1, editorIndex + 1))}
-                onNextRow={() => setSelectedIndex(editorIndex < lines.length - 1 ? editorIndex + 1 : addRow())}
-                onRemove={() => removeRow(editorIndex)}
-                onClose={() => setEditorOpen(false)}
-              />
-            </div>
-          )}
-
-          {railPanel && editorIndex === null && (
-            <fieldset disabled={readOnly && railPanel === "summary"} className="absolute top-4 right-16 bottom-4 z-30 w-[440px]">
-              <RailPanelView panel={railPanel} totals={totals} currency={values.currency ?? ""} onClose={() => setRailPanel(null)} daybook={<MemoDaybook />} />
-            </fieldset>
-          )}
-        </div>
-        {toast && <Toast message={toast} onClose={() => setToast(null)} />}
-      </FormProvider>
+          <ConfirmDialog
+            open={approving}
+            title="Approve Memo Receive"
+            body={approveMessage(itemCount)}
+            cancelLabel="Cancel"
+            confirmLabel="Approve"
+            pendingLabel="Approving…"
+            pending={writes.busy}
+            onCancel={() => setApproving(false)}
+            onConfirm={() => void onApprove()}
+          />
+          {toast && <Toast message={toast} onClose={() => setToast(null)} />}
+        </FormProvider>
+      </LinePhotoContext.Provider>
     </DocumentKindContext.Provider>
   );
 }
 
-/** Saved memo receives, newest first; orange = Pending Approval (Q-MR-05). */
+/** Saved memo receives, newest first; orange = Pending Approval, green = Approved. */
 function MemoDaybook() {
-  const list = useMemoReceiveList();
+  const list = useMemoReceiveDaybook();
   if (list.isPending) return <p className="py-16 text-center text-sm text-[#6B7480]">Loading…</p>;
-  const entries = list.data ?? [];
+  if (list.error) return <p className="py-16 text-center text-sm text-[#E5484D]">{memoReceiveLoadError(list.error, "memo receives")}</p>;
+  const entries = list.data?.items ?? [];
   if (entries.length === 0) {
     return (
       <div className="flex flex-col items-center gap-4 py-20 text-[#6B7480]">
@@ -315,7 +417,7 @@ function MemoDaybook() {
     <ul className="px-5 py-3">
       {entries.map((entry, index) => (
         <li key={entry.id}>
-          <Link href={`${MEMO_RECEIVE_HREF}/${entry.id}`} className="flex w-full items-start gap-3 rounded-lg px-2 py-2.5 text-left hover:bg-[#F6F7F8]">
+          <Link href={memoReceiveHref(entry.id)} className="flex w-full items-start gap-3 rounded-lg px-2 py-2.5 text-left hover:bg-[#F6F7F8]">
             <span className="w-8 shrink-0 text-[#1C252E]">#{index + 1}</span>
             <span className={cx("mt-1.5 size-3 shrink-0 rounded-full", entry.status === "APPROVED" ? "bg-[#22C55E]" : "bg-[#F5A524]")} title={STATUS_LABELS[entry.status]?.label} />
             <span className="min-w-0 flex-1">

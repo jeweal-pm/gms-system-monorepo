@@ -1,169 +1,225 @@
 /**
- * Memo Receive data access (ADR-0033 D1). Real reads from the existing master APIs — vendors, currencies,
- * stone master, Document Setup — each under its own permission; Memo Receive documents themselves come
- * from the mock store until the Memo Receive API exists. Components use only this file.
+ * Memo Receive data access (memo-receive UI rev 3/4 + SA rev 1/2, ADR-0034): `memoReceive.*` on the master tRPC router
+ * plus the binary line-photo route (SA revision 2).
+ * `memoReceive.options` gives the vendors, currencies, numbering state and stone lists in one call (it replaces the
+ * vendor, stone master and Document Setup reads); exchange rates still come from `currency.options`, which the
+ * backend grants to `memo-receive:VIEW`. Components use only this file.
  */
-import { skipToken, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
-import { partnerAccess, type PartnerAccess } from "@/features/partner/access";
-import { PhotoUploadError, PHOTO_MAX_BYTES, PHOTO_TYPES } from "@/features/quotation/api";
+import { skipToken } from "@tanstack/react-query";
+import type { InferQueryLikeData } from "@trpc/react-query/shared";
+import { useCallback } from "react";
+import { partnerAccess, type PartnerAccess, type PermissionMine } from "@/features/partner/access";
+import { fromTradeDocument, toTradeDocumentInput, uploadLinePhoto, type QuotationDetail } from "@/features/quotation/api";
 import type { StoneChoices } from "@/features/quotation/document-kind";
-import type { PhotoRef } from "@/features/quotation/schema";
-import { sizePartCode } from "@/features/stone-master/stone-code";
+import { isFilledLine } from "@/features/quotation/schema";
 import { authTrpc } from "@/lib/auth-trpc";
 import { masterTrpc } from "@/lib/master-trpc";
-import { readDomainError, retryTransient } from "@/lib/trpc-error";
-import type { NumberingRow } from "./numbering";
-import type { MemoReceiveFormValues } from "./schema";
-import {
-  createMemoReceive,
-  deleteMemoReceive,
-  getMemoReceive,
-  listMemoReceives,
-  MemoReceiveError,
-  previewDocNo,
-  updateMemoReceive,
-} from "./store";
+import { isCallerLicenseCode, readDomainError, retryTransient } from "@/lib/trpc-error";
+import type { MemoReceiveFormValues, MemoReceiveStatus } from "./schema";
+
+export type MemoReceiveDetail = InferQueryLikeData<typeof masterTrpc.memoReceive.get>;
+export type MemoReceiveOptions = InferQueryLikeData<typeof masterTrpc.memoReceive.options>;
+export type MemoReceiveInput = ReturnType<typeof toMemoReceiveInput>;
 
 export const MEMO_RECEIVE_MENU = "memo-receive";
-const VENDOR_PAGE = 50;
+/** The mock store of rev 1/2 (ADR-0033 D1); removed from the browser on load (rev 3). */
+export const LEGACY_STORAGE_KEY = "gms.memo-receive.v1";
+const HEADER_FIELDS = ["docDate", "dueDate", "vendorId", "addressId", "currency", "exchangeRate", "ref", "documentNote"] as const;
 
-// ---- permissions (UX only; the future Memo Receive API checks every call) ----
+// ---- permissions (UX only; the server checks every call) ----
 
-export function useMemoReceiveAccess(): PartnerAccess | undefined {
-  const mine = authTrpc.permission.mine.useQuery(undefined, { staleTime: 30_000, retry: false });
-  return mine.data ? partnerAccess(mine.data, MEMO_RECEIVE_MENU) : undefined;
+export type MemoReceiveAccess = PartnerAccess & { approve: boolean };
+
+export function memoReceiveAccess(mine: PermissionMine): MemoReceiveAccess {
+  const approve = mine.isSuperAdmin || mine.permissions === "ALL" || mine.permissions.includes(`${MEMO_RECEIVE_MENU}:APPROVE`);
+  return { ...partnerAccess(mine, MEMO_RECEIVE_MENU), approve };
 }
 
-/** Short, field-level text for a master list that can't load (ADR-0033 D1: no mock in its place). */
-export function masterLoadMessage(error: unknown, what: string): string {
+export function useMemoReceiveAccess(): MemoReceiveAccess | undefined {
+  const mine = authTrpc.permission.mine.useQuery(undefined, { staleTime: 30_000, retry: false });
+  return mine.data ? memoReceiveAccess(mine.data) : undefined;
+}
+
+/** Rev 3: forget the old browser-only memo receives. Storage may be blocked; nothing else depends on it. */
+export function removeLegacyStore(storage: Pick<Storage, "removeItem"> | undefined = typeof window === "undefined" ? undefined : window.localStorage) {
+  try {
+    storage?.removeItem(LEGACY_STORAGE_KEY);
+  } catch {
+    // Blocked storage: there is nothing to remove.
+  }
+}
+
+// ---- photos (REST, SA revision 2: SA-MR-15/16) ----
+
+export const MEMO_RECEIVE_PHOTO_ROUTE = "/api/v1/memo-receive/photos";
+/** Read link of a Memo Receive line photo (memo-receive VIEW, immutable cache). */
+export const memoReceivePhotoUrl = (id: string) => `${MEMO_RECEIVE_PHOTO_ROUTE}/${encodeURIComponent(id)}`;
+/** Uploads one JPEG/PNG ≤ 5 MB (memo-receive ADD or EDIT); returns its photo id. Same checks and messages as Quotation. */
+export const uploadMemoReceivePhoto = (file: File): Promise<string> => uploadLinePhoto(MEMO_RECEIVE_PHOTO_ROUTE, file);
+
+// ---- form ↔ contract ----
+
+/**
+ * Form values → contract input. Empty rows are dropped; a row loaded from the server sends its `id` so it keeps its
+ * Stock ID (SA-MR-04), a new row sends none. No Stone Code id, no Location (rev 3); each row sends its photo ids in
+ * order, the main photo first (rev 4, SA-MR-17).
+ */
+export function toMemoReceiveInput(values: MemoReceiveFormValues, savedLineIds: ReadonlySet<string> = new Set()) {
+  const shared = toTradeDocumentInput(values);
+  // toTradeDocumentInput keeps the filled rows in order, so the n-th input line is the n-th filled row.
+  const keys = values.lines.filter(isFilledLine).map((line) => line.key);
+  return {
+    ...shared,
+    lines: shared.lines.map((line, index) => {
+      const key = keys[index];
+      return {
+        source: line.source, stoneCode: line.stoneCode, stone: line.stone, shape: line.shape, size: line.size, color: line.color,
+        clarity: line.clarity, cutting: line.cutting, quality: line.quality, lot: line.lot, cerType: line.cerType, cerNo: line.cerNo,
+        pcs: line.pcs, weightCt: line.weightCt, priceUnit: line.priceUnit, unitPrice: line.unitPrice, discount: line.discount,
+        itemNote: line.itemNote, photoIds: line.photoIds,
+        ...(key !== undefined && savedLineIds.has(key) ? { id: key } : {}),
+      };
+    }),
+    vendorId: values.vendorId,
+    addressId: values.addressId,
+  };
+}
+
+/** Saved memo receive → form values; each row keeps its server line id as its key and shows its Stock ID and photos. */
+export function fromMemoReceive(detail: MemoReceiveDetail): MemoReceiveFormValues {
+  const asTrade = { ...detail, lines: detail.lines.map((line) => ({ ...line, stoneCodeId: null, location: "" })) } as unknown as QuotationDetail;
+  const shared = fromTradeDocument(asTrade, memoReceivePhotoUrl);
+  return {
+    ...shared,
+    status: detail.status,
+    vendorId: detail.vendorId,
+    addressId: detail.addressId ?? "",
+    lines: shared.lines.map((line, index) => ({ ...line, stockId: detail.lines[index]?.stockId ?? "" })),
+  };
+}
+
+/** Server line ids of a saved document (the form keys of its rows). */
+export const savedLineIds = (detail: MemoReceiveFormValues | undefined) => new Set(detail?.id ? detail.lines.map((line) => line.key) : []);
+
+/** Stone lists for the row panel; Memo Receive has no Stone Code (rev 2), so there are no codes. */
+export function stoneChoices(options: MemoReceiveOptions | undefined): StoneChoices | undefined {
+  return options ? ({ ...options.stone, codes: [] } as StoneChoices) : undefined;
+}
+
+// ---- errors (error-handling.md, SA rev 1) ----
+
+export type MemoReceiveOutcome = {
+  fieldErrors: { name: string; message: string }[];
+  message: string;
+  /** Load the saved document again (it changed or was approved elsewhere). */
+  reload: boolean;
+  /** The document is gone: leave for a new one. */
+  gone: boolean;
+};
+
+export function mapMemoReceiveError(error: unknown): MemoReceiveOutcome {
+  const { domainCode, fieldErrors } = readDomainError(error);
+  const outcome = (message: string, extra: Partial<MemoReceiveOutcome> = {}): MemoReceiveOutcome => ({ fieldErrors: [], message, reload: false, gone: false, ...extra });
+  const onFields = (message: string) => fieldErrors.flatMap((entry) => {
+    if ((HEADER_FIELDS as readonly string[]).includes(entry.path)) return [{ name: entry.path, message: entry.code === "required" ? "Required" : message }];
+    if (entry.path.startsWith("lines.")) return [{ name: "lines", message: `Check item row ${Number(entry.path.split(".")[1] ?? 0) + 1}` }];
+    return [];
+  });
+  switch (domainCode) {
+    case "VALIDATION_ERROR": {
+      if (fieldErrors.some((entry) => entry.code === "unknown_line")) return outcome("An item of this memo receive changed. Refresh to see the latest.");
+      const gross = fieldErrors.find((entry) => entry.code === "exceeds_gross");
+      if (gross) return outcome(`Item row ${Number(gross.path.split(".")[1] ?? 0) + 1}: the discount is more than the line amount.`, { fieldErrors: onFields("Check this field") });
+      if (fieldErrors.some((entry) => entry.code === "exceeds_subtotal")) return outcome("The document discount is more than the subtotal.");
+      return outcome("Some details couldn't be saved. Check the form and try again.", { fieldErrors: onFields("Check this field") });
+    }
+    case "MEMO_RECEIVE_REFERENCE_INVALID":
+      return outcome("A selected vendor, address or currency is no longer available.", { fieldErrors: onFields("Choose an active option") });
+    case "MEMO_RECEIVE_PHOTO_INVALID":
+      return outcome("A photo couldn't be used. Remove it and add it again.", { fieldErrors: onFields("Check the photos") });
+    case "MEMO_RECEIVE_NOT_FOUND":
+      return outcome("This Memo Receive no longer exists.", { gone: true });
+    case "MEMO_RECEIVE_CHANGED":
+      return outcome("Someone changed this document. Refresh to see the latest.");
+    case "MEMO_RECEIVE_STATUS_INVALID":
+      return outcome("Already approved", { reload: true });
+    case "MEMO_RECEIVE_STOCK_ID_EXHAUSTED":
+      return outcome("Stock ID limit reached for this year. Contact the administrator.");
+    case "PERMISSION_DENIED":
+      return outcome("You don't have permission to do this. Nothing was saved.");
+    case "CSRF_INVALID":
+      return outcome("Your session needs a refresh. Reload the page and try again.");
+    case "UNAUTHORIZED":
+      return outcome("Your session has ended. Sign in again.");
+    case "AUTHORIZATION_UNAVAILABLE":
+      return outcome("Couldn't check your access right now. Try again.");
+    default:
+      if (isCallerLicenseCode(domainCode)) return outcome("Your license doesn't allow this right now. Nothing was saved.");
+      return outcome("Couldn't save. Try again.");
+  }
+}
+
+export function memoReceiveLoadError(error: unknown, what = "this memo receive"): string {
   const { domainCode } = readDomainError(error);
-  if (domainCode === "PERMISSION_DENIED") return `You don't have permission to view ${what}.`;
+  if (domainCode === "MEMO_RECEIVE_NOT_FOUND") return "This Memo Receive no longer exists.";
+  if (domainCode === "PERMISSION_DENIED") return "You don't have permission to view memo receives.";
+  if (isCallerLicenseCode(domainCode)) return "Your license doesn't allow opening memo receives right now.";
   if (domainCode === "UNAUTHORIZED") return "Your session has ended. Sign in again.";
   return `Couldn't load ${what}. Try again.`;
 }
 
-// ---- vendors (Setup › Vendor) ----
+// ---- reads ----
 
-export type VendorChoice = { id: string; label: string };
-export type VendorAddress = { id: string; label: string; isDefault: boolean };
-
-/** Active vendors, first 50 by name (vendor.list keyset page). */
-export function useVendorChoices() {
-  return masterTrpc.vendor.list.useQuery(
-    { active: true, limit: VENDOR_PAGE },
-    { staleTime: 60_000, retry: retryTransient, select: (page) => page.items.map((v) => ({ id: v.id, label: v.code ? `${v.code} · ${v.name}` : v.name })) },
-  );
+export function useMemoReceiveDetail(id: string | null) {
+  return masterTrpc.memoReceive.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient });
 }
 
-/** One vendor with its addresses and currency, for the Address select and defaults (Q-MR-06). */
-export function useVendor(id: string) {
-  return masterTrpc.vendor.get.useQuery(id ? { id } : skipToken, {
-    staleTime: 60_000,
-    retry: retryTransient,
-    select: (vendor) => ({
-      id: vendor.id,
-      label: vendor.code ? `${vendor.code} · ${vendor.name}` : vendor.name,
-      currencyCode: vendor.currencyCode,
-      addresses: vendor.invoiceAddresses.map((a): VendorAddress => ({
-        id: a.id,
-        label: [a.name, a.address, [a.city, a.state, a.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", "),
-        isDefault: a.isDefault,
-      })),
-    }),
-  });
+export function useMemoReceiveDaybook() {
+  return masterTrpc.memoReceive.list.useQuery({ limit: 50 }, { staleTime: 15_000, retry: retryTransient });
 }
 
-export function useFetchVendor() {
-  const utils = masterTrpc.useUtils();
-  return useCallback((id: string) => utils.vendor.get.fetch({ id }, { staleTime: 60_000 }), [utils]);
+/** Vendors, currencies, numbering state and stone lists; `vendorId` keeps a saved, now inactive vendor listed. */
+export function useMemoReceiveOptions(vendorId: string | undefined) {
+  return masterTrpc.memoReceive.options.useQuery(vendorId ? { vendorId } : {}, { staleTime: 60_000, retry: retryTransient });
 }
 
-// ---- currencies (Setup › Currency) ----
-
-export function useCurrencyOptions() {
+/** Exchange rates (Setup › Currency, read-only here). */
+export function useCurrencyRates() {
   return masterTrpc.currency.options.useQuery(undefined, { staleTime: 60_000, retry: retryTransient });
 }
 
-// ---- stone master ----
-
-const PART_KINDS = ["stone-name", "shape", "size", "color", "clarity", "cutting", "quality"] as const;
-type PartRow = { id: string; code?: string | null; name: string; active?: boolean };
-type OptionsData = Partial<Record<"stoneName" | "shape" | "size" | "color" | "clarity" | "cutting" | "quality", PartRow[]>>;
-
-const toChoices = (rows: PartRow[] | undefined) => (rows ?? []).map((row) => ({ name: row.name, code: row.code ?? sizePartCode(row.name) }));
-
-/**
- * Row panel stone choices in the `quotation.options` shape, from `stoneMaster.options`. Memo Receive has no
- * Stone Code (owner 2026-10-28, rev 2), so no codes are loaded.
- */
-export function useStoneChoices() {
-  const options = masterTrpc.stoneMaster.options.useQuery({ kinds: [...PART_KINDS], include: [] }, { staleTime: 60_000, retry: retryTransient });
-  const data = options.data as OptionsData | undefined;
-
-  const stone = useMemo((): StoneChoices | undefined => {
-    if (!data) return undefined;
-    return {
-      codes: [],
-      stones: toChoices(data.stoneName),
-      shapes: toChoices(data.shape),
-      sizes: toChoices(data.size),
-      colors: toChoices(data.color),
-      clarities: toChoices(data.clarity),
-      cuttings: toChoices(data.cutting),
-      qualities: toChoices(data.quality),
-    };
-  }, [data]);
-
-  return { stone, error: options.error };
+/** Number preview for a new document (Document Setup › Memo Receive). */
+export function useNextMemoReceiveNo(docDate: string, isNew: boolean) {
+  return masterTrpc.memoReceive.nextNumber.useQuery(isNew && /^\d{4}-\d{2}-\d{2}$/.test(docDate) ? { docDate } : skipToken, { staleTime: 10_000, retry: retryTransient });
 }
 
-// ---- numbering (Setup › Document Setup, Q-MR-02) ----
+// ---- writes ----
 
-export function useNumberingRows() {
-  return masterTrpc.documentSetup.get.useQuery({ transactionKey: "memo-receive" as never }, {
-    staleTime: 30_000,
-    retry: retryTransient,
-    select: (result) => ((result as { setup: { rows: NumberingRow[] } | null }).setup?.rows ?? []).map(({ id, effectiveDate, prefix, separator, startNo }) => ({ id, effectiveDate, prefix, separator, startNo })),
-  });
-}
-
-export { previewDocNo };
-
-// ---- documents (mock store) ----
-
-const keys = {
-  all: ["memo-receive"] as const,
-  list: ["memo-receive", "list"] as const,
-  detail: (id: string) => ["memo-receive", "detail", id] as const,
-};
-
-export function useMemoReceiveList() {
-  return useQuery({ queryKey: keys.list, queryFn: listMemoReceives, staleTime: 10_000 });
-}
-
-export function useMemoReceiveDetail(id: string | null) {
-  return useQuery({ queryKey: keys.detail(id ?? ""), queryFn: () => getMemoReceive(id ?? ""), enabled: id !== null, staleTime: 10_000 });
-}
-
-export function useMemoReceiveMutations() {
-  const client = useQueryClient();
-  const invalidate = () => client.invalidateQueries({ queryKey: keys.all });
+export function useMemoReceiveWrites() {
+  const utils = masterTrpc.useUtils();
+  const writes = { retry: false, gcTime: 0 } as const;
+  const create = masterTrpc.memoReceive.create.useMutation(writes);
+  const update = masterTrpc.memoReceive.update.useMutation(writes);
+  const remove = masterTrpc.memoReceive.delete.useMutation(writes);
+  const approve = masterTrpc.memoReceive.approve.useMutation(writes);
+  const invalidate = useCallback(
+    () => Promise.all([utils.memoReceive.list.invalidate(), utils.memoReceive.get.invalidate(), utils.memoReceive.nextNumber.invalidate()]),
+    [utils],
+  );
+  /** The latest saved document, straight from the server. */
+  const reload = useCallback(async (id: string) => {
+    await invalidate();
+    return utils.memoReceive.get.fetch({ id }, { staleTime: 0 });
+  }, [invalidate, utils]);
   return {
-    create: useMutation({ mutationFn: (input: { values: MemoReceiveFormValues; rows: NumberingRow[]; vendorName: string }) => createMemoReceive(input.values, input.rows, input.vendorName) }),
-    update: useMutation({ mutationFn: (input: { id: string; values: MemoReceiveFormValues; vendorName: string }) => updateMemoReceive(input.id, input.values, input.vendorName) }),
-    remove: useMutation({ mutationFn: (id: string) => deleteMemoReceive(id) }),
+    create: create.mutateAsync,
+    update: update.mutateAsync,
+    remove: remove.mutateAsync,
+    approve: approve.mutateAsync,
     invalidate,
+    reload,
+    busy: create.isPending || update.isPending || remove.isPending || approve.isPending,
   };
 }
 
-export const saveErrorMessage = (error: unknown) => (error instanceof MemoReceiveError ? error.message : "Couldn't save. Try again.");
-
-// ---- photos (memory only in revision 1) ----
-
-/** Checks a JPEG/PNG ≤ 5 MB and keeps it for this page session only (ADR-0033 D1). */
-export async function keepPhotoInMemory(file: File): Promise<PhotoRef> {
-  if (!(PHOTO_TYPES as readonly string[]).includes(file.type)) throw new PhotoUploadError("Use a JPEG or PNG photo.");
-  if (file.size > PHOTO_MAX_BYTES) throw new PhotoUploadError("Photos can be up to 5 MB.");
-  return { id: crypto.randomUUID(), name: file.name, url: URL.createObjectURL(file) };
-}
+export const isPendingApproval = (status: MemoReceiveStatus | undefined) => status === "PENDING_APPROVAL";

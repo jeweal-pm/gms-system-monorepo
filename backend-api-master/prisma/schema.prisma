@@ -100,6 +100,8 @@ model Vendor {
   updatedBy      String          @map("updated_by") @db.VarChar(64)
   addresses      VendorAddress[]
   memoOutReturns MemoOutReturn[]
+  memoReceives   MemoReceive[]
+  memoStocks     MemoStock[]
 
   @@index([nameKey, id], map: "vendor_name_key_id_idx")
   @@index([active, nameKey, id], map: "vendor_active_name_key_id_idx")
@@ -122,6 +124,7 @@ model VendorAddress {
   isDefault      Boolean         @default(false) @map("is_default")
   vendor         Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   memoOutReturns MemoOutReturn[]
+  memoReceives   MemoReceive[]
 
   @@unique([vendorId, position], map: "vendor_address_position_key")
   /// Zero or one default per vendor (D-V03); a partial UNIQUE index allows zero rows.
@@ -168,24 +171,25 @@ model CompanyProfile {
 
 /// User-upload metadata tombstones are independent of CompanyProfile and cannot cascade away.
 model StoredFile {
-  id                  String               @id @db.Uuid
-  kind                String               @db.VarChar(32)
-  bucket              String               @db.VarChar(16)
-  objectKey           String               @map("object_key") @db.VarChar(512)
-  filename            String               @db.VarChar(255)
-  contentType         String               @map("content_type") @db.VarChar(255)
-  sizeBytes           BigInt               @map("size_bytes")
-  sha256              String               @db.Char(64)
-  status              String               @db.VarChar(16)
-  sourceType          String               @map("source_type") @db.VarChar(64)
-  sourceId            String               @map("source_id") @db.VarChar(128)
-  createdBy           String?              @map("created_by") @db.VarChar(64)
-  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  readyAt             DateTime?            @map("ready_at") @db.Timestamptz(6)
-  expiresAt           DateTime?            @map("expires_at") @db.Timestamptz(6)
-  deletedAt           DateTime?            @map("deleted_at") @db.Timestamptz(6)
-  purgeAfter          DateTime?            @map("purge_after") @db.Timestamptz(6)
-  quotationLinePhotos QuotationLinePhoto[]
+  id                    String                 @id @db.Uuid
+  kind                  String                 @db.VarChar(32)
+  bucket                String                 @db.VarChar(16)
+  objectKey             String                 @map("object_key") @db.VarChar(512)
+  filename              String                 @db.VarChar(255)
+  contentType           String                 @map("content_type") @db.VarChar(255)
+  sizeBytes             BigInt                 @map("size_bytes")
+  sha256                String                 @db.Char(64)
+  status                String                 @db.VarChar(16)
+  sourceType            String                 @map("source_type") @db.VarChar(64)
+  sourceId              String                 @map("source_id") @db.VarChar(128)
+  createdBy             String?                @map("created_by") @db.VarChar(64)
+  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  readyAt               DateTime?              @map("ready_at") @db.Timestamptz(6)
+  expiresAt             DateTime?              @map("expires_at") @db.Timestamptz(6)
+  deletedAt             DateTime?              @map("deleted_at") @db.Timestamptz(6)
+  purgeAfter            DateTime?              @map("purge_after") @db.Timestamptz(6)
+  quotationLinePhotos   QuotationLinePhoto[]
+  memoReceiveLinePhotos MemoReceiveLinePhoto[]
 
   @@unique([bucket, objectKey], map: "stored_files_bucket_object_key_key")
   @@index([sourceType, sourceId], map: "stored_files_source_idx")
@@ -420,6 +424,7 @@ model DocumentNumbering {
   quotations     Quotation[]
   memoOuts       MemoOut[]
   memoOutReturns MemoOutReturn[]
+  memoReceives   MemoReceive[]
 
   @@unique([transactionKey, effectiveDate])
   @@map("document_numbering")
@@ -781,5 +786,190 @@ model MemoOutReturnCharge {
 
   @@id([memoOutReturnId, chargeType])
   @@map("memo_out_return_charge")
+  @@schema("partner")
+}
+
+// ---- Memo Receive + Memo Stock (memo-receive SA revision 1 / ADR-0034, owner 2026-10-29) ----
+
+/// Memo Receive: stones borrowed from a vendor on memo. Same engine as Memo Out Return (vendor + address,
+/// Document Setup number, server totals, version). PENDING_APPROVAL -> APPROVED only (SA-MR-03); approval copies
+/// each line to memo_stock. CHECKs (status, approved_at iff APPROVED, values) are in the migration SQL.
+model MemoReceive {
+  id                 String              @id @db.Uuid
+  /// null = plain running number 1, 2, 3 … (no Document Setup row in effect).
+  numberingId        String?             @map("numbering_id") @db.Uuid
+  runningNo          Int                 @map("running_no")
+  docNo              String              @unique(map: "memo_receive_doc_no_key") @map("doc_no") @db.VarChar(40)
+  status             String              @db.VarChar(20)
+  docDate            DateTime            @map("doc_date") @db.Date
+  dueDate            DateTime            @map("due_date") @db.Date
+  vendorId           String              @map("vendor_id") @db.Uuid
+  vendorCodeSnapshot String              @map("vendor_code_snapshot") @db.VarChar(120)
+  vendorNameSnapshot String              @map("vendor_name_snapshot") @db.VarChar(200)
+  addressId          String?             @map("address_id") @db.Uuid
+  addressSnapshot    String              @map("address_snapshot") @db.VarChar(1000)
+  currencyCode       String              @map("currency_code") @db.Char(3)
+  exchangeRate       Decimal?            @map("exchange_rate") @db.Decimal(18, 6)
+  ref                String              @default("") @db.VarChar(100)
+  documentNote       String              @default("") @map("document_note") @db.VarChar(500)
+  discountType       String              @map("discount_type") @db.VarChar(10)
+  discountValue      Decimal             @map("discount_value") @db.Decimal(18, 4)
+  taxEnabled         Boolean             @map("tax_enabled")
+  taxRate            Decimal             @map("tax_rate") @db.Decimal(9, 4)
+  taxIncluded        Boolean             @map("tax_included")
+  laborWork          String?             @map("labor_work") @db.VarChar(120)
+  laborBasis         String?             @map("labor_basis") @db.VarChar(10)
+  laborQty           Decimal?            @map("labor_qty") @db.Decimal(18, 3)
+  laborRate          Decimal?            @map("labor_rate") @db.Decimal(18, 2)
+  subtotal           Decimal             @db.Decimal(18, 2)
+  discountAmount     Decimal             @map("discount_amount") @db.Decimal(18, 2)
+  priceBeforeTax     Decimal             @map("price_before_tax") @db.Decimal(18, 2)
+  taxAmount          Decimal             @map("tax_amount") @db.Decimal(18, 2)
+  chargesAmount      Decimal             @map("charges_amount") @db.Decimal(18, 2)
+  laborAmount        Decimal             @map("labor_amount") @db.Decimal(18, 2)
+  grandTotal         Decimal             @map("grand_total") @db.Decimal(18, 2)
+  approvedAt         DateTime?           @map("approved_at") @db.Timestamp(3)
+  approvedBy         String?             @map("approved_by") @db.VarChar(64)
+  version            Int                 @default(1)
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamp(3)
+  createdBy          String              @map("created_by") @db.VarChar(64)
+  updatedAt          DateTime            @default(now()) @map("updated_at") @db.Timestamp(3)
+  updatedBy          String              @map("updated_by") @db.VarChar(64)
+  numbering          DocumentNumbering?  @relation(fields: [numberingId], references: [id], onDelete: Restrict)
+  vendor             Vendor              @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  address            VendorAddress?      @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  lines              MemoReceiveLine[]
+  charges            MemoReceiveCharge[]
+  memoStocks         MemoStock[]
+
+  @@unique([numberingId, runningNo], map: "memo_receive_numbering_running_no_key")
+  @@unique([runningNo], where: { numberingId: null }, map: "memo_receive_plain_running_no_key")
+  @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "memo_receive_list_idx")
+  @@index([vendorId, docDate(sort: Desc)], map: "memo_receive_vendor_idx")
+  @@index([status, docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "memo_receive_status_idx")
+  @@index([addressId], map: "memo_receive_address_idx")
+  @@map("memo_receive")
+  @@schema("partner")
+}
+
+/// A Memo Receive line: like memo_out_return_line plus the server-issued Stock ID (YY + 4 digits, SA-MR-04),
+/// without stone code id and location (SA-MR-07).
+model MemoReceiveLine {
+  id                String                 @id @db.Uuid
+  memoReceiveId     String                 @map("memo_receive_id") @db.Uuid
+  position          Int                    @db.SmallInt
+  stockId           String                 @unique(map: "memo_receive_line_stock_id_key") @map("stock_id") @db.VarChar(10)
+  source            String                 @db.VarChar(10)
+  stoneCodeSnapshot String                 @default("") @map("stone_code_snapshot") @db.VarChar(60)
+  stone             String                 @default("") @db.VarChar(60)
+  shape             String                 @default("") @db.VarChar(60)
+  size              String                 @default("") @db.VarChar(60)
+  color             String                 @default("") @db.VarChar(60)
+  clarity           String                 @default("") @db.VarChar(60)
+  cutting           String                 @default("") @db.VarChar(60)
+  quality           String                 @default("") @db.VarChar(60)
+  lot               String                 @default("") @db.VarChar(40)
+  cerType           String                 @default("") @map("cer_type") @db.VarChar(20)
+  cerNo             String                 @default("") @map("cer_no") @db.VarChar(60)
+  pcs               Int
+  weightCt          Decimal                @map("weight_ct") @db.Decimal(12, 3)
+  priceUnit         String                 @map("price_unit") @db.VarChar(10)
+  unitPrice         Decimal                @map("unit_price") @db.Decimal(18, 2)
+  discountType      String                 @default("NONE") @map("discount_type") @db.VarChar(10)
+  discountValue     Decimal                @default(0) @map("discount_value") @db.Decimal(18, 4)
+  discountAmount    Decimal                @default(0) @map("discount_amount") @db.Decimal(18, 2)
+  amount            Decimal                @db.Decimal(18, 2)
+  itemNote          String                 @default("") @map("item_note") @db.VarChar(500)
+  document          MemoReceive            @relation(fields: [memoReceiveId], references: [id], onDelete: Cascade)
+  memoStock         MemoStock?
+  photos            MemoReceiveLinePhoto[]
+
+  @@unique([memoReceiveId, position], map: "memo_receive_line_position_key")
+  @@map("memo_receive_line")
+  @@schema("partner")
+}
+
+/// memo-receive SA revision 2 (SA-MR-14): up to 5 photos per line in order (position 1..5, the first is the main
+/// photo). Deleting a line removes its links; a stored file can't be deleted while linked (bytes are kept, ADR-0030).
+model MemoReceiveLinePhoto {
+  lineId   String          @map("line_id") @db.Uuid
+  position Int             @db.SmallInt
+  fileId   String          @map("file_id") @db.Uuid
+  line     MemoReceiveLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  file     StoredFile      @relation(fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@id([lineId, position])
+  @@index([fileId], map: "memo_receive_line_photo_file_idx")
+  @@map("memo_receive_line_photo")
+  @@schema("partner")
+}
+
+model MemoReceiveCharge {
+  memoReceiveId String      @map("memo_receive_id") @db.Uuid
+  chargeType    String      @map("charge_type") @db.VarChar(20)
+  amount        Decimal     @db.Decimal(18, 2)
+  document      MemoReceive @relation(fields: [memoReceiveId], references: [id], onDelete: Cascade)
+
+  @@id([memoReceiveId, chargeType])
+  @@map("memo_receive_charge")
+  @@schema("partner")
+}
+
+/// Memo Stock (ADR-0034 D4/D5, SA-MR-06): one row per approved Memo Receive line, location always Memo. Interim
+/// in the master service until the inventory service exists; Memo Return (later revision) is the only writer of
+/// pending_*. net_unit_price = line_amount / received basis (weight for PER_CT, pcs for PER_PCS).
+model MemoStock {
+  id                 String          @id @db.Uuid
+  stockId            String          @unique(map: "memo_stock_stock_id_key") @map("stock_id") @db.VarChar(10)
+  memoReceiveId      String          @map("memo_receive_id") @db.Uuid
+  memoReceiveLineId  String          @unique(map: "memo_stock_memo_receive_line_id_key") @map("memo_receive_line_id") @db.Uuid
+  receivedDocNo      String          @map("received_doc_no") @db.VarChar(40)
+  receivedDocDate    DateTime        @map("received_doc_date") @db.Date
+  dueDate            DateTime        @map("due_date") @db.Date
+  vendorId           String          @map("vendor_id") @db.Uuid
+  vendorCodeSnapshot String          @map("vendor_code_snapshot") @db.VarChar(120)
+  vendorNameSnapshot String          @map("vendor_name_snapshot") @db.VarChar(200)
+  location           String          @default("Memo") @db.VarChar(40)
+  stone              String          @default("") @db.VarChar(60)
+  shape              String          @default("") @db.VarChar(60)
+  size               String          @default("") @db.VarChar(60)
+  color              String          @default("") @db.VarChar(60)
+  clarity            String          @default("") @db.VarChar(60)
+  cutting            String          @default("") @db.VarChar(60)
+  quality            String          @default("") @db.VarChar(60)
+  lot                String          @default("") @db.VarChar(40)
+  cerType            String          @default("") @map("cer_type") @db.VarChar(20)
+  cerNo              String          @default("") @map("cer_no") @db.VarChar(60)
+  itemNote           String          @default("") @map("item_note") @db.VarChar(500)
+  receivedPcs        Int             @map("received_pcs")
+  receivedWeightCt   Decimal         @map("received_weight_ct") @db.Decimal(12, 3)
+  pendingPcs         Int             @map("pending_pcs")
+  pendingWeightCt    Decimal         @map("pending_weight_ct") @db.Decimal(12, 3)
+  priceUnit          String          @map("price_unit") @db.VarChar(10)
+  unitPrice          Decimal         @map("unit_price") @db.Decimal(18, 2)
+  lineAmount         Decimal         @map("line_amount") @db.Decimal(18, 2)
+  netUnitPrice       Decimal         @map("net_unit_price") @db.Decimal(18, 4)
+  currencyCode       String          @map("currency_code") @db.Char(3)
+  version            Int             @default(1)
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamp(3)
+  createdBy          String          @map("created_by") @db.VarChar(64)
+  updatedAt          DateTime        @default(now()) @map("updated_at") @db.Timestamp(3)
+  memoReceive        MemoReceive     @relation(fields: [memoReceiveId], references: [id], onDelete: Restrict)
+  memoReceiveLine    MemoReceiveLine @relation(fields: [memoReceiveLineId], references: [id], onDelete: Restrict)
+  vendor             Vendor          @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+
+  /// Add Memo Stock dialog: a vendor's items with something still pending, newest receive first (SA-MR-11).
+  @@index([vendorId, receivedDocDate(sort: Desc), stockId(sort: Desc)], where: raw("((pending_pcs > 0) OR (pending_weight_ct > (0)::numeric))"), map: "memo_stock_pending_idx")
+  @@index([memoReceiveId], map: "memo_stock_memo_receive_idx")
+  @@map("memo_stock")
+  @@schema("partner")
+}
+
+/// Stock ID running number per 2-digit year of the save (SA-MR-04); row-locked by INSERT ... ON CONFLICT DO UPDATE.
+model MemoStockIdCounter {
+  year   Int @id @db.SmallInt
+  lastNo Int @map("last_no")
+
+  @@map("memo_stock_id_counter")
   @@schema("partner")
 }

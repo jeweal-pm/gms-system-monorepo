@@ -11,9 +11,12 @@ import { DocumentSetupService } from "./document-setup/document-setup.service";
 import { CurrencyService } from "./currency/currency.service";
 import { PrismaLifecycleService } from "./database/prisma-lifecycle.service";
 import { QuotationPhotoPublicController } from "./quotation/quotation-photo.public.controller";
+import { MemoReceivePhotoPublicController } from "./trade-document/memo-receive-photo.public.controller";
 import { QuotationService } from "./quotation/quotation.service";
 import { MemoOutService } from "./trade-document/memo-out.service";
 import { MemoOutReturnService } from "./trade-document/memo-out-return.service";
+import { MemoReceiveService } from "./trade-document/memo-receive.service";
+import { MemoStockService } from "./trade-document/memo-stock.service";
 import { HealthController } from "./health/health.controller";
 import { ServiceTokenGuard } from "./internal-auth/service-token.guard";
 import { MasterAuthzDatabase } from "./master/authz-database";
@@ -42,7 +45,7 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
       },
     }),
   ],
-  controllers: [HealthController, CustomerController, VendorController, CompanyProfileController, CompanyLogoPublicController, StoneMasterController, QuotationPhotoPublicController],
+  controllers: [HealthController, CustomerController, VendorController, CompanyProfileController, CompanyLogoPublicController, StoneMasterController, QuotationPhotoPublicController, MemoReceivePhotoPublicController],
   providers: [
     PrismaLifecycleService,
     CustomerService,
@@ -54,6 +57,8 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
     QuotationService,
     MemoOutService,
     MemoOutReturnService,
+    MemoReceiveService,
+    MemoStockService,
     MasterAuthzDatabase,
     MasterLicenseClient,
     MasterTrpcHandler,

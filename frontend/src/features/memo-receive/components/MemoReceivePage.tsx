@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemoReceiveAccess, useMemoReceiveDetail } from "../api";
+import { fromMemoReceive, memoReceiveLoadError, useMemoReceiveAccess, useMemoReceiveDetail } from "../api";
 import { MemoReceiveForm } from "./MemoReceiveForm";
 
 const message = "p-10 text-gms-body text-gms-text-secondary";
@@ -14,11 +14,12 @@ export function NewMemoReceivePage() {
   return <MemoReceiveForm access={access} />;
 }
 
+/** `/memo/memo-receive/[id]`: a saved memo receive; the form reloads it itself after every write. */
 export function EditMemoReceivePage({ id }: { id: string }) {
   const access = useMemoReceiveAccess();
   const detail = useMemoReceiveDetail(access?.view ? id : null);
   if (!access || (access.view && detail.isPending)) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{denied}</p>;
-  if (!detail.data) return <p className={message}>This memo receive doesn&apos;t exist.</p>;
-  return <MemoReceiveForm key={id} access={access} initial={detail.data} />;
+  if (detail.isError || !detail.data) return <p className={message}>{detail.error ? memoReceiveLoadError(detail.error) : "This Memo Receive no longer exists."}</p>;
+  return <MemoReceiveForm key={id} access={access} initial={fromMemoReceive(detail.data)} />;
 }

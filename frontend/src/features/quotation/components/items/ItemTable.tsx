@@ -12,9 +12,9 @@ import { Badge, Button, cx } from "../ui";
 
 type Column = { title: string; sub?: string; align?: "right"; className?: string };
 
-const columns = (stoneCode: boolean): Column[] => [
+export const itemColumns = (stoneCode: boolean, location = true): Column[] => [
   stoneCode ? { title: "Stone Code", sub: "STOCK ID · LOT", className: "w-[200px]" } : { title: "STOCK ID", sub: "LOT", className: "w-[200px]" },
-  { title: "LOCATION", className: "w-[96px]" },
+  ...(location ? [{ title: "LOCATION", className: "w-[96px]" }] : []),
   { title: "STONE", sub: "SHAPE · SIZE", className: "w-[150px]" },
   { title: "COLOR · CLARITY", sub: "CUTTING · QUALITY", className: "w-[150px]" },
   { title: "CER TYPE", sub: "CER NO.", className: "w-[140px]" },
@@ -55,7 +55,7 @@ export function ItemTable({
   emptyRowText?: string;
 }) {
   const kind = useDocumentKind();
-  const COLUMNS = columns(kind.stoneCode);
+  const COLUMNS = itemColumns(kind.stoneCode, kind.location);
   const allChecked = lines.length > 0 && lines.every((l) => checkedKeys.has(l.key));
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -160,7 +160,7 @@ export function ItemTable({
                   <td className="px-2 py-4 text-center text-[#6B7480]">{index + 1}</td>
 
                   {filled ? (
-                    <FilledCells line={line} currency={currency} stoneCode={kind.stoneCode} />
+                    <FilledCells line={line} currency={currency} stoneCode={kind.stoneCode} location={kind.location} />
                   ) : (
                     <>
                       <td colSpan={COLUMNS.length - 1} className="px-3 py-4 text-[#A9B1B9]">
@@ -181,7 +181,7 @@ export function ItemTable({
             <tr className="bg-[#F6F7F8] font-medium">
               <td colSpan={3} />
               <td className="px-3 py-3">Totals</td>
-              <td colSpan={4} />
+              <td colSpan={kind.location ? 4 : 3} />
               <td className="px-3 py-3 text-right">{toFixed(totals.totalPcs, 0)}</td>
               <td className="px-3 py-3 text-right">{formatWeight(totals.totalWeight)}</td>
               <td />
@@ -214,7 +214,7 @@ function fitVisibleRows(box: HTMLDivElement) {
   box.style.maxHeight = height === null ? "" : `${height}px`;
 }
 
-function FilledCells({ line, currency, stoneCode }: { line: QuotationLine; currency: string; stoneCode: boolean }) {
+function FilledCells({ line, currency, stoneCode, location }: { line: QuotationLine; currency: string; stoneCode: boolean; location: boolean }) {
   return (
     <>
       <td className="px-3 py-4">
@@ -243,7 +243,7 @@ function FilledCells({ line, currency, stoneCode }: { line: QuotationLine; curre
           </div>
         )}
       </td>
-      <td className="px-3 py-4">{line.locationId}</td>
+      {location && <td className="px-3 py-4">{line.locationId}</td>}
       <td className="px-3 py-4">
         <div className="font-medium">{line.stone}</div>
         <div className="mt-1 text-xs text-[#6B7480]">{[line.shape, line.size].filter(Boolean).join(" · ")}</div>
