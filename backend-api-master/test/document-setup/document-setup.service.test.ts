@@ -14,6 +14,8 @@ const db = vi.hoisted(() => ({
   setups: new Map<string, Stored>(),
   rows: [] as StoredRow[],
   usedIds: new Set<string>(),
+  /** Numbering rows referenced by a memo out / memo out return (SA-MO-04). */
+  memoUsedIds: new Set<string>(),
   failWith: null as unknown,
 }));
 
@@ -64,6 +66,11 @@ vi.mock("../../src/database/prisma-client", () => {
       groupBy: vi.fn(async ({ where }: { where: { numberingId: { in: string[] } } }) =>
         where.numberingId.in.filter((id) => db.usedIds.has(id)).map((numberingId) => ({ numberingId }))),
     },
+    memoOut: {
+      groupBy: vi.fn(async ({ where }: { where: { numberingId: { in: string[] } } }) =>
+        where.numberingId.in.filter((id) => db.memoUsedIds.has(id)).map((numberingId) => ({ numberingId }))),
+    },
+    memoOutReturn: { groupBy: vi.fn(async () => []) },
   });
   return { prisma: { ...tx, $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) } };
 });
@@ -92,6 +99,7 @@ beforeEach(() => {
   db.setups.clear();
   db.rows = [];
   db.usedIds = new Set();
+  db.memoUsedIds = new Set();
   db.failWith = null;
 });
 
@@ -175,6 +183,12 @@ describe("saveDocumentSetupBodySchema", () => {
     db.usedIds.add(used.id);
     const { setup } = await service.get("purchase-order");
     expect(setup!.rows.map((row) => row.used)).toEqual([true, false]);
+    // UT-MO-B10: a row that only a memo out used counts as used too (SA-MO-04).
+    db.usedIds.clear();
+    db.memoUsedIds.add(used.id);
+    expect((await service.get("purchase-order")).setup!.rows.map((row) => row.used)).toEqual([true, false]);
+    db.memoUsedIds.clear();
+    db.usedIds.add(used.id);
 
     // Same values back: the used row keeps its id; the unused row is replaced.
     const saved = await service.save("actor", body({ rows: [...twoRows, { effectiveDate: "2028-01-01", prefix: "PO", separator: "", startNo: 1 }], expectedVersion: 1 }));

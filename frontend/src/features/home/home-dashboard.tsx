@@ -24,7 +24,7 @@ export function HomeDashboard() {
           <h1 className="text-gms-title font-semibold tracking-tight text-[#19232a]">Shortcuts</h1>
           <p className="mt-1 text-gms-label text-[#84919a]">{groups.length} groups · {groups.reduce((total, group) => total + group.items.length, 0)} shortcuts</p>
         </div>
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-label="ทางลัด">
+        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-label="Shortcuts">
           {groups.map((group) => (
             <article key={group.title} className="min-h-[148px] rounded-[9px] border border-[#d5dfe4] px-4 py-4 shadow-[0_1px_2px_rgba(20,40,50,0.02)]">
               <h2 className="mb-3 text-gms-heading font-semibold text-[#1d272d]">{group.title}</h2>
@@ -39,7 +39,7 @@ export function HomeDashboard() {
             {NO_SHORTCUTS_MESSAGE}
           </p>
         )}
-        {shortcuts.isError && <p className="mt-4 text-gms-label text-amber-700">กำลังแสดงเมนูเริ่มต้น เนื่องจากเชื่อมต่อบริการเมนูไม่ได้</p>}
+        {shortcuts.isError && <p className="mt-4 text-gms-label text-amber-700">Showing the default menu because the menu service cannot be reached.</p>}
       </div>
     </AppShell>
   );

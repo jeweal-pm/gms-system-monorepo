@@ -43,14 +43,24 @@ export const isEditableStatus = (status: QuotationStatus | undefined) => status 
 export const photoUrl = (id: string) => `/api/v1/quotation/photos/${id}`;
 const orZero = (value: string) => (value.trim() === "" ? "0" : value.trim());
 
+/** The trade-document part of a form (quotation; memo out, memo out return ADR-0033): all but party and status. */
+export type TradeDocumentFormValues = Omit<QuotationFormValues, "status" | "statusReason" | "customerId" | "shippingAddressId" | "invoiceAddressId">;
+
 /** Form values → contract input; empty rows are dropped, totals are left to the server. */
 export function toQuotationInput(values: QuotationFormValues) {
   return {
-    docDate: values.docDate,
-    dueDate: values.dueDate,
+    ...toTradeDocumentInput(values),
     customerId: values.customerId,
     shippingAddressId: values.shippingAddressId,
     invoiceAddressId: values.invoiceAddressId,
+  };
+}
+
+/** Shared part of a document input: dates, currency, lines (empty rows dropped) and the summary. */
+export function toTradeDocumentInput(values: TradeDocumentFormValues) {
+  return {
+    docDate: values.docDate,
+    dueDate: values.dueDate,
     currency: values.currency,
     exchangeRate: values.exchangeRate.trim() === "" ? null : values.exchangeRate.trim(),
     ref: values.ref.trim(),
@@ -90,16 +100,26 @@ export function toQuotationInput(values: QuotationFormValues) {
 /** Saved quotation → form values (rows keep a client key for useFieldArray). */
 export function fromQuotation(detail: QuotationDetail): QuotationFormValues {
   return {
-    id: detail.id,
-    docNo: detail.docNo,
-    version: detail.version,
+    ...fromTradeDocument(detail, photoUrl),
     status: detail.status,
     statusReason: detail.statusReason ?? undefined,
-    docDate: detail.docDate,
-    dueDate: detail.dueDate,
     customerId: detail.customerId,
     shippingAddressId: detail.shippingAddressId ?? "",
     invoiceAddressId: detail.invoiceAddressId ?? "",
+  };
+}
+
+/** The contract fields every saved trade document returns (quotation and the memo documents share them). */
+export type TradeDocumentDetail = Pick<QuotationDetail, "id" | "docNo" | "version" | "docDate" | "dueDate" | "currency" | "exchangeRate" | "ref" | "lines" | "discount" | "tax" | "serviceCharges" | "labor" | "documentNote">;
+
+/** Shared part of a saved document → form values; `url` builds photo links for the document's photo route. */
+export function fromTradeDocument(detail: TradeDocumentDetail, url: (id: string) => string): TradeDocumentFormValues {
+  return {
+    id: detail.id,
+    docNo: detail.docNo,
+    version: detail.version,
+    docDate: detail.docDate,
+    dueDate: detail.dueDate,
     currency: detail.currency,
     exchangeRate: detail.exchangeRate ?? "",
     ref: detail.ref,
@@ -127,7 +147,7 @@ export function fromQuotation(detail: QuotationDetail): QuotationFormValues {
       discountType: line.discount.type === "AMOUNT" ? "AMOUNT" : "PERCENT",
       discountValue: line.discount.type === "NONE" ? "" : line.discount.value,
       stonePartOrder: [],
-      photos: line.photoIds.map((id, index) => ({ id, name: `Photo ${index + 1}`, url: photoUrl(id) })),
+      photos: line.photoIds.map((id, index) => ({ id, name: `Photo ${index + 1}`, url: url(id) })),
       itemNote: line.itemNote,
     })),
     discount: detail.discount.type === "NONE"

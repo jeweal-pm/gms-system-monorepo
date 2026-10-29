@@ -2,6 +2,7 @@
 
 import { Calculator, FileSearch } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { loadErrorMessage, useDaybook, type QuotationStatus } from "../../api";
 import type { QuotationTotals } from "../../lib/calculate";
 import { formatDate } from "../../lib/format";
@@ -36,11 +37,14 @@ export function RailPanelView({
   totals,
   currency,
   onClose,
+  daybook,
 }: {
   panel: Exclude<RailPanel, null>;
   totals: QuotationTotals;
   currency: string;
   onClose: () => void;
+  /** The document's daybook list; defaults to quotations (memo-out passes its own). */
+  daybook?: ReactNode;
 }) {
   if (panel === "summary") {
     return (
@@ -53,7 +57,7 @@ export function RailPanelView({
   }
   return (
     <SidePanel title="Daybook" subtitle="Chronological daybook of all system activities." onClose={onClose} className="h-full">
-      <DaybookList />
+      {daybook ?? <DaybookList />}
     </SidePanel>
   );
 }

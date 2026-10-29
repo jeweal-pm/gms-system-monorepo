@@ -1,9 +1,10 @@
 "use client";
 
 import { Plus, Trash2 } from "lucide-react";
-import { useFieldArray, useFormState, useWatch, type UseFormReturn } from "react-hook-form";
+import { Controller, useFieldArray, useFormState, useWatch, type UseFormReturn } from "react-hook-form";
 import { Button, cx, focusRing } from "@/components/ui/button";
 import { Badge, Card } from "@/components/ui/card";
+import { DateInput } from "@/components/ui/date-input";
 import { fieldFocusClass } from "@/components/ui/outlined-field";
 import { compareRowDates, displayDate, formatDocumentNumber, rowStatuses } from "../numbering";
 import { newRowValues, ROWS_MAX, type DocumentSetupFormValues } from "../schema";
@@ -114,15 +115,27 @@ export function NumberingCard({ form, readOnly }: { form: UseFormReturn<Document
                     {locked ? (
                       <span className="flex h-10 items-center">{displayDate(row.effectiveDate)}</span>
                     ) : (
-                      <input
-                        id={id("date")}
-                        type="date"
-                        aria-label={`Date, row ${position + 1}`}
-                        aria-required
-                        aria-invalid={errorText("effectiveDate") ? true : undefined}
-                        aria-describedby={describedBy("effectiveDate")}
-                        className={cellInput}
-                        {...register(`rows.${index}.effectiveDate`, { onBlur: sortRows })}
+                      <Controller
+                        control={control}
+                        name={`rows.${index}.effectiveDate`}
+                        render={({ field: date }) => (
+                          <DateInput
+                            ref={date.ref}
+                            id={id("date")}
+                            name={date.name}
+                            aria-label={`Date, row ${position + 1}`}
+                            aria-required
+                            aria-invalid={errorText("effectiveDate") ? true : undefined}
+                            aria-describedby={describedBy("effectiveDate")}
+                            className={cellInput}
+                            value={date.value ?? ""}
+                            onChange={date.onChange}
+                            onBlur={() => {
+                              date.onBlur();
+                              sortRows();
+                            }}
+                          />
+                        )}
                       />
                     )}
                     {cellError("effectiveDate")}
