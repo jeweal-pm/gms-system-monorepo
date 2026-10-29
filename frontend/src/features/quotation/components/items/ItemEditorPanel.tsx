@@ -7,6 +7,7 @@ import { lineGross } from "../../lib/calculate";
 import { CER_TYPES, toOptions, type Option } from "../../lib/options";
 import { ATTRIBUTE_KEYS, rebuildStoneCode } from "../../lib/stone-code";
 import { DiscountPair } from "../DiscountPair";
+import { useDocumentKind } from "../../document-kind";
 import { useLineOptions } from "../../options-context";
 import { isFilledLine, MAX_LINE_PHOTOS, type QuotationFormValues } from "../../schema";
 import { LinePhotosField } from "./LinePhotosField";
@@ -40,7 +41,9 @@ export function ItemEditorPanel({
   const line = useWatch({ control, name: `lines.${index}` });
   const currency = useWatch({ control, name: "currency" });
   const lineErrors = formState.errors.lines?.[index];
-  const stone = useLineOptions()?.stone;
+  const kind = useDocumentKind();
+  const lineStone = useLineOptions()?.stone;
+  const stone = kind.stone ?? lineStone;
   if (!line) return null;
 
   const fromStock = line.source === "STOCK";
@@ -70,6 +73,7 @@ export function ItemEditorPanel({
   // Owner 2026-10-27: changing a part rebuilds the Stone Code from the parts' codes, in the chosen master
   // code's part order (default order otherwise); it links to a master code only when one matches.
   const onPartChange = (key: (typeof ATTRIBUTE_KEYS)[number], value: string) => {
+    if (!kind.stoneCode) return;
     const lists = { stone: stone?.stones, shape: stone?.shapes, size: stone?.sizes, color: stone?.colors, clarity: stone?.clarities, cutting: stone?.cuttings, quality: stone?.qualities };
     const names = { ...pick(line, ATTRIBUTE_KEYS), [key]: value };
     const { code: built, complete } = rebuildStoneCode(names, lists, line.stonePartOrder);
@@ -115,7 +119,7 @@ export function ItemEditorPanel({
           </div>
         </div>
         <h2 className="mt-2 flex items-center gap-2 text-lg font-medium text-[#1C252E]">
-          {isFilledLine(line) ? line.stoneCode || line.stockId || "Item" : "New item"}
+          {!isFilledLine(line) ? "New item" : kind.stoneCode ? line.stoneCode || line.stockId || "Item" : line.stockId ? `Stock ID ${line.stockId}` : "Item"}
           {fromStock && (
             <span className="inline-flex items-center gap-1 rounded bg-[#EEF0F2] px-2 py-0.5 text-xs font-normal text-[#6B7480]">
               <Lock className="size-3" /> From stock
@@ -125,21 +129,35 @@ export function ItemEditorPanel({
       </header>
 
       <fieldset disabled={readOnly} className="min-h-0 flex-1 space-y-1 overflow-y-auto px-5 py-2">
-        <Section title="Stone Code">
-          {/* Stock ID / Location มาจาก From Stock เท่านั้น — กรอกเองไม่ได้ */}
-          <Field label="Stock ID">
-            <ReadonlyBox compact value={line.stockId} placeholder="From stock only" />
-          </Field>
+        <Section title="Info">
+          {/* Quotation: Stock ID / Location come from From Stock only. Memo Receive (owner 2026-10-28): the
+              Stock ID is a running number assigned on save and the location is chosen from a list. */}
+          {kind.stockId === "auto" ? (
+            <div>
+              <Field label="Stock ID">
+                <ReadonlyBox compact value={line.stockId} placeholder="Auto" />
+              </Field>
+              {!line.stockId && <p className="mt-1 pl-3 text-xs text-[#6B7480]">Assigned when you save</p>}
+            </div>
+          ) : (
+            <Field label="Stock ID">
+              <ReadonlyBox compact value={line.stockId} placeholder="From stock only" />
+            </Field>
+          )}
           <Field label="Lot">
             <TextInput compact readOnly={locked} placeholder="e.g. L-2609-001" maxLength={30} {...register(name("lot"))} />
           </Field>
           <Field label="Location">
-            <ReadonlyBox compact value={line.locationId} placeholder="From stock only" />
+            {kind.locations ? (
+              <FormSelect<QuotationFormValues> compact disabled={locked} name={name("locationId")} options={withCurrent(kind.locations, line.locationId)} />
+            ) : (
+              <ReadonlyBox compact value={line.locationId} placeholder="From stock only" />
+            )}
           </Field>
         </Section>
 
         <Section title="Stone">
-          <Field label="Stone Code" className="col-span-2">
+          {kind.stoneCode && <Field label="Stone Code" className="col-span-2">
             <TextInput
               compact
               list={datalistId}
@@ -152,7 +170,7 @@ export function ItemEditorPanel({
             <datalist id={datalistId}>
               {(stone?.codes ?? []).map((code) => <option key={code.id} value={code.code} />)}
             </datalist>
-          </Field>
+          </Field>}
           <Field label="Stone">{select("stone", stone?.stones)}</Field>
           <Field label="Shape">{select("shape", stone?.shapes)}</Field>
           <Field label="Size">{select("size", stone?.sizes)}</Field>
@@ -210,9 +228,9 @@ export function ItemEditorPanel({
           </div>
         </Section>
 
-        <Section title="Item Note">
+        <Section title={kind.itemNote.section}>
           <Field label="Note" className="col-span-2">
-            <TextInput compact maxLength={500} {...register(name("itemNote"))} />
+            <TextInput compact maxLength={kind.itemNote.max} placeholder={kind.itemNote.placeholder} {...register(name("itemNote"))} />
           </Field>
         </Section>
       </fieldset>

@@ -13,6 +13,11 @@
 - approval-evidence: owner 2026-10-26: "uxui ทำ spec Currency ให้เอาไปใช้ใน company profile และทุก currency และ frontend backend ทำต่อเลย". This one instruction asked for the spec and its implementation, using the defaults Q-CUR-01…09.
 - review-bundle: [ui-spec](../../apps/frontend/currency/ui-spec.md), [data-fetching](../../apps/frontend/currency/data-fetching.md), [error-handling](../../apps/frontend/currency/error-handling.md), [testing](../../apps/frontend/currency/testing.md), [open-questions](../../apps/frontend/currency/open-questions.md)
 
+## Changes after delivery
+
+- Owner 2026-10-27: one Exchange Rate (saved to both rates) and an optional Description (see [decisions](../../apps/backend/master/currency/decisions.md)).
+- Owner 2026-10-28 ("ปรับ ช่อง exchange rate ให้เป็น text box ธรรมดาเหมือน name"): Exchange Rate is a plain outlined text field like Name; the grey panel and the unit box are removed; a hint below shows "1 unit of this currency in <base>". Frontend 425 tests, tsc and eslint pass.
+
 ## Implementation items
 
 | Done | ID | Owner | Task | Allowed files | Depends on | Verification |

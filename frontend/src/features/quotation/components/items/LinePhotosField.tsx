@@ -4,6 +4,7 @@ import { Crown, Plus, X } from "lucide-react";
 import { useRef, useState, type DragEvent } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import { PhotoUploadError, PHOTO_TYPES } from "../../api";
+import { useDocumentKind } from "../../document-kind";
 import { useLinePhotoTarget } from "../../options-context";
 import { MAX_LINE_PHOTOS, type PhotoRef, type QuotationFormValues } from "../../schema";
 import { cx } from "../ui";
@@ -15,14 +16,14 @@ import { cx } from "../ui";
  */
 export function LinePhotosField({ index, readOnly }: { index: number; readOnly: boolean }) {
   const { control, setValue } = useFormContext<QuotationFormValues>();
+  const { uploadPhoto } = useDocumentKind();
   const photos = useWatch({ control, name: `lines.${index}.photos` }) ?? [];
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  // Quotation photo route, or none yet on memo documents (ADR-0033 rev 1).
-  const target = useLinePhotoTarget();
-  const upload = target.upload;
+  // Quotation photo route, Memo Receive's in-memory photos (its document kind), or none yet on memo out.
+  const upload = useLinePhotoTarget().upload ? uploadPhoto : null;
   const canAdd = Boolean(upload) && !readOnly && !uploading && photos.length < MAX_LINE_PHOTOS;
 
   const setPhotos = (next: PhotoRef[]) => setValue(`lines.${index}.photos`, next, { shouldDirty: true });
@@ -36,8 +37,7 @@ export function LinePhotosField({ index, readOnly }: { index: number; readOnly: 
     try {
       for (const file of picked) {
         if (!upload) break;
-        const id = await upload(file);
-        added.push({ id, name: file.name, url: target.url(id) });
+        added.push(await upload(file));
       }
     } catch (cause) {
       setError(cause instanceof PhotoUploadError ? cause.message : "Couldn't upload the photo. Try again.");

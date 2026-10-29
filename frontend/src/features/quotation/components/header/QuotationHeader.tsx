@@ -15,7 +15,9 @@ export type HeaderActions = {
 };
 
 /** No approval step (owner 2026-10-27): a saved quotation shows no status badge; only rejected/cancelled rows do. */
-const STATUS_LABEL: Partial<Record<QuotationStatus, { label: string; tone: string }>> = {
+export type StatusLabels = Partial<Record<QuotationStatus, { label: string; tone: string }>>;
+
+const STATUS_LABEL: StatusLabels = {
   REJECTED: { label: "Rejected", tone: "bg-[#FDECEC] text-[#B42318]" },
   CANCELLED: { label: "Cancelled", tone: "bg-[#EEF0F2] text-[#6B7480] line-through" },
 };
@@ -35,6 +37,7 @@ export function QuotationHeader({
   noLabel = "Quotation No.:",
   newHref = "/pre-sale/quotation",
   previewNote = "Number preview — the number is issued when you save.",
+  statusLabels = STATUS_LABEL,
 }: {
   docNo: string;
   isPreview: boolean;
@@ -48,13 +51,14 @@ export function QuotationHeader({
   canEdit: boolean;
   canDelete: boolean;
   actions: HeaderActions;
-  /** Label above the number, Create New target and the note under a preview number (memo-out reuses this header). */
+  /** Label above the number, Create New target, the note under a preview number and status badges (memo documents reuse this header). */
   noLabel?: string;
   newHref?: string;
   previewNote?: string;
+  statusLabels?: StatusLabels;
 }) {
   const editing = mode === "edit";
-  const badge = status ? STATUS_LABEL[status] : undefined;
+  const badge = status ? statusLabels[status] : undefined;
   return (
     <div className="flex flex-wrap items-start justify-between gap-4 px-6 pt-6 pb-2">
       <div>
