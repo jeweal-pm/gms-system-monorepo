@@ -16,6 +16,8 @@ const db = vi.hoisted(() => ({
   usedIds: new Set<string>(),
   /** Numbering rows referenced by a memo out / memo out return (SA-MO-04). */
   memoUsedIds: new Set<string>(),
+  /** Numbering rows referenced by a memo receive (SA-MR-08). */
+  memoReceiveUsedIds: new Set<string>(),
   returnUsedIds: new Set<string>(),
   failWith: null as unknown,
 }));
@@ -72,7 +74,10 @@ vi.mock("../../src/database/prisma-client", () => {
         where.numberingId.in.filter((id) => db.memoUsedIds.has(id)).map((numberingId) => ({ numberingId }))),
     },
     memoOutReturn: { groupBy: vi.fn(async () => []) },
-    memoReceive: { groupBy: vi.fn(async () => []) },
+    memoReceive: {
+      groupBy: vi.fn(async ({ where }: { where: { numberingId: { in: string[] } } }) =>
+        where.numberingId.in.filter((id) => db.memoReceiveUsedIds.has(id)).map((numberingId) => ({ numberingId }))),
+    },
     memoReturn: {
       groupBy: vi.fn(async ({ where }: { where: { numberingId: { in: string[] } } }) =>
         where.numberingId.in.filter((id) => db.returnUsedIds.has(id)).map((numberingId) => ({ numberingId }))),
@@ -106,6 +111,7 @@ beforeEach(() => {
   db.rows = [];
   db.usedIds = new Set();
   db.memoUsedIds = new Set();
+  db.memoReceiveUsedIds = new Set();
   db.returnUsedIds = new Set();
   db.failWith = null;
 });
@@ -195,6 +201,10 @@ describe("saveDocumentSetupBodySchema", () => {
     db.memoUsedIds.add(used.id);
     expect((await service.get("purchase-order")).setup!.rows.map((row) => row.used)).toEqual([true, false]);
     db.memoUsedIds.clear();
+    // IT-MR-08 (unit part): a row that only a memo receive used counts as used too (SA-MR-08).
+    db.memoReceiveUsedIds.add(used.id);
+    expect((await service.get("purchase-order")).setup!.rows.map((row) => row.used)).toEqual([true, false]);
+    db.memoReceiveUsedIds.clear();
     // UT-MR-B06: a memo return number counts too (memo-return SA rev 1).
     db.returnUsedIds.add(used.id);
     expect((await service.get("purchase-order")).setup!.rows.map((row) => row.used)).toEqual([true, false]);

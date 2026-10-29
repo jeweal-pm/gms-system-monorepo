@@ -3,6 +3,7 @@
 import { useFormContext } from "react-hook-form";
 import { DocumentDaybook, useDocumentAccess } from "@/features/trade-document/document-api";
 import { DocumentForm, type DocumentFormConfig } from "@/features/trade-document/document-form";
+import type { StatusLabels } from "@/features/quotation/components/header/QuotationHeader";
 import { returnItemTable } from "@/features/trade-document/return-item-table";
 import { VendorDocumentDetails, VendorDocumentInfoForm } from "@/features/trade-document/vendor-info-form";
 import { isFilledLine } from "@/features/quotation/schema";
@@ -16,7 +17,7 @@ import {
   memoReturnLoadError,
   memoReturnSchema,
   memoStockToLine,
-  pickedSourceIds,
+  pickedStockIds,
   toMemoReturnInput,
   useMemoReturnApi,
   useMemoReturnDaybook,
@@ -29,8 +30,8 @@ import { MemoStockModal } from "./MemoStockModal";
 
 export { MEMO_RETURN_HREF };
 
-/** memo-return design: checkbox, remove, Add row; Return Pcs fills Return Weight in proportion; view leads with Stone Code. */
-export const MemoReturnItemTable = returnItemTable({ rowControls: true, addRow: true, autoWeight: true, viewStoneCode: true });
+/** memo-return design: checkbox, remove, Add row; Return Pcs fills Return Weight in proportion; STOCK ID first (Memo Stock has no stone code). */
+export const MemoReturnItemTable = returnItemTable({ rowControls: true, addRow: true, autoWeight: true, viewStoneCode: false });
 
 /** Header (design 01): a new vendor empties rows picked from the previous vendor's Memo Stock. */
 function MemoReturnInfoForm({ options }: { options: MemoReturnOptions | undefined }) {
@@ -41,6 +42,12 @@ function MemoReturnInfoForm({ options }: { options: MemoReturnOptions | undefine
   };
   return <VendorDocumentInfoForm options={options} onVendorChange={onVendorChange} />;
 }
+
+/** Memo Receive colors (orange pending, green approved). */
+const MEMO_RETURN_STATUS_LABELS: StatusLabels = {
+  PENDING_APPROVAL: { label: "Pending Approval", tone: "bg-[#FFF4E0] text-[#B45309]" },
+  APPROVED: { label: "Approved", tone: "bg-[#E7F7EE] text-[#15803D]" },
+};
 
 function MemoReturnDaybook() {
   const daybook = useMemoReturnDaybook();
@@ -59,9 +66,10 @@ function MemoReturnDaybook() {
 }
 
 /**
- * memo-return UI rev 1 + SA rev 1 (owner 2026-10-29): vendor document; number from Document Setup › Memo Return.
- * Rows are picked from the vendor's Memo Stock (memo receive lines still out) and only their Return quantity is
- * edited, so there is no row editor. A saved document opens in view mode with the "Memo Return Details" card.
+ * memo-return UI rev 1 + SA rev 2 (owner 2026-10-29): vendor document; number from Document Setup › Memo Return.
+ * Rows are picked from the vendor's Memo Stock (items of approved memo receives) and only their Return quantity is
+ * edited, so there is no row editor. A saved document opens in view mode with the "Memo Return Details" card; it
+ * waits as Pending Approval, and Approve takes the returned quantity off Memo Stock (Q-MR-15).
  */
 const CONFIG: DocumentFormConfig<MemoReturnFormValues, MemoReturnInput, MemoReturnOptions> = {
   noun: "memo return",
@@ -87,13 +95,18 @@ const CONFIG: DocumentFormConfig<MemoReturnFormValues, MemoReturnInput, MemoRetu
       <MemoStockModal
         vendorId={values.vendorId}
         currency={values.currency}
-        excludeReturnId={values.id}
-        pickedIds={pickedSourceIds(values.lines)}
+        pickedIds={pickedStockIds(values.lines)}
         onCancel={onClose}
         onConfirm={(items) => onAdd(items.map(memoStockToLine))}
       />
     ),
     addedToast: (count) => `Added ${count} item${count === 1 ? "" : "s"} from Memo Stock`,
+  },
+  approval: {
+    statusLabels: MEMO_RETURN_STATUS_LABELS,
+    pendingStatus: "PENDING_APPROVAL",
+    confirmTitle: "Approve Memo Return",
+    confirmBody: (count) => `Approve this Memo Return? Its ${count} ${count === 1 ? "item goes" : "items go"} back to the vendor and come off Memo Stock. It can no longer be edited.`,
   },
   noteMax: MEMO_RETURN_NOTE_MAX,
   notePlaceholder: "e.g. Returned in good condition.",
@@ -109,7 +122,7 @@ export function MemoReturnPage() {
   const access = useDocumentAccess("memo-return");
   if (!access) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{DENIED}</p>;
-  return <DocumentForm config={CONFIG} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} />;
+  return <DocumentForm config={CONFIG} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
 }
 
 /** `/memo/memo-return/[id]` — a saved memo return. */
@@ -119,5 +132,5 @@ export function EditMemoReturnPage({ id }: { id: string }) {
   if (!access || (access.view && detail.isPending)) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{DENIED}</p>;
   if (detail.isError || !detail.data) return <p className={message}>{detail.error ? memoReturnLoadError(detail.error) : "Memo return not found."}</p>;
-  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromMemoReturn(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} />;
+  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromMemoReturn(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
 }

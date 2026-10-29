@@ -2,9 +2,8 @@ import type { RequestHandler, Response } from "express";
 import { TRPCError } from "@trpc/server";
 import { getHTTPStatusCodeFromError } from "@trpc/server/http";
 import { errorBody } from "../common/errors";
-import { requireMasterGrant } from "../master/authorization";
+import { requireMasterGrant, type MasterContext, type MasterMenu } from "../master/authorization";
 import type { MasterTrpcHandler } from "../master/trpc-handler";
-import { uploaderId } from "./quotation-photo.public.controller";
 
 export const QUOTATION_PHOTO_ROUTE = "/api/v1/quotation/photos";
 
@@ -37,13 +36,21 @@ export function createPhotoLimiter(max: number): PhotoLimiter {
   };
 }
 
+export type PhotoLimiters = { uploads: PhotoLimiter; downloads: PhotoLimiter };
+
+/**
+ * The process-wide photo limiters (SA-MR-15): Quotation and Memo Receive photo routes share these two instances, so
+ * adding a document type with photos does not raise the host bound (3 buffered uploads, 6 streamed downloads).
+ */
+export const sharedPhotoLimiters: PhotoLimiters = { uploads: createPhotoLimiter(PHOTO_UPLOADS_MAX), downloads: createPhotoLimiter(PHOTO_DOWNLOADS_MAX) };
+
 /** Holds a slot until the response finishes or the connection closes (abort/error included). */
 function holdUntilDone(response: Response, release: () => void) {
   response.once("finish", release);
   response.once("close", release);
 }
 
-export const quotationPhotoMethodCheck: RequestHandler = (request, response, next) => {
+export const photoMethodCheck: RequestHandler = (request, response, next) => {
   // A GET never carries a body, so it can't make express.raw buffer one.
   if (request.method === "GET" && (Number(request.headers["content-length"] ?? 0) > 0 || request.headers["transfer-encoding"] !== undefined)) {
     response.status(400).json(errorBody("VALIDATION_ERROR", [{ path: "(body)", code: "unexpected" }]));
@@ -54,18 +61,26 @@ export const quotationPhotoMethodCheck: RequestHandler = (request, response, nex
   response.status(405).json(errorBody("METHOD_NOT_ALLOWED"));
 };
 
+export const quotationPhotoMethodCheck: RequestHandler = photoMethodCheck;
+
+/** ADD or EDIT of `menu` may upload (a new or an edited document); both need CSRF. Returns the uploader id. */
+export function photoUploaderId(context: MasterContext, menu: MasterMenu): string {
+  try {
+    return requireMasterGrant(context, menu, "ADD", true);
+  } catch {
+    return requireMasterGrant(context, menu, "EDIT", true);
+  }
+}
+
 /**
- * Live user authorization, then a concurrency slot, both before any body is buffered (same pattern as
- * the company logo route).
+ * Live user authorization of `menu` (POST: ADD or EDIT + CSRF; GET: VIEW), then a concurrency slot, both before any
+ * body is buffered (same pattern as the company logo route).
  */
-export function createQuotationPhotoAccessCheck(
-  masterTrpc: MasterTrpcHandler,
-  limiters: { uploads: PhotoLimiter; downloads: PhotoLimiter } = { uploads: createPhotoLimiter(PHOTO_UPLOADS_MAX), downloads: createPhotoLimiter(PHOTO_DOWNLOADS_MAX) },
-): RequestHandler {
+export function createPhotoAccessCheck(masterTrpc: MasterTrpcHandler, menu: MasterMenu, limiters: PhotoLimiters): RequestHandler {
   return (request, response, next) => {
     void masterTrpc.createContext(request).then((context) => {
-      if (request.method === "GET") requireMasterGrant(context, "quotation", "VIEW", false);
-      else uploaderId(context);
+      if (request.method === "GET") requireMasterGrant(context, menu, "VIEW", false);
+      else photoUploaderId(context, menu);
       // The client left while authorization ran: "close" already fired, so a slot would never be released.
       if (response.closed || response.destroyed) return;
       const release = (request.method === "GET" ? limiters.downloads : limiters.uploads).tryAcquire();
@@ -82,4 +97,12 @@ export function createQuotationPhotoAccessCheck(
       response.status(getHTTPStatusCodeFromError(trpcError)).json({ error: { code, message: code } });
     });
   };
+}
+
+/** Quotation photo access check (SA-QT-10); main.ts passes `sharedPhotoLimiters`. */
+export function createQuotationPhotoAccessCheck(
+  masterTrpc: MasterTrpcHandler,
+  limiters: PhotoLimiters = { uploads: createPhotoLimiter(PHOTO_UPLOADS_MAX), downloads: createPhotoLimiter(PHOTO_DOWNLOADS_MAX) },
+): RequestHandler {
+  return createPhotoAccessCheck(masterTrpc, "quotation", limiters);
 }

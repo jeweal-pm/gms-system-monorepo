@@ -1,12 +1,13 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ScanLine, Trash2 } from "lucide-react";
+import { CircleCheck, ScanLine, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { FormProvider, useFieldArray, useForm, useWatch, type DefaultValues, type FieldValues, type Path, type Resolver } from "react-hook-form";
 import type { z } from "zod";
-import { QuotationHeader } from "@/features/quotation/components/header/QuotationHeader";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { QuotationHeader, type StatusLabels } from "@/features/quotation/components/header/QuotationHeader";
 import { ItemEditorPanel } from "@/features/quotation/components/items/ItemEditorPanel";
 import { ItemPhotoBox } from "@/features/quotation/components/items/ItemPhotoBox";
 import { ItemTable, type RowAction } from "@/features/quotation/components/items/ItemTable";
@@ -17,7 +18,7 @@ import { Button, IconButton, Toast } from "@/features/quotation/components/ui";
 import { calculateTotals } from "@/features/quotation/lib/calculate";
 import { emptyLine, newKey } from "@/features/quotation/lib/defaults";
 import { LineOptionsContext, LinePhotoContext, type LineOptions } from "@/features/quotation/options-context";
-import { isFilledLine, type QuotationFormValues, type QuotationLine } from "@/features/quotation/schema";
+import { isFilledLine, type QuotationFormValues, type QuotationLine, type QuotationStatus } from "@/features/quotation/schema";
 
 /** Everything the form needs from a document's API, read through the document's own hooks. */
 export type DocumentApi<Input, Options extends LineOptions = LineOptions> = {
@@ -29,13 +30,15 @@ export type DocumentApi<Input, Options extends LineOptions = LineOptions> = {
   create(input: Input): Promise<{ id: string }>;
   update(args: Input & { id: string; expectedVersion: number }): Promise<unknown>;
   remove(args: { id: string; expectedVersion: number }): Promise<unknown>;
+  /** Documents with an approval step (memo return). */
+  approve?(args: { id: string; expectedVersion: number }): Promise<unknown>;
   invalidate(): Promise<unknown>;
   busy: boolean;
 };
 
 export type SaveOutcome = { fieldErrors: { name: string; message: string }[]; message: string };
 
-type Saved = { id?: string; docNo?: string; version?: number };
+type Saved = { id?: string; docNo?: string; version?: number; status?: string };
 
 export type DocumentFormConfig<V extends FieldValues & Saved, Input, Options extends LineOptions = LineOptions> = {
   noun: string;
@@ -70,6 +73,16 @@ export type DocumentFormConfig<V extends FieldValues & Saved, Input, Options ext
   };
   /** A saved document in view mode shows this instead of the disabled header fields (memo return design, view). */
   viewHeader?: (args: { values: V; options: Options | undefined }) => ReactNode;
+  /**
+   * Saved documents wait for approval (memo return, Q-MR-15): a status badge, an Approve button for a saved pending
+   * document in view mode, and Edit / Delete only while pending.
+   */
+  approval?: {
+    statusLabels: StatusLabels;
+    pendingStatus: QuotationStatus;
+    confirmTitle: string;
+    confirmBody: (itemCount: number) => string;
+  };
   noteMax?: number;
   notePlaceholder: string;
   noteHint: string;
@@ -84,12 +97,13 @@ const NO_PHOTOS = { upload: null, url: (id: string) => id };
  * document type supplies its schema, header fields, API hooks and wording. A saved document is remounted with
  * the new server version after every write (its page keys on id + version).
  */
-export function DocumentForm<V extends FieldValues & Saved, Input, Options extends LineOptions = LineOptions>({ config, initial, canAdd, canEdit, canDelete }: {
+export function DocumentForm<V extends FieldValues & Saved, Input, Options extends LineOptions = LineOptions>({ config, initial, canAdd, canEdit, canDelete, canApprove = false }: {
   config: DocumentFormConfig<V, Input, Options>;
   initial?: V;
   canAdd: boolean;
   canEdit: boolean;
   canDelete: boolean;
+  canApprove?: boolean;
 }) {
   const router = useRouter();
   const [saved, setSaved] = useState<V | undefined>(initial);
@@ -100,6 +114,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   const [checkedKeys, setCheckedKeys] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [approving, setApproving] = useState(false);
 
   const form = useForm<V>({ resolver: zodResolver(config.schema as never) as unknown as Resolver<V>, defaultValues: (initial ?? config.empty()) as DefaultValues<V> });
   const { control, reset, getValues, handleSubmit, formState, setValue, setError } = form;
@@ -111,6 +126,11 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   const readOnly = mode === "view";
   const api = config.useApi(config.partyId(saved), values.docDate ?? "", !saved?.docNo);
   const docNo = saved?.docNo ?? api.nextDocNo ?? "—";
+  const { approval } = config;
+  const status = approval && saved?.docNo ? (saved.status as QuotationStatus | undefined) : undefined;
+  /** An approved document is read-only (approval documents edit only while pending). */
+  const locked = Boolean(approval && status && status !== approval.pendingStatus);
+  const showApprove = Boolean(approval && api.approve && saved?.id && status === approval.pendingStatus && readOnly && !formState.isDirty && canApprove);
 
   // A new document starts in the company currency once the options arrive.
   useEffect(() => {
@@ -168,10 +188,23 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
     }
   };
 
+  const onApprove = async () => {
+    if (!saved?.id || !saved.version || !api.approve) return;
+    try {
+      await api.approve({ id: saved.id, expectedVersion: saved.version });
+      setApproving(false);
+      setToast(`Approved ${saved.docNo}`);
+      await api.invalidate();
+    } catch (error) {
+      setApproving(false);
+      showError(error);
+    }
+  };
+
   const onDuplicate = () => {
     const current = getValues() as V & { lines: QuotationLine[] };
     setSaved(undefined);
-    reset({ ...config.empty(), ...current, id: undefined, docNo: undefined, version: undefined, status: "DRAFT", lines: current.lines.map((l) => ({ ...l, key: newKey() })) });
+    reset({ ...config.empty(), ...current, id: undefined, docNo: undefined, version: undefined, status: approval?.pendingStatus ?? "DRAFT", lines: current.lines.map((l) => ({ ...l, key: newKey() })) });
     setMode("edit");
     setToast(`Duplicated as a new ${config.noun}`);
   };
@@ -251,12 +284,22 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
                 newHref={config.newHref}
                 docNo={docNo}
                 isPreview={!saved?.docNo}
+                status={status}
+                statusLabels={approval?.statusLabels}
+                hideEditDelete={locked}
+                extraActions={
+                  showApprove && (
+                    <Button variant="primary" onClick={() => setApproving(true)}>
+                      <CircleCheck className="size-4" /> Approve
+                    </Button>
+                  )
+                }
                 mode={mode}
                 saving={api.busy}
                 canSave={saved ? canEdit : canAdd}
                 canCreate={canAdd}
-                canEdit={Boolean(saved) && canEdit}
-                canDelete={Boolean(saved) && canDelete}
+                canEdit={Boolean(saved) && canEdit && !locked}
+                canDelete={Boolean(saved) && canDelete && !locked}
                 actions={{
                   onCancel,
                   onSave: () => void onSave(),
@@ -364,6 +407,19 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
             )}
           </div>
           {pickerOpen && config.picker?.render({ values: values as unknown as V, onClose: () => setPickerOpen(false), onAdd: addPicked })}
+          {approval && (
+            <ConfirmDialog
+              open={approving}
+              title={approval.confirmTitle}
+              body={approval.confirmBody(lines.filter(isFilledLine).length)}
+              cancelLabel="Cancel"
+              confirmLabel="Approve"
+              pendingLabel="Approving…"
+              pending={api.busy}
+              onCancel={() => setApproving(false)}
+              onConfirm={() => void onApprove()}
+            />
+          )}
           {toast && <Toast message={toast} onClose={() => setToast(null)} />}
         </FormProvider>
       </LinePhotoContext.Provider>

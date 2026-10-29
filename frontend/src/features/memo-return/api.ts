@@ -4,21 +4,22 @@ import { skipToken } from "@tanstack/react-query";
 import type { InferQueryLikeData } from "@trpc/react-query/shared";
 import { z } from "zod";
 import { fromTradeDocument, toTradeDocumentInput } from "@/features/quotation/api";
+import { dec, toFixed } from "@/features/quotation/lib/decimal";
 import { emptyQuotation, newKey } from "@/features/quotation/lib/defaults";
 import { isFilledLine, lineSchema, tradeDocumentRules, tradeDocumentShape, type QuotationLine } from "@/features/quotation/schema";
 import { documentLoadError, mapDocumentSaveError } from "@/features/trade-document/document-api";
 import type { DocumentApi } from "@/features/trade-document/document-form";
 import { masterTrpc } from "@/lib/master-trpc";
-import { retryTransient } from "@/lib/trpc-error";
+import { readDomainError, retryTransient } from "@/lib/trpc-error";
 
 /**
- * Memo Return data access (memo-return SA rev 1, owner 2026-10-29): `memoReturn.*` with a vendor and one address,
- * numbers from Document Setup `memo-return`, rows picked from the vendor's Memo Stock (memo receive lines with a
- * quantity still out).
+ * Memo Return data access (memo-return SA rev 2, owner 2026-10-29): `memoReturn.*` with a vendor and one address,
+ * numbers from Document Setup `memo-return`, rows picked from the vendor's Memo Stock (`memoStock.list`, items of
+ * approved memo receives with something still pending). Saving waits for approval; approval reduces pending.
  */
 export type MemoReturnDetail = InferQueryLikeData<typeof masterTrpc.memoReturn.get>;
 export type MemoReturnOptions = InferQueryLikeData<typeof masterTrpc.memoReturn.options>;
-export type MemoStockItem = InferQueryLikeData<typeof masterTrpc.memoReturn.memoStock>["items"][number];
+export type MemoStockItem = InferQueryLikeData<typeof masterTrpc.memoStock.list>["items"][number];
 export type MemoReturnInput = ReturnType<typeof toMemoReturnInput>;
 
 export const MEMO_RETURN_HREF = "/memo/memo-return";
@@ -28,22 +29,24 @@ export const MEMO_RETURN_NOTE_MAX = 250;
 const HEADER_FIELDS = ["docDate", "dueDate", "vendorId", "addressId", "currency", "exchangeRate", "ref", "documentNote"] as const;
 
 /**
- * A row keeps the memo receive line it came from and the Outstanding quantity it was picked with; its pcs / weightCt
- * are the Return quantity (the only part keyed in), > 0 and ≤ Outstanding. Empty rows have none of these yet.
+ * A row keeps the Memo Stock item it came from and the Outstanding (pending) quantity it was picked with; its pcs /
+ * weightCt are the Return quantity (the only part keyed in), > 0 and ≤ Outstanding. Empty rows have none of these yet.
  */
 const memoReturnLineSchema = lineSchema.extend({
-  sourceLineId: z.string().default(""),
+  memoStockId: z.string().default(""),
   outstandingPcs: z.string().default(""),
   outstandingWeightCt: z.string().default(""),
 });
 export type MemoReturnLine = z.infer<typeof memoReturnLineSchema>;
+/** Saving sends it to approval; Approve makes it read-only and takes the items off Memo Stock (Q-MR-15). */
+export const MEMO_RETURN_STATUSES = ["PENDING_APPROVAL", "APPROVED"] as const;
 
 export const memoReturnSchema = z
   .object({
     ...tradeDocumentShape,
     lines: z.array(memoReturnLineSchema),
     documentNote: z.string().max(MEMO_RETURN_NOTE_MAX),
-    status: z.enum(["DRAFT"]),
+    status: z.enum(MEMO_RETURN_STATUSES),
     vendorId: z.string().min(1, "Required"),
     addressId: z.string().min(1, "Required"),
   })
@@ -64,7 +67,7 @@ export type MemoReturnFormValues = z.infer<typeof memoReturnSchema>;
 export function emptyMemoReturn(): MemoReturnFormValues {
   const q = emptyQuotation();
   return {
-    status: "DRAFT",
+    status: "PENDING_APPROVAL",
     docDate: q.docDate,
     dueDate: q.dueDate,
     vendorId: "",
@@ -72,7 +75,7 @@ export function emptyMemoReturn(): MemoReturnFormValues {
     currency: q.currency,
     exchangeRate: q.exchangeRate,
     ref: q.ref,
-    lines: q.lines.map((line) => ({ ...line, sourceLineId: "", outstandingPcs: "", outstandingWeightCt: "" })),
+    lines: q.lines.map((line) => ({ ...line, memoStockId: "", outstandingPcs: "", outstandingWeightCt: "" })),
     discount: q.discount,
     tax: q.tax,
     serviceCharges: q.serviceCharges,
@@ -81,15 +84,18 @@ export function emptyMemoReturn(): MemoReturnFormValues {
   };
 }
 
-/** A Memo Stock row → a return row with Return 0 / 0.00 (design); the item and price come from the memo receive line. */
+/**
+ * A Memo Stock row → a return row with Return 0 / 0.00 (design). The price is the item's price after the line
+ * discount (Q-MR-13) at 2 dp, as the server stores it; Memo Stock has no stone code.
+ */
 export function memoStockToLine(item: MemoStockItem): MemoReturnLine {
   return {
     key: newKey(),
     source: "MANUAL",
-    stockId: "",
+    stockId: item.stockId,
     lot: item.lot,
-    stoneCodeId: item.stoneCodeId ?? "",
-    stoneCode: item.stoneCode,
+    stoneCodeId: "",
+    stoneCode: "",
     locationId: item.location,
     stone: item.stone,
     shape: item.shape,
@@ -102,20 +108,20 @@ export function memoStockToLine(item: MemoStockItem): MemoReturnLine {
     cerNo: item.cerNo,
     pcs: "0",
     weightCt: "0.00",
-    priceUnit: item.priceUnit,
-    unitPrice: item.unitPrice,
+    priceUnit: item.priceUnit === "PCS" ? "PER_PCS" : "PER_CT",
+    unitPrice: toFixed(dec(item.netUnitPrice), 2),
     discountType: "PERCENT",
     discountValue: "",
     stonePartOrder: [],
     photos: [],
     itemNote: item.itemNote,
-    sourceLineId: item.sourceLineId,
+    memoStockId: item.id,
     outstandingPcs: String(item.pendingPcs),
     outstandingWeightCt: item.pendingWeightCt,
   };
 }
 
-/** Form values → contract input: each filled row names its memo receive line; no photos yet. */
+/** Form values → contract input: each filled row names its Memo Stock item; no photos yet. */
 export function toMemoReturnInput(values: MemoReturnFormValues) {
   const shared = toTradeDocumentInput(values);
   const filled = values.lines.filter(isFilledLine);
@@ -124,7 +130,7 @@ export function toMemoReturnInput(values: MemoReturnFormValues) {
     lines: shared.lines.map((line, index) => ({
       ...line,
       photoIds: [] as string[],
-      sourceLineId: filled[index]?.sourceLineId ?? "",
+      memoStockId: filled[index]?.memoStockId ?? "",
       outstandingPcs: Number.parseInt(filled[index]?.outstandingPcs || "0", 10),
       outstandingWeightCt: filled[index]?.outstandingWeightCt || "0",
     })),
@@ -134,25 +140,33 @@ export function toMemoReturnInput(values: MemoReturnFormValues) {
 }
 
 export function fromMemoReturn(detail: MemoReturnDetail): MemoReturnFormValues {
-  const shared = fromTradeDocument(detail, (id) => id);
+  // Memo Stock items have no stone code (memo-receive rev 2).
+  const shared = fromTradeDocument({ ...detail, lines: detail.lines.map((line) => ({ ...line, stoneCodeId: null })) }, (id) => id);
   return {
     ...shared,
     lines: shared.lines.map((line, index) => ({
       ...line,
-      sourceLineId: detail.lines[index]?.sourceLineId ?? "",
+      stockId: detail.lines[index]?.stockId ?? "",
+      memoStockId: detail.lines[index]?.memoStockId ?? "",
       outstandingPcs: String(detail.lines[index]?.outstandingPcs ?? 0),
       outstandingWeightCt: detail.lines[index]?.outstandingWeightCt ?? "0",
     })),
-    status: "DRAFT",
+    status: detail.status,
     vendorId: detail.vendorId,
     addressId: detail.addressId ?? "",
   };
 }
 
-/** Memo receive lines already on the form (the picker leaves them out). */
-export const pickedSourceIds = (lines: QuotationLine[]) => new Set(lines.flatMap((line) => ((line as Partial<MemoReturnLine>).sourceLineId ? [(line as MemoReturnLine).sourceLineId] : [])));
+/** Memo Stock items already on the form (the picker leaves them out). */
+export const pickedStockIds = (lines: QuotationLine[]) => new Set(lines.flatMap((line) => ((line as Partial<MemoReturnLine>).memoStockId ? [(line as MemoReturnLine).memoStockId] : [])));
 
-export const mapMemoReturnSaveError = (error: unknown) => mapDocumentSaveError(error, "MEMO_RETURN", "memo return", HEADER_FIELDS);
+export function mapMemoReturnSaveError(error: unknown) {
+  // Approval found less pending than a row returns: another memo return took it first.
+  if (readDomainError(error).domainCode === "MEMO_RETURN_PENDING_SHORT") {
+    return { fieldErrors: [], message: "Some items no longer have enough pending. Edit the Return quantity and approve again." };
+  }
+  return mapDocumentSaveError(error, "MEMO_RETURN", "memo return", HEADER_FIELDS);
+}
 export const memoReturnLoadError = (error: unknown) => documentLoadError(error, "MEMO_RETURN", "memo return", "memo returns");
 
 export function useMemoReturnDetail(id: string | null) {
@@ -163,19 +177,27 @@ export function useMemoReturnDaybook() {
   return masterTrpc.memoReturn.list.useQuery({ limit: 50 }, { staleTime: 15_000, retry: retryTransient });
 }
 
-export type MemoStockFilter = { vendorId: string; currency: string; q: string; from: string; to: string; excludeReturnId?: string };
+export type MemoStockFilter = { vendorId: string; currency: string; q: string; from: string; to: string };
+export const MEMO_STOCK_PAGE_SIZE = 50;
 
-/** The vendor's Memo Stock in the return's currency (server limit 200, newest receipt first). */
+/**
+ * The vendor's Memo Stock in the return's currency, newest receipt first, 50 a page (SA-MR-11). Pending is what
+ * approved memo returns left; an unapproved return doesn't hold items (approval re-checks).
+ */
 export function useMemoStock(filter: MemoStockFilter) {
   const input = {
     vendorId: filter.vendorId,
     currency: filter.currency,
+    limit: MEMO_STOCK_PAGE_SIZE,
     ...(filter.q.trim() ? { q: filter.q.trim() } : {}),
     ...(filter.from ? { from: filter.from } : {}),
     ...(filter.to ? { to: filter.to } : {}),
-    ...(filter.excludeReturnId ? { excludeReturnId: filter.excludeReturnId } : {}),
   };
-  return masterTrpc.memoReturn.memoStock.useQuery(filter.vendorId && filter.currency ? input : skipToken, { staleTime: 10_000, retry: retryTransient });
+  return masterTrpc.memoStock.list.useInfiniteQuery(filter.vendorId && filter.currency ? input : skipToken, {
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    staleTime: 10_000,
+    retry: retryTransient,
+  });
 }
 
 export function useMemoReturnApi(vendorId: string | undefined, docDate: string, isNew: boolean): DocumentApi<MemoReturnInput, MemoReturnOptions> {
@@ -186,6 +208,7 @@ export function useMemoReturnApi(vendorId: string | undefined, docDate: string, 
   const create = masterTrpc.memoReturn.create.useMutation(writes);
   const update = masterTrpc.memoReturn.update.useMutation(writes);
   const remove = masterTrpc.memoReturn.delete.useMutation(writes);
+  const approve = masterTrpc.memoReturn.approve.useMutation(writes);
   return {
     options: options.data,
     companyCurrency: options.data?.companyCurrency,
@@ -193,8 +216,9 @@ export function useMemoReturnApi(vendorId: string | undefined, docDate: string, 
     create: (input) => create.mutateAsync(input),
     update: (args) => update.mutateAsync(args),
     remove: (args) => remove.mutateAsync(args),
+    approve: (args) => approve.mutateAsync(args),
     invalidate: () =>
-      Promise.all([utils.memoReturn.list.invalidate(), utils.memoReturn.get.invalidate(), utils.memoReturn.nextNumber.invalidate(), utils.memoReturn.memoStock.invalidate()]),
-    busy: create.isPending || update.isPending || remove.isPending,
+      Promise.all([utils.memoReturn.list.invalidate(), utils.memoReturn.get.invalidate(), utils.memoReturn.nextNumber.invalidate(), utils.memoStock.list.invalidate()]),
+    busy: create.isPending || update.isPending || remove.isPending || approve.isPending,
   };
 }

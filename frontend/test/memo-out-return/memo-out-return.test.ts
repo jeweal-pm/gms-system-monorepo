@@ -60,7 +60,7 @@ describe("navigation and access (UT-MOR-01)", () => {
     expect(navigationHref({ label: "Memo Out Return", slug: "memo-out-return" })).toBe("/memo/memo-out-return");
     expect(MEMO_OUT_RETURN_HREF).toBe("/memo/memo-out-return");
     expect(memoOutReturnHref(ID)).toBe(`/memo/memo-out-return/${ID}`);
-    expect(documentAccess({ isSuperAdmin: false, permissions: ["memo-out-return:VIEW", "memo-out-return:ADD"] }, "memo-out-return")).toEqual({ view: true, add: true, edit: false, delete: false });
+    expect(documentAccess({ isSuperAdmin: false, permissions: ["memo-out-return:VIEW", "memo-out-return:ADD"] }, "memo-out-return")).toEqual({ view: true, add: true, edit: false, delete: false, approve: false });
     expect(documentAccess({ isSuperAdmin: false, permissions: ["memo-out:VIEW"] }, "memo-out-return").view).toBe(false);
   });
 });
@@ -117,7 +117,7 @@ describe("form and mapping (UT-MOR-04)", () => {
       lines: [{
         id: ID, source: "MANUAL", stoneCodeId: null, stoneCode: "RU-1", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "",
         location: "", cerType: "", cerNo: "", pcs: 1, weightCt: "1.000", priceUnit: "PER_CT", unitPrice: "100.00", discount: { type: "NONE", value: "0" },
-        discountAmount: "0.00", amount: "100.00", itemNote: "", photoIds: [], outstandingPcs: 2, outstandingWeightCt: "1.500", sourceLineId: null,
+        discountAmount: "0.00", amount: "100.00", itemNote: "", photoIds: [], outstandingPcs: 2, outstandingWeightCt: "1.500",
       }],
       discount: { type: "NONE", value: "0" },
       tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,

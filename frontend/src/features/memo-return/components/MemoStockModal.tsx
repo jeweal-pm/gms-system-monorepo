@@ -4,19 +4,19 @@ import { ArrowRight, ChevronsUpDown, MessageSquare, Search, X } from "lucide-rea
 import { useEffect, useState } from "react";
 import { DateInput } from "@/components/ui/date-input";
 import { Badge, Button, cx, IconButton } from "@/features/quotation/components/ui";
-import { dec } from "@/features/quotation/lib/decimal";
+import { dec, toFixed } from "@/features/quotation/lib/decimal";
 import { formatMoneyText, formatWeight } from "@/features/quotation/lib/format";
 import { memoReturnLoadError, useMemoStock, type MemoStockItem } from "../api";
 
 /**
- * "Add Memo Stock" (memo-return design): the vendor's memo receive lines in the return's currency with a quantity
- * still out — Pending Pcs / Weight, price and amount. Search + Start → Due filter the receive date; rows already on
- * the return are left out. OK adds the checked rows.
+ * "Add Memo Stock" (memo-return design, SA-MR-11): the vendor's Memo Stock items in the return's currency with
+ * something still pending — Stock ID, location Memo, Pending Pcs / Weight, price after the line discount (Q-MR-13)
+ * and amount. Search + Start → Due (memo receive Doc Date, Q-MR-10) filter; rows already on the return are left out;
+ * 50 a page with Load more. OK adds the checked rows.
  */
-export function MemoStockModal({ vendorId, currency, excludeReturnId, pickedIds, onCancel, onConfirm }: {
+export function MemoStockModal({ vendorId, currency, pickedIds, onCancel, onConfirm }: {
   vendorId: string;
   currency: string;
-  excludeReturnId?: string;
   pickedIds: Set<string>;
   onCancel: () => void;
   onConfirm: (items: MemoStockItem[]) => void;
@@ -38,9 +38,9 @@ export function MemoStockModal({ vendorId, currency, excludeReturnId, pickedIds,
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
 
-  const stock = useMemoStock({ vendorId, currency, q, from, to, excludeReturnId });
-  const items = (stock.data?.items ?? []).filter((item) => !pickedIds.has(item.sourceLineId));
-  const allChecked = items.length > 0 && items.every((item) => checked.has(item.sourceLineId));
+  const stock = useMemoStock({ vendorId, currency, q, from, to });
+  const items = (stock.data?.pages ?? []).flatMap((page) => page.items).filter((item) => !pickedIds.has(item.id));
+  const allChecked = items.length > 0 && items.every((item) => checked.has(item.id));
   const toggle = (id: string) =>
     setChecked((prev) => {
       const next = new Set(prev);
@@ -75,7 +75,7 @@ export function MemoStockModal({ vendorId, currency, excludeReturnId, pickedIds,
                 autoFocus
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search stone code, stone, lot, location"
+                placeholder="Search Stock ID, Lot, Stone, Cer No."
                 aria-label="Search memo stock"
                 className="w-full bg-transparent outline-none placeholder:text-[#A9B1B9]"
               />
@@ -99,7 +99,7 @@ export function MemoStockModal({ vendorId, currency, excludeReturnId, pickedIds,
                         className="size-5 accent-[#0E5E63]"
                         checked={allChecked}
                         disabled={items.length === 0}
-                        onChange={() => setChecked(allChecked ? new Set() : new Set(items.map((item) => item.sourceLineId)))}
+                        onChange={() => setChecked(allChecked ? new Set() : new Set(items.map((item) => item.id)))}
                       />
                     </th>
                     <th rowSpan={2} className="w-8 font-normal text-[#6B7480]">#</th>
@@ -134,23 +134,23 @@ export function MemoStockModal({ vendorId, currency, excludeReturnId, pickedIds,
                     </tr>
                   )}
                   {items.map((item, index) => (
-                    <tr key={item.sourceLineId} onClick={() => toggle(item.sourceLineId)} className="cursor-pointer border-b border-[#EEF0F2] align-top hover:bg-[#FAFBFB]">
+                    <tr key={item.id} onClick={() => toggle(item.id)} className="cursor-pointer border-b border-[#EEF0F2] align-top hover:bg-[#FAFBFB]">
                       <td className="px-4 py-4">
                         <input
                           type="checkbox"
-                          aria-label={`Select ${item.stoneCode || item.stone} from ${item.memoReceiveNo}`}
+                          aria-label={`Select ${item.stockId} from ${item.memoReceive.docNo}`}
                           className="size-5 accent-[#0E5E63]"
-                          checked={checked.has(item.sourceLineId)}
-                          onChange={() => toggle(item.sourceLineId)}
+                          checked={checked.has(item.id)}
+                          onChange={() => toggle(item.id)}
                           onClick={(event) => event.stopPropagation()}
                         />
                       </td>
                       <td className="py-4 text-[#6B7480]">{index + 1}</td>
                       <td className="px-3 py-4">
-                        <div className="font-medium">{item.stoneCode || "—"}</div>
+                        <div className="font-medium">{item.stockId}</div>
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6B7480]">
                           {item.lot && <span>{item.lot}</span>}
-                          <span>from {item.memoReceiveNo}</span>
+                          <span>from {item.memoReceive.docNo}</span>
                         </div>
                         {item.itemNote && (
                           <div className="mt-1 flex items-center gap-1.5 text-xs text-[#6B7480]">
@@ -174,19 +174,28 @@ export function MemoStockModal({ vendorId, currency, excludeReturnId, pickedIds,
                       <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">{item.pendingPcs}</td>
                       <td className="px-3 py-4 text-right">{formatWeight(dec(item.pendingWeightCt))}</td>
                       <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">
-                        {formatMoneyText(item.unitPrice)} {currency}
-                        <div className="mt-1 text-xs text-[#6B7480]">{item.priceUnit === "PER_PCS" ? "pcs" : "cts"}</div>
+                        {formatMoneyText(toFixed(dec(item.netUnitPrice), 2))} {currency}
+                        <div className="mt-1 text-xs text-[#6B7480]">{item.priceUnit === "PCS" ? "pcs" : "cts"}</div>
                       </td>
                       <td className="px-3 py-4 text-right">{formatMoneyText(item.amount)}</td>
                     </tr>
                   ))}
+                  {stock.hasNextPage && (
+                    <tr>
+                      <td colSpan={11} className="py-4 text-center">
+                        <Button size="sm" disabled={stock.isFetchingNextPage} onClick={() => void stock.fetchNextPage()}>
+                          {stock.isFetchingNextPage ? "Loading…" : "Load more"}
+                        </Button>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
             <footer className="flex items-center justify-end gap-2 border-t border-[#E3E6EA] px-5 py-3">
               {checked.size > 0 && <span className="mr-auto text-sm font-medium text-[#1C252E]">{checked.size} selected</span>}
               <Button onClick={onCancel}>Cancel</Button>
-              <Button variant="primary" className="min-w-24" disabled={checked.size === 0} onClick={() => onConfirm(items.filter((item) => checked.has(item.sourceLineId)))}>
+              <Button variant="primary" className="min-w-24" disabled={checked.size === 0} onClick={() => onConfirm(items.filter((item) => checked.has(item.id)))}>
                 OK
               </Button>
             </footer>

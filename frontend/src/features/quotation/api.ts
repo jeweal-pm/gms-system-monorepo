@@ -198,13 +198,19 @@ export const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 
 export class PhotoUploadError extends Error {}
 
-/** Uploads one JPEG/PNG ≤ 5 MB; returns its photo id. */
-export async function uploadQuotationPhoto(file: File): Promise<string> {
+/** Uploads one JPEG/PNG ≤ 5 MB to the quotation photo route; returns its photo id. */
+export const uploadQuotationPhoto = (file: File): Promise<string> => uploadLinePhoto("/api/v1/quotation/photos", file);
+
+/**
+ * Uploads one JPEG/PNG ≤ 5 MB as the raw request body to a document's line-photo route (quotation SA-QT-10; the
+ * memo receive route, SA-MR-15, shares the same contract); returns its photo id. File bytes never pass through Next.
+ */
+export async function uploadLinePhoto(route: string, file: File): Promise<string> {
   if (!(PHOTO_TYPES as readonly string[]).includes(file.type)) throw new PhotoUploadError("Use a JPEG or PNG photo.");
   if (file.size > PHOTO_MAX_BYTES) throw new PhotoUploadError("Photos can be up to 5 MB.");
   let response: Response;
   try {
-    response = await fetch("/api/v1/quotation/photos", {
+    response = await fetch(route, {
       method: "POST",
       headers: { "content-type": file.type, "x-gms-csrf": "1" },
       body: file,

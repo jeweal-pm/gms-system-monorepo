@@ -12,7 +12,7 @@ import {
   memoReturnHref,
   memoReturnSchema,
   memoStockToLine,
-  pickedSourceIds,
+  pickedStockIds,
   toMemoReturnInput,
   type MemoReturnDetail,
   type MemoReturnFormValues,
@@ -26,17 +26,19 @@ import { documentAccess } from "@/features/trade-document/document-api";
 import { VendorDocumentDetails } from "@/features/trade-document/vendor-info-form";
 import { gatewayError } from "../partner/helpers";
 
-/** UT-MRT-01…07: memo-return UI rev 1 + SA rev 1 (owner 2026-10-29). */
+/** UT-MRT-01…08: memo-return UI rev 1 + SA rev 2 (owner 2026-10-29): rows from Memo Stock, approval step. */
 
 const ID = "11111111-1111-4111-8111-111111111111";
 const SOURCE = "22222222-2222-4222-8222-222222222222";
 const noop = () => undefined;
 
+/** A Memo Stock item whose memo receive line had 10% off 20,000 per ct: PRICE = 18,000 (Q-MR-13). */
 const stockItem: MemoStockItem = {
-  sourceLineId: SOURCE, memoReceiveId: ID, memoReceiveNo: "MR-1", docDate: "2026-10-01", dueDate: "2026-11-01",
-  stoneCodeId: null, stoneCode: "RU-RUBDEXVVS1AAA", stone: "Ruby", shape: "Oval", size: "7.2×5.4 mm", color: "Red", clarity: "VVS", cutting: "Excellent", quality: "AAA",
-  lot: "L-2608-003", location: "BKK-01", cerType: "GIA", cerNo: "GRS2024-081233", itemNote: "Unheated", priceUnit: "PER_CT", unitPrice: "18000.00",
-  pendingPcs: 10, pendingWeightCt: "3.200", amount: "57600.00",
+  id: SOURCE, stockId: "260001", lot: "L-2608-003", location: "Memo", itemNote: "Unheated",
+  stone: "Ruby", shape: "Oval", size: "7.2×5.4 mm", color: "Red", clarity: "VVS", cutting: "Excellent", quality: "AAA", cerType: "GIA", cerNo: "GRS2024-081233",
+  receivedPcs: 10, receivedWeightCt: "3.200", pendingPcs: 10, pendingWeightCt: "3.200", priceUnit: "CTS", unitPrice: "20000.00", netUnitPrice: "18000.0000",
+  currency: "THB", amount: "57600.00", vendor: { id: ID, code: "V001", name: "BC Stone Shop" },
+  memoReceive: { id: ID, docNo: "MR-1", docDate: "2026-10-01", dueDate: "2026-11-01" },
 };
 const blank = () => emptyMemoReturn().lines[0];
 const picked = (patch: Partial<MemoReturnLine> = {}): MemoReturnLine => ({ ...memoStockToLine(stockItem), pcs: "7", weightCt: "2.24", ...patch });
@@ -67,8 +69,9 @@ describe("navigation and access (UT-MRT-01)", () => {
     expect(navigationHref({ label: "Memo Return", slug: "memo-return" })).toBe("/memo/memo-return");
     expect(MEMO_RETURN_HREF).toBe("/memo/memo-return");
     expect(memoReturnHref(ID)).toBe(`/memo/memo-return/${ID}`);
-    expect(documentAccess({ isSuperAdmin: false, permissions: ["memo-return:VIEW"] }, "memo-return")).toEqual({ view: true, add: false, edit: false, delete: false });
+    expect(documentAccess({ isSuperAdmin: false, permissions: ["memo-return:VIEW"] }, "memo-return")).toEqual({ view: true, add: false, edit: false, delete: false, approve: false });
     expect(documentAccess({ isSuperAdmin: false, permissions: ["memo-receive:VIEW"] }, "memo-return").view).toBe(false);
+    expect(documentAccess({ isSuperAdmin: false, permissions: ["memo-return:VIEW", "memo-return:APPROVE"] }, "memo-return").approve).toBe(true);
   });
 });
 
@@ -90,11 +93,11 @@ describe("item table (UT-MRT-02, design)", () => {
     expect(html).toContain("40,320.00"); // 2.24 ct × 18,000
   });
 
-  it("view mode: Stone Code · STOCK ID · LOT first, Return as text, no checkbox, remove, inputs or Add row", () => {
+  it("view mode: STOCK ID · LOT first (Memo Stock has no stone code), Return as text, no checkbox, remove, inputs or Add row", () => {
     const html = renderTable([picked()], true);
-    expect(html).toContain(">Stone Code<");
-    expect(html).toContain(">STOCK ID · LOT<");
-    expect(html).toContain("RU-RUBDEXVVS1AAA");
+    expect(html).toContain(">STOCK ID<");
+    expect(html).not.toContain(">Stone Code<");
+    expect(html).toContain("260001");
     expect(html).not.toMatch(/<input|Remove row|Add row/);
     expect(html).toMatch(/>7<\/td>/);
     expect(html).toContain(">10<");
@@ -102,12 +105,13 @@ describe("item table (UT-MRT-02, design)", () => {
 });
 
 describe("Memo Stock and form rules (UT-MRT-03/04)", () => {
-  it("UT-MRT-03 a Memo Stock row becomes a return row with Return 0 / 0.00 and its Outstanding and source line", () => {
+  it("UT-MRT-03 a Memo Stock row becomes a return row with Return 0 / 0.00, its Stock ID, net price and Outstanding", () => {
     expect(memoStockToLine(stockItem)).toMatchObject({
-      sourceLineId: SOURCE, stoneCode: "RU-RUBDEXVVS1AAA", lot: "L-2608-003", locationId: "BKK-01", unitPrice: "18000.00", priceUnit: "PER_CT",
+      memoStockId: SOURCE, stockId: "260001", stoneCode: "", lot: "L-2608-003", locationId: "Memo", unitPrice: "18000.00", priceUnit: "PER_CT",
       itemNote: "Unheated", pcs: "0", weightCt: "0.00", outstandingPcs: "10", outstandingWeightCt: "3.200",
     });
-    expect([...pickedSourceIds([picked(), blank()])]).toEqual([SOURCE]);
+    expect(memoStockToLine({ ...stockItem, priceUnit: "PCS", netUnitPrice: "333.3350" })).toMatchObject({ priceUnit: "PER_PCS", unitPrice: "333.34" });
+    expect([...pickedStockIds([picked(), blank()])]).toEqual([SOURCE]);
   });
 
   it("UT-MRT-04 needs a vendor and an address, a return quantity above 0 and not above Outstanding; note up to 250", () => {
@@ -117,35 +121,44 @@ describe("Memo Stock and form rules (UT-MRT-03/04)", () => {
     expect(paths(values({ lines: [picked({ pcs: "0", weightCt: "0.00" })] }))).toEqual(["lines.0.pcs"]);
     expect(paths(values({ lines: [picked({ pcs: "11", weightCt: "3.3" })] }))).toEqual(["lines.0.pcs", "lines.0.weightCt"]);
     expect(paths(values({ documentNote: "x".repeat(MEMO_RETURN_NOTE_MAX + 1) }))).toEqual(["documentNote"]);
+    expect(emptyMemoReturn().status).toBe("PENDING_APPROVAL");
+    expect(paths(values({ status: "DRAFT" as never }))).toEqual(["status"]);
   });
 });
 
 describe("mapping and errors (UT-MRT-05/06)", () => {
-  it("UT-MRT-05 sends the source line with the Return quantity, drops empty rows; loads a saved document back", () => {
+  it("UT-MRT-05 sends the Memo Stock item with the Return quantity, drops empty rows; loads a saved document back", () => {
     const input = toMemoReturnInput(values());
     expect(input).toMatchObject({ vendorId: ID, addressId: ID });
     expect(input.lines).toHaveLength(1);
-    expect(input.lines[0]).toMatchObject({ sourceLineId: SOURCE, pcs: 7, weightCt: "2.24", outstandingPcs: 10, outstandingWeightCt: "3.200", photoIds: [] });
+    expect(input.lines[0]).toMatchObject({ memoStockId: SOURCE, pcs: 7, weightCt: "2.24", outstandingPcs: 10, outstandingWeightCt: "3.200", photoIds: [] });
     const detail = {
-      id: ID, docNo: "MRT-1", status: "DRAFT", version: 2, docDate: "2026-10-29", dueDate: "2026-11-29",
+      id: ID, docNo: "MRT-1", status: "PENDING_APPROVAL", version: 2, docDate: "2026-10-29", dueDate: "2026-11-29",
       vendorId: ID, vendor: { code: "V001", name: "BC Stone Shop" }, addressId: ID, addressText: "A",
       currency: "THB", exchangeRate: null, ref: "", documentNote: "",
       lines: [{
-        id: ID, source: "MANUAL", stoneCodeId: null, stoneCode: "RU-1", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "",
-        location: "", cerType: "", cerNo: "", pcs: 7, weightCt: "2.240", priceUnit: "PER_CT", unitPrice: "18000.00", discount: { type: "NONE", value: "0" },
-        discountAmount: "0.00", amount: "40320.00", itemNote: "", photoIds: [], outstandingPcs: 10, outstandingWeightCt: "3.200", sourceLineId: SOURCE,
+        id: ID, source: "MANUAL", stoneCode: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "",
+        location: "Memo", cerType: "", cerNo: "", pcs: 7, weightCt: "2.240", priceUnit: "PER_CT", unitPrice: "18000.00", discount: { type: "NONE", value: "0" },
+        discountAmount: "0.00", amount: "40320.00", itemNote: "", photoIds: [], outstandingPcs: 10, outstandingWeightCt: "3.200", memoStockId: SOURCE, stockId: "260001",
       }],
       discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "40320.00", discountAmount: "0.00", priceBeforeTax: "40320.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "40320.00" },
-      createdAt: "", createdBy: "", updatedAt: "",
+      approvedAt: null, approvedBy: null, createdAt: "", createdBy: "", updatedAt: "",
     } satisfies MemoReturnDetail;
-    expect(fromMemoReturn(detail)).toMatchObject({ docNo: "MRT-1", version: 2, vendorId: ID, lines: [{ pcs: "7", sourceLineId: SOURCE, outstandingPcs: "10", outstandingWeightCt: "3.200" }] });
+    expect(fromMemoReturn(detail)).toMatchObject({
+      docNo: "MRT-1", version: 2, status: "PENDING_APPROVAL", vendorId: ID,
+      lines: [{ pcs: "7", memoStockId: SOURCE, stockId: "260001", outstandingPcs: "10", outstandingWeightCt: "3.200" }],
+    });
+    expect(fromMemoReturn({ ...detail, status: "APPROVED" }).status).toBe("APPROVED");
   });
 
   it("UT-MRT-06 maps MEMO_RETURN_* codes", () => {
-    expect(mapMemoReturnSaveError(gatewayError({ domainCode: "MEMO_RETURN_REFERENCE_INVALID", httpStatus: 422, fieldErrors: [{ path: "lines.0.sourceLineId", code: "invalid_reference" }] })))
+    expect(mapMemoReturnSaveError(gatewayError({ domainCode: "MEMO_RETURN_REFERENCE_INVALID", httpStatus: 422, fieldErrors: [{ path: "lines.0.memoStockId", code: "invalid_reference" }] })))
       .toMatchObject({ fieldErrors: [{ name: "lines", message: "Check item row 1" }] });
     expect(mapMemoReturnSaveError(gatewayError({ domainCode: "MEMO_RETURN_CHANGED", httpStatus: 409, code: "CONFLICT" })).message).toContain("Someone else changed this memo return");
+    expect(mapMemoReturnSaveError(gatewayError({ domainCode: "MEMO_RETURN_STATUS_INVALID", httpStatus: 409, code: "CONFLICT" })).message).toContain("can't be changed in its current status");
+    // UT-MRT-08: approval found less pending than a row returns.
+    expect(mapMemoReturnSaveError(gatewayError({ domainCode: "MEMO_RETURN_PENDING_SHORT", httpStatus: 409, code: "CONFLICT" })).message).toContain("no longer have enough pending");
   });
 });
 

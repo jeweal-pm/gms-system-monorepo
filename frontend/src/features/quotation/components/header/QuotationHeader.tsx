@@ -2,6 +2,7 @@
 
 import { Copy, FileSpreadsheet, Pencil, Plus, Printer, RefreshCw, ScanLine, Trash2 } from "lucide-react";
 import Link from "next/link";
+import type { ReactNode } from "react";
 import type { QuotationStatus } from "../../schema";
 import { Button, cx, IconButton } from "../ui";
 
@@ -38,6 +39,8 @@ export function QuotationHeader({
   newHref = "/pre-sale/quotation",
   previewNote = "Number preview — the number is issued when you save.",
   statusLabels = STATUS_LABEL,
+  extraActions,
+  hideEditDelete = false,
 }: {
   docNo: string;
   isPreview: boolean;
@@ -56,6 +59,10 @@ export function QuotationHeader({
   newHref?: string;
   previewNote?: string;
   statusLabels?: StatusLabels;
+  /** Extra buttons after Delete (Memo Receive's Approve, rev 3). Quotation passes none. */
+  extraActions?: ReactNode;
+  /** Hides Edit and Delete (a read-only Approved Memo Receive, rev 3). Quotation keeps both. */
+  hideEditDelete?: boolean;
 }) {
   const editing = mode === "edit";
   const badge = status ? statusLabels[status] : undefined;
@@ -110,12 +117,17 @@ export function QuotationHeader({
           <Button variant="primary" onClick={actions.onSave} disabled={!editing || saving || !canSave} className="min-w-24">
             {saving ? "Saving…" : "Save"}
           </Button>
-          <Button variant="primary" onClick={actions.onEdit} disabled={editing || !canEdit} className="min-w-24">
-            <Pencil className="size-4" /> Edit
-          </Button>
-          <Button variant="danger" onClick={actions.onDelete} disabled={editing || !canDelete || saving} className="min-w-24">
-            <Trash2 className="size-4" /> Delete
-          </Button>
+          {!hideEditDelete && (
+            <>
+              <Button variant="primary" onClick={actions.onEdit} disabled={editing || !canEdit} className="min-w-24">
+                <Pencil className="size-4" /> Edit
+              </Button>
+              <Button variant="danger" onClick={actions.onDelete} disabled={editing || !canDelete || saving} className="min-w-24">
+                <Trash2 className="size-4" /> Delete
+              </Button>
+            </>
+          )}
+          {extraActions}
         </div>
       </div>
     </div>

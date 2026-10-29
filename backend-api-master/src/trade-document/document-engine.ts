@@ -14,14 +14,17 @@ import { CHARGE_TYPES, type LineInput } from "../quotation/quotation.schemas";
 import type { DocumentErrors } from "./document-errors";
 
 /**
- * Shared document engine for memo out, memo out return (ADR-0033), memo receive and memo return (memo-return SA rev 1): the quotation rules — Document Setup number
- * (max + 1 under the numbering-row lock, plain 1, 2, 3 … without a row), party + address snapshots, server
- * totals with the quotation calculator, optimistic version, drafts only (no approval in rev 1), no photos and no
- * stock posting yet. The party part (customer or vendor) comes from an adapter.
+ * Shared document engine for memo out, memo out return (ADR-0033), memo receive (ADR-0034) and memo return
+ * (memo-return SA rev 2): the quotation rules — Document Setup number (max + 1 under the numbering-row lock, plain
+ * 1, 2, 3 … without a row), party + address snapshots, server totals with the quotation calculator, optimistic
+ * version. The party part (customer or vendor) comes from an adapter. Status on create and the editable statuses are
+ * per document (SA-MR-02): memo out / memo out return stay drafts; memo receive and memo return start
+ * PENDING_APPROVAL. An optional line hook adds per-line columns (memo receive: kept line ids, Stock IDs and line
+ * photos, SA-MR-17; memo return: the Memo Stock item).
  */
 
 const COMPANY_PROFILE_ID = 1;
-const EDITABLE = ["DRAFT"] as const;
+const DRAFT_ONLY = ["DRAFT"] as const;
 
 type Row = Record<string, unknown>;
 type Dec = Prisma.Decimal;
@@ -36,6 +39,9 @@ type DocDelegate = {
 type ChildDelegate = { createMany(args: unknown): Promise<unknown>; deleteMany(args: unknown): Promise<unknown> };
 type Client = Tx | typeof prisma;
 
+/** A line of any trade document; memo receive lines have no stone code id and no location (SA-MR-07). */
+export type EngineLine = Omit<LineInput, "stoneCodeId" | "location"> & { stoneCodeId?: string | null; location?: string };
+
 /** The shared input fields (quotation `tradeDocumentFields`) every adapter's input carries. */
 export type TradeDocumentInput = {
   docDate: string;
@@ -44,7 +50,7 @@ export type TradeDocumentInput = {
   exchangeRate: string | null;
   ref: string;
   documentNote: string;
-  lines: LineInput[];
+  lines: EngineLine[];
   discount: { type: "NONE" | "PERCENT" | "AMOUNT"; value: string };
   tax: { enabled: boolean; rate: string; includeInPrice: boolean };
   serviceCharges: { type: (typeof CHARGE_TYPES)[number]; amount: string }[];
@@ -79,41 +85,66 @@ export type EngineConfig<Input extends TradeDocumentInput, Out extends Row = Row
   party: PartyAdapter<Input, Out>;
   /** Lines keep an Outstanding quantity (memo out return UI rev 3); pcs / weightCt are then the Return quantity. */
   outstanding?: boolean;
-  /** Lines keep the id of the line they come from (memo return → memo receive line). */
-  sourceLine?: boolean;
   /**
-   * Runs first in the write transaction (create: documentId null): may lock rows and returns the input to store,
-   * e.g. memo return lines completed from their memo receive lines.
+   * Runs first in the write transaction, after the status check on update (create: documentId null); returns the
+   * input to store, e.g. memo return lines completed from their Memo Stock items.
    */
   prepare?: (tx: Tx, input: Input, documentId: string | null) => Promise<Input>;
-  /** Throws when the document may not be edited or deleted because another document depends on it. */
-  writeGuard?: (client: Client, documentId: string) => Promise<void>;
+  /** Status written on create (default `DRAFT`). */
+  createStatus?: string;
+  /** Statuses in which update and delete are allowed (default `[DRAFT]`). */
+  editableStatuses?: readonly string[];
+  /** Line columns the line table does not have (memo receive: `stoneCodeId`, `location`). */
+  lineOmit?: readonly ("stoneCodeId" | "location")[];
+  /** Per-line columns assigned inside the save transaction (memo receive Stock IDs). */
+  lineHook?: LineHook<Input>;
+  /** Extra header fields of the detail output (memo receive approval). */
+  detailExtra?: (row: Row) => Row;
 };
 
-/** A line input of a document with `outstanding` / `sourceLine` lines. */
-type OutstandingLine = LineInput & { outstandingPcs: number; outstandingWeightCt: string };
-type SourcedLine = LineInput & { sourceLineId: string };
+/** Called inside the save transaction after the document number is issued (lock order: number → hook → document). */
+export type LineHook<Input extends TradeDocumentInput> = {
+  /** Stored line columns read on update (passed to `assign`). */
+  storedSelect: Record<string, true>;
+  /** Columns for each input line, in order; may set `id` to keep a saved line's id. `stored` is null on create. */
+  assign(tx: Tx, input: Input, stored: Row[] | null): Promise<Row[]>;
+  /** Final detail output of a line from its row and the default output. */
+  output(line: Row, base: Row): Row;
+  /** Extra fields of the create / update result. */
+  result(assigned: Row[]): Row;
+  /** Relations read with each line by `get` (memo receive: photos in order). */
+  lineInclude?: Record<string, unknown>;
+  /** Writes per-line child rows after the lines (same transaction); `lineIds` are in input order. */
+  afterLines?(tx: Tx, input: Input, lineIds: string[]): Promise<void>;
+};
 
-export const documentListSchema = z.object({
+/** A line input of a document with `outstanding` lines. */
+type OutstandingLine = LineInput & { outstandingPcs: number; outstandingWeightCt: string };
+
+export const documentListFields = {
   q: z.string().trim().max(100).optional(),
   partyId: z.uuid().optional(),
   from: z.iso.date().optional(),
   to: z.iso.date().optional(),
   cursor: z.string().max(200).nullish(),
   limit: z.number().int().min(1).max(50).default(50),
-}).strict();
-export type DocumentListInput = z.output<typeof documentListSchema>;
+};
+export const documentListSchema = z.object(documentListFields).strict();
+/** `status` is accepted only by documents with more than one status (memo receive). */
+export type DocumentListInput = z.output<typeof documentListSchema> & { status?: string };
 
 const cursorSchema = z.object({ d: z.iso.date(), c: z.iso.datetime(), i: z.uuid(), v: z.literal(1) }).strict();
 
 const money = (value: unknown) => (value as Dec).toFixed(2);
 const text = (value: unknown) => (value === null ? null : (value as Dec).toString());
 
-export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends Row = Row> {
+export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends Row = Row, Status extends string = "DRAFT"> {
   private readonly logger: Logger;
+  private readonly editable: readonly string[];
 
   constructor(private readonly config: EngineConfig<Input, Out>) {
     this.logger = new Logger(config.event);
+    this.editable = config.editableStatuses ?? DRAFT_ONLY;
   }
 
   private doc(client: Client): DocDelegate {
@@ -128,6 +159,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
     const { party, errors } = this.config;
     const where: Row = {
       ...(input.partyId ? { [party.partyColumn]: input.partyId } : {}),
+      ...(input.status ? { status: input.status } : {}),
       ...(input.from || input.to ? { docDate: { ...(input.from ? { gte: toDbDate(input.from) } : {}), ...(input.to ? { lte: toDbDate(input.to) } : {}) } } : {}),
     };
     const and: Row[] = [];
@@ -157,7 +189,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
         items: page.map((row) => ({
           id: row.id as string,
           docNo: row.docNo as string,
-          status: row.status as "DRAFT",
+          status: row.status as Status,
           docDate: fromDbDate(row.docDate as Date),
           dueDate: fromDbDate(row.dueDate as Date),
           [party.listNameKey]: row[party.nameColumn] as string,
@@ -178,7 +210,8 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
   async get(id: string) {
     const { errors } = this.config;
     try {
-      const row = await this.doc(prisma).findUnique({ where: { id }, include: { lines: { orderBy: { position: "asc" } }, charges: true } });
+      const lineInclude = this.config.lineHook?.lineInclude;
+      const row = await this.doc(prisma).findUnique({ where: { id }, include: { lines: { orderBy: { position: "asc" }, ...(lineInclude ? { include: lineInclude } : {}) }, charges: true } });
       if (!row) throw errors.notFound();
       return this.toDetail(row);
     } catch (error) {
@@ -196,20 +229,22 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
   }
 
   async create(actorId: string, rawInput: Input) {
-    const { errors, event } = this.config;
+    const { errors, event, lineHook } = this.config;
     try {
       const created = await prisma.$transaction(async (tx) => {
         const input = this.config.prepare ? await this.config.prepare(tx, rawInput, null) : rawInput;
         const partyColumns = await this.checkReferences(tx, input, null);
         const { numberingId, runningNo, docNo } = await this.issueNumber(tx, input.docDate, true);
         if (docNo.length > DOC_NO_MAX) throw validationException([{ path: "docNo", code: "too_big" }]);
+        const header = this.headerData(input);
+        const assigned = lineHook ? await lineHook.assign(tx, input, null) : null;
         const id = uuidV7();
         const now = new Date();
         await this.doc(tx).create({
-          data: { id, numberingId, runningNo, docNo, status: "DRAFT", ...this.headerData(input), ...partyColumns, createdAt: now, createdBy: actorId, updatedAt: now, updatedBy: actorId },
+          data: { id, numberingId, runningNo, docNo, status: this.config.createStatus ?? "DRAFT", ...header, ...partyColumns, createdAt: now, createdBy: actorId, updatedAt: now, updatedBy: actorId },
         });
-        await this.writeChildren(tx, id, input);
-        return { id, docNo, version: 1 };
+        await this.writeChildren(tx, id, input, assigned);
+        return { id, docNo, version: 1, ...(assigned && lineHook ? lineHook.result(assigned) : {}) };
       }, WRITE_TX);
       this.logger.log({ event: `${event}.created`, actorId, id: created.id, docNo: created.docNo });
       return created;
@@ -219,47 +254,49 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
   }
 
   async update(actorId: string, id: string, expectedVersion: number, rawInput: Input) {
-    const { errors, event, party, lineModel, chargeModel, parentKey } = this.config;
+    const { errors, event, party, lineModel, chargeModel, parentKey, lineHook } = this.config;
+    const storedLineSelect = { ...(this.config.lineOmit?.includes("stoneCodeId") ? {} : { stoneCodeId: true }), ...lineHook?.storedSelect };
     try {
-      const version = await prisma.$transaction(async (tx) => {
+      const saved = await prisma.$transaction(async (tx) => {
         const stored = await this.doc(tx).findUnique({
           where: { id },
-          select: { status: true, version: true, currencyCode: true, ...party.storedSelect, lines: { select: { stoneCodeId: true } } },
+          select: { status: true, version: true, currencyCode: true, ...party.storedSelect, lines: { select: storedLineSelect } },
         });
         if (!stored) throw errors.notFound();
+        // Status first: a document that left its editable status (memo receive APPROVED) reports that, not a stale version.
+        if (!this.editable.includes(stored.status as string)) throw errors.statusInvalid();
         if (stored.version !== expectedVersion) throw errors.changed();
-        if (!(EDITABLE as readonly string[]).includes(stored.status as string)) throw errors.statusInvalid();
-        await this.config.writeGuard?.(tx, id);
         const input = this.config.prepare ? await this.config.prepare(tx, rawInput, id) : rawInput;
         const partyColumns = await this.checkReferences(tx, input, stored);
+        const header = this.headerData(input);
+        const assigned = lineHook ? await lineHook.assign(tx, input, stored.lines as Row[]) : null;
         const result = await this.doc(tx).updateMany({
-          where: { id, version: expectedVersion, status: { in: [...EDITABLE] } },
-          data: { ...this.headerData(input), ...partyColumns, version: { increment: 1 }, updatedAt: new Date(), updatedBy: actorId },
+          where: { id, version: expectedVersion, status: { in: [...this.editable] } },
+          data: { ...header, ...partyColumns, version: { increment: 1 }, updatedAt: new Date(), updatedBy: actorId },
         });
         if (result.count === 0) throw errors.changed();
         await this.child(tx, lineModel).deleteMany({ where: { [parentKey]: id } });
         await this.child(tx, chargeModel).deleteMany({ where: { [parentKey]: id } });
-        await this.writeChildren(tx, id, input);
-        return expectedVersion + 1;
+        await this.writeChildren(tx, id, input, assigned);
+        return { version: expectedVersion + 1, extra: assigned && lineHook ? lineHook.result(assigned) : {} };
       }, WRITE_TX);
-      this.logger.log({ event: `${event}.updated`, actorId, id, version });
-      return { id, version };
+      this.logger.log({ event: `${event}.updated`, actorId, id, version: saved.version });
+      return { id, version: saved.version, ...saved.extra };
     } catch (error) {
       throw errors.map(error, "update");
     }
   }
 
-  /** Only drafts can be deleted; the next save may reuse the latest number (Q-QT-03 rule). */
+  /** Only editable documents (drafts; memo receive PENDING_APPROVAL) can be deleted; the next save may reuse the latest number (Q-QT-03 rule). */
   async delete(actorId: string, id: string, expectedVersion: number) {
     const { errors, event } = this.config;
     try {
-      await this.config.writeGuard?.(prisma, id);
-      const result = await this.doc(prisma).deleteMany({ where: { id, version: expectedVersion, status: { in: [...EDITABLE] } } });
+      const result = await this.doc(prisma).deleteMany({ where: { id, version: expectedVersion, status: { in: [...this.editable] } } });
       if (result.count === 0) {
-        const row = await this.doc(prisma).findUnique({ where: { id }, select: { version: true } });
+        const row = await this.doc(prisma).findUnique({ where: { id }, select: { version: true, status: true } });
         if (!row) throw errors.notFound();
-        if (row.version !== expectedVersion) throw errors.changed();
-        throw errors.statusInvalid();
+        if (!this.editable.includes(row.status as string)) throw errors.statusInvalid();
+        throw errors.changed();
       }
     } catch (error) {
       throw errors.map(error, "delete");
@@ -307,7 +344,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
   }
 
   private headerData(input: Input) {
-    const totals = calculateTotals(input);
+    const totals = totalsOf(input);
     // Amounts must fit DECIMAL(18,2); otherwise the write would fail as a database error.
     const oversize = oversizeAmounts(totals);
     if (oversize.length > 0) throw validationException(oversize.map((path) => ({ path, code: "too_big" })));
@@ -337,11 +374,11 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
     };
   }
 
-  /** Lines and charges, written in batches (≤ 2 statements). */
-  private async writeChildren(tx: Tx, documentId: string, input: Input) {
-    const { lineModel, chargeModel, parentKey } = this.config;
-    const { lineAmounts, lineDiscounts } = calculateTotals(input);
-    const lines = input.lines.map((line, index) => ({
+  /** Lines and charges, written in batches (≤ 2 statements, plus the line hook's). `assigned` = line hook columns by position. */
+  private async writeChildren(tx: Tx, documentId: string, input: Input, assigned: Row[] | null = null) {
+    const { lineModel, chargeModel, parentKey, lineOmit = [] } = this.config;
+    const { lineAmounts, lineDiscounts } = totalsOf(input);
+    const lines = input.lines.map((line, index) => omit({
       id: uuidV7(),
       [parentKey]: documentId,
       position: index + 1,
@@ -371,9 +408,10 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
       ...(this.config.outstanding
         ? { outstandingPcs: (line as OutstandingLine).outstandingPcs, outstandingWeightCt: (line as OutstandingLine).outstandingWeightCt }
         : {}),
-      ...(this.config.sourceLine ? { sourceLineId: (line as SourcedLine).sourceLineId } : {}),
-    }));
+      ...assigned?.[index],
+    }, lineOmit));
     await this.child(tx, lineModel).createMany({ data: lines });
+    await this.config.lineHook?.afterLines?.(tx, input, lines.map((line) => line.id as string));
     if (input.serviceCharges.length > 0) {
       await this.child(tx, chargeModel).createMany({ data: input.serviceCharges.map((charge) => ({ [parentKey]: documentId, chargeType: charge.type, amount: charge.amount })) });
     }
@@ -386,7 +424,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
     return {
       id: row.id as string,
       docNo: row.docNo as string,
-      status: row.status as "DRAFT",
+      status: row.status as Status,
       version: row.version as number,
       docDate: fromDbDate(row.docDate as Date),
       dueDate: fromDbDate(row.dueDate as Date),
@@ -395,7 +433,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
       exchangeRate: text(row.exchangeRate),
       ref: row.ref as string,
       documentNote: row.documentNote as string,
-      lines: lines.map((line) => ({
+      lines: lines.map((line) => this.lineOutput(line, {
         id: line.id as string,
         source: line.source as "MANUAL",
         stoneCodeId: line.stoneCodeId as string | null,
@@ -423,8 +461,6 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
         // Only documents with `outstanding` lines (memo out return) have these columns.
         outstandingPcs: line.outstandingPcs === undefined ? null : (line.outstandingPcs as number),
         outstandingWeightCt: line.outstandingWeightCt === undefined ? null : (line.outstandingWeightCt as Dec).toFixed(3),
-        // Only memo return lines come from another line (a memo receive line).
-        sourceLineId: line.sourceLineId === undefined ? null : (line.sourceLineId as string),
       })),
       discount: { type: row.discountType as "NONE" | "PERCENT" | "AMOUNT", value: (row.discountValue as Dec).toString() },
       tax: { enabled: row.taxEnabled as boolean, rate: (row.taxRate as Dec).toString(), includeInPrice: row.taxIncluded as boolean },
@@ -443,11 +479,29 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
         laborAmount: money(row.laborAmount),
         grandTotal: money(row.grandTotal),
       },
+      ...this.config.detailExtra?.(row),
       createdAt: (row.createdAt as Date).toISOString(),
       createdBy: row.createdBy as string,
       updatedAt: (row.updatedAt as Date).toISOString(),
     };
   }
+
+  /** Default line output, or the line hook's (memo receive: no stone code id / location, plus Stock ID). */
+  private lineOutput<T extends Row>(line: Row, base: T): T {
+    return this.config.lineHook ? (this.config.lineHook.output(line, base) as T) : base;
+  }
+}
+
+/** Totals with the quotation calculator; it reads only the price fields every engine line has. */
+function totalsOf(input: TradeDocumentInput) {
+  return calculateTotals(input as unknown as Parameters<typeof calculateTotals>[0]);
+}
+
+function omit(row: Row, keys: readonly string[]): Row {
+  if (keys.length === 0) return row;
+  const copy = { ...row };
+  for (const key of keys) delete copy[key];
+  return copy;
 }
 
 function encodeCursor(docDate: string, createdAt: string, id: string): string {
