@@ -14,6 +14,8 @@ import { QuotationPhotoPublicController } from "./quotation/quotation-photo.publ
 import { QuotationService } from "./quotation/quotation.service";
 import { MemoOutService } from "./trade-document/memo-out.service";
 import { MemoOutReturnService } from "./trade-document/memo-out-return.service";
+import { MemoReceiveService } from "./trade-document/memo-receive.service";
+import { MemoReturnService } from "./trade-document/memo-return.service";
 import { HealthController } from "./health/health.controller";
 import { ServiceTokenGuard } from "./internal-auth/service-token.guard";
 import { MasterAuthzDatabase } from "./master/authz-database";
@@ -54,6 +56,8 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
     QuotationService,
     MemoOutService,
     MemoOutReturnService,
+    MemoReceiveService,
+    MemoReturnService,
     MasterAuthzDatabase,
     MasterLicenseClient,
     MasterTrpcHandler,

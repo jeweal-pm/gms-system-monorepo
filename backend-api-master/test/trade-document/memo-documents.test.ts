@@ -4,10 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { documentListSchema } from "../../src/trade-document/document-engine";
 import { MemoOutService } from "../../src/trade-document/memo-out.service";
 import { MemoOutReturnService } from "../../src/trade-document/memo-out-return.service";
-import { createMemoOutReturnSchema, createMemoOutSchema } from "../../src/trade-document/memo-schemas";
+import { MemoReceiveService } from "../../src/trade-document/memo-receive.service";
+import { MemoReturnService } from "../../src/trade-document/memo-return.service";
+import { createMemoOutReturnSchema, createMemoOutSchema, createMemoReceiveSchema, createMemoReturnSchema, memoStockSchema } from "../../src/trade-document/memo-schemas";
+import { Prisma } from "../../src/generated/prisma/client";
 
 /**
- * UT-MO-B01…B09, B11: memo out / memo out return SA rev 1 (ADR-0033, owner 2026-10-28) — the shared engine against a
+ * UT-MO-B01…B09, B11: memo out / memo out return SA rev 1 (ADR-0033, owner 2026-10-28); UT-MR-B01…B05: memo receive /
+ * memo return (memo-return SA rev 1, owner 2026-10-29) — the shared engine against a
  * mocked Prisma: Document Setup keys, party references and snapshots, server totals, version/draft guards,
  * list and options. Real SQL (row lock, CHECKs) is covered by the live checks.
  */
@@ -31,6 +35,11 @@ const db = vi.hoisted(() => ({
   lines: [] as { model: string; data: Row[] }[],
   charges: [] as Row[],
   findManyArgs: [] as Row[],
+  /** Memo receive lines (Memo Stock) and the quantities other memo returns already took. */
+  sources: [] as Row[],
+  returned: [] as Row[],
+  groupByArgs: [] as Row[],
+  returnLineCount: 0,
 }));
 
 vi.mock("@gms/storage", () => ({
@@ -82,6 +91,16 @@ vi.mock("../../src/database/prisma-client", () => {
     memoOutReturn: document("memoOutReturn"),
     memoOutReturnLine: children("memoOutReturnLine"),
     memoOutReturnCharge: children("memoOutReturnCharge"),
+    memoReceive: document("memoReceive"),
+    memoReceiveLine: { ...children("memoReceiveLine"), findMany: vi.fn(async (args: Row) => { db.findManyArgs.push(args); return db.sources; }) },
+    memoReceiveCharge: children("memoReceiveCharge"),
+    memoReturn: document("memoReturn"),
+    memoReturnLine: {
+      ...children("memoReturnLine"),
+      count: vi.fn(async () => db.returnLineCount),
+      groupBy: vi.fn(async (args: Row) => { db.groupByArgs.push(args); return db.returned; }),
+    },
+    memoReturnCharge: children("memoReturnCharge"),
   };
   return { prisma: { ...tx, $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) } };
 });
@@ -131,6 +150,7 @@ beforeEach(() => {
     stored: null,
     writeCount: 1,
     rawSql: [], created: [], updates: [], lines: [], charges: [], findManyArgs: [],
+    sources: [], returned: [], groupByArgs: [], returnLineCount: 0,
   });
 });
 
@@ -238,5 +258,96 @@ describe("list and options (SA-MO-09)", () => {
     await expect(memoOut.options()).resolves.toMatchObject({ customers: [], currencies: ["THB"], companyCurrency: "THB", numbering: { configured: false } });
     const back = await memoOutReturn.options();
     expect(back.vendors[0]).toMatchObject({ code: "V001", currency: "USD", addresses: [expect.objectContaining({ id: VADDR, isDefault: true })] });
+  });
+});
+
+const memoReceive = new MemoReceiveService();
+const memoReturn = new MemoReturnService();
+const [SOURCE, SOURCE2, RECEIPT] = [21, 22, 23].map(ID);
+
+/** A memo receive line of VENDOR in THB: 10 pcs / 3.200 ct at 18,000 per ct. */
+function sourceLine(patch: Row = {}): Row {
+  return {
+    id: SOURCE, memoReceiveId: RECEIPT, position: 1, stoneCodeId: STONE, stoneCodeSnapshot: "RU-RUBDEXVVS1AAA", stone: "Ruby", shape: "Oval", size: "7.2×5.4 mm",
+    color: "Red", clarity: "VVS", cutting: "Excellent", quality: "AAA", lot: "L-2608-003", location: "BKK-01", cerType: "GIA", cerNo: "GRS2024-081233",
+    pcs: 10, weightCt: new Prisma.Decimal("3.2"), priceUnit: "PER_CT", unitPrice: new Prisma.Decimal("18000"), itemNote: "Unheated",
+    document: { id: RECEIPT, docNo: "MR-1", docDate: new Date("2026-10-01T00:00:00Z"), dueDate: new Date("2026-11-01T00:00:00Z"), vendorId: VENDOR, currencyCode: "THB" },
+    ...patch,
+  };
+}
+const receiveInput = (patch: Row = {}) => createMemoReceiveSchema.parse({ ...shared(), vendorId: VENDOR, addressId: VADDR, ...patch });
+/** A return line as the client sends it: only sourceLineId, the Return quantity and the note are trusted. */
+const memoReturnLine = (patch: Row = {}) => ({ ...shared().lines[0], stone: "typed by client", unitPrice: "1", sourceLineId: SOURCE, pcs: 7, weightCt: "2.24", outstandingPcs: 999, outstandingWeightCt: "999", ...patch });
+const memoReturnInput = (lines: Row[] = [memoReturnLine()]) => createMemoReturnSchema.parse({ ...shared(), lines, vendorId: VENDOR, addressId: VADDR });
+
+describe("memo receive (memo-return SA rev 1)", () => {
+  it("UT-MR-B01 memo receive reads Document Setup key memo-receive and stores the vendor snapshot", async () => {
+    db.numbering = { id: NUMBERING, prefix: "MR", separator: "-", start_no: 1 };
+    await expect(memoReceive.create("actor", receiveInput())).resolves.toMatchObject({ docNo: "MR-1" });
+    expect(db.rawSql[0].values[0]).toBe("memo-receive");
+    expect(db.created[0]).toMatchObject({ model: "memoReceive", data: { vendorId: VENDOR, vendorNameSnapshot: "Bangkok Gems", addressId: VADDR } });
+    expect(db.lines[0]).toMatchObject({ model: "memoReceiveLine" });
+    expect(db.lines[0].data[0]).not.toHaveProperty("sourceLineId");
+  });
+
+  it("UT-MR-B02 a memo receive with returned lines can't be edited or deleted (MEMO_RECEIVE_IN_USE)", async () => {
+    db.stored = { status: "DRAFT", version: 1, currencyCode: "THB", vendorId: VENDOR, lines: [] };
+    db.returnLineCount = 1;
+    expect(await failure(memoReceive.update("editor", DOC, 1, receiveInput()))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_IN_USE" });
+    expect(await failure(memoReceive.delete("editor", DOC, 1))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_IN_USE" });
+    db.returnLineCount = 0;
+    await expect(memoReceive.update("editor", DOC, 1, receiveInput())).resolves.toEqual({ id: DOC, version: 2 });
+    await expect(memoReceive.delete("editor", DOC, 1)).resolves.toEqual({ ok: true });
+  });
+});
+
+describe("memo return (memo-return SA rev 1)", () => {
+  it("UT-MR-B03 copies the item and price from the memo receive line under a row lock; Outstanding = received − returned elsewhere", async () => {
+    db.numbering = { id: NUMBERING, prefix: "MRT", separator: "-", start_no: 1 };
+    db.sources = [sourceLine()];
+    db.returned = [{ sourceLineId: SOURCE, _sum: { pcs: 2, weightCt: new Prisma.Decimal("0.5") } }];
+    await expect(memoReturn.create("actor", memoReturnInput())).resolves.toMatchObject({ docNo: "MRT-1" });
+    expect(db.rawSql[0].text).toContain("memo_receive_line");
+    expect(db.rawSql[0].text).toContain("FOR UPDATE");
+    expect(db.rawSql.some((sql) => sql.values.includes("memo-return"))).toBe(true);
+    expect(db.lines[0].model).toBe("memoReturnLine");
+    expect(db.lines[0].data[0]).toMatchObject({
+      sourceLineId: SOURCE, stone: "Ruby", stoneCodeSnapshot: "RU-RUBDEXVVS1AAA", lot: "L-2608-003", location: "BKK-01", unitPrice: "18000.00",
+      pcs: 7, weightCt: "2.24", outstandingPcs: 8, outstandingWeightCt: "2.700",
+    });
+    expect(String(db.lines[0].data[0].amount)).toBe("40320"); // 2.24 ct × 18,000
+  });
+
+  it("UT-MR-B04 rejects more than Outstanding, another vendor's or currency's line, and the same line twice; an edit doesn't count itself", async () => {
+    db.sources = [sourceLine()];
+    db.returned = [{ sourceLineId: SOURCE, _sum: { pcs: 4, weightCt: new Prisma.Decimal("1") } }];
+    expect(await failure(memoReturn.create("actor", memoReturnInput([memoReturnLine({ pcs: 7, weightCt: "2.2" })])))).toMatchObject({ status: 400, code: "VALIDATION_ERROR", path: "lines.0.pcs" });
+    expect(await failure(memoReturn.create("actor", memoReturnInput([memoReturnLine({ pcs: 6, weightCt: "2.3" })])))).toMatchObject({ status: 400, path: "lines.0.weightCt" });
+    db.sources = [sourceLine({ document: { ...(sourceLine().document as Row), vendorId: ID(77) } })];
+    expect(await failure(memoReturn.create("actor", memoReturnInput()))).toMatchObject({ status: 422, code: "MEMO_RETURN_REFERENCE_INVALID", path: "lines.0.sourceLineId" });
+    db.sources = [sourceLine({ document: { ...(sourceLine().document as Row), currencyCode: "USD" } })];
+    expect(await failure(memoReturn.create("actor", memoReturnInput()))).toMatchObject({ code: "MEMO_RETURN_REFERENCE_INVALID", path: "lines.0.sourceLineId" });
+    db.sources = [];
+    expect(await failure(memoReturn.create("actor", memoReturnInput()))).toMatchObject({ code: "MEMO_RETURN_REFERENCE_INVALID", path: "lines.0.sourceLineId" });
+    expect(await failure(memoReturn.create("actor", memoReturnInput([memoReturnLine(), memoReturnLine()])))).toMatchObject({ status: 400, path: "lines.1.sourceLineId" });
+
+    db.sources = [sourceLine()];
+    db.returned = [];
+    db.groupByArgs = [];
+    db.stored = { status: "DRAFT", version: 1, currencyCode: "THB", vendorId: VENDOR, lines: [] };
+    await expect(memoReturn.update("editor", DOC, 1, memoReturnInput([memoReturnLine({ pcs: 10, weightCt: "3.2" })]))).resolves.toEqual({ id: DOC, version: 2 });
+    expect(db.groupByArgs[0]).toMatchObject({ where: { sourceLineId: { in: [SOURCE] }, memoReturnId: { not: DOC } } });
+  });
+
+  it("UT-MR-B05 Memo Stock lists the vendor's lines in the currency with a quantity still out", async () => {
+    db.sources = [sourceLine(), sourceLine({ id: SOURCE2, pcs: 2, weightCt: new Prisma.Decimal("1.36"), unitPrice: new Prisma.Decimal("500"), priceUnit: "PER_PCS" })];
+    db.returned = [{ sourceLineId: SOURCE, _sum: { pcs: 3, weightCt: new Prisma.Decimal("0.96") } }, { sourceLineId: SOURCE2, _sum: { pcs: 2, weightCt: new Prisma.Decimal("1.36") } }];
+    const stock = await memoReturn.memoStock(memoStockSchema.parse({ vendorId: VENDOR, currency: "THB", q: "ruby", from: "2026-10-01", to: "2026-10-31", excludeReturnId: DOC }));
+    expect(db.findManyArgs[0]).toMatchObject({ where: { document: { vendorId: VENDOR, currencyCode: "THB" } }, take: 200 });
+    expect(JSON.stringify(db.findManyArgs[0])).toContain("ruby");
+    expect(db.groupByArgs[0]).toMatchObject({ where: { memoReturnId: { not: DOC } } });
+    expect(stock.items).toEqual([expect.objectContaining({
+      sourceLineId: SOURCE, memoReceiveNo: "MR-1", docDate: "2026-10-01", stone: "Ruby", pendingPcs: 7, pendingWeightCt: "2.240", unitPrice: "18000.00", amount: "40320.00", itemNote: "Unheated",
+    })]);
   });
 });

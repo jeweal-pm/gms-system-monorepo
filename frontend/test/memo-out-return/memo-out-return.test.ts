@@ -117,7 +117,7 @@ describe("form and mapping (UT-MOR-04)", () => {
       lines: [{
         id: ID, source: "MANUAL", stoneCodeId: null, stoneCode: "RU-1", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "",
         location: "", cerType: "", cerNo: "", pcs: 1, weightCt: "1.000", priceUnit: "PER_CT", unitPrice: "100.00", discount: { type: "NONE", value: "0" },
-        discountAmount: "0.00", amount: "100.00", itemNote: "", photoIds: [], outstandingPcs: 2, outstandingWeightCt: "1.500",
+        discountAmount: "0.00", amount: "100.00", itemNote: "", photoIds: [], outstandingPcs: 2, outstandingWeightCt: "1.500", sourceLineId: null,
       }],
       discount: { type: "NONE", value: "0" },
       tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,

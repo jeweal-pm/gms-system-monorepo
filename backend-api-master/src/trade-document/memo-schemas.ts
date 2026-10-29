@@ -37,3 +37,32 @@ export type MemoOutReturnInput = z.output<typeof createMemoOutReturnSchema>;
 
 export const memoVersionedIdSchema = z.object(versioned).strict();
 export const memoNextNumberSchema = z.object({ docDate: z.iso.date() }).strict();
+
+/** Memo receive (memo-return SA rev 1): vendor + address, lines typed by hand (no photos yet). */
+const memoReceiveFields = { ...memoFields, vendorId: uuid, addressId: uuid };
+export const createMemoReceiveSchema = z.object(memoReceiveFields).strict().superRefine(tradeDocumentRules);
+export const updateMemoReceiveSchema = z.object({ ...memoReceiveFields, ...versioned }).strict().superRefine(tradeDocumentRules);
+export type MemoReceiveInput = z.output<typeof createMemoReceiveSchema>;
+
+/**
+ * Memo return (memo-return SA rev 1, owner 2026-10-29): each line names the memo receive line it sends back
+ * (Memo Stock). The server copies the item fields, price and Outstanding quantity from that line on save; the user
+ * keys in only the Return pcs / weightCt (≤ Outstanding) and the item note.
+ */
+const memoReturnLineSchema = returnLineSchema.extend({ sourceLineId: uuid });
+const memoReturnFields = { ...memoFields, lines: z.array(memoReturnLineSchema).min(1).max(LINES_MAX), vendorId: uuid, addressId: uuid };
+export const createMemoReturnSchema = z.object(memoReturnFields).strict().superRefine(returnRules);
+export const updateMemoReturnSchema = z.object({ ...memoReturnFields, ...versioned }).strict().superRefine(returnRules);
+export type MemoReturnInput = z.output<typeof createMemoReturnSchema>;
+
+/** Memo Stock of a vendor in one currency: memo receive lines with a quantity still out. */
+export const memoStockSchema = z.object({
+  vendorId: uuid,
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  q: z.string().trim().max(100).optional(),
+  from: z.iso.date().optional(),
+  to: z.iso.date().optional(),
+  /** The memo return being edited: its own lines don't count as returned. */
+  excludeReturnId: uuid.optional(),
+}).strict();
+export type MemoStockInput = z.output<typeof memoStockSchema>;

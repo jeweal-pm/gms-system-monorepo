@@ -58,6 +58,18 @@ export type DocumentFormConfig<V extends FieldValues & Saved, Input, Options ext
   rowEditor?: boolean;
   /** Shown when an empty row is clicked and there is no row editor (e.g. its picker isn't available yet). */
   emptyRowNotice?: string;
+  /**
+   * The item button's picker (memo return: Add Memo Stock). The button and a click on an empty row open it; picked
+   * rows fill the empty rows first, then are appended.
+   */
+  picker?: {
+    /** Why it can't open yet (e.g. no vendor chosen), or null. */
+    blockedReason: (values: V) => string | null;
+    render: (props: { values: V; onClose: () => void; onAdd: (lines: QuotationLine[]) => void }) => ReactNode;
+    addedToast: (count: number) => string;
+  };
+  /** A saved document in view mode shows this instead of the disabled header fields (memo return design, view). */
+  viewHeader?: (args: { values: V; options: Options | undefined }) => ReactNode;
   noteMax?: number;
   notePlaceholder: string;
   noteHint: string;
@@ -87,6 +99,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   const [railPanel, setRailPanel] = useState<RailPanel>(null);
   const [checkedKeys, setCheckedKeys] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const form = useForm<V>({ resolver: zodResolver(config.schema as never) as unknown as Resolver<V>, defaultValues: (initial ?? config.empty()) as DefaultValues<V> });
   const { control, reset, getValues, handleSubmit, formState, setValue, setError } = form;
@@ -163,10 +176,28 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
     setToast(`Duplicated as a new ${config.noun}`);
   };
 
+  const blockedReason = config.picker?.blockedReason(values as unknown as V) ?? null;
+  const openPicker = () => {
+    if (blockedReason) setToast(blockedReason);
+    else setPickerOpen(true);
+  };
+
+  /** Picked rows go into the empty rows first, then after the last row. */
+  const addPicked = (picked: QuotationLine[]) => {
+    const queue = [...picked];
+    const current = getValues("lines" as Path<V>) as QuotationLine[];
+    const merged = current.map((line) => (!isFilledLine(line) && queue.length > 0 ? queue.shift()! : line));
+    lineArray.replace([...merged, ...queue] as never);
+    setPickerOpen(false);
+    if (config.picker) setToast(config.picker.addedToast(picked.length));
+  };
+
   const openRow = (index: number) => {
     setSelectedIndex(index);
     if (config.rowEditor === false) {
-      if (config.emptyRowNotice && !readOnly && lines[index] && !isFilledLine(lines[index])) setToast(config.emptyRowNotice);
+      const empty = !readOnly && lines[index] && !isFilledLine(lines[index]);
+      if (empty && config.picker) openPicker();
+      else if (empty && config.emptyRowNotice) setToast(config.emptyRowNotice);
       return;
     }
     setEditorOpen(true);
@@ -236,7 +267,11 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
                 }}
               />
 
-              <fieldset disabled={readOnly}>{config.header({ readOnly, options: api.options })}</fieldset>
+              {readOnly && config.viewHeader ? (
+                config.viewHeader({ values: values as unknown as V, options: api.options })
+              ) : (
+                <fieldset disabled={readOnly}>{config.header({ readOnly, options: api.options })}</fieldset>
+              )}
 
               <hr className="border-[#E3E6EA]" />
 
@@ -245,15 +280,20 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
                   <div className="mb-4 flex items-center gap-3">
                     <h2 className="text-lg font-medium text-[#1C252E]">Item</h2>
                     <span className="text-xs text-[#6B7480]">{lines.length} rows</span>
-                    <span title={config.pickHint}>
-                      <Button variant="dark" size="sm" disabled>
-                        {config.pickLabel}
-                      </Button>
-                    </span>
-                    {/* TODO: scan barcode เพื่อเพิ่มรายการ */}
-                    <IconButton label="Scan to add" disabled={readOnly} className="bg-[#F6F7F8]">
-                      <ScanLine className="size-4" />
-                    </IconButton>
+                    {/* A view-mode header (memo return design) hides the item tools too. */}
+                    {!(readOnly && config.viewHeader) && (
+                      <>
+                        <span title={config.picker ? (blockedReason ?? config.pickHint) : config.pickHint}>
+                          <Button variant="dark" size="sm" disabled={!config.picker || readOnly} onClick={openPicker}>
+                            {config.pickLabel}
+                          </Button>
+                        </span>
+                        {/* TODO: scan barcode เพื่อเพิ่มรายการ */}
+                        <IconButton label="Scan to add" disabled={readOnly} className="bg-[#F6F7F8]">
+                          <ScanLine className="size-4" />
+                        </IconButton>
+                      </>
+                    )}
                     {checkedKeys.size > 0 && !readOnly && (
                       <Button size="sm" variant="danger-outline" onClick={removeChecked}>
                         <Trash2 className="size-4" /> Remove {checkedKeys.size} selected
@@ -323,6 +363,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
               </fieldset>
             )}
           </div>
+          {pickerOpen && config.picker?.render({ values: values as unknown as V, onClose: () => setPickerOpen(false), onAdd: addPicked })}
           {toast && <Toast message={toast} onClose={() => setToast(null)} />}
         </FormProvider>
       </LinePhotoContext.Provider>
