@@ -12,6 +12,8 @@ import { CurrencyService } from "./currency/currency.service";
 import { PrismaLifecycleService } from "./database/prisma-lifecycle.service";
 import { QuotationPhotoPublicController } from "./quotation/quotation-photo.public.controller";
 import { QuotationService } from "./quotation/quotation.service";
+import { MemoOutService } from "./trade-document/memo-out.service";
+import { MemoOutReturnService } from "./trade-document/memo-out-return.service";
 import { HealthController } from "./health/health.controller";
 import { ServiceTokenGuard } from "./internal-auth/service-token.guard";
 import { MasterAuthzDatabase } from "./master/authz-database";
@@ -50,6 +52,8 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
     DocumentSetupService,
     CurrencyService,
     QuotationService,
+    MemoOutService,
+    MemoOutReturnService,
     MasterAuthzDatabase,
     MasterLicenseClient,
     MasterTrpcHandler,

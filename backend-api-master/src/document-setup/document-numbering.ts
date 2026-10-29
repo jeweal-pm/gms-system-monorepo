@@ -30,30 +30,54 @@ export async function numberingInEffect(client: Client, transactionKey: Document
   return row ? { id: row.id, prefix: row.prefix, separator: row.separator, startNo: row.start_no } : null;
 }
 
+/** Document types that take numbers from Document Setup (quotation ADR-0032; memo out, memo out return ADR-0033). */
+export type NumberedDocument = "quotation" | "memoOut" | "memoOutReturn";
+
+const PLAIN_LOCK_KEY: Readonly<Record<NumberedDocument, string>> = {
+  quotation: "partner.quotation.plain_running_no",
+  memoOut: "partner.memo_out.plain_running_no",
+  memoOutReturn: "partner.memo_out_return.plain_running_no",
+};
+
+type RunningNoDelegate = {
+  aggregate(args: { where: { numberingId: string | null }; _max: { runningNo: true } }): Promise<{ _max: { runningNo: number | null } }>;
+  groupBy(args: { by: ["numberingId"]; where: { numberingId: { in: string[] } } }): Promise<{ numberingId: string | null }[]>;
+};
+
+/** The table of a document type (each has `numbering_id` + `running_no`). */
+function documentTable(client: Client, document: NumberedDocument): RunningNoDelegate {
+  return (client as unknown as Record<NumberedDocument, RunningNoDelegate>)[document];
+}
+
 /**
- * Next running number for a quotation numbering row: the highest stored one + 1, or the row's start
- * number (owner 2026-10-26, Q-QT-03: deleting the latest quotation frees its number).
+ * Next running number for a numbering row: the highest stored one + 1, or the row's start number
+ * (owner 2026-10-26, Q-QT-03: deleting the latest document frees its number).
  */
-export async function nextQuotationRunningNo(client: Client, row: NumberingRow): Promise<number> {
-  const { _max } = await client.quotation.aggregate({ where: { numberingId: row.id }, _max: { runningNo: true } });
+export async function nextRunningNo(client: Client, document: NumberedDocument, row: NumberingRow): Promise<number> {
+  const { _max } = await documentTable(client, document).aggregate({ where: { numberingId: row.id }, _max: { runningNo: true } });
   return _max.runningNo === null ? row.startNo : Math.max(_max.runningNo + 1, row.startNo);
 }
 
 /**
- * Owner 2026-10-26: with no Document Setup row in effect, quotations get a plain running number
- * (1, 2, 3 …): the highest plain one + 1. With `lock`, a transaction-scoped advisory lock serializes
- * concurrent saves (there is no numbering row to lock).
+ * Owner 2026-10-26: with no Document Setup row in effect, a document gets a plain running number
+ * (1, 2, 3 …): the highest plain one + 1. With `lock`, a transaction-scoped advisory lock per document
+ * type serializes concurrent saves (there is no numbering row to lock).
  */
-export async function nextPlainQuotationRunningNo(client: Client, lock: boolean): Promise<number> {
+export async function nextPlainRunningNo(client: Client, document: NumberedDocument, lock: boolean): Promise<number> {
   // pg_advisory_xact_lock returns void, which the driver can't read; select a constant instead.
-  if (lock) await client.$queryRaw(Prisma.sql`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext('partner.quotation.plain_running_no'))) AS l`);
-  const { _max } = await client.quotation.aggregate({ where: { numberingId: null }, _max: { runningNo: true } });
+  if (lock) await client.$queryRaw(Prisma.sql`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${PLAIN_LOCK_KEY[document]}))) AS l`);
+  const { _max } = await documentTable(client, document).aggregate({ where: { numberingId: null }, _max: { runningNo: true } });
   return (_max.runningNo ?? 0) + 1;
 }
 
-/** Numbering row ids that issued a document number (Document Setup `used`, SA-QT-05). */
+export const nextQuotationRunningNo = (client: Client, row: NumberingRow) => nextRunningNo(client, "quotation", row);
+export const nextPlainQuotationRunningNo = (client: Client, lock: boolean) => nextPlainRunningNo(client, "quotation", lock);
+
+/** Numbering row ids that issued a number on any document type (Document Setup `used`, SA-QT-05, SA-MO-04). */
 export async function usedNumberingIds(client: Client, ids: readonly string[]): Promise<Set<string>> {
   if (ids.length === 0) return new Set();
-  const used = await client.quotation.groupBy({ by: ["numberingId"], where: { numberingId: { in: [...ids] } } });
-  return new Set(used.flatMap((entry) => (entry.numberingId ? [entry.numberingId] : [])));
+  const where = { numberingId: { in: [...ids] } };
+  const kinds: NumberedDocument[] = ["quotation", "memoOut", "memoOutReturn"];
+  const used = await Promise.all(kinds.map((kind) => documentTable(client, kind).groupBy({ by: ["numberingId"], where })));
+  return new Set(used.flat().flatMap((entry) => (entry.numberingId ? [entry.numberingId] : [])));
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canViewWith, menuKeyFor, railModules, sidebarSections, visibleRailModules, visibleSections, type CanView } from "@/features/home/navigation";
+import { canViewWith, menuKeyFor, railModules, sidebarSections, visibleRailModules, visibleSections, type CanView, moduleBreadcrumbs } from "@/features/home/navigation";
 
 /** UT-MENU-01…07: menus without VIEW are hidden (owner 2026-10-17). */
 
@@ -30,11 +30,21 @@ describe("menu visibility", () => {
   });
 
   it("UT-MENU-05 a disclosure keeps only allowed children and disappears when empty", () => {
+    const visible = ids(visibleSections(sidebarSections, canViewFor(["outstanding-payable:VIEW"])));
+    expect(visible).toContain("account-outstanding");
+    expect(visible).toContain("os-payable");
+    expect(visible).not.toContain("os-receivable");
+    expect(ids(visibleSections(sidebarSections, canViewFor([])))).not.toContain("account-outstanding");
+  });
+
+  it("UT-MENU-05b Memo Outstanding keeps its Vendor / Customer sub-items without \"From\" (owner 2026-10-28)", () => {
     const visible = ids(visibleSections(sidebarSections, canViewFor(["memo-outstanding-vendor:VIEW"])));
     expect(visible).toContain("memo-outstanding");
     expect(visible).toContain("memo-outstanding-from-vendor");
     expect(visible).not.toContain("memo-outstanding-from-customer");
     expect(ids(visibleSections(sidebarSections, canViewFor([])))).not.toContain("memo-outstanding");
+    expect(moduleBreadcrumbs("memo-outstanding-from-vendor")?.label).toBe("Vendor");
+    expect(moduleBreadcrumbs("memo-outstanding-from-customer")?.label).toBe("Customer");
   });
 
   it("UT-MENU-06 rail sections follow the visible sidebar sections", () => {

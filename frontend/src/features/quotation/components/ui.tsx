@@ -1,6 +1,7 @@
 "use client";
 
 // Primitive เฉพาะ feature นี้ — ถ้าโปรเจกต์มี design system กลางอยู่แล้ว ให้เปลี่ยนไปใช้ของกลางแทน
+import { DateInput } from "@/components/ui/date-input";
 import { Check, ChevronDown, X } from "lucide-react";
 import {
   forwardRef,
@@ -281,6 +282,23 @@ export function SelectMenu({
         </ul>
       )}
     </div>
+  );
+}
+
+/** English dd/mm/yyyy date field bound to react-hook-form by name (value stays ISO). */
+export function FormDateInput<T extends FieldValues = FieldValues>({ name, compact }: { name: Path<T>; compact?: boolean }) {
+  const { control } = useFormContext<T>();
+  const { field: { ref, ...field }, fieldState } = useController({ control, name });
+  return (
+    <DateInput
+      ref={ref}
+      name={field.name}
+      value={(field.value as string | undefined) ?? ""}
+      onChange={field.onChange}
+      onBlur={field.onBlur}
+      aria-invalid={fieldState.error ? true : undefined}
+      className={cx(controlClass, readOnlyInputClass, compact && "h-10 px-3 text-sm")}
+    />
   );
 }
 

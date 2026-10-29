@@ -12,9 +12,9 @@ export default function ModulePlaceholderPage() {
   return (
     <AppShell breadcrumbs={breadcrumbs}>
       <div className="mx-auto max-w-[760px] px-6 py-12 sm:px-10">
-        <h1 className="text-gms-title font-semibold">{label ?? "ไม่พบเมนู"}</h1>
-        <p className="mt-2 text-gms-body text-[#687887]">เมนูนี้แสดงในโครงระบบเริ่มต้นแล้ว แต่ยังไม่มี workflow ในเอกสารที่ให้มา</p>
-        <Link className="mt-6 inline-block text-gms-body font-medium text-[#1477db] hover:underline" href="/">กลับหน้า Home</Link>
+        <h1 className="text-gms-title font-semibold">{label ?? "Menu not found"}</h1>
+        <p className="mt-2 text-gms-body text-[#687887]">This menu is part of the system layout, but its workflow is not available yet.</p>
+        <Link className="mt-6 inline-block text-gms-body font-medium text-[#1477db] hover:underline" href="/">Back to Home</Link>
       </div>
     </AppShell>
   );

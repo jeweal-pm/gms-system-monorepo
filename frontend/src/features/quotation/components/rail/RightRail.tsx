@@ -43,7 +43,6 @@ export function RailPanelView({
   totals: QuotationTotals;
   currency: string;
   onClose: () => void;
-  /** Another document's daybook list (Memo Receive, ADR-0033 D5); default: quotations. */
   daybook?: ReactNode;
 }) {
   if (panel === "summary") {

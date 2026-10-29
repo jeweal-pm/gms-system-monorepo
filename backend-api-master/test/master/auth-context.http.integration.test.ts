@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MasterAuthContextAdapter, MasterJwksCache } from "../../src/master/auth-context";
 import { createMasterRouter } from "../../src/master/router";
 import type { QuotationService } from "../../src/quotation/quotation.service";
+import type { MemoOutService } from "../../src/trade-document/memo-out.service";
+import type { MemoOutReturnService } from "../../src/trade-document/memo-out-return.service";
 import type { DocumentSetupService } from "../../src/document-setup/document-setup.service";
 import type { CustomerService } from "../../src/customer/customer.service";
 import type { VendorService } from "../../src/vendor/vendor.service";
@@ -51,6 +53,8 @@ async function startHttp(authReader = vi.fn(async () => ({
     documentSetup: { list: vi.fn(), get: vi.fn(), save: vi.fn() } as unknown as DocumentSetupService,
     currency: { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as unknown as CurrencyService,
     quotation: {} as unknown as QuotationService,
+    memoOut: {} as unknown as MemoOutService,
+    memoOutReturn: {} as unknown as MemoOutReturnService,
   });
   const handler = createHTTPHandler({ router, createContext: ({ req }) => adapter.create(req) });
   const server = createServer(handler);

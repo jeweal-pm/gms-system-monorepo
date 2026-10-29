@@ -76,7 +76,7 @@ export class AuthService {
   validatePasswordChange(input: unknown) {
     const parsed = changePasswordSchema.safeParse(input);
     if (!parsed.success) throw new BadRequestException({ error: "PASSWORD_POLICY_VIOLATION", violations: parsed.error.issues.map((issue) => issue.message) });
-    if (parsed.data.newPassword !== parsed.data.confirmPassword) throw new BadRequestException({ error: "PASSWORD_CONFIRMATION_MISMATCH", violations: ["รหัสผ่านยืนยันไม่ตรงกัน"] });
+    if (parsed.data.newPassword !== parsed.data.confirmPassword) throw new BadRequestException({ error: "PASSWORD_CONFIRMATION_MISMATCH", violations: ["Passwords don't match"] });
     return parsed.data;
   }
 }

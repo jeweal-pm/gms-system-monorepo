@@ -56,7 +56,7 @@ Design ใหม่ของหน้า User and Permission ต่างจา�
 | — | Dashboard (`dashboard`: VIEW, APPROVE, PRICE, PRINT, EXCEL) |
 | SETUP | Company Profile (`company-profile`), User and Permission (`user-and-permission`), Notifications (`notifications`), **Master Code**: Vendor (`vendor`), Customer (`customer`), Stone Master (`stone-master`), Location Master (`location-master`), Certificate Type (`certificate-type`), Labor Name (`labor-name`), Sale Person (`sale-person`) |
 | PRE-SALE | Quotation (`quotation`), Reserve (`reserve`) |
-| Memo | Memo Receive (`memo-receive`), Memo Return (`memo-return`), Memo Out (`memo-out`), Memo Out-Return (`memo-out-return`), **Memo Outstanding**: From Vendor (`memo-outstanding-vendor`), From Customer (`memo-outstanding-customer`) |
+| Memo | Memo Receive (`memo-receive`), Memo Return (`memo-return`), Memo Out (`memo-out`), Memo Out-Return (`memo-out-return`), **Memo Outstanding**: Vendor (`memo-outstanding-vendor`), Customer (`memo-outstanding-customer`) |
 | PURCHASE | Purchase Order (PO) (`purchase-order`), Purchase (`purchase`), Purchase Outstanding (`purchase-outstanding`) |
 | INVENTORY | Load to Stock (`load-to-stock`), Merge/Split (`merge-split`), Stock Transfer Location (`stock-transfer-location`), Stock Adjustment (`stock-adjustment`), Barcode (`barcode`) |
 | SALE | Sale (`sale`) |

@@ -34,9 +34,6 @@ export function QuotationHeader({
   canEdit,
   canDelete,
   actions,
-  title = "Quotation No.:",
-  createHref = "/pre-sale/quotation",
-  statusLabels = STATUS_LABEL,
 }: {
   docNo: string;
   isPreview: boolean;
@@ -50,17 +47,13 @@ export function QuotationHeader({
   canEdit: boolean;
   canDelete: boolean;
   actions: HeaderActions;
-  /** Reused by Memo Receive (ADR-0033 D5); the defaults are the Quotation page. */
-  title?: string;
-  createHref?: string;
-  statusLabels?: StatusLabels;
+
 }) {
   const editing = mode === "edit";
   const badge = status ? statusLabels[status] : undefined;
   return (
     <div className="flex flex-wrap items-start justify-between gap-4 px-6 pt-6 pb-2">
       <div>
-        <p className="text-xs text-[#6B7480]">{title}</p>
         <div className="mt-1 flex flex-wrap items-center gap-3">
           <h1 className={cx("text-[28px] leading-none font-medium", isPreview ? "text-[#6B7480]" : "text-[#1C252E]")}>
             {docNo}
@@ -71,7 +64,7 @@ export function QuotationHeader({
             <ScanLine className="size-4" />
           </IconButton>
         </div>
-        {isPreview && <p className="mt-1 text-xs text-[#6B7480]">Number preview — the number is issued when you save.</p>}
+        {isPreview && <p className="mt-1 text-xs text-[#6B7480]">{previewNote}</p>}
         {statusReason && (status === "REJECTED" || status === "CANCELLED") && (
           <p className="mt-1 max-w-xl text-xs break-words text-[#B42318]">Reason: {statusReason}</p>
         )}
@@ -96,7 +89,6 @@ export function QuotationHeader({
         <div className="flex flex-wrap items-center gap-2">
           {canCreate && (
             <Link
-              href={createHref}
               className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#E3E6EA] px-4 text-sm text-[#6B7480] hover:bg-[#F6F7F8]"
             >
               <Plus className="size-4" /> Create New

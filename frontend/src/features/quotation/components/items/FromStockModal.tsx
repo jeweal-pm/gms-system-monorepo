@@ -1,5 +1,6 @@
 "use client";
 
+import { DateInput } from "@/components/ui/date-input";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Calendar, ChevronsUpDown, MessageSquare, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -87,20 +88,18 @@ export function FromStockModal({
             </label>
             <div className="flex h-10 items-center gap-2 rounded-lg bg-[#F6F7F8] px-3 text-sm">
               <Calendar className="size-4 text-[#6B7480]" />
-              <input
-                type="date"
+              <DateInput
                 aria-label="Loaded from"
                 value={filter.from}
-                onChange={(e) => setFilter((f) => ({ ...f, from: e.target.value }))}
-                className="bg-transparent outline-none"
+                onChange={(from) => setFilter((f) => ({ ...f, from }))}
+                className="w-[130px] bg-transparent outline-none"
               />
               <ArrowRight className="size-4 text-[#6B7480]" />
-              <input
-                type="date"
+              <DateInput
                 aria-label="Loaded to"
                 value={filter.to}
-                onChange={(e) => setFilter((f) => ({ ...f, to: e.target.value }))}
-                className="bg-transparent outline-none"
+                onChange={(to) => setFilter((f) => ({ ...f, to }))}
+                className="w-[130px] bg-transparent outline-none"
               />
             </div>
           </div>

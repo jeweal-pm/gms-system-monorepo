@@ -47,7 +47,6 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   "document-setup": "/setup/document-setup",
   currency: "/setup/currency",
   quotation: "/pre-sale/quotation",
-  "memo-receive": "/memo/memo-receive",
 };
 
 export function navigationHref(item: NavigationItem): string {
@@ -126,9 +125,9 @@ export function setupPlaceholderLink(slug: SetupPlaceholderSlug): { label: strin
 
 /** Navigation id → permission catalog leaf key (catalog v2, ADR-0020) where the two differ. */
 const CATALOG_KEY_ALIASES: Readonly<Record<string, string>> = {
+  "barcode-printing": "barcode",
   "memo-outstanding-from-vendor": "memo-outstanding-vendor",
   "memo-outstanding-from-customer": "memo-outstanding-customer",
-  "barcode-printing": "barcode",
   "os-payable": "outstanding-payable",
   "os-receivable": "outstanding-receivable",
   "sale-report-compare-with-costing": "sale-report-costing",
@@ -199,12 +198,15 @@ export const sidebarSections: NavSection[] = [
       // memo-receive (ADR-0033, mock documents): real page; stays active on /memo/memo-receive/[id].
       { ...link("memo-receive", "Memo Receive", MemoReceiveIcon, REAL_PAGE_HREFS["memo-receive"]), activePrefix: REAL_PAGE_HREFS["memo-receive"] },
       link("memo-return", "Memo Return", MemoReturnIcon),
-      link("memo-out", "Memo Out", MemoOutIcon),
-      link("memo-out-return", "Memo Out Return", MemoOutReturnIcon),
+      // memo-out UI rev 1 (owner 2026-10-28): page structure; stays active on /memo/memo-out/*.
+      { ...link("memo-out", "Memo Out", MemoOutIcon, REAL_PAGE_HREFS["memo-out"]), activePrefix: REAL_PAGE_HREFS["memo-out"] },
+      // memo-out-return UI rev 1 (owner 2026-10-28): page structure; stays active on /memo/memo-out-return/*.
+      { ...link("memo-out-return", "Memo Out Return", MemoOutReturnIcon, REAL_PAGE_HREFS["memo-out-return"]), activePrefix: REAL_PAGE_HREFS["memo-out-return"] },
       // DV-03: the design text "From Vender" is spelled "From Vendor".
+      // Owner 2026-10-28: sub-items read "Vendor" / "Customer" (no "From"); ids and catalog keys unchanged.
       disclosure("memo-outstanding", "Memo Outstanding", FileOutstandingIcon, [
-        link("memo-outstanding-from-vendor", "From Vendor"),
-        link("memo-outstanding-from-customer", "From Customer"),
+        link("memo-outstanding-from-vendor", "Vendor"),
+        link("memo-outstanding-from-customer", "Customer"),
       ]),
     ],
   },
@@ -431,7 +433,7 @@ const placeholderCatalog: ReadonlyMap<string, PlaceholderEntry> = (() => {
   return catalog;
 })();
 
-/** Breadcrumbs for a `/modules/<slug>` placeholder; unknown slugs keep `label: null` ("ไม่พบเมนู"). */
+/** Breadcrumbs for a `/modules/<slug>` placeholder; unknown slugs keep `label: null` ("Menu not found"). */
 export function moduleBreadcrumbs(slug: string): { label: string | null; breadcrumbs: Breadcrumb[] } {
   const entry = placeholderCatalog.get(slug);
   if (entry) return { label: entry.label, breadcrumbs: entry.breadcrumbs };

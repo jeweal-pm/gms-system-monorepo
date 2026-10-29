@@ -4,7 +4,12 @@ import { useFormContext, useWatch } from "react-hook-form";
 import { useDocumentKind } from "../../document-kind";
 import type { QuotationFormValues } from "../../schema";
 
-export function DocumentNote() {
+/** Wording defaults to the quotation; memo-out passes its own. */
+export function DocumentNote({
+  placeholder = "e.g. Prices valid for 30 days. 50% deposit, balance before delivery.",
+  hint = "Printed on the quotation for the customer",
+  max = MAX_DOCUMENT_NOTE,
+}: { placeholder?: string; hint?: string; max?: number }) {
   const { register, control } = useFormContext<QuotationFormValues>();
   const note = useWatch({ control, name: "documentNote" });
   const { max, hint } = useDocumentKind().documentNote;
@@ -15,7 +20,6 @@ export function DocumentNote() {
       <textarea
         rows={4}
         maxLength={max}
-        placeholder="e.g. Prices valid for 30 days. 50% deposit, balance before delivery."
         className="w-full resize-none rounded-lg border border-[#E3E6EA] px-3 py-2.5 text-sm text-[#1C252E] outline-none placeholder:text-[#A9B1B9] focus:border-[#0E5E63] focus:ring-2 focus:ring-[#0E5E63]/15 disabled:bg-[#F6F7F8]"
         {...register("documentNote")}
       />

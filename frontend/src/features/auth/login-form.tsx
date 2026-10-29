@@ -68,17 +68,17 @@ export function LoginForm() {
         const retryAfterSeconds = error.retryAfterSeconds ?? error.error?.retryAfterSeconds;
         const attemptsRemaining = error.attemptsRemaining ?? error.error?.attemptsRemaining;
         if (error.code === "ACCOUNT_INACTIVE") {
-          setServerError("บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ");
+          setServerError("This account is disabled. Please contact your administrator.");
         } else if (error.status === 423 || retryAfterSeconds) {
           const seconds = Math.max(1, retryAfterSeconds ?? 60);
           setLockoutSeconds(seconds);
-          setServerError(`ใส่รหัสผ่านผิด 3 ครั้ง กรุณารอ ${seconds} วินาที`);
+          setServerError(`Wrong password 3 times. Please wait ${seconds} seconds.`);
         } else if (error.status === 429) {
-          setServerError("มีการลองเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่");
+          setServerError("Too many sign-in attempts. Please wait a moment and try again.");
         } else if (attemptsRemaining !== undefined) {
-          setServerError(`ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (เหลืออีก ${attemptsRemaining} ครั้ง)`);
+          setServerError(`Incorrect username or password (${attemptsRemaining} attempts left)`);
         } else {
-          setServerError("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+          setServerError("Incorrect username or password");
         }
         return;
       }
@@ -87,7 +87,7 @@ export function LoginForm() {
       router.replace("/");
       router.refresh();
     } catch {
-      setServerError("ไม่สามารถเข้าสู่ระบบได้ กรุณาลองใหม่อีกครั้ง");
+      setServerError("Couldn't log in. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -129,7 +129,7 @@ export function LoginForm() {
 
       <div className="mt-8 flex flex-wrap items-center justify-between gap-y-3 pt-1 text-gms-body">
         <label className="flex items-center gap-2.5 text-[#657681]"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="size-5 rounded border border-[#cbdce2] accent-[#007570]" /> Remember this device</label>      </div>
-      {serverError && <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-gms-body text-red-700">{lockoutSeconds > 0 ? `บัญชีถูกล็อกชั่วคราว กรุณารออีก ${lockoutSeconds} วินาที` : serverError}</p>}
+      {serverError && <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-gms-body text-red-700">{lockoutSeconds > 0 ? `Account temporarily locked. Please wait ${lockoutSeconds} seconds.` : serverError}</p>}
       <button disabled={submitting || lockoutSeconds > 0} type="submit" className="mt-[19px] h-[64px] w-full rounded-xl bg-[#006d70] text-gms-body font-semibold text-white shadow-sm transition hover:bg-[#005a5d] disabled:cursor-wait disabled:opacity-65">
         {submitting ? "Logging in…" : lockoutSeconds > 0 ? `Try again in ${lockoutSeconds}s` : "Log in"}
       </button>
