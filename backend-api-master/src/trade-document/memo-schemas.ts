@@ -107,6 +107,8 @@ export const memoStockListSchema = z.object({
   from: z.iso.date().optional(),
   to: z.iso.date().optional(),
   cursor: z.string().max(200).nullish(),
+  /** Sent by tRPC infinite queries (the Add Memo Stock "Load more"); pages only go forward. */
+  direction: z.enum(["forward", "backward"]).optional(),
   limit: z.number().int().min(1).max(50).default(50),
 }).strict().superRefine((value, ctx) => {
   if (value.from && value.to) {

@@ -13,14 +13,14 @@ import { Badge, Button, cx } from "../ui";
 type Column = { title: string; sub?: string; align?: "right"; className?: string };
 
 export const itemColumns = (stoneCode: boolean, location = true): Column[] => [
-  stoneCode ? { title: "Stone Code", sub: "STOCK ID · LOT", className: "w-[200px]" } : { title: "STOCK ID", sub: "LOT", className: "w-[200px]" },
-  ...(location ? [{ title: "LOCATION", className: "w-[96px]" }] : []),
-  { title: "STONE", sub: "SHAPE · SIZE", className: "w-[150px]" },
-  { title: "COLOR · CLARITY", sub: "CUTTING · QUALITY", className: "w-[150px]" },
-  { title: "CER TYPE", sub: "CER NO.", className: "w-[140px]" },
-  { title: "PCS", align: "right", className: "w-[64px]" },
+  stoneCode ? { title: "Stone Code", sub: "Stock ID · Lot", className: "w-[200px]" } : { title: "Stock ID", sub: "Lot", className: "w-[200px]" },
+  ...(location ? [{ title: "Location", className: "w-[96px]" }] : []),
+  { title: "Stone", sub: "Shape · Size", className: "w-[150px]" },
+  { title: "Color · Clarity", sub: "Cutting · Quality", className: "w-[150px]" },
+  { title: "Cer Type", sub: "Cer No.", className: "w-[140px]" },
+  { title: "Pcs", align: "right", className: "w-[64px]" },
   { title: "Weight (ct)", align: "right", className: "w-[100px]" },
-  { title: "SALE PRICE", sub: "UNIT", align: "right", className: "w-[130px]" },
+  { title: "Sale Price", sub: "Unit", align: "right", className: "w-[130px]" },
   { title: "Amount", align: "right", className: "w-[120px] border-l border-[#E3E6EA]" },
 ];
 

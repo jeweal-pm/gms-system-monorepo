@@ -156,16 +156,16 @@ describe("contract mapping (UT-MR-F1)", () => {
 
 describe("Stock ID, Location and Approve (UT-MR-F2)", () => {
   it("Memo Receive has no Location column; Quotation keeps it", () => {
-    expect(itemColumns(false, false).map((c) => c.title)).not.toContain("LOCATION");
-    expect(itemColumns(true).map((c) => c.title)).toContain("LOCATION");
+    expect(itemColumns(false, false).map((c) => c.title)).not.toContain("Location");
+    expect(itemColumns(true).map((c) => c.title)).toContain("Location");
     const lines = [{ ...emptyLine(), stone: "Ruby", pcs: "1", weightCt: "1", unitPrice: "10", locationId: "Vault" }, { ...emptyLine(), stockId: "260001", stone: "Opal", pcs: "1", weightCt: "1", unitPrice: "10" }];
     const receive = table({ ...MEMO_RECEIVE_KIND }, lines);
-    expect(receive).not.toContain("LOCATION");
+    expect(receive).not.toContain("Location");
     expect(receive).not.toContain("Vault");
     expect(receive).toContain("Auto");
     expect(receive).toContain("260001");
     const quotation = table(QUOTATION_KIND, lines);
-    expect(quotation).toContain("LOCATION");
+    expect(quotation).toContain("Location");
     expect(quotation).toContain("Vault");
   });
 

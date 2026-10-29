@@ -49,14 +49,14 @@ type FieldShellProps = {
 export type LabelPosition = "notch" | "above";
 
 /**
- * The label sits across the top border: its upper half is transparent (the card or panel behind
- * shows through, owner 2026-10-16), the lower half from 6 px uses the field fill so the border line
- * does not cross the text.
+ * The label sits across the top border: everything above the border is transparent (the card or panel
+ * behind shows through, owner 2026-10-16/2026-10-29), and from the border line (8 px) it takes the field
+ * fill, so the border does not cross the text and no colored strip shows around the label in any state.
  */
 function labelBackground({ invalid, readOnly, disabled }: { invalid: boolean; readOnly?: boolean; disabled?: boolean }) {
-  if (disabled || readOnly) return "bg-[linear-gradient(to_bottom,transparent_6px,var(--color-gms-field-disabled)_6px)]";
-  if (invalid) return "bg-[linear-gradient(to_bottom,transparent_6px,var(--color-gms-danger-subtle)_6px)]";
-  return "bg-[linear-gradient(to_bottom,transparent_6px,var(--color-gms-surface)_6px)]";
+  if (disabled || readOnly) return "bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-field-disabled)_8px)]";
+  if (invalid) return "bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-danger-subtle)_8px)]";
+  return "bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-surface)_8px)]";
 }
 
 /**

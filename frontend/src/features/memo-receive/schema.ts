@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { isFilledLine, lineSchema, serviceChargeSchema } from "@/features/quotation/schema";
+import { DUE_BEFORE_DOC_MESSAGE, isFilledLine, lineSchema, serviceChargeSchema } from "@/features/quotation/schema";
 
 /** Memo Receive (ADR-0033, ADR-0034): lines, discounts and totals use the Quotation shape (D6, rev 2). */
 export const MEMO_RECEIVE_STATUSES = ["PENDING_APPROVAL", "APPROVED"] as const;
@@ -35,7 +35,7 @@ export const memoReceiveSchema = z
   })
   .superRefine((value, ctx) => {
     if (value.dueDate && value.docDate && value.dueDate < value.docDate) {
-      ctx.addIssue({ code: "custom", path: ["dueDate"], message: "Due date must be on or after doc date" });
+      ctx.addIssue({ code: "custom", path: ["dueDate"], message: DUE_BEFORE_DOC_MESSAGE });
     }
     value.lines.forEach((line, index) => {
       if (line.discountType === "PERCENT" && line.discountValue !== "" && Number(line.discountValue) > 100) {

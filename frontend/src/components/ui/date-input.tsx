@@ -47,6 +47,11 @@ export function monthGrid(year: number, month: number): { iso: string; day: numb
   });
 }
 
+/** True when both are ISO dates and `iso` is before `min` (Due Date before Doc Date). */
+export function isBeforeDate(iso: string | undefined, min: string | undefined): boolean {
+  return Boolean(iso && min && /^\d{4}-\d{2}-\d{2}$/.test(iso) && /^\d{4}-\d{2}-\d{2}$/.test(min) && iso < min);
+}
+
 function todayIso(): string {
   const now = new Date();
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
@@ -57,15 +62,17 @@ function viewOf(iso: string): { year: number; month: number } {
   return { year, month: month - 1 };
 }
 
-export type DateInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "defaultValue" | "onChange" | "type"> & {
+export type DateInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "defaultValue" | "onChange" | "type" | "min"> & {
   /** ISO `YYYY-MM-DD`, or "". */
   value: string;
   onChange: (value: string) => void;
+  /** Earliest date the calendar offers (ISO); earlier days are greyed out (Due Date ≥ Doc Date, owner 2026-10-29). */
+  min?: string;
   wrapperClassName?: string;
 };
 
 export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function DateInput(
-  { value, onChange, onBlur, className, wrapperClassName, disabled, readOnly, placeholder = "dd/mm/yyyy", ...props },
+  { value, onChange, onBlur, className, wrapperClassName, disabled, readOnly, min, placeholder = "dd/mm/yyyy", ...props },
   ref,
 ) {
   const [text, setText] = useState(() => formatDateText(value));
@@ -101,6 +108,7 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
   const step = (delta: number) => setView(({ year, month }) => ({ year: year + Math.floor((month + delta) / 12), month: (month + delta + 12) % 12 }));
   const today = todayIso();
   const locked = disabled || readOnly;
+  const tooEarly = (iso: string) => isBeforeDate(iso, min);
 
   return (
     <div ref={boxRef} className={`relative ${wrapperClassName ?? ""}`}>
@@ -114,7 +122,7 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
         disabled={disabled}
         readOnly={readOnly}
         value={text}
-        className={`${className ?? ""} pr-10`}
+        className={`peer ${className ?? ""} pr-10`}
         onChange={(event) => {
           const next = maskDateText(event.target.value);
           setText(next);
@@ -131,7 +139,8 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
         aria-label="Open calendar"
         aria-expanded={open}
         disabled={locked}
-        className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-gms-text-secondary hover:bg-gms-page disabled:cursor-not-allowed disabled:opacity-50"
+        // No hover background on an invalid or locked (disabled / read-only) field (owner 2026-10-29).
+        className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-gms-text-secondary hover:bg-gms-page peer-aria-invalid:hover:bg-transparent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent focus-visible:outline-2 focus-visible:outline-gms-primary"
         onClick={() => {
           setView(viewOf(value));
           setOpen((current) => !current);
@@ -172,11 +181,16 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
                 type="button"
                 aria-label={formatDateText(cell.iso)}
                 aria-pressed={cell.iso === value}
+                disabled={tooEarly(cell.iso)}
                 className={[
                   "h-8 rounded",
-                  cell.iso === value ? "bg-gms-primary text-white" : "hover:bg-gms-page",
-                  !cell.inMonth && cell.iso !== value ? "text-gms-text-placeholder" : "",
-                  cell.iso === today && cell.iso !== value ? "font-semibold text-gms-primary" : "",
+                  tooEarly(cell.iso)
+                    ? "cursor-not-allowed text-gms-text-placeholder opacity-50"
+                    : [
+                        cell.iso === value ? "bg-gms-primary text-white" : "hover:bg-gms-page",
+                        !cell.inMonth && cell.iso !== value ? "text-gms-text-placeholder" : "",
+                        cell.iso === today && cell.iso !== value ? "font-semibold text-gms-primary" : "",
+                      ].join(" "),
                 ].join(" ")}
                 onClick={() => pick(cell.iso)}
               >
@@ -185,7 +199,12 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(function D
             ))}
           </div>
           <div className="mt-2 flex justify-end">
-            <button type="button" className="rounded px-2 py-1 text-sm font-medium text-gms-primary hover:bg-gms-page" onClick={() => pick(today)}>
+            <button
+              type="button"
+              disabled={tooEarly(today)}
+              className="rounded px-2 py-1 text-sm font-medium text-gms-primary hover:bg-gms-page disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+              onClick={() => pick(today)}
+            >
               Today
             </button>
           </div>

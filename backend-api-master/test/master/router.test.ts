@@ -406,6 +406,9 @@ describe("staged master domain tRPC boundary", () => {
     // The Add Memo Stock dialog passes the return's currency.
     await router.createCaller(context(["memo-return:VIEW"])).memoStock.list({ vendorId: ID, currency: "THB" });
     expect(memoStock.list).toHaveBeenLastCalledWith(expect.objectContaining({ vendorId: ID, currency: "THB" }));
+    // The dialog pages with a tRPC infinite query, which adds `direction`.
+    await router.createCaller(context(["memo-return:VIEW"])).memoStock.list({ vendorId: ID, currency: "THB", cursor: null, direction: "forward" });
+    expect(memoStock.list).toHaveBeenLastCalledWith(expect.objectContaining({ direction: "forward", cursor: null }));
     await expect(router.createCaller(context(["memo-return:VIEW"])).memoStock.list({ vendorId: ID, currency: "thb" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     await router.createCaller(context(["memo-return:VIEW"])).currency.options();

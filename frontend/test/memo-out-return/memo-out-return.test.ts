@@ -66,12 +66,12 @@ describe("navigation and access (UT-MOR-01)", () => {
 });
 
 describe("return item table (UT-MOR-02/03, design rev 3)", () => {
-  it("has the design headers (STOCK ID · LOT, Outstanding and Return, Memo PRICE) and no More, checkbox or remove", () => {
+  it("has the design headers (Stock ID · Lot, Outstanding and Return, Memo Price) in Title Case and no More, checkbox or remove", () => {
     const html = renderTable(undefined, "Empty row · click to pick from Memo Stock");
-    for (const title of ["STOCK ID", "LOT", "LOCATION", "SHAPE · SIZE", "COLOR · CLARITY", "CUTTING · QUALITY", "CER TYPE", "CER NO.", "Memo PRICE", "UNIT", "Amount"]) expect(html).toContain(`>${title}<`);
+    for (const title of ["Stock ID", "Lot", "Location", "Shape · Size", "Color · Clarity", "Cutting · Quality", "Cer Type", "Cer No.", "Memo Price", "Unit", "Amount"]) expect(html).toContain(`>${title}<`);
     expect(html).toMatch(/colSpan="2"[^>]*>Outstanding<\/th>/i);
     expect(html).toMatch(/colSpan="2"[^>]*>Return<\/th>/i);
-    expect(html).not.toMatch(/>More<|>Pending<|>SALE PRICE<|Stone Code|type="checkbox"|Remove row|#E3F0F0|Add row/);
+    expect(html).not.toMatch(/>More<|>Pending<|>Sale Price<|Stone Code|type="checkbox"|Remove row|#E3F0F0|Add row/);
     expect(html.match(/Empty row · click to pick from Memo Stock/g)).toHaveLength(2);
     expect(html).not.toContain("<input");
   });

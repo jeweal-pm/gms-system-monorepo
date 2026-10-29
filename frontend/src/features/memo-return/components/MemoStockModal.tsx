@@ -103,13 +103,13 @@ export function MemoStockModal({ vendorId, currency, pickedIds, onCancel, onConf
                       />
                     </th>
                     <th rowSpan={2} className="w-8 font-normal text-[#6B7480]">#</th>
-                    <Th title="STOCK ID" sub="LOT" />
-                    <Th title="LOCATION" />
-                    <Th title="STONE" sub="SHAPE · SIZE" />
-                    <Th title="COLOR · CLARITY" sub="CUTTING · QUALITY" />
-                    <Th title="CER TYPE" sub="CER NO." />
+                    <Th title="Stock ID" sub="Lot" />
+                    <Th title="Location" />
+                    <Th title="Stone" sub="Shape · Size" />
+                    <Th title="Color · Clarity" sub="Cutting · Quality" />
+                    <Th title="Cer Type" sub="Cer No." />
                     <th colSpan={2} className="border-b border-l border-[#E3E6EA] px-3 py-3 text-center font-medium">Pending</th>
-                    <Th title="PRICE" sub="UNIT" right divider />
+                    <Th title="Price" sub="Unit" right divider />
                     <Th title="Amount" right />
                   </tr>
                   <tr>

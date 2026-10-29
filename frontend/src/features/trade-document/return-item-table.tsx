@@ -8,6 +8,7 @@ import { Badge, Button, cx } from "@/features/quotation/components/ui";
 import { lineAmount } from "@/features/quotation/lib/calculate";
 import { add, dec, div, mul, toFixed, ZERO } from "@/features/quotation/lib/decimal";
 import { formatMoney, formatMoneyText, formatWeight } from "@/features/quotation/lib/format";
+import { sanitizeQuantity } from "@/features/quotation/lib/number";
 import { visibleRowsHeight } from "@/features/quotation/lib/table-scroll";
 import { isFilledLine, type QuotationLine } from "@/features/quotation/schema";
 
@@ -24,17 +25,17 @@ export type ReturnTableOptions = {
   addRow: boolean;
   /** Typing Return Pcs fills Return Weight in proportion to the Outstanding one (memo return design: 7 of 10 pcs, 3.20 ct → 2.24). */
   autoWeight: boolean;
-  /** A saved document in view mode leads with "Stone Code · STOCK ID · LOT" (memo return design, view). */
+  /** A saved document in view mode leads with "Stone Code · Stock ID · Lot" (memo return design, view). */
   viewStoneCode: boolean;
 };
 
 type Column = { title: string; sub?: string; className: string };
 
 const REST: Column[] = [
-  { title: "LOCATION", className: "w-[120px]" },
-  { title: "STONE", sub: "SHAPE · SIZE", className: "w-[140px]" },
-  { title: "COLOR · CLARITY", sub: "CUTTING · QUALITY", className: "w-[150px]" },
-  { title: "CER TYPE", sub: "CER NO.", className: "w-[120px]" },
+  { title: "Location", className: "w-[120px]" },
+  { title: "Stone", sub: "Shape · Size", className: "w-[140px]" },
+  { title: "Color · Clarity", sub: "Cutting · Quality", className: "w-[150px]" },
+  { title: "Cer Type", sub: "Cer No.", className: "w-[120px]" },
 ];
 const QTY = "w-[108px] px-3 text-right";
 const DIVIDER = "border-l border-[#E3E6EA]";
@@ -53,7 +54,7 @@ export function returnItemTable(options: ReturnTableOptions) {
     const outstandingWeight = add(ZERO, ...filledLines.map((line) => dec(line.outstandingWeightCt)));
     const controls = options.rowControls && !readOnly;
     const stoneCodeFirst = options.viewStoneCode && readOnly;
-    const first: Column = stoneCodeFirst ? { title: "Stone Code", sub: "STOCK ID · LOT", className: "w-[200px]" } : { title: "STOCK ID", sub: "LOT", className: "w-[180px]" };
+    const first: Column = stoneCodeFirst ? { title: "Stone Code", sub: "Stock ID · Lot", className: "w-[200px]" } : { title: "Stock ID", sub: "Lot", className: "w-[180px]" };
     const left = [first, ...REST];
     const allChecked = returnLines.length > 0 && returnLines.every((line) => checkedKeys.has(line.key));
     const lead = controls ? 3 : 1;
@@ -109,8 +110,8 @@ export function returnItemTable(options: ReturnTableOptions) {
                 <th rowSpan={2} className={cx("w-[130px] px-3 py-3 text-right font-medium", DIVIDER)}>
                   <span className="inline-flex flex-row-reverse items-center gap-1.5">
                     <span className="leading-tight">
-                      <span className="block whitespace-nowrap">Memo PRICE</span>
-                      <span className="block text-[11px] font-normal text-[#6B7480]">UNIT</span>
+                      <span className="block whitespace-nowrap">Memo Price</span>
+                      <span className="block text-[11px] font-normal text-[#6B7480]">Unit</span>
                     </span>
                     <ChevronsUpDown className="size-3 text-[#95A0A9]" />
                   </span>
@@ -209,33 +210,51 @@ export function returnItemTable(options: ReturnTableOptions) {
   };
 }
 
+/** Return cell limits (server): pcs a whole number ≤ 999,999; weight 5 whole digits + 3 decimals. */
+const RETURN_LIMITS = { pcs: { whole: 6, decimals: 0, placeholder: "0" }, weightCt: { whole: 5, decimals: 3, placeholder: "0.00" } } as const;
+
 /**
- * Return Pcs / Weight of one row — the only editable cells (≤ Outstanding, checked by the form schema). With
- * `autoWeight`, a new pcs value also fills the weight in proportion: Outstanding weight × pcs ÷ Outstanding pcs.
+ * Return Pcs / Weight of one row — the only editable cells (≤ Outstanding, checked by the form schema). Numbers only,
+ * empty with a "0" placeholder (owner 2026-10-29); the row is checked as you type. With `autoWeight`, a new pcs
+ * value also fills the weight in proportion: Outstanding weight × pcs ÷ Outstanding pcs.
  */
 function ReturnInput({ index, field, label, line, autoWeight }: { index: number; field: "pcs" | "weightCt"; label: string; line: ReturnLine; autoWeight: boolean }) {
-  const { register, setValue, formState } = useFormContext();
+  const { register, setValue, trigger, clearErrors, getValues, formState } = useFormContext();
+  const limits = RETURN_LIMITS[field];
   const error = (formState.errors.lines as unknown as Record<string, FieldError | undefined>[] | undefined)?.[index]?.[field] as FieldError | undefined;
+  const rowFields = [`lines.${index}.pcs`, `lines.${index}.weightCt`];
   const registered = register(`lines.${index}.${field}`, {
     onChange: autoWeight
       ? (event: { target: { value: string } }) => {
-          const pcs = dec(event.target.value);
           const outstanding = dec(line.outstandingPcs);
           if (outstanding <= ZERO) return;
+          // An emptied pcs empties the weight too (back to its placeholder).
+          if (event.target.value === "") return setValue(`lines.${index}.weightCt`, "", { shouldDirty: true });
           // Two decimals, as the design shows (7 of 10 pcs, 3.20 ct → 2.24); the weight stays editable.
-          const weight = div(mul(dec(line.outstandingWeightCt), pcs), outstanding);
-          setValue(`lines.${index}.weightCt`, toFixed(weight, 2), { shouldDirty: true, shouldValidate: formState.isSubmitted });
+          const weight = div(mul(dec(line.outstandingWeightCt), dec(event.target.value)), outstanding);
+          setValue(`lines.${index}.weightCt`, toFixed(weight, 2), { shouldDirty: true });
         }
       : undefined,
   });
   return (
     <input
       {...registered}
+      onChange={(event) => {
+        event.target.value = sanitizeQuantity(event.target.value, limits.whole, limits.decimals);
+        void registered.onChange(event).then(() => {
+          // "More than outstanding" shows as you type; an empty row is reported on Save ("Enter the return quantity").
+          const empty = rowFields.every((name) => !getValues(name));
+          if (empty && !formState.isSubmitted) clearErrors(rowFields);
+          else void trigger(rowFields);
+        });
+      }}
       aria-label={label}
       aria-invalid={error ? true : undefined}
       title={error?.message}
-      inputMode="decimal"
-      className={cx("h-9 w-full rounded-md border bg-white px-2 text-right outline-none focus:border-[#0E5E63]", error ? "border-[#E5484D]" : "border-[#DFE3E8]")}
+      placeholder={limits.placeholder}
+      autoComplete="off"
+      inputMode={limits.decimals === 0 ? "numeric" : "decimal"}
+      className={cx("h-9 w-full rounded-md border bg-white px-2 text-right outline-none placeholder:text-gms-text-placeholder focus:border-[#0E5E63]", error ? "border-[#E5484D]" : "border-[#DFE3E8]")}
     />
   );
 }

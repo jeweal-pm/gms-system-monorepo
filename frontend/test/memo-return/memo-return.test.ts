@@ -76,9 +76,9 @@ describe("navigation and access (UT-MRT-01)", () => {
 });
 
 describe("item table (UT-MRT-02, design)", () => {
-  it("edit mode: checkbox, remove, STOCK ID · LOT, Outstanding / Return, Memo PRICE, Add row; only Return Pcs / Weight are inputs", () => {
+  it("edit mode: checkbox, remove, Stock ID · Lot, Outstanding / Return, Memo Price, Add row; only Return Pcs / Weight are inputs", () => {
     const html = renderTable([picked(), blank()]);
-    for (const title of ["STOCK ID", "LOT", "LOCATION", "COLOR · CLARITY", "CER TYPE", "Memo PRICE", "UNIT", "Amount", "Totals"]) expect(html).toContain(`>${title}<`);
+    for (const title of ["Stock ID", "Lot", "Location", "Color · Clarity", "Cer Type", "Memo Price", "Unit", "Amount", "Totals"]) expect(html).toContain(`>${title}<`);
     expect(html).toMatch(/colSpan="2"[^>]*>Outstanding<\/th>/);
     expect(html).toMatch(/colSpan="2"[^>]*>Return<\/th>/);
     expect(html).toContain('aria-label="Select all rows"');
@@ -87,15 +87,18 @@ describe("item table (UT-MRT-02, design)", () => {
     expect(html).toContain("Empty row · click to pick from Memo Stock");
     expect(html).toContain('aria-label="Return pcs, row 1"');
     expect(html).toContain('aria-label="Return weight, row 1"');
+    // UT-MRT-10: numbers only, with a 0 placeholder (owner 2026-10-29).
+    expect(html).toMatch(/aria-label="Return pcs, row 1"[^>]*placeholder="0"[^>]*inputMode="numeric"|placeholder="0"[^>]*aria-label="Return pcs, row 1"/);
+    expect(html).toMatch(/placeholder="0.00"/);
     expect(html.match(/<input(?![^>]*type="checkbox")/g)).toHaveLength(2);
     expect(html).toContain("18,000.00 THB");
     expect(html).toContain("per cts");
     expect(html).toContain("40,320.00"); // 2.24 ct × 18,000
   });
 
-  it("view mode: STOCK ID · LOT first (Memo Stock has no stone code), Return as text, no checkbox, remove, inputs or Add row", () => {
+  it("view mode: Stock ID · Lot first (Memo Stock has no stone code), Return as text, no checkbox, remove, inputs or Add row", () => {
     const html = renderTable([picked()], true);
-    expect(html).toContain(">STOCK ID<");
+    expect(html).toContain(">Stock ID<");
     expect(html).not.toContain(">Stone Code<");
     expect(html).toContain("260001");
     expect(html).not.toMatch(/<input|Remove row|Add row/);
@@ -105,10 +108,10 @@ describe("item table (UT-MRT-02, design)", () => {
 });
 
 describe("Memo Stock and form rules (UT-MRT-03/04)", () => {
-  it("UT-MRT-03 a Memo Stock row becomes a return row with Return 0 / 0.00, its Stock ID, net price and Outstanding", () => {
+  it("UT-MRT-03 a Memo Stock row becomes a return row with an empty Return, its Stock ID, net price and Outstanding", () => {
     expect(memoStockToLine(stockItem)).toMatchObject({
       memoStockId: SOURCE, stockId: "260001", stoneCode: "", lot: "L-2608-003", locationId: "Memo", unitPrice: "18000.00", priceUnit: "PER_CT",
-      itemNote: "Unheated", pcs: "0", weightCt: "0.00", outstandingPcs: "10", outstandingWeightCt: "3.200",
+      itemNote: "Unheated", pcs: "", weightCt: "", outstandingPcs: "10", outstandingWeightCt: "3.200",
     });
     expect(memoStockToLine({ ...stockItem, priceUnit: "PCS", netUnitPrice: "333.3350" })).toMatchObject({ priceUnit: "PER_PCS", unitPrice: "333.34" });
     expect([...pickedStockIds([picked(), blank()])]).toEqual([SOURCE]);
@@ -119,6 +122,8 @@ describe("Memo Stock and form rules (UT-MRT-03/04)", () => {
     expect(paths(values())).toEqual([]);
     expect(paths(values({ vendorId: "", addressId: "" }))).toEqual(["vendorId", "addressId"]);
     expect(paths(values({ lines: [picked({ pcs: "0", weightCt: "0.00" })] }))).toEqual(["lines.0.pcs"]);
+    expect(paths(values({ lines: [picked({ pcs: "", weightCt: "" })] }))).toEqual(["lines.0.pcs"]);
+    expect(paths(values({ lines: [picked({ pcs: "", weightCt: "1.5" })] }))).toEqual([]);
     expect(paths(values({ lines: [picked({ pcs: "11", weightCt: "3.3" })] }))).toEqual(["lines.0.pcs", "lines.0.weightCt"]);
     expect(paths(values({ documentNote: "x".repeat(MEMO_RETURN_NOTE_MAX + 1) }))).toEqual(["documentNote"]);
     expect(emptyMemoReturn().status).toBe("PENDING_APPROVAL");
@@ -171,5 +176,28 @@ describe("view header (UT-MRT-07, design view)", () => {
     expect(html).toContain("V001 · BC Stone Shop Co., Ltd.");
     expect(html).toContain("BC Stone Shop, Silom Rd.");
     expect(html).toContain("03/10/2026");
+  });
+});
+
+describe("table headers (owner 2026-10-29: Title Case, e.g. STOCK ID → Stock ID)", () => {
+  it("UT-MRT-09 no all-caps header words except acronyms", () => {
+    const headers = [...renderTable([picked(), blank()]).matchAll(/<th[^>]*>([\s\S]*?)<\/th>/g)].map((m) => m[1].replace(/<[^>]+>/g, " ")).join(" ");
+    const caps = (headers.match(/\b[A-Z]{2,}\b/g) ?? []).filter((word) => word !== "ID");
+    expect(caps).toEqual([]);
+  });
+});
+
+describe("Return cells accept numbers only (UT-MRT-10, owner 2026-10-29)", () => {
+  it("drops letters and symbols and keeps the server limits", async () => {
+    const { sanitizeQuantity } = await import("@/features/quotation/lib/number");
+    expect(sanitizeQuantity("dfgfdgdf", 6, 0)).toBe("");
+    expect(sanitizeQuantity("1a2b3", 6, 0)).toBe("123");
+    expect(sanitizeQuantity("7.5", 6, 0)).toBe("75");
+    expect(sanitizeQuantity("12345678", 6, 0)).toBe("123456");
+    expect(sanitizeQuantity("1000000", 5, 3)).toBe("10000");
+    expect(sanitizeQuantity("2.2456", 5, 3)).toBe("2.245");
+    expect(sanitizeQuantity("1,234.5x", 5, 3)).toBe("1234.5");
+    expect(sanitizeQuantity(".5", 5, 3)).toBe("0.5");
+    expect(sanitizeQuantity("-3", 5, 3)).toBe("3");
   });
 });

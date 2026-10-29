@@ -85,7 +85,7 @@ export function emptyMemoReturn(): MemoReturnFormValues {
 }
 
 /**
- * A Memo Stock row → a return row with Return 0 / 0.00 (design). The price is the item's price after the line
+ * A Memo Stock row → a return row with an empty Return (placeholder 0 / 0.00, owner 2026-10-29). The price is the item's price after the line
  * discount (Q-MR-13) at 2 dp, as the server stores it; Memo Stock has no stone code.
  */
 export function memoStockToLine(item: MemoStockItem): MemoReturnLine {
@@ -106,8 +106,8 @@ export function memoStockToLine(item: MemoStockItem): MemoReturnLine {
     quality: item.quality,
     cerType: item.cerType,
     cerNo: item.cerNo,
-    pcs: "0",
-    weightCt: "0.00",
+    pcs: "",
+    weightCt: "",
     priceUnit: item.priceUnit === "PCS" ? "PER_PCS" : "PER_CT",
     unitPrice: toFixed(dec(item.netUnitPrice), 2),
     discountType: "PERCENT",

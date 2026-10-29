@@ -66,7 +66,7 @@ export function VendorDocumentInfoForm({ options, onVendorChange: afterVendorCha
       </div>
       <div className="grid grid-cols-1 gap-x-4 gap-y-5 md:grid-cols-[200px_1fr_1fr_1fr]">
         <Field label="Due Date" required error={errors.dueDate?.message}>
-          <FormDateInput<VendorHeaderValues> name="dueDate" />
+          <FormDateInput<VendorHeaderValues> name="dueDate" notBefore="docDate" />
         </Field>
         <Field label="Currency" required error={errors.currency?.message}>
           <FormSelect<VendorHeaderValues> name="currency" options={quotationCurrencyOptions(items, currency)} onValueChange={onCurrencyChange} />

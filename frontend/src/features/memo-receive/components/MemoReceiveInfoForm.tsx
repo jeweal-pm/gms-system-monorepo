@@ -70,7 +70,7 @@ export function MemoReceiveInfoForm({ options, optionsError }: { options: MemoRe
       </div>
 
       <Field label="Due Date" required error={errors.dueDate?.message}>
-        <FormDateInput<MemoReceiveFormValues> name="dueDate" />
+        <FormDateInput<MemoReceiveFormValues> name="dueDate" notBefore="docDate" />
       </Field>
       <LoadNote message={rates.error ? memoReceiveLoadError(rates.error, "currencies") : undefined}>
         <Field label="Currency" required error={errors.currency?.message}>
