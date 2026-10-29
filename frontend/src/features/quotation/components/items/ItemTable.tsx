@@ -38,7 +38,7 @@ export function ItemTable({
   onToggleAll,
   onRowAction,
   onAddRow,
-  emptyRowText = "Empty row · click to key in, or use From Stock to fill it",
+  emptyRowText,
 }: {
   lines: QuotationLine[];
   currency: string;
@@ -164,6 +164,7 @@ export function ItemTable({
                   ) : (
                     <>
                       <td colSpan={COLUMNS.length - 1} className="px-3 py-4 text-[#A9B1B9]">
+                        {emptyRowText ?? kind.emptyRowText}
                       </td>
                       <td className="border-l border-[#E3E6EA]" />
                     </>

@@ -7,6 +7,8 @@ import { lineGross } from "../../lib/calculate";
 import { CER_TYPES, toOptions, type Option } from "../../lib/options";
 import { ATTRIBUTE_KEYS, rebuildStoneCode } from "../../lib/stone-code";
 import { DiscountPair } from "../DiscountPair";
+import { useDocumentKind } from "../../document-kind";
+import { useLineOptions } from "../../options-context";
 import { isFilledLine, MAX_LINE_PHOTOS, type QuotationFormValues } from "../../schema";
 import { LinePhotosField } from "./LinePhotosField";
 import { Button, Field, FormSelect, IconButton, NumberInput, ReadonlyBox, TextInput } from "../ui";
@@ -39,6 +41,9 @@ export function ItemEditorPanel({
   const line = useWatch({ control, name: `lines.${index}` });
   const currency = useWatch({ control, name: "currency" });
   const lineErrors = formState.errors.lines?.[index];
+  const kind = useDocumentKind();
+  const lineStone = useLineOptions()?.stone;
+  const stone = kind.stone ?? lineStone;
   if (!line) return null;
 
   const fromStock = line.source === "STOCK";

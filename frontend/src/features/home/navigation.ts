@@ -47,6 +47,9 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   "document-setup": "/setup/document-setup",
   currency: "/setup/currency",
   quotation: "/pre-sale/quotation",
+  "memo-receive": "/memo/memo-receive",
+  "memo-out": "/memo/memo-out",
+  "memo-out-return": "/memo/memo-out-return",
 };
 
 export function navigationHref(item: NavigationItem): string {

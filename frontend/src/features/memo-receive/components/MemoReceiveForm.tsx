@@ -186,8 +186,8 @@ export function MemoReceiveForm({ initial, access }: { initial?: SavedMemoReceiv
         <div className="relative flex h-full bg-white">
           <div className="min-w-0 flex-1 overflow-y-auto">
             <QuotationHeader
-              title="Memo Receive No.:"
-              createHref={MEMO_RECEIVE_HREF}
+              noLabel="Memo Receive No.:"
+              newHref={MEMO_RECEIVE_HREF}
               statusLabels={STATUS_LABELS}
               docNo={docNo}
               isPreview={!saved}
