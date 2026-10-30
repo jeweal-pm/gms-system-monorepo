@@ -8,6 +8,7 @@ import type { QuotationService } from "../../src/quotation/quotation.service";
 import type { MemoOutService } from "../../src/trade-document/memo-out.service";
 import type { MemoOutReturnService } from "../../src/trade-document/memo-out-return.service";
 import type { MemoReceiveService } from "../../src/trade-document/memo-receive.service";
+import type { MemoReturnService } from "../../src/trade-document/memo-return.service";
 import type { MemoStockService } from "../../src/trade-document/memo-stock.service";
 import type { MemoOutstandingService } from "../../src/trade-document/memo-outstanding.service";
 import type { DocumentSetupService } from "../../src/document-setup/document-setup.service";
@@ -62,7 +63,7 @@ describe("IT-MAUTH-07 mounted Express tRPC adapter", () => {
     const license = { check: vi.fn(async () => "ELIGIBLE" as const) } as unknown as MasterLicenseClient;
     const documentSetup = { list: vi.fn(), get: vi.fn(), save: vi.fn() } as unknown as DocumentSetupService;
     const currency = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as unknown as CurrencyService;
-    const handler = new MasterTrpcHandler(customer, vendor, companyProfile, stoneMaster, authz, license, documentSetup, currency, {} as unknown as QuotationService, {} as unknown as MemoOutService, {} as unknown as MemoOutReturnService, {} as unknown as MemoReceiveService, {} as unknown as MemoStockService, {} as unknown as MemoOutstandingService);
+    const handler = new MasterTrpcHandler(customer, vendor, companyProfile, stoneMaster, authz, license, documentSetup, currency, {} as unknown as QuotationService, {} as unknown as MemoOutService, {} as unknown as MemoOutReturnService, {} as unknown as MemoReceiveService, {} as unknown as MemoStockService, {} as unknown as MemoReturnService, {} as unknown as MemoOutstandingService);
     const app = express();
     app.use(express.json({ limit: "256kb" }));
     app.use("/api/master/trpc", handler.handle.bind(handler));

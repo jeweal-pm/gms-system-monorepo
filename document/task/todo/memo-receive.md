@@ -33,6 +33,15 @@ Direct owner instruction (verbatim in [ui-spec.md](../../apps/frontend/memo-rece
 |---|---|---|---|---|---|---|---|---|
 | [x] | FE-MR-006 | done 2026-10-28; frontend 433 tests, tsc, eslint pass; sec-auditor + security-auditor clear (advisory: discount limits must be re-checked by the future API; an amount discount has no upper bound, so totals can go negative) | frontend | `DocumentKind`: drop pricing/discount switches, add `stoneCode`; Memo Receive uses Quotation pricing and discounts; schema allows the document discount and checks line % ≤ 100; no Stone Code field/column/code list; table first column STOCK ID / LOT; panel title "Stock ID n" | `frontend/src/features/memo-receive/**`, `frontend/src/features/quotation/document-kind.tsx`, `frontend/src/features/quotation/components/items/**` | rev 1 | Matches rev 2; Quotation unchanged | UT-MR-05, UT-MR-06 |
 
+## Memo Receive API (memo-return SA rev 1, 2026-10-29)
+
+The Memo Receive API now exists in backend-api-master (`memoReceive.*`, [SA rev 1](../../apps/backend/master/memo-return/decisions.md)) as the Memo Stock source for Memo Return. The owner chose it 2026-10-29: "Memo Receive (Recommended)", backend only. **This page still uses the mock store.**
+
+Wiring it is [FE-MRT-004](memo-return.md) and needs owner decisions first:
+- **Status flow:** the mock has Pending approval / Approved; the API keeps drafts only.
+- **Stock ID:** the mock numbers running Stock IDs; the API doesn't issue them yet (Q-MRT-05). Revision 2 removed Stone Code from Memo Receive, so returned rows will need the Stock ID to show which stone they are.
+- **Photos:** not on the API yet.
+
 ## Decisions
 
 Approved 2026-10-28 with the owner's answers to Q-MR-01…07 ([open-questions.md](../../apps/frontend/memo-receive/open-questions.md)); the owner noted the answers may change later.

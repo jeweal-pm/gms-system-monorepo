@@ -48,6 +48,7 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   currency: "/setup/currency",
   quotation: "/pre-sale/quotation",
   "memo-receive": "/memo/memo-receive",
+  "memo-return": "/memo/memo-return",
   "memo-out": "/memo/memo-out",
   "memo-out-return": "/memo/memo-out-return",
   // memo-outstanding-vendor UI rev 1 (ADR-0035): Memo Outstanding › Vendor.
@@ -202,7 +203,8 @@ export const sidebarSections: NavSection[] = [
     items: [
       // memo-receive (ADR-0033, mock documents): real page; stays active on /memo/memo-receive/[id].
       { ...link("memo-receive", "Memo Receive", MemoReceiveIcon, REAL_PAGE_HREFS["memo-receive"]), activePrefix: REAL_PAGE_HREFS["memo-receive"] },
-      link("memo-return", "Memo Return", MemoReturnIcon),
+      // memo-return UI rev 1 (owner 2026-10-29): real page; stays active on /memo/memo-return/*.
+      { ...link("memo-return", "Memo Return", MemoReturnIcon, REAL_PAGE_HREFS["memo-return"]), activePrefix: REAL_PAGE_HREFS["memo-return"] },
       // memo-out UI rev 1 (owner 2026-10-28): page structure; stays active on /memo/memo-out/*.
       { ...link("memo-out", "Memo Out", MemoOutIcon, REAL_PAGE_HREFS["memo-out"]), activePrefix: REAL_PAGE_HREFS["memo-out"] },
       // memo-out-return UI rev 1 (owner 2026-10-28): page structure; stays active on /memo/memo-out-return/*.

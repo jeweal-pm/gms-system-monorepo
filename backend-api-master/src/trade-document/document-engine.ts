@@ -14,12 +14,13 @@ import { CHARGE_TYPES, type LineInput } from "../quotation/quotation.schemas";
 import type { DocumentErrors } from "./document-errors";
 
 /**
- * Shared document engine for memo out, memo out return (ADR-0033) and memo receive (ADR-0034): the quotation rules —
- * Document Setup number (max + 1 under the numbering-row lock, plain 1, 2, 3 … without a row), party + address
- * snapshots, server totals with the quotation calculator, optimistic version. The party part (customer
- * or vendor) comes from an adapter. Status on create and the editable statuses are per document (SA-MR-02): memo
- * out / memo out return stay drafts; memo receive starts PENDING_APPROVAL. An optional line hook adds per-line
- * columns (memo receive: kept line ids, Stock IDs and line photos, SA-MR-17).
+ * Shared document engine for memo out, memo out return (ADR-0033), memo receive (ADR-0034) and memo return
+ * (memo-return SA rev 2): the quotation rules — Document Setup number (max + 1 under the numbering-row lock, plain
+ * 1, 2, 3 … without a row), party + address snapshots, server totals with the quotation calculator, optimistic
+ * version. The party part (customer or vendor) comes from an adapter. Status on create and the editable statuses are
+ * per document (SA-MR-02): memo out / memo out return stay drafts; memo receive and memo return start
+ * PENDING_APPROVAL. An optional line hook adds per-line columns (memo receive: kept line ids, Stock IDs and line
+ * photos, SA-MR-17; memo return: the Memo Stock item).
  */
 
 const COMPANY_PROFILE_ID = 1;
@@ -84,6 +85,11 @@ export type EngineConfig<Input extends TradeDocumentInput, Out extends Row = Row
   party: PartyAdapter<Input, Out>;
   /** Lines keep an Outstanding quantity (memo out return UI rev 3); pcs / weightCt are then the Return quantity. */
   outstanding?: boolean;
+  /**
+   * Runs first in the write transaction, after the status check on update (create: documentId null); returns the
+   * input to store, e.g. memo return lines completed from their Memo Stock items.
+   */
+  prepare?: (tx: Tx, input: Input, documentId: string | null) => Promise<Input>;
   /** Status written on create (default `DRAFT`). */
   createStatus?: string;
   /** Statuses in which update and delete are allowed (default `[DRAFT]`). */
@@ -222,10 +228,11 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
     }
   }
 
-  async create(actorId: string, input: Input) {
+  async create(actorId: string, rawInput: Input) {
     const { errors, event, lineHook } = this.config;
     try {
       const created = await prisma.$transaction(async (tx) => {
+        const input = this.config.prepare ? await this.config.prepare(tx, rawInput, null) : rawInput;
         const partyColumns = await this.checkReferences(tx, input, null);
         const { numberingId, runningNo, docNo } = await this.issueNumber(tx, input.docDate, true);
         if (docNo.length > DOC_NO_MAX) throw validationException([{ path: "docNo", code: "too_big" }]);
@@ -246,7 +253,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
     }
   }
 
-  async update(actorId: string, id: string, expectedVersion: number, input: Input) {
+  async update(actorId: string, id: string, expectedVersion: number, rawInput: Input) {
     const { errors, event, party, lineModel, chargeModel, parentKey, lineHook } = this.config;
     const storedLineSelect = { ...(this.config.lineOmit?.includes("stoneCodeId") ? {} : { stoneCodeId: true }), ...lineHook?.storedSelect };
     try {
@@ -259,6 +266,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
         // Status first: a document that left its editable status (memo receive APPROVED) reports that, not a stale version.
         if (!this.editable.includes(stored.status as string)) throw errors.statusInvalid();
         if (stored.version !== expectedVersion) throw errors.changed();
+        const input = this.config.prepare ? await this.config.prepare(tx, rawInput, id) : rawInput;
         const partyColumns = await this.checkReferences(tx, input, stored);
         const header = this.headerData(input);
         const assigned = lineHook ? await lineHook.assign(tx, input, stored.lines as Row[]) : null;

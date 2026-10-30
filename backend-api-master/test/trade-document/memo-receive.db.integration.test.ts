@@ -105,7 +105,7 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     const unused = {} as never;
     router = createMasterRouter({
       customer: unused, vendor: unused, companyProfile: unused, stoneMaster: unused, documentSetup: unused, currency: unused, quotation: unused,
-      memoOut: unused, memoOutReturn: unused, memoReceive: receive, memoStock: stock, memoOutstanding: unused,
+      memoOut: unused, memoOutReturn: unused, memoReceive: receive, memoStock: stock, memoReturn: unused, memoOutstanding: unused,
     });
 
     // A concurrent DB integration file may create the same shared fixture first (P2002): keep its row.

@@ -119,14 +119,14 @@ export function FromStockModal({
                       />
                     </th>
                     <th className="w-8 font-normal text-[#6B7480]">#</th>
-                    <Th title="Stone Code" sub="STOCK ID · LOT" />
-                    <Th title="LOCATION" />
-                    <Th title="STONE" sub="SHAPE · SIZE" />
-                    <Th title="COLOR · CLARITY" sub="CUTTING · QUALITY" />
-                    <Th title="CER TYPE" sub="CER NO." />
-                    <Th title="PCS" right />
+                    <Th title="Stone Code" sub="Stock ID · Lot" />
+                    <Th title="Location" />
+                    <Th title="Stone" sub="Shape · Size" />
+                    <Th title="Color · Clarity" sub="Cutting · Quality" />
+                    <Th title="Cer Type" sub="Cer No." />
+                    <Th title="Pcs" right />
                     <Th title="Weight (ct)" right />
-                    <Th title="SALE PRICE" sub="UNIT" right />
+                    <Th title="Sale Price" sub="Unit" right />
                     <Th title="Amount" right />
                   </tr>
                 </thead>

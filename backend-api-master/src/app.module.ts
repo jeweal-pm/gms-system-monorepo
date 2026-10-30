@@ -16,6 +16,7 @@ import { QuotationService } from "./quotation/quotation.service";
 import { MemoOutService } from "./trade-document/memo-out.service";
 import { MemoOutReturnService } from "./trade-document/memo-out-return.service";
 import { MemoReceiveService } from "./trade-document/memo-receive.service";
+import { MemoReturnService } from "./trade-document/memo-return.service";
 import { MemoStockService } from "./trade-document/memo-stock.service";
 import { MemoOutstandingService } from "./trade-document/memo-outstanding.service";
 import { HealthController } from "./health/health.controller";
@@ -59,6 +60,7 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
     MemoOutService,
     MemoOutReturnService,
     MemoReceiveService,
+    MemoReturnService,
     MemoStockService,
     MemoOutstandingService,
     MasterAuthzDatabase,

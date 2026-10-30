@@ -30,14 +30,15 @@ export async function numberingInEffect(client: Client, transactionKey: Document
   return row ? { id: row.id, prefix: row.prefix, separator: row.separator, startNo: row.start_no } : null;
 }
 
-/** Document types that take numbers from Document Setup (quotation ADR-0032; memo out, memo out return ADR-0033; memo receive ADR-0034). */
-export type NumberedDocument = "quotation" | "memoOut" | "memoOutReturn" | "memoReceive";
+/** Document types that take numbers from Document Setup (quotation ADR-0032; memo out, memo out return ADR-0033; memo receive ADR-0034; memo return memo-return SA rev 2). */
+export type NumberedDocument = "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoReturn";
 
 const PLAIN_LOCK_KEY: Readonly<Record<NumberedDocument, string>> = {
   quotation: "partner.quotation.plain_running_no",
   memoOut: "partner.memo_out.plain_running_no",
   memoOutReturn: "partner.memo_out_return.plain_running_no",
   memoReceive: "partner.memo_receive.plain_running_no",
+  memoReturn: "partner.memo_return.plain_running_no",
 };
 
 type RunningNoDelegate = {
@@ -78,7 +79,7 @@ export const nextPlainQuotationRunningNo = (client: Client, lock: boolean) => ne
 export async function usedNumberingIds(client: Client, ids: readonly string[]): Promise<Set<string>> {
   if (ids.length === 0) return new Set();
   const where = { numberingId: { in: [...ids] } };
-  const kinds: NumberedDocument[] = ["quotation", "memoOut", "memoOutReturn", "memoReceive"];
+  const kinds: NumberedDocument[] = ["quotation", "memoOut", "memoOutReturn", "memoReceive", "memoReturn"];
   const used = await Promise.all(kinds.map((kind) => documentTable(client, kind).groupBy({ by: ["numberingId"], where })));
   return new Set(used.flat().flatMap((entry) => (entry.numberingId ? [entry.numberingId] : [])));
 }

@@ -82,16 +82,33 @@ export const memoReceiveListSchema = z.object({ ...documentListFields, status: z
 export type MemoReceiveListInput = z.output<typeof memoReceiveListSchema>;
 
 /**
+ * Memo return (memo-return SA rev 2, owner 2026-10-29): each line names the Memo Stock item it sends back. The server
+ * copies the item fields, price and Outstanding (= pending) from that item on save; the user keys in only the Return
+ * pcs / weightCt (≤ Outstanding) and the item note. Pending is reduced when the memo return is approved (Q-MR-15).
+ */
+const memoReturnLineSchema = returnLineSchema.extend({ memoStockId: uuid });
+const memoReturnFields = { ...memoFields, lines: z.array(memoReturnLineSchema).min(1).max(LINES_MAX), vendorId: uuid, addressId: uuid };
+export const createMemoReturnSchema = z.object(memoReturnFields).strict().superRefine(returnRules);
+export const updateMemoReturnSchema = z.object({ ...memoReturnFields, ...versioned }).strict().superRefine(returnRules);
+export type MemoReturnInput = z.output<typeof createMemoReturnSchema>;
+/** Memo return statuses are the memo receive ones: PENDING_APPROVAL → APPROVED. */
+export const memoReturnListSchema = memoReceiveListSchema;
+
+/**
  * memoStock.list (SA-MR-11): a vendor's pending items for the Memo Return "Add Memo Stock" dialog. `from`/`to`
- * filter the memo receive Doc Date, from ≤ to, range ≤ 366 days.
+ * filter the memo receive Doc Date, from ≤ to, range ≤ 366 days. `currency` (memo-return SA rev 2) keeps the items a
+ * memo return in that currency can take.
  */
 const DAY_MS = 86_400_000;
 export const memoStockListSchema = z.object({
   vendorId: uuid,
+  currency: z.string().regex(/^[A-Z]{3}$/).optional(),
   q: z.string().trim().max(100).optional(),
   from: z.iso.date().optional(),
   to: z.iso.date().optional(),
   cursor: z.string().max(200).nullish(),
+  /** Sent by tRPC infinite queries (the Add Memo Stock "Load more"); pages only go forward. */
+  direction: z.enum(["forward", "backward"]).optional(),
   limit: z.number().int().min(1).max(50).default(50),
 }).strict().superRefine((value, ctx) => {
   if (value.from && value.to) {

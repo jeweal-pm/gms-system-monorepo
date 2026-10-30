@@ -1,7 +1,7 @@
 "use client";
 
 // Primitive เฉพาะ feature นี้ — ถ้าโปรเจกต์มี design system กลางอยู่แล้ว ให้เปลี่ยนไปใช้ของกลางแทน
-import { DateInput } from "@/components/ui/date-input";
+import { DateInput, isBeforeDate } from "@/components/ui/date-input";
 import { Check, ChevronDown, X } from "lucide-react";
 import {
   forwardRef,
@@ -14,8 +14,9 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { useController, useFormContext, type FieldValues, type Path } from "react-hook-form";
+import { useController, useFormContext, useWatch, type FieldValues, type Path } from "react-hook-form";
 import { sanitizeDecimal } from "../lib/number";
+import { DUE_BEFORE_DOC_MESSAGE } from "../schema";
 
 export const cx = (...classes: (string | false | null | undefined)[]) => classes.filter(Boolean).join(" ");
 
@@ -78,21 +79,20 @@ export function Field({
   className?: string;
   children: ReactNode;
 }) {
-  // Same label as the shared FieldShell (owner 2026-10-23): upper half transparent, lower half the field's own
-  // fill, so it never shows a white strip on a grey disabled/read-only field.
+  // Same label as the shared FieldShell (owner 2026-10-23/2026-10-29): transparent above the field's top border,
+  // the control's own fill from the border line (8 px) down — read from the control (invalid / disabled /
+  // read-only), so no colored strip or patch shows around the label in any state.
   return (
     <label className={cx("group/field relative block", className)}>
       <span
         className={cx(
           "absolute -top-2 left-3 z-10 px-1 text-gms-label font-medium leading-4",
-          error
-            ? "bg-[linear-gradient(to_bottom,transparent_6px,var(--color-gms-danger-subtle)_6px)] text-gms-danger"
-            : cx(
-                "bg-[linear-gradient(to_bottom,transparent_6px,var(--color-gms-surface)_6px)] text-gms-text",
-                "group-has-[:disabled]/field:bg-[linear-gradient(to_bottom,transparent_6px,var(--color-gms-field-disabled)_6px)]",
-                "group-has-[input:read-only]/field:bg-[linear-gradient(to_bottom,transparent_6px,var(--color-gms-field-disabled)_6px)]",
-                "group-has-[[aria-readonly=true]]/field:bg-[linear-gradient(to_bottom,transparent_6px,var(--color-gms-field-disabled)_6px)]",
-              ),
+          error ? "text-gms-danger" : "text-gms-text",
+          "bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-surface)_8px)]",
+          "group-has-[[aria-invalid=true]]/field:bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-danger-subtle)_8px)]",
+          "group-has-[:disabled]/field:bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-field-disabled)_8px)]",
+          "group-has-[input:read-only]/field:bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-field-disabled)_8px)]",
+          "group-has-[[aria-readonly=true]]/field:bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-field-disabled)_8px)]",
         )}
       >
         {label}
@@ -109,6 +109,8 @@ const controlClass = cx(
   "h-12 w-full rounded-gms-md border border-gms-border bg-gms-surface px-4 text-[15px] text-gms-text transition-colors placeholder:text-gms-text-placeholder hover:border-gms-text-placeholder",
   "outline-none focus:border-gms-primary focus:ring-2 focus:ring-gms-primary/20",
   "disabled:cursor-not-allowed disabled:bg-gms-field-disabled disabled:text-gms-checkbox-readonly disabled:hover:border-gms-border",
+  // Error look of the shared fields (fieldBoxClass): red border, light red fill; the Field label reads the same state.
+  "aria-[invalid=true]:border-gms-danger aria-[invalid=true]:bg-gms-danger-subtle",
 );
 /**
  * Read-only look for inputs only: a <button> always matches :read-only, so this must not be in controlClass
@@ -238,6 +240,7 @@ export function SelectMenu({
         aria-expanded={open}
         aria-controls={listId}
         aria-haspopup="listbox"
+        aria-invalid={invalid || undefined}
         disabled={disabled}
         onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={onKeyDown}
@@ -285,15 +288,32 @@ export function SelectMenu({
   );
 }
 
-/** English dd/mm/yyyy date field bound to react-hook-form by name (value stays ISO). */
-export function FormDateInput<T extends FieldValues = FieldValues>({ name, compact }: { name: Path<T>; compact?: boolean }) {
-  const { control } = useFormContext<T>();
+/**
+ * English dd/mm/yyyy date field bound to react-hook-form by name (value stays ISO). `notBefore` names the date it
+ * may not precede (Due Date → Doc Date, owner 2026-10-29): earlier days are greyed out in the calendar, and a typed
+ * earlier date shows the error at once, not only on Save; it clears when either date is fixed.
+ */
+export function FormDateInput<T extends FieldValues = FieldValues>({ name, compact, notBefore }: { name: Path<T>; compact?: boolean; notBefore?: Path<T> }) {
+  const { control, setError, clearErrors } = useFormContext<T>();
   const { field: { ref, ...field }, fieldState } = useController({ control, name });
+  const watched = useWatch({ control, name: notBefore ?? name }) as string | undefined;
+  const min = notBefore ? (watched ?? "") : "";
+  const value = (field.value as string | undefined) ?? "";
+  const errorMessage = fieldState.error?.message;
+  useEffect(() => {
+    if (!notBefore) return;
+    if (isBeforeDate(value, min)) {
+      if (errorMessage !== DUE_BEFORE_DOC_MESSAGE) setError(name, { type: "before_doc_date", message: DUE_BEFORE_DOC_MESSAGE });
+    } else if (errorMessage === DUE_BEFORE_DOC_MESSAGE) {
+      clearErrors(name);
+    }
+  }, [notBefore, min, value, errorMessage, name, setError, clearErrors]);
   return (
     <DateInput
       ref={ref}
       name={field.name}
-      value={(field.value as string | undefined) ?? ""}
+      value={value}
+      min={min || undefined}
       onChange={field.onChange}
       onBlur={field.onBlur}
       aria-invalid={fieldState.error ? true : undefined}

@@ -9,13 +9,13 @@ import type { SaveOutcome } from "./document-form";
 
 /** Helpers shared by the memo documents (ADR-0033): permissions, error messages and the daybook list. */
 
-export type DocumentAccess = { view: boolean; add: boolean; edit: boolean; delete: boolean };
+export type DocumentAccess = { view: boolean; add: boolean; edit: boolean; delete: boolean; approve: boolean };
 type Mine = { isSuperAdmin: boolean; permissions: "ALL" | readonly string[] } | undefined;
 
 /** UX only; the server checks every call with the same catalog leaf. */
 export function documentAccess(mine: Mine, menu: string): DocumentAccess {
   const can = (action: string) => Boolean(mine && (mine.isSuperAdmin || mine.permissions === "ALL" || mine.permissions.includes(`${menu}:${action}`)));
-  return { view: can("VIEW"), add: can("ADD"), edit: can("EDIT"), delete: can("DELETE") };
+  return { view: can("VIEW"), add: can("ADD"), edit: can("EDIT"), delete: can("DELETE"), approve: can("APPROVE") };
 }
 
 export function useDocumentAccess(menu: string): DocumentAccess | undefined {

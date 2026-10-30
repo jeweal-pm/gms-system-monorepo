@@ -83,6 +83,7 @@ export class MemoStockService {
       Prisma.sql`vendor_id = ${input.vendorId}::uuid`,
       Prisma.sql`(pending_pcs > 0 OR pending_weight_ct > 0)`,
     ];
+    if (input.currency) filters.push(Prisma.sql`currency_code = ${input.currency}::char(3)`);
     if (input.q) {
       const pattern = `%${escapeLike(input.q)}%`;
       filters.push(Prisma.sql`(stock_id ILIKE ${pattern} OR lot ILIKE ${pattern} OR stone ILIKE ${pattern} OR cer_no ILIKE ${pattern} OR received_doc_no ILIKE ${pattern})`);
