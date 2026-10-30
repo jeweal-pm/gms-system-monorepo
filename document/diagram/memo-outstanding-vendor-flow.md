@@ -22,10 +22,10 @@ flowchart TD
 ```mermaid
 flowchart LR
   MR[Memo Receive approved] -->|received pcs/weight| M[(Memo Stock item)]
-  RET[Memo Return approved · later] -->|returned| M
+  RET[Memo Return approved] -->|returned| M
   SALE[Sale / Purchase approved · later] -->|sold| M
   RES[Reserve / Memo Out approved · later] -->|reserved| M
   M --> O[Outstanding = Memo − Return − Sold − Reserve]
 ```
 
-Revision 1 has a writer for Memo only, so Return, Sold and Reserve are 0. The labels marked "later" depend on Q-MOV-04.
+Built writers (2026-10-30): Memo Receive approval fills Memo. Memo Return approval moves the returned pcs / weight from pending into Return in the same UPDATE ([memo-return-flow](memo-return-flow.md)). Sold and Reserve have no writer yet, so they stay 0. The labels marked "later" depend on Q-MOV-04. Return + Sold + Reserve + Outstanding = Memo always holds (CHECK `memo_stock_balance`).
