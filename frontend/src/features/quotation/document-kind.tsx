@@ -17,6 +17,8 @@ export type DocumentKind = {
   stockId: "from-stock" | "auto";
   /** Stone Code field and column; without it the Stock ID leads the row (Memo Receive, owner 2026-10-28). */
   stoneCode: boolean;
+  /** Location column and row-panel field; Memo Receive has none (rev 3: its Memo Stock is always `Memo`). */
+  location: boolean;
   /** Location choices; null = filled by From Stock only (read-only). */
   locations: Option[] | null;
   emptyRowText: string;
@@ -30,6 +32,7 @@ export type DocumentKind = {
 export const QUOTATION_KIND: DocumentKind = {
   stockId: "from-stock",
   stoneCode: true,
+  location: true,
   locations: null,
   emptyRowText: "Empty row · click to key in, or use From Stock to fill it",
   itemNote: { section: "Item Note", max: 500 },

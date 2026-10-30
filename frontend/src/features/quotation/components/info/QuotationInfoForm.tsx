@@ -76,7 +76,7 @@ export function QuotationInfoForm() {
       </Field>
 
       <Field label="Due Date" required error={errors.dueDate?.message}>
-        <FormDateInput<QuotationFormValues> name="dueDate" />
+        <FormDateInput<QuotationFormValues> name="dueDate" notBefore="docDate" />
       </Field>
       <Field label="Currency" required error={errors.currency?.message}>
         <FormSelect<QuotationFormValues> name="currency" options={quotationCurrencyOptions(items, currency)} onValueChange={onCurrencyChange} />

@@ -96,10 +96,13 @@ export const tradeDocumentShape = {
 
 type TradeDocumentValues = z.infer<z.ZodObject<typeof tradeDocumentShape>>;
 
+/** Due Date may not be before Doc Date (every transaction page; the server refuses it too, `before_doc_date`). */
+export const DUE_BEFORE_DOC_MESSAGE = "Due date must be on or after doc date";
+
 /** Cross-field rules every trade document form shares. */
 export function tradeDocumentRules(value: TradeDocumentValues, ctx: z.RefinementCtx) {
   if (value.dueDate && value.docDate && value.dueDate < value.docDate) {
-    ctx.addIssue({ code: "custom", path: ["dueDate"], message: "Due date must be on or after doc date" });
+    ctx.addIssue({ code: "custom", path: ["dueDate"], message: DUE_BEFORE_DOC_MESSAGE });
   }
   value.lines.forEach((line, index) => {
     if (line.discountType === "PERCENT" && line.discountValue !== "" && Number(line.discountValue) > 100) {

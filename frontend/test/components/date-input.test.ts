@@ -40,3 +40,29 @@ describe("DateInput", () => {
     expect(october.filter((cell) => cell.inMonth)).toHaveLength(31);
   });
 });
+
+describe("Due Date not before Doc Date (owner 2026-10-29)", () => {
+  it("UT-DATE-06 isBeforeDate compares complete ISO dates only", async () => {
+    const { isBeforeDate } = await import("@/components/ui/date-input");
+    expect(isBeforeDate("2026-10-14", "2026-10-29")).toBe(true);
+    expect(isBeforeDate("2026-10-29", "2026-10-29")).toBe(false);
+    expect(isBeforeDate("2026-11-01", "2026-10-29")).toBe(false);
+    expect(isBeforeDate("", "2026-10-29")).toBe(false);
+    expect(isBeforeDate("2026-10-14", "")).toBe(false);
+    expect(isBeforeDate("2026-10-14", undefined)).toBe(false);
+  });
+
+  it("UT-DATE-07 every transaction schema refuses a Due Date before the Doc Date with the shared message", async () => {
+    const { DUE_BEFORE_DOC_MESSAGE, quotationSchema } = await import("@/features/quotation/schema");
+    const { emptyQuotation } = await import("@/features/quotation/lib/defaults");
+    const { memoReturnSchema, emptyMemoReturn } = await import("@/features/memo-return/api");
+    const { memoReceiveSchema } = await import("@/features/memo-receive/schema");
+    const { emptyMemoReceive } = await import("@/features/memo-receive/defaults");
+    const dueIssue = (result: { error?: { issues: { path: PropertyKey[]; message: string }[] } }) => result.error?.issues.find((issue) => issue.path.join(".") === "dueDate")?.message;
+    const dates = { docDate: "2026-10-29", dueDate: "2026-10-14" };
+    expect(dueIssue(quotationSchema.safeParse({ ...emptyQuotation(), ...dates }))).toBe(DUE_BEFORE_DOC_MESSAGE);
+    expect(dueIssue(memoReturnSchema.safeParse({ ...emptyMemoReturn(), ...dates }))).toBe(DUE_BEFORE_DOC_MESSAGE);
+    expect(dueIssue(memoReceiveSchema.safeParse({ ...emptyMemoReceive(), ...dates }))).toBe(DUE_BEFORE_DOC_MESSAGE);
+    expect(dueIssue(quotationSchema.safeParse({ ...emptyQuotation(), docDate: "2026-10-29", dueDate: "2026-10-29" }))).toBeUndefined();
+  });
+});

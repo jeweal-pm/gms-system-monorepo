@@ -105,6 +105,13 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: #fff; color: var(--gms-ink); font-family: var(--font-sans); font-size: var(--text-gms-body); line-height: var(--text-gms-body--line-height); }
 button, input, select, textarea { font: inherit; }
+
+/*
+ * Focus rings only after keyboard navigation (owner 2026-10-29): Shift or typing after a click no longer shows the
+ * green frame. lib/focus-modality.ts sets data-focus-source; Tab and arrow keys bring the rings back (WCAG 2.4.7).
+ * Field focus borders use :focus, not :focus-visible, so a clicked field still shows it is active.
+ */
+html[data-focus-source="pointer"] :focus-visible { outline: none !important; }
 @layer base {
   a { color: inherit; text-decoration: none; }
 }

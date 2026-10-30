@@ -130,8 +130,8 @@ export function ItemEditorPanel({
 
       <fieldset disabled={readOnly} className="min-h-0 flex-1 space-y-1 overflow-y-auto px-5 py-2">
         <Section title="Info">
-          {/* Quotation: Stock ID / Location come from From Stock only. Memo Receive (owner 2026-10-28): the
-              Stock ID is a running number assigned on save and the location is chosen from a list. */}
+          {/* Quotation: Stock ID / Location come from From Stock only. Memo Receive (rev 3, owner 2026-10-29): the
+              server assigns the Stock ID (YY####) on save, and there is no Location field. */}
           {kind.stockId === "auto" ? (
             <div>
               <Field label="Stock ID">
@@ -147,13 +147,15 @@ export function ItemEditorPanel({
           <Field label="Lot">
             <TextInput compact readOnly={locked} placeholder="e.g. L-2609-001" maxLength={30} {...register(name("lot"))} />
           </Field>
-          <Field label="Location">
-            {kind.locations ? (
-              <FormSelect<QuotationFormValues> compact disabled={locked} name={name("locationId")} options={withCurrent(kind.locations, line.locationId)} />
-            ) : (
-              <ReadonlyBox compact value={line.locationId} placeholder="From stock only" />
-            )}
-          </Field>
+          {kind.location && (
+            <Field label="Location">
+              {kind.locations ? (
+                <FormSelect<QuotationFormValues> compact disabled={locked} name={name("locationId")} options={withCurrent(kind.locations, line.locationId)} />
+              ) : (
+                <ReadonlyBox compact value={line.locationId} placeholder="From stock only" />
+              )}
+            </Field>
+          )}
         </Section>
 
         <Section title="Stone">
