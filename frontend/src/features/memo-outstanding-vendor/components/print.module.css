@@ -1,0 +1,18 @@
+/*
+ * Memo Outstanding print isolation (same pattern as partner-print.module.css): while the page is mounted, <body>
+ * carries .printScope; in print media every other top-level child (AppShell, panel, popovers) is hidden and only the
+ * print view is shown.
+ */
+.printRoot {
+  display: none;
+}
+
+@media print {
+  .printScope > *:not(.printRoot) {
+    display: none !important;
+  }
+
+  .printRoot {
+    display: block;
+  }
+}

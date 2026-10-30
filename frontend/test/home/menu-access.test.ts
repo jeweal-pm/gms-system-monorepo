@@ -43,7 +43,8 @@ describe("menu visibility", () => {
     expect(visible).toContain("memo-outstanding-from-vendor");
     expect(visible).not.toContain("memo-outstanding-from-customer");
     expect(ids(visibleSections(sidebarSections, canViewFor([])))).not.toContain("memo-outstanding");
-    expect(moduleBreadcrumbs("memo-outstanding-from-vendor")?.label).toBe("Vendor");
+    // memo-outstanding-vendor UI rev 1: Vendor is a real page now, so it has no /modules placeholder.
+    expect(moduleBreadcrumbs("memo-outstanding-from-vendor")?.label).toBeNull();
     expect(moduleBreadcrumbs("memo-outstanding-from-customer")?.label).toBe("Customer");
   });
 

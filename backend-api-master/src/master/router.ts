@@ -20,6 +20,13 @@ import type { MemoOutService } from "../trade-document/memo-out.service";
 import type { MemoOutReturnService } from "../trade-document/memo-out-return.service";
 import type { MemoReceiveService } from "../trade-document/memo-receive.service";
 import type { MemoStockService } from "../trade-document/memo-stock.service";
+import type { MemoOutstandingService } from "../trade-document/memo-outstanding.service";
+import {
+  memoOutstandingFiltersSchema,
+  memoOutstandingItemsSchema,
+  memoOutstandingListSchema,
+  memoOutstandingOptionsSchema,
+} from "../trade-document/memo-outstanding.schemas";
 import {
   createMemoOutReturnSchema,
   createMemoOutSchema,
@@ -41,6 +48,7 @@ import {
   versionedIdSchema,
 } from "../quotation/quotation.schemas";
 import { LIST_LIMIT_MAX } from "../common/partner-schemas";
+import { validationException, zodFieldErrors } from "../common/errors";
 import { requireAnyMasterGrant, requireMasterGrant, type MasterAction, type MasterContext, type MasterMenu } from "./authorization";
 
 // Staged router: do not mount until the auth-owned JWT/view/license context adapter is verified.
@@ -116,6 +124,21 @@ function permittedAny(menus: readonly MasterMenu[], action: MasterAction) {
   });
 }
 
+/**
+ * Validates the raw input with `schema` before the procedure's own parser, so a refusal carries the contract's
+ * `VALIDATION_ERROR` field errors (`{path, code}`, e.g. `to: before_from`) instead of a bare BAD_REQUEST
+ * (memo-outstanding-vendor api-contract). Runs after the grant check.
+ */
+function withFieldErrors(schema: z.ZodType) {
+  return t.middleware(async ({ next, getRawInput }) => {
+    const parsed = schema.safeParse(await getRawInput());
+    if (!parsed.success) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "VALIDATION_ERROR", cause: validationException(zodFieldErrors(parsed.error)) });
+    }
+    return next();
+  });
+}
+
 export type MasterServices = Pick<{
   customer: CustomerService;
   vendor: VendorService;
@@ -128,7 +151,8 @@ export type MasterServices = Pick<{
   memoOutReturn: MemoOutReturnService;
   memoReceive: MemoReceiveService;
   memoStock: MemoStockService;
-}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "currency" | "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoStock">;
+  memoOutstanding: MemoOutstandingService;
+}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "currency" | "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoStock" | "memoOutstanding">;
 
 function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
   const schemas = bodySchemasFor(kind);
@@ -145,7 +169,7 @@ function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
 }
 
 /** Direct service calls preserve IDs, transaction behavior and existing partner/stone schemas. */
-export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, currency, quotation, memoOut, memoOutReturn, memoReceive, memoStock }: MasterServices) {
+export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, currency, quotation, memoOut, memoOutReturn, memoReceive, memoStock, memoOutstanding }: MasterServices) {
   return t.router({
     customer: t.router({
       list: permitted("customer", "VIEW").input(listInput).query(({ input }) => domainCall(() => customer.list(toListQuery(input)))),
@@ -274,6 +298,17 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
     // Memo Return "Add Memo Stock" dialog (SA-MR-11): readable from either memo page.
     memoStock: t.router({
       list: permittedAny(["memo-return", "memo-receive"], "VIEW").input(memoStockListSchema).query(({ input }) => domainCall(() => memoStock.list(input))),
+    }),
+    // Memo Outstanding From Vendor report (memo-outstanding-vendor SA-MOV-01/10): read-only, VIEW on its own menu.
+    memoOutstanding: t.router({
+      vendorSummary: permitted("memo-outstanding-vendor", "VIEW").use(withFieldErrors(memoOutstandingFiltersSchema)).input(memoOutstandingFiltersSchema)
+        .query(({ input }) => domainCall(() => memoOutstanding.vendorSummary(input))),
+      vendorList: permitted("memo-outstanding-vendor", "VIEW").use(withFieldErrors(memoOutstandingListSchema)).input(memoOutstandingListSchema)
+        .query(({ input }) => domainCall(() => memoOutstanding.vendorList(input))),
+      vendorItems: permitted("memo-outstanding-vendor", "VIEW").use(withFieldErrors(memoOutstandingItemsSchema)).input(memoOutstandingItemsSchema)
+        .query(({ input }) => domainCall(() => memoOutstanding.vendorItems(input))),
+      vendorOptions: permitted("memo-outstanding-vendor", "VIEW").use(withFieldErrors(memoOutstandingOptionsSchema)).input(memoOutstandingOptionsSchema)
+        .query(() => domainCall(() => memoOutstanding.vendorOptions())),
     }),
   });
 }

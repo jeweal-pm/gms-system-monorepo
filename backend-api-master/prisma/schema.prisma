@@ -945,6 +945,13 @@ model MemoStock {
   receivedWeightCt   Decimal         @map("received_weight_ct") @db.Decimal(12, 3)
   pendingPcs         Int             @map("pending_pcs")
   pendingWeightCt    Decimal         @map("pending_weight_ct") @db.Decimal(12, 3)
+  /// Buckets (memo-outstanding-vendor SA-MOV-02): pending = received - returned - sold - reserved (CHECK memo_stock_balance).
+  returnedPcs        Int             @default(0) @map("returned_pcs")
+  returnedWeightCt   Decimal         @default(0) @map("returned_weight_ct") @db.Decimal(12, 3)
+  soldPcs            Int             @default(0) @map("sold_pcs")
+  soldWeightCt       Decimal         @default(0) @map("sold_weight_ct") @db.Decimal(12, 3)
+  reservedPcs        Int             @default(0) @map("reserved_pcs")
+  reservedWeightCt   Decimal         @default(0) @map("reserved_weight_ct") @db.Decimal(12, 3)
   priceUnit          String          @map("price_unit") @db.VarChar(10)
   unitPrice          Decimal         @map("unit_price") @db.Decimal(18, 2)
   lineAmount         Decimal         @map("line_amount") @db.Decimal(18, 2)
@@ -961,6 +968,8 @@ model MemoStock {
   /// Add Memo Stock dialog: a vendor's items with something still pending, newest receive first (SA-MR-11).
   @@index([vendorId, receivedDocDate(sort: Desc), stockId(sort: Desc)], where: raw("((pending_pcs > 0) OR (pending_weight_ct > (0)::numeric))"), map: "memo_stock_pending_idx")
   @@index([memoReceiveId], map: "memo_stock_memo_receive_idx")
+  /// Outstanding report: items with Reserve or Outstanding above 0 (SA-MOV-04).
+  @@index([memoReceiveId], where: raw("((pending_pcs > 0) OR (pending_weight_ct > (0)::numeric) OR (reserved_pcs > 0) OR (reserved_weight_ct > (0)::numeric))"), map: "memo_stock_open_idx")
   @@map("memo_stock")
   @@schema("partner")
 }

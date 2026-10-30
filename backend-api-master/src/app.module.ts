@@ -17,6 +17,7 @@ import { MemoOutService } from "./trade-document/memo-out.service";
 import { MemoOutReturnService } from "./trade-document/memo-out-return.service";
 import { MemoReceiveService } from "./trade-document/memo-receive.service";
 import { MemoStockService } from "./trade-document/memo-stock.service";
+import { MemoOutstandingService } from "./trade-document/memo-outstanding.service";
 import { HealthController } from "./health/health.controller";
 import { ServiceTokenGuard } from "./internal-auth/service-token.guard";
 import { MasterAuthzDatabase } from "./master/authz-database";
@@ -59,6 +60,7 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
     MemoOutReturnService,
     MemoReceiveService,
     MemoStockService,
+    MemoOutstandingService,
     MasterAuthzDatabase,
     MasterLicenseClient,
     MasterTrpcHandler,
