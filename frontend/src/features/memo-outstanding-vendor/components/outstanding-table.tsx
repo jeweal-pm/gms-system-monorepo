@@ -2,7 +2,7 @@
 
 import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronDown, ChevronRight, MessageSquare } from "lucide-react";
 import Link from "next/link";
-import { Fragment } from "react";
+import { Fragment, type CSSProperties } from "react";
 import { cx, focusRing } from "@/components/ui/button";
 import {
   BUCKET_COLUMNS,
@@ -24,6 +24,7 @@ import {
   type VendorListRow,
   type ViewPrefs,
 } from "../model";
+import { ResizeHandle, stickyOffsets, useColumnWidths, type TableColumn } from "./column-resize";
 import { DueLabel } from "./parts";
 
 export type TableEntry = { row: VendorListRow; items: readonly VendorItem[] | undefined };
@@ -44,9 +45,25 @@ type TableProps = {
 };
 
 // Frozen left part (expand · Doc · Due · Vendor); the bucket groups scroll sideways on narrow screens.
-const sticky = ["sticky left-0 w-10 min-w-10", "sticky left-10 w-[124px] min-w-[124px]", "sticky left-[164px] w-[112px] min-w-[112px]", "sticky left-[276px] w-[190px] min-w-[190px] border-r border-gms-border"];
-const headCell = "px-3 py-2 text-left text-gms-label font-semibold text-gms-text";
-const numCell = "px-3 py-2.5 text-right tabular-nums whitespace-nowrap";
+// Their left offsets follow the column widths (`stickyOffsets`).
+const sticky = ["sticky", "sticky", "sticky", "sticky border-r border-gms-border"];
+const headCell = "relative overflow-hidden px-3 py-2 text-left text-gms-label font-semibold text-gms-text";
+const numCell = "overflow-hidden px-3 py-2.5 text-right tabular-nums whitespace-nowrap text-ellipsis";
+
+/** Column order of the table; the keys name the widths kept by `useColumnWidths`. */
+export function tableColumns(buckets: readonly Bucket[], showPrice: boolean): TableColumn[] {
+  return [
+    { key: "expand", kind: "expand" },
+    { key: "docNo", kind: "docNo" },
+    { key: "dueDate", kind: "dueDate" },
+    { key: "vendor", kind: "vendor" },
+    ...buckets.flatMap((bucket): TableColumn[] => [
+      { key: `${bucket}.pcs`, kind: "pcs" },
+      { key: `${bucket}.weight`, kind: "weight" },
+    ]),
+    ...(showPrice ? [{ key: "price", kind: "price" } satisfies TableColumn] : []),
+  ];
+}
 
 function SortButton({ label, sortKey, sort, onSort, sub }: { label: string; sortKey: SortKey; sort: TableProps["sort"]; onSort: (key: SortKey) => void; sub?: string }) {
   const active = sort.key === sortKey;
@@ -77,12 +94,12 @@ function BucketCells({ value, buckets }: { value: Pick<VendorListRow, Bucket>; b
   );
 }
 
-function ItemRow({ item, prefs, buckets, showPrice, checked, onToggle }: { item: VendorItem; prefs: ViewPrefs; buckets: readonly Bucket[]; showPrice: boolean; checked: boolean; onToggle: () => void }) {
+function ItemRow({ item, prefs, buckets, showPrice, checked, onToggle, left }: { item: VendorItem; prefs: ViewPrefs; buckets: readonly Bucket[]; showPrice: boolean; checked: boolean; onToggle: () => void; left: readonly CSSProperties[] }) {
   const spec = itemSpecParts(item, { colorClarity: isShown(prefs, "colorClarity"), cerType: isShown(prefs, "cerType") });
   const stockLot = [item.stockId, item.lot].filter(Boolean).join(" · ");
   return (
     <tr className={cx("border-t border-gms-border", checked ? "bg-gms-surface-sunken" : "bg-gms-surface-muted")}>
-      <td className={cx(sticky[0], "bg-inherit px-2 py-2.5 align-top")}>
+      <td style={left[0]} className={cx(sticky[0], "bg-inherit px-2 py-2.5 align-top")}>
         <span className="relative inline-flex h-5 w-5 items-center justify-center" title="Show selected rows only.">
           <input
             type="checkbox"
@@ -94,7 +111,7 @@ function ItemRow({ item, prefs, buckets, showPrice, checked, onToggle }: { item:
           {checked && <Check size={14} strokeWidth={3} className="pointer-events-none absolute text-gms-on-primary" aria-hidden />}
         </span>
       </td>
-      <th scope="row" colSpan={3} className={cx(sticky[1], "w-auto bg-inherit py-2.5 pr-3 pl-1 text-left align-top font-normal")}>
+      <th scope="row" colSpan={3} style={left[1]} className={cx(sticky[1], "overflow-hidden bg-inherit py-2.5 pr-3 pl-1 text-left align-top font-normal break-words")}>
         {isShown(prefs, "stone") && <p className="text-gms-body font-semibold">{item.stone || "-"}</p>}
         <p className="text-gms-label text-gms-text-secondary">
           {[spec.shapeSize, spec.grading].filter(Boolean).join(" · ")}
@@ -141,22 +158,33 @@ export function TableSkeleton() {
 export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggleOpen, itemsLoading, itemsError, onRetryItems, selected, onToggleItem }: TableProps) {
   const buckets = BUCKET_COLUMNS.filter((bucket) => isShown(prefs, bucket));
   const showPrice = isShown(prefs, "price");
-  const columnCount = 4 + buckets.length * 2 + (showPrice ? 1 : 0);
+  const columns = tableColumns(buckets, showPrice);
+  const columnCount = columns.length;
+  const { boxRef, widths, resize, reset } = useColumnWidths(columns);
+  const left: CSSProperties[] = stickyOffsets(columns, widths, 4).map((offset) => ({ left: offset }));
+  const tableWidth = columns.reduce((sum, column) => sum + widths[column.key], 0);
+  const handle = (key: string, label: string) => <ResizeHandle label={label} width={widths[key]} onResize={(width) => resize(key, width)} onReset={() => reset(key)} />;
   return (
-    <div className="overflow-x-auto rounded-gms-md border border-gms-border bg-gms-surface">
-      <table className="w-full border-collapse text-gms-body">
+    <div ref={boxRef} className="overflow-x-auto rounded-gms-md border border-gms-border bg-gms-surface">
+      <table className="table-fixed border-collapse text-gms-body" style={{ width: tableWidth }}>
         <caption className="sr-only">Memo outstanding from vendors</caption>
+        <colgroup>
+          {columns.map((column) => <col key={column.key} style={{ width: widths[column.key] }} />)}
+        </colgroup>
         <thead className="bg-gms-surface">
           <tr className="border-b border-gms-border">
-            <th rowSpan={2} className={cx(sticky[0], "bg-gms-surface")}><span className="sr-only">Expand</span></th>
-            <th rowSpan={2} scope="col" aria-sort={ariaSort(sort, "docNo")} className={cx(sticky[1], headCell, "bg-gms-surface")}>
+            <th rowSpan={2} style={left[0]} className={cx(sticky[0], "bg-gms-surface")}><span className="sr-only">Expand</span></th>
+            <th rowSpan={2} scope="col" aria-sort={ariaSort(sort, "docNo")} style={left[1]} className={cx(sticky[1], headCell, "bg-gms-surface")}>
               <SortButton label="Doc Number" sub="Doc Date" sortKey="docNo" sort={sort} onSort={onSort} />
+              {handle("docNo", "Doc Number")}
             </th>
-            <th rowSpan={2} scope="col" aria-sort={ariaSort(sort, "dueDate")} className={cx(sticky[2], headCell, "bg-gms-surface")}>
+            <th rowSpan={2} scope="col" aria-sort={ariaSort(sort, "dueDate")} style={left[2]} className={cx(sticky[2], headCell, "bg-gms-surface")}>
               <SortButton label="Due Date" sub="Overdue" sortKey="dueDate" sort={sort} onSort={onSort} />
+              {handle("dueDate", "Due Date")}
             </th>
-            <th rowSpan={2} scope="col" aria-sort={ariaSort(sort, "vendorName")} className={cx(sticky[3], headCell, "bg-gms-surface")}>
+            <th rowSpan={2} scope="col" aria-sort={ariaSort(sort, "vendorName")} style={left[3]} className={cx(sticky[3], headCell, "bg-gms-surface")}>
               <SortButton label="Vendor Name" sortKey="vendorName" sort={sort} onSort={onSort} />
+              {handle("vendor", "Vendor Name")}
             </th>
             {buckets.map((bucket) => (
               <th key={bucket} colSpan={2} scope="colgroup" aria-sort={ariaSort(sort, BUCKET_SORT[bucket])} className={cx(headCell, "border-l border-gms-border text-center")}>
@@ -166,14 +194,21 @@ export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggl
             {showPrice && (
               <th rowSpan={2} scope="col" aria-sort={ariaSort(sort, "openValue")} className={cx(headCell, "border-l border-gms-border text-right")}>
                 <SortButton label="PRICE" sub="UNIT" sortKey="openValue" sort={sort} onSort={onSort} />
+                {handle("price", "Price")}
               </th>
             )}
           </tr>
           <tr className="border-b border-gms-border">
             {buckets.map((bucket) => (
               <Fragment key={bucket}>
-                <th scope="col" className="border-l border-gms-border px-3 py-1.5 text-right text-gms-label font-normal text-gms-text-secondary">Pcs</th>
-                <th scope="col" className="px-3 py-1.5 text-right text-gms-label font-normal text-gms-text-secondary">Weight</th>
+                <th scope="col" className="relative border-l border-gms-border px-3 py-1.5 text-right text-gms-label font-normal text-gms-text-secondary">
+                  Pcs
+                  {handle(`${bucket}.pcs`, `${BUCKET_LABEL[bucket]} Pcs`)}
+                </th>
+                <th scope="col" className="relative px-3 py-1.5 text-right text-gms-label font-normal text-gms-text-secondary">
+                  Weight
+                  {handle(`${bucket}.weight`, `${BUCKET_LABEL[bucket]} Weight`)}
+                </th>
               </Fragment>
             ))}
           </tr>
@@ -184,7 +219,7 @@ export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggl
             return (
               <Fragment key={row.memoReceiveId}>
                 <tr className={cx("border-t border-gms-border", open ? "bg-gms-primary-subtle" : "bg-gms-surface")}>
-                  <td className={cx(sticky[0], "bg-inherit px-1.5 py-2.5")}>
+                  <td style={left[0]} className={cx(sticky[0], "bg-inherit px-1.5 py-2.5")}>
                     <button
                       type="button"
                       aria-expanded={open}
@@ -196,16 +231,16 @@ export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggl
                       {open ? <ChevronDown size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
                     </button>
                   </td>
-                  <th scope="row" className={cx(sticky[1], "bg-inherit px-3 py-2.5 text-left font-normal")}>
-                    <Link href={memoReceiveHref(row.memoReceiveId)} className={cx("block font-semibold text-gms-primary hover:underline", focusRing)}>{row.docNo}</Link>
+                  <th scope="row" style={left[1]} className={cx(sticky[1], "overflow-hidden bg-inherit px-3 py-2.5 text-left font-normal")}>
+                    <Link href={memoReceiveHref(row.memoReceiveId)} className={cx("block truncate font-semibold text-gms-primary hover:underline", focusRing)}>{row.docNo}</Link>
                     <span className="block text-gms-label text-gms-text-secondary">{formatDate(row.docDate)}</span>
                   </th>
-                  <td className={cx(sticky[2], "bg-inherit px-3 py-2.5")}>
+                  <td style={left[2]} className={cx(sticky[2], "overflow-hidden bg-inherit px-3 py-2.5")}>
                     <span className="block">{formatDate(row.dueDate)}</span>
                     <DueLabel dueInDays={row.dueInDays} />
                   </td>
-                  <td className={cx(sticky[3], "bg-inherit px-3 py-2.5")}>
-                    <span className="block max-w-[166px] truncate" title={row.vendor.name}>{row.vendor.name}</span>
+                  <td style={left[3]} className={cx(sticky[3], "overflow-hidden bg-inherit px-3 py-2.5")}>
+                    <span className="block truncate" title={row.vendor.name}>{row.vendor.name}</span>
                   </td>
                   <BucketCells value={row} buckets={buckets} />
                   {showPrice && (
@@ -235,7 +270,7 @@ export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggl
                   </tr>
                 )}
                 {open && items?.map((item) => (
-                  <ItemRow key={item.id} item={item} prefs={prefs} buckets={buckets} showPrice={showPrice} checked={selected.has(item.id)} onToggle={() => onToggleItem(item)} />
+                  <ItemRow key={item.id} item={item} prefs={prefs} buckets={buckets} showPrice={showPrice} checked={selected.has(item.id)} onToggle={() => onToggleItem(item)} left={left} />
                 ))}
               </Fragment>
             );

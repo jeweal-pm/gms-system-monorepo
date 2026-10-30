@@ -102,6 +102,8 @@ function OutstandingReport({ access }: { access: MemoOutstandingAccess }) {
   const options = useVendorOptions(true);
   const refreshAll = useRefreshAll();
   const [refreshing, setRefreshing] = useState(false);
+  // Refresh also brings the dragged column widths back to the default 30% / 70% (owner note 2026-10-30).
+  const [layoutKey, setLayoutKey] = useState(0);
   const rows = useMemo(() => list.data?.items ?? [], [list.data]);
 
   // Rows flipped from the subtask mode's default; reset when the mode changes.
@@ -149,6 +151,7 @@ function OutstandingReport({ access }: { access: MemoOutstandingAccess }) {
   };
   const refresh = async () => {
     setRefreshing(true);
+    setLayoutKey((key) => key + 1);
     try {
       await refreshAll();
     } finally {
@@ -219,6 +222,7 @@ function OutstandingReport({ access }: { access: MemoOutstandingAccess }) {
         ) : (
           <>
             <OutstandingTable
+              key={layoutKey}
               entries={entries}
               prefs={prefs}
               sort={activeSort(state)}

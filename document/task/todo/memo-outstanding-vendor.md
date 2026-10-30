@@ -35,3 +35,7 @@ Backend evidence: [testing.md](../../apps/backend/master/memo-outstanding-vendor
 ## Merge note 2026-10-30
 
 Merged `change-to-nginx-with-new-skill-agent` (memo-return PR #59). Memo Return approval now moves the returned pcs / weight from `pending_*` into `returned_*` in the same UPDATE (`memo-return.service.ts` approve), as SA-MOV-02 requires, so the `memo_stock_balance` CHECK holds and the Return column of this report is fed. IT-MRT-03 now checks the Return bucket. Verified on a disposable PostgreSQL: all 18 migrations in order, `test/trade-document` 7 files / 46 tests pass. Backend 415 unit tests, frontend 512 tests, tsc and lint pass.
+
+## Owner note 2026-10-30: resizable columns
+
+Owner Simple Notes on the design: each column can be resized by dragging its header edge (cursor `col-resize`). The default split is 30% info (expand · Doc · Due · Vendor) and 70% numbers (bucket Pcs / Weight, Price). Widths are kept only in component state, so a page reload or the toolbar Refresh brings the default back. Implemented in `components/column-resize.tsx` and `outstanding-table.tsx`. The frozen columns follow the widths, arrow keys resize by 16 px, and a double click resets a column. UT-MOV-F3 (5 tests) passes. Frontend: 52 files / 517 tests, tsc, and eslint pass.
