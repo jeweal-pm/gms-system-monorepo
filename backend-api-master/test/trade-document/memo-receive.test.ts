@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "../../src/generated/prisma/client";
 import { formatStockId, netUnitPrice, stockIdYear } from "../../src/trade-document/memo-receive.service";
-import { encodeStockCursor, pendingAmount } from "../../src/trade-document/memo-stock.service";
+import { encodeStockCursor, pendingAmount, totalPerItem } from "../../src/trade-document/memo-stock.service";
 import { createMemoReceiveSchema, memoStockListSchema, updateMemoReceiveSchema } from "../../src/trade-document/memo-schemas";
 
 /**
@@ -105,5 +105,20 @@ describe("Memo Stock prices (SA-MR-06/11)", () => {
 
   it("UT-MR-P3 the keyset cursor is base64url of date|stockId", () => {
     expect(Buffer.from(encodeStockCursor("2026-10-29", "260001"), "base64url").toString("utf8")).toBe("2026-10-29|260001");
+  });
+});
+
+describe("Memo Stock approval totals (INV-20261031-001)", () => {
+  it("UT-MS-T1 sums lines that name the same item and keeps each line's position for error paths", () => {
+    const D = (value: string) => new Prisma.Decimal(value);
+    const totals = totalPerItem([
+      { memoStockId: "a", pcs: 2, weightCt: D("1"), index: 0 },
+      { memoStockId: "b", pcs: 1, weightCt: D("0.4"), index: 1 },
+      { memoStockId: "a", pcs: 3, weightCt: D("1.5"), index: 2 },
+    ]);
+    expect(totals.map((total) => [total.memoStockId, total.pcs, total.weightCt.toFixed(3), total.indexes])).toEqual([
+      ["a", 5, "2.500", [0, 2]],
+      ["b", 1, "0.400", [1]],
+    ]);
   });
 });

@@ -31,6 +31,7 @@ const db = vi.hoisted(() => ({
   lines: [] as { model: string; data: Row[] }[],
   charges: [] as Row[],
   findManyArgs: [] as Row[],
+  memoOutStatus: "APPROVED",
 }));
 
 vi.mock("@gms/storage", () => ({
@@ -76,8 +77,21 @@ vi.mock("../../src/database/prisma-client", () => {
       findUnique: vi.fn(async ({ where }: { where: { code: string } }) => ({ THB: { active: true }, USD: { active: true }, EUR: { active: false } } as Record<string, { active: boolean }>)[where.code] ?? null),
       findMany: vi.fn(async () => [{ code: "EUR", name: "Euro", active: false }, { code: "THB", name: "Baht", active: true }]),
     },
+    memoStock: { findMany: vi.fn(async () => [{ ...(await import("../../src/generated/prisma/client").then(({ Prisma }) => ({ pendingWeightCt: new Prisma.Decimal(5) }))), id: "00000000-0000-4000-8000-0000000000aa", stockId: "260001", lot: "", location: "Memo", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", cerType: "", cerNo: "", priceUnit: "PER_CT", pendingPcs: 5 }]) },
+    memoOutLine: {
+      ...children("memoOutLine"),
+      findMany: vi.fn(async () => {
+        const { Prisma } = await import("../../src/generated/prisma/client");
+        return [{
+          id: "00000000-0000-4000-8000-0000000000bb", memoStockId: "00000000-0000-4000-8000-0000000000aa", stockId: "260001",
+          stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "", location: "Memo", cerType: "", cerNo: "",
+          pcs: 2, weightCt: new Prisma.Decimal("2.5"), returnedPcs: 0, returnedWeightCt: new Prisma.Decimal(0),
+          priceUnit: "PER_CT", unitPrice: new Prisma.Decimal(1000), amount: new Prisma.Decimal(2500),
+          document: { status: db.memoOutStatus, customerId: "00000000-0000-4000-8000-000000000001", currencyCode: "THB" },
+        }];
+      }),
+    },
     memoOut: document("memoOut"),
-    memoOutLine: children("memoOutLine"),
     memoOutCharge: children("memoOutCharge"),
     memoOutReturn: document("memoOutReturn"),
     memoOutReturnLine: children("memoOutReturnLine"),
@@ -102,9 +116,14 @@ const shared = (patch: Row = {}) => ({
   discount: { type: "NONE", value: "0" }, tax: { enabled: true, rate: "7", includeInPrice: false }, serviceCharges: [{ type: "SHIPPING", amount: "100" }], labor: null,
   ...patch,
 });
-const outInput = (patch: Row = {}) => createMemoOutSchema.parse({ ...shared(), customerId: CUSTOMER, shippingAddressId: SHIP, invoiceAddressId: INVOICE, ...patch });
-const returnLine = (patch: Row = {}) => ({ ...shared().lines[0], outstandingPcs: 2, outstandingWeightCt: "2.5", ...patch });
-const returnInput = (patch: Row = {}) => createMemoOutReturnSchema.parse({ ...shared(), lines: [returnLine()], vendorId: VENDOR, addressId: VADDR, ...patch });
+// memo-out rev 3 (owner 2026-10-31): every Memo Out line comes from From Stock.
+const MEMO_STOCK = "00000000-0000-4000-8000-0000000000aa";
+const outLine = () => ({ ...shared().lines[0], memoStockId: MEMO_STOCK });
+const outInput = (patch: Row = {}) => createMemoOutSchema.parse({ ...shared(), lines: [outLine()], customerId: CUSTOMER, shippingAddressId: SHIP, invoiceAddressId: INVOICE, ...patch });
+// memo-out-return rev 4 (owner 2026-10-31): customer + both addresses; each line names an approved Memo Out line.
+const MEMO_OUT_LINE = "00000000-0000-4000-8000-0000000000bb";
+const returnLine = (patch: Row = {}) => ({ ...shared().lines[0], memoOutLineId: MEMO_OUT_LINE, outstandingPcs: 2, outstandingWeightCt: "2.5", ...patch });
+const returnInput = (patch: Row = {}) => createMemoOutReturnSchema.parse({ ...shared(), lines: [returnLine()], customerId: CUSTOMER, shippingAddressId: SHIP, invoiceAddressId: INVOICE, ...patch });
 
 async function failure(promise: Promise<unknown>) {
   try { await promise; } catch (error) {
@@ -138,8 +157,14 @@ describe("schemas", () => {
   it("UT-MO-B01 memo lines can't carry photos; each document takes only its own party fields", () => {
     expect(createMemoOutSchema.safeParse({ ...outInput(), lines: [{ ...outInput().lines[0], photoIds: [STONE] }] }).success).toBe(false);
     expect(createMemoOutSchema.safeParse({ ...outInput(), vendorId: VENDOR }).success).toBe(false);
-    expect(createMemoOutReturnSchema.safeParse({ ...returnInput(), customerId: CUSTOMER }).success).toBe(false);
+    expect(createMemoOutReturnSchema.safeParse({ ...returnInput(), vendorId: VENDOR }).success).toBe(false);
     expect(createMemoOutReturnSchema.safeParse({ ...returnInput(), dueDate: "2026-10-01" }).success).toBe(false);
+  });
+
+  it("UT-MO-B12 memo out rev 3: a row keyed in by hand (no memoStockId) is rejected, lines.N.memoStockId required", () => {
+    const manual = createMemoOutSchema.safeParse({ ...outInput(), lines: [outLine(), { ...shared().lines[0] }] });
+    expect(manual.success).toBe(false);
+    expect(manual.error?.issues).toEqual([expect.objectContaining({ path: ["lines", 1, "memoStockId"], params: { code: "required" } })]);
   });
 });
 
@@ -148,7 +173,7 @@ describe("numbering from Document Setup (SA-MO-04)", () => {
     await expect(memoOut.create("actor", outInput())).resolves.toMatchObject({ docNo: "MO-2609001", version: 1 });
     expect(db.rawSql[0].values[0]).toBe("memo-out");
     expect(db.rawSql[0].text).toContain("FOR UPDATE");
-    expect(db.created[0]).toMatchObject({ model: "memoOut", data: { numberingId: NUMBERING, runningNo: 2609001, status: "DRAFT", createdBy: "actor" } });
+    expect(db.created[0]).toMatchObject({ model: "memoOut", data: { numberingId: NUMBERING, runningNo: 2609001, status: "PENDING_APPROVAL", createdBy: "actor" } });
     db.maxRunning = 2609004;
     await expect(memoOut.create("actor", outInput())).resolves.toMatchObject({ docNo: "MO-2609005" });
   });
@@ -177,17 +202,31 @@ describe("party references, snapshots and totals (SA-MO-05/06)", () => {
     expect(db.charges).toEqual([expect.objectContaining({ chargeType: "SHIPPING" })]);
   });
 
-  it("UT-MO-B05 memo out return stores the vendor + address snapshot", async () => {
+  it("UT-MO-B05 memo out return (rev 4) stores the customer + both addresses, its Memo Out line, Outstanding and the net price from it", async () => {
     await memoOutReturn.create("actor", returnInput());
-    expect(db.created[0]).toMatchObject({ model: "memoOutReturn", data: { vendorId: VENDOR, vendorCodeSnapshot: "V001", vendorNameSnapshot: "Bangkok Gems", addressId: VADDR } });
-    expect(String(db.created[0].data.addressSnapshot)).toContain("88 Silom Rd");
-    expect(db.lines[0]).toMatchObject({ model: "memoOutReturnLine", data: [expect.objectContaining({ pcs: 1, weightCt: "1.12", outstandingPcs: 2, outstandingWeightCt: "2.5" })] });
+    expect(db.created[0]).toMatchObject({ model: "memoOutReturn", data: { customerId: CUSTOMER, customerCodeSnapshot: "C001", shippingAddressId: SHIP, invoiceAddressId: INVOICE, status: "PENDING_APPROVAL" } });
+    expect(String(db.created[0].data.shippingAddressSnapshot)).toContain("919/1 Silom Rd");
+    expect(db.lines[0]).toMatchObject({ model: "memoOutReturnLine", data: [expect.objectContaining({ memoOutLineId: MEMO_OUT_LINE, source: "STOCK", stoneCodeId: null, pcs: 1, weightCt: "1.12", unitPrice: "1000.00", outstandingPcs: 2, outstandingWeightCt: "2.500" })] });
+  });
+
+  it("UT-MOR-B21 memo out return rejects a Memo Out line that is not approved or above its outstanding (SA-MOR-16)", async () => {
+    db.memoOutStatus = "PENDING_APPROVAL";
+    expect(await failure(memoOutReturn.create("actor", returnInput()))).toMatchObject({ status: 422, code: "MEMO_OUT_RETURN_REFERENCE_INVALID", path: "lines.0.memoOutLineId" });
+    db.memoOutStatus = "APPROVED";
+    expect(await failure(memoOutReturn.create("actor", returnInput({ customerId: ID(42) })))).toMatchObject({ code: "MEMO_OUT_RETURN_REFERENCE_INVALID" });
+    // The client claims 9 outstanding; the server sees 2 left on the Memo Out line.
+    expect(await failure(memoOutReturn.create("actor", returnInput({ lines: [returnLine({ pcs: 3, outstandingPcs: 9, outstandingWeightCt: "9" })] })))).toMatchObject({ status: 400, code: "VALIDATION_ERROR", path: "lines.0.pcs" });
+    const dup = createMemoOutReturnSchema.safeParse({ ...returnInput(), lines: [returnLine(), returnLine()] });
+    expect(dup.success ? [] : dup.error.issues.map((issue) => issue.path.join("."))).toContain("lines.1.memoOutLineId");
+    const empty = createMemoOutReturnSchema.safeParse({ ...returnInput(), lines: [returnLine({ pcs: 0, weightCt: "0" })] });
+    expect(empty.success ? [] : empty.error.issues.map((issue) => issue.path.join("."))).toEqual(["lines.0.pcs"]);
   });
 
   it("UT-MO-B11 memo out return lines need an Outstanding quantity and may not return more than it (UI rev 3)", () => {
-    const parse = (line: Row) => createMemoOutReturnSchema.safeParse({ ...shared(), lines: [line], vendorId: VENDOR, addressId: VADDR });
+    const parse = (line: Row) => createMemoOutReturnSchema.safeParse({ ...shared(), lines: [line], customerId: CUSTOMER, shippingAddressId: SHIP, invoiceAddressId: INVOICE });
     expect(parse(returnLine({ pcs: 2, weightCt: "2.5" })).success).toBe(true);
     expect(parse(shared().lines[0]).success).toBe(false);
+    expect(parse(returnLine({ memoOutLineId: undefined })).success).toBe(false);
     const tooMany = parse(returnLine({ pcs: 3 }));
     expect(tooMany.success ? [] : tooMany.error.issues.map((issue) => issue.path.join("."))).toEqual(["lines.0.pcs"]);
     const tooHeavy = parse(returnLine({ weightCt: "2.501" }));
@@ -201,28 +240,29 @@ describe("party references, snapshots and totals (SA-MO-05/06)", () => {
     expect(await failure(memoOut.create("actor", outInput()))).toMatchObject({ status: 422, code: "MEMO_OUT_REFERENCE_INVALID", path: "customerId" });
     db.customer = { ...db.customer!, active: true };
     expect(await failure(memoOut.create("actor", outInput({ shippingAddressId: INVOICE })))).toMatchObject({ code: "MEMO_OUT_REFERENCE_INVALID", path: "shippingAddressId" });
-    expect(await failure(memoOutReturn.create("actor", returnInput({ addressId: ID(99) })))).toMatchObject({ code: "MEMO_OUT_RETURN_REFERENCE_INVALID", path: "addressId" });
-    expect(await failure(memoOutReturn.create("actor", returnInput({ currency: "EUR", exchangeRate: "39" })))).toMatchObject({ code: "MEMO_OUT_RETURN_REFERENCE_INVALID", path: "currency" });
+    expect(await failure(memoOutReturn.create("actor", returnInput({ invoiceAddressId: SHIP })))).toMatchObject({ code: "MEMO_OUT_RETURN_REFERENCE_INVALID", path: "invoiceAddressId" });
+    // A currency other than the Memo Out line's is rejected on the line first (SA-MOR-16).
+    expect(await failure(memoOutReturn.create("actor", returnInput({ currency: "EUR", exchangeRate: "39" })))).toMatchObject({ code: "MEMO_OUT_RETURN_REFERENCE_INVALID", path: "lines.0.memoOutLineId" });
     expect(await failure(memoOut.create("actor", outInput({ currency: "USD" })))).toMatchObject({ status: 400, code: "VALIDATION_ERROR", path: "exchangeRate" });
   });
 });
 
 describe("update and delete (SA-MO-07)", () => {
-  it("UT-MO-B07 replaces the document under the version guard; a stored inactive vendor may stay; stale → CHANGED", async () => {
-    db.stored = { status: "DRAFT", version: 2, currencyCode: "THB", vendorId: VENDOR, lines: [{ stoneCodeId: STONE }] };
-    db.vendor = { ...db.vendor!, active: false };
+  it("UT-MO-B07 replaces the document under the version guard; a stored inactive customer may stay; stale → CHANGED", async () => {
+    db.stored = { status: "PENDING_APPROVAL", version: 2, currencyCode: "THB", customerId: CUSTOMER, lines: [{ stoneCodeId: null, id: ID(50) }] };
+    db.customer = { ...db.customer!, active: false };
     await expect(memoOutReturn.update("editor", DOC, 2, returnInput())).resolves.toEqual({ id: DOC, version: 3 });
-    expect(db.updates[0]).toMatchObject({ where: { id: DOC, version: 2, status: { in: ["DRAFT"] } } });
+    expect(db.updates[0]).toMatchObject({ where: { id: DOC, version: 2, status: { in: ["PENDING_APPROVAL"] } } });
     db.stored = { ...db.stored, version: 5 };
     expect(await failure(memoOutReturn.update("editor", DOC, 2, returnInput()))).toMatchObject({ status: 409, code: "MEMO_OUT_RETURN_CHANGED" });
     db.stored = null;
     expect(await failure(memoOut.update("editor", DOC, 2, outInput()))).toMatchObject({ status: 404, code: "MEMO_OUT_NOT_FOUND" });
   });
 
-  it("UT-MO-B08 delete needs the current version of a draft", async () => {
+  it("UT-MO-B08 delete needs the current version of a pending memo out (SA-MO-11)", async () => {
     await expect(memoOut.delete("actor", DOC, 1)).resolves.toEqual({ ok: true });
     db.writeCount = 0;
-    db.stored = { status: "DRAFT", version: 4 };
+    db.stored = { status: "PENDING_APPROVAL", version: 4 };
     expect(await failure(memoOut.delete("actor", DOC, 1))).toMatchObject({ status: 409, code: "MEMO_OUT_CHANGED" });
     db.stored = null;
     expect(await failure(memoOutReturn.delete("actor", DOC, 1))).toMatchObject({ status: 404, code: "MEMO_OUT_RETURN_NOT_FOUND" });
@@ -230,13 +270,12 @@ describe("update and delete (SA-MO-07)", () => {
 });
 
 describe("list and options (SA-MO-09)", () => {
-  it("UT-MO-B09 lists newest first searching the party name; options have the quotation / vendor shapes", async () => {
+  it("UT-MO-B09 lists newest first searching the party name; both options have the quotation (customer) shape", async () => {
     await memoOut.list(documentListSchema.parse({ q: "gem", partyId: CUSTOMER }));
     expect(db.findManyArgs[0]).toMatchObject({ orderBy: [{ docDate: "desc" }, { createdAt: "desc" }, { id: "desc" }], take: 51, where: { customerId: CUSTOMER } });
     expect(JSON.stringify(db.findManyArgs[0])).toContain("customerNameSnapshot");
     expect(await failure(memoOutReturn.list(documentListSchema.parse({ cursor: "!!" })))).toMatchObject({ status: 400, path: "cursor" });
     await expect(memoOut.options()).resolves.toMatchObject({ customers: [], currencies: ["THB"], companyCurrency: "THB", numbering: { configured: false } });
-    const back = await memoOutReturn.options();
-    expect(back.vendors[0]).toMatchObject({ code: "V001", currency: "USD", addresses: [expect.objectContaining({ id: VADDR, isDefault: true })] });
+    await expect(memoOutReturn.options()).resolves.toMatchObject({ customers: [], currencies: ["THB"], companyCurrency: "THB", numbering: { configured: false } });
   });
 });

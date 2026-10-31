@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import { validationException } from "../common/errors";
-import { escapeLike } from "../common/persistence";
+import { validationException, type FieldError } from "../common/errors";
+import { escapeLike, type Tx } from "../common/persistence";
 import { prisma } from "../database/prisma-client";
 import { fromDbDate, toDbDate } from "../document-setup/document-setup.service";
 import { Prisma } from "../generated/prisma/client";
@@ -9,6 +9,103 @@ import type { MemoStockListInput } from "./memo-schemas";
 
 const Decimal = Prisma.Decimal;
 type Dec = Prisma.Decimal;
+
+/** One approved line taking quantity off a Memo Stock item; `index` is its line position for error paths. */
+export type MemoStockTake = { memoStockId: string; pcs: number; weightCt: Dec; index: number };
+
+/** One Memo Stock item's total over the lines that name it, with those lines' positions for error paths. */
+type ItemTotal = { memoStockId: string; pcs: number; weightCt: Dec; indexes: number[] };
+
+/**
+ * Sums lines per Memo Stock item (INV-20261031-001): one memo out return can bring back lines of two memo outs that
+ * took the same item, and an `UPDATE … FROM (VALUES …)` applies only one joined row per target row. Checking and
+ * updating per item keeps every line's quantity.
+ */
+export function totalPerItem(lines: MemoStockTake[]): ItemTotal[] {
+  const totals = new Map<string, ItemTotal>();
+  for (const line of lines) {
+    const total = totals.get(line.memoStockId);
+    if (total) {
+      total.pcs += line.pcs;
+      total.weightCt = total.weightCt.plus(line.weightCt);
+      total.indexes.push(line.index);
+    } else {
+      totals.set(line.memoStockId, { memoStockId: line.memoStockId, pcs: line.pcs, weightCt: line.weightCt, indexes: [line.index] });
+    }
+  }
+  return [...totals.values()];
+}
+
+/** Error paths of every line of an item that falls short. */
+const shortPaths = (total: ItemTotal, field: "pcs" | "weightCt", code: string): FieldError[] => total.indexes.map((index) => ({ path: `lines.${index}.${field}`, code }));
+
+const valuesOf = (totals: ItemTotal[]) => totals.map((total) => Prisma.sql`(${total.memoStockId}::uuid, ${total.pcs}::int, ${total.weightCt.toFixed(3)}::numeric)`);
+
+/** Memo Stock buckets a document approval fills (memo-outstanding-vendor SA-MOV-02, Q-MOV-04). Fixed SQL, never input. */
+const BUCKET_SQL = {
+  returned: Prisma.sql`returned_pcs = s.returned_pcs + r.pcs, returned_weight_ct = s.returned_weight_ct + r.weight`,
+  reserved: Prisma.sql`reserved_pcs = s.reserved_pcs + r.pcs, reserved_weight_ct = s.reserved_weight_ct + r.weight`,
+} as const;
+
+/**
+ * Inside an approval transaction: locks the items in id order (`FOR UPDATE`, so concurrent approvals of the same item
+ * queue up instead of deadlocking), re-checks each line against the item's current pending (owner Q-MR-15 over-pull
+ * guard) and moves the quantity from pending into `bucket` in one UPDATE (CHECK memo_stock_balance holds). A line asking
+ * more than pending → `short(fields)` is thrown and the caller's transaction rolls back. Memo Return → returned
+ * (memo-return SA rev 2); Memo Out → reserved (memo-out SA-MO-14). Lines are summed per item first (`totalPerItem`).
+ */
+export async function takeFromMemoStock(tx: Tx, takes: MemoStockTake[], bucket: keyof typeof BUCKET_SQL, short: (fields: FieldError[]) => Error, now: Date): Promise<void> {
+  if (takes.length === 0) return;
+  const totals = totalPerItem(takes);
+  const ids = totals.map((total) => total.memoStockId);
+  const locked = await tx.$queryRaw<{ id: string; pending_pcs: number; pending_weight_ct: Dec | string }[]>(Prisma.sql`
+    SELECT id::text AS id, pending_pcs, pending_weight_ct FROM "partner"."memo_stock"
+    WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR UPDATE`);
+  const pending = new Map(locked.map((row) => [row.id, row]));
+  const shortFields: FieldError[] = [];
+  for (const total of totals) {
+    const item = pending.get(total.memoStockId);
+    if (!item || total.pcs > item.pending_pcs) shortFields.push(...shortPaths(total, "pcs", "exceeds_pending"));
+    if (!item || total.weightCt.gt(new Decimal(item.pending_weight_ct.toString()))) shortFields.push(...shortPaths(total, "weightCt", "exceeds_pending"));
+  }
+  if (shortFields.length > 0) throw short(shortFields);
+  await tx.$executeRaw(Prisma.sql`
+    UPDATE "partner"."memo_stock" AS s
+    SET pending_pcs = s.pending_pcs - r.pcs, pending_weight_ct = s.pending_weight_ct - r.weight, ${BUCKET_SQL[bucket]},
+        version = s.version + 1, updated_at = ${now}
+    FROM (VALUES ${Prisma.join(valuesOf(totals))}) AS r(id, pcs, weight)
+    WHERE s.id = r.id`);
+}
+
+/**
+ * Inside a Memo Out Return approval (memo-out-return SA-MOR-17): locks the items in id order and moves each quantity from
+ * Reserve back to pending (`reserved -= q, pending += q`), so the stone is available again. An item with less in Reserve
+ * than the lines bring back → `short` (nothing changes); `memo_stock_balance` holds either way. Lines of two memo outs
+ * that took the same item are summed per item first (`totalPerItem`, INV-20261031-001).
+ */
+export async function releaseToMemoStock(tx: Tx, puts: MemoStockTake[], short: (fields: FieldError[]) => Error, now: Date): Promise<void> {
+  if (puts.length === 0) return;
+  const totals = totalPerItem(puts);
+  const ids = totals.map((total) => total.memoStockId);
+  const locked = await tx.$queryRaw<{ id: string; reserved_pcs: number; reserved_weight_ct: Dec | string }[]>(Prisma.sql`
+    SELECT id::text AS id, reserved_pcs, reserved_weight_ct FROM "partner"."memo_stock"
+    WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR UPDATE`);
+  const reserved = new Map(locked.map((row) => [row.id, row]));
+  const shortFields: FieldError[] = [];
+  for (const total of totals) {
+    const item = reserved.get(total.memoStockId);
+    if (!item || total.pcs > item.reserved_pcs) shortFields.push(...shortPaths(total, "pcs", "exceeds_reserved"));
+    if (!item || total.weightCt.gt(new Decimal(item.reserved_weight_ct.toString()))) shortFields.push(...shortPaths(total, "weightCt", "exceeds_reserved"));
+  }
+  if (shortFields.length > 0) throw short(shortFields);
+  await tx.$executeRaw(Prisma.sql`
+    UPDATE "partner"."memo_stock" AS s
+    SET reserved_pcs = s.reserved_pcs - r.pcs, reserved_weight_ct = s.reserved_weight_ct - r.weight,
+        pending_pcs = s.pending_pcs + r.pcs, pending_weight_ct = s.pending_weight_ct + r.weight,
+        version = s.version + 1, updated_at = ${now}
+    FROM (VALUES ${Prisma.join(valuesOf(totals))}) AS r(id, pcs, weight)
+    WHERE s.id = r.id`);
+}
 
 type StockRow = {
   id: string;
@@ -79,10 +176,9 @@ function decodeStockCursor(value: string): { docDate: string; stockId: string } 
 @Injectable()
 export class MemoStockService {
   async list(input: MemoStockListInput) {
-    const filters: Prisma.Sql[] = [
-      Prisma.sql`vendor_id = ${input.vendorId}::uuid`,
-      Prisma.sql`(pending_pcs > 0 OR pending_weight_ct > 0)`,
-    ];
+    const filters: Prisma.Sql[] = [Prisma.sql`(pending_pcs > 0 OR pending_weight_ct > 0)`];
+    // With a vendor (Memo Return): memo_stock_pending_idx; without (Memo Out From Stock): memo_stock_pending_all_idx.
+    if (input.vendorId) filters.push(Prisma.sql`vendor_id = ${input.vendorId}::uuid`);
     if (input.currency) filters.push(Prisma.sql`currency_code = ${input.currency}::char(3)`);
     if (input.q) {
       const pattern = `%${escapeLike(input.q)}%`;

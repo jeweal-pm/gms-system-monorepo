@@ -171,7 +171,7 @@ export function ItemTable({
                   )}
 
                   <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                    <RowMenu disabled={readOnly} filled={filled} onAction={(a) => onRowAction(index, a)} />
+                    <RowMenu disabled={readOnly} filled={filled} canDuplicate={!(kind.stockQuantity && line.source === "STOCK")} onAction={(a) => onRowAction(index, a)} />
                   </td>
                 </tr>
               );
@@ -193,7 +193,7 @@ export function ItemTable({
           </tfoot>
         </table>
       </div>
-      {!readOnly && (
+      {!readOnly && !kind.pickOnly && (
         <Button size="sm" className="mt-3 bg-[#F6F7F8]" onClick={addRow}>
           <Plus className="size-4" /> Add row
         </Button>
@@ -275,11 +275,11 @@ function FilledCells({ line, currency, stoneCode, location }: { line: QuotationL
   );
 }
 
-function RowMenu({ disabled, filled, onAction }: { disabled: boolean; filled: boolean; onAction: (a: RowAction) => void }) {
+function RowMenu({ disabled, filled, canDuplicate, onAction }: { disabled: boolean; filled: boolean; canDuplicate: boolean; onAction: (a: RowAction) => void }) {
   const [open, setOpen] = useState(false);
   const items: { action: RowAction; label: string; danger?: boolean; hidden?: boolean }[] = [
     { action: "edit", label: "Edit" },
-    { action: "duplicate", label: "Duplicate", hidden: !filled },
+    { action: "duplicate", label: "Duplicate", hidden: !filled || !canDuplicate },
     { action: "clear", label: "Clear row", hidden: !filled },
     { action: "remove", label: "Remove row", danger: true },
   ];

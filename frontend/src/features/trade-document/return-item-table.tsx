@@ -28,7 +28,7 @@ export type ReturnTableOptions = {
   /** A saved document in view mode leads with "Stone Code · Stock ID · Lot" (memo return design, view). */
   viewStoneCode: boolean;
 };
-
+ 
 type Column = { title: string; sub?: string; className: string };
 
 const REST: Column[] = [

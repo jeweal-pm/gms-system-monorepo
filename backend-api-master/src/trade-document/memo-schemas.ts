@@ -5,7 +5,7 @@ import { LINES_MAX, decimal, lineInputSchema, tradeDocumentFields, tradeDocument
 import { documentListFields } from "./document-engine";
 
 /**
- * Inputs of memo out (customer + shipping/invoice address) and memo out return (vendor + address), ADR-0033:
+ * Inputs of memo out and memo out return (both customer + shipping/invoice address since memo-out-return rev 4), ADR-0033:
  * the quotation trade-document fields and rules. Photos are not available on these documents yet, so a line
  * can't carry photo ids.
  */
@@ -14,9 +14,30 @@ const memoLineSchema = lineInputSchema.extend({ photoIds: z.array(uuid).max(0) }
 const memoFields = { ...tradeDocumentFields, lines: z.array(memoLineSchema).min(1).max(LINES_MAX) };
 const versioned = { id: uuid, expectedVersion: z.number().int().min(1) };
 
-const memoOutFields = { ...memoFields, customerId: uuid, shippingAddressId: uuid, invoiceAddressId: uuid };
-export const createMemoOutSchema = z.object(memoOutFields).strict().superRefine(tradeDocumentRules);
-export const updateMemoOutSchema = z.object({ ...memoOutFields, ...versioned }).strict().superRefine(tradeDocumentRules);
+/**
+ * memo-out SA revision 2 (SA-MO-12/13, owner 2026-10-31): a line may name a Memo Stock item (From Stock). Such a stock
+ * line needs pcs or weight > 0 and a Sale Price > 0 (Q-MO-10/11), and an item appears once per document. The server
+ * checks pending and copies the item fields on save. Since memo-out rev 3 every line needs `memoStockId` (no manual
+ * lines); manual lines stored before it stay readable and cut nothing.
+ */
+const memoOutLineSchema = memoLineSchema.extend({ memoStockId: uuid.nullish() });
+const memoOutFields = { ...memoFields, lines: z.array(memoOutLineSchema).min(1).max(LINES_MAX), customerId: uuid, shippingAddressId: uuid, invoiceAddressId: uuid };
+type MemoOutValues = Omit<Parameters<typeof tradeDocumentRules>[0], "lines"> & { lines: z.output<typeof memoOutLineSchema>[] };
+function memoOutRules(value: MemoOutValues, ctx: z.RefinementCtx) {
+  tradeDocumentRules(value, ctx);
+  const issue = (path: (string | number)[], code: string) => ctx.addIssue({ code: "custom", path, params: { code }, message: code });
+  const seen = new Set<string>();
+  value.lines.forEach((line, index) => {
+    // memo-out rev 3 (owner 2026-10-31, Q-MOR-13): every row comes from From Stock; rows can't be keyed in by hand.
+    if (!line.memoStockId) return issue(["lines", index, "memoStockId"], "required");
+    if (seen.has(line.memoStockId)) issue(["lines", index, "memoStockId"], "duplicate");
+    seen.add(line.memoStockId);
+    if (line.pcs <= 0 && Number(line.weightCt) <= 0) issue(["lines", index, "pcs"], "required");
+    if (Number(line.unitPrice) <= 0) issue(["lines", index, "unitPrice"], "required");
+  });
+}
+export const createMemoOutSchema = z.object(memoOutFields).strict().superRefine(memoOutRules);
+export const updateMemoOutSchema = z.object({ ...memoOutFields, ...versioned }).strict().superRefine(memoOutRules);
 export type MemoOutInput = z.output<typeof createMemoOutSchema>;
 
 /**
@@ -24,7 +45,13 @@ export type MemoOutInput = z.output<typeof createMemoOutSchema>;
  * Return quantity (the only part the user edits) and may not exceed it.
  */
 const returnLineSchema = memoLineSchema.extend({ outstandingPcs: z.number().int().min(0).max(999_999), outstandingWeightCt: decimal(5, 3) });
-const memoOutReturnFields = { ...memoFields, lines: z.array(returnLineSchema).min(1).max(LINES_MAX), vendorId: uuid, addressId: uuid };
+/**
+ * memo-out-return SA rev 2 (owner 2026-10-31, SA-MOR-11/13/16): the customer + Shipping / Invoice address of Memo Out,
+ * and each line names the approved Memo Out From Stock line it brings back, once per document, with pcs or weight > 0.
+ * The server copies the item fields, price and Outstanding from that line on save.
+ */
+const memoOutReturnLineSchema = returnLineSchema.extend({ memoOutLineId: uuid });
+const memoOutReturnFields = { ...memoFields, lines: z.array(memoOutReturnLineSchema).min(1).max(LINES_MAX), customerId: uuid, shippingAddressId: uuid, invoiceAddressId: uuid };
 type ReturnValues = Omit<Parameters<typeof tradeDocumentRules>[0], "lines"> & { lines: z.output<typeof returnLineSchema>[] };
 function returnRules(value: ReturnValues, ctx: z.RefinementCtx) {
   tradeDocumentRules(value, ctx);
@@ -34,8 +61,18 @@ function returnRules(value: ReturnValues, ctx: z.RefinementCtx) {
     if (Number(line.weightCt) > Number(line.outstandingWeightCt)) issue("weightCt");
   });
 }
-export const createMemoOutReturnSchema = z.object(memoOutReturnFields).strict().superRefine(returnRules);
-export const updateMemoOutReturnSchema = z.object({ ...memoOutReturnFields, ...versioned }).strict().superRefine(returnRules);
+function memoOutReturnRules(value: Omit<ReturnValues, "lines"> & { lines: z.output<typeof memoOutReturnLineSchema>[] }, ctx: z.RefinementCtx) {
+  returnRules(value, ctx);
+  const seen = new Set<string>();
+  value.lines.forEach((line, index) => {
+    const issue = (field: string, code: string) => ctx.addIssue({ code: "custom", path: ["lines", index, field], params: { code }, message: code });
+    if (seen.has(line.memoOutLineId)) issue("memoOutLineId", "duplicate");
+    seen.add(line.memoOutLineId);
+    if (line.pcs <= 0 && Number(line.weightCt) <= 0) issue("pcs", "required");
+  });
+}
+export const createMemoOutReturnSchema = z.object(memoOutReturnFields).strict().superRefine(memoOutReturnRules);
+export const updateMemoOutReturnSchema = z.object({ ...memoOutReturnFields, ...versioned }).strict().superRefine(memoOutReturnRules);
 export type MemoOutReturnInput = z.output<typeof createMemoOutReturnSchema>;
 
 export const memoVersionedIdSchema = z.object(versioned).strict();
@@ -91,8 +128,9 @@ const memoReturnFields = { ...memoFields, lines: z.array(memoReturnLineSchema).m
 export const createMemoReturnSchema = z.object(memoReturnFields).strict().superRefine(returnRules);
 export const updateMemoReturnSchema = z.object({ ...memoReturnFields, ...versioned }).strict().superRefine(returnRules);
 export type MemoReturnInput = z.output<typeof createMemoReturnSchema>;
-/** Memo return statuses are the memo receive ones: PENDING_APPROVAL → APPROVED. */
+/** Memo return and memo out (SA-MO-11) statuses are the memo receive ones: PENDING_APPROVAL → APPROVED. */
 export const memoReturnListSchema = memoReceiveListSchema;
+export const memoOutListSchema = memoReceiveListSchema;
 
 /**
  * memoStock.list (SA-MR-11): a vendor's pending items for the Memo Return "Add Memo Stock" dialog. `from`/`to`
@@ -100,8 +138,16 @@ export const memoReturnListSchema = memoReceiveListSchema;
  * memo return in that currency can take.
  */
 const DAY_MS = 86_400_000;
+function dateRange(value: { from?: string; to?: string }, ctx: z.RefinementCtx) {
+  if (value.from && value.to) {
+    const days = (Date.parse(value.to) - Date.parse(value.from)) / DAY_MS;
+    if (days < 0) ctx.addIssue({ code: "custom", path: ["to"], params: { code: "before_from" }, message: "before_from" });
+    else if (days > 366) ctx.addIssue({ code: "custom", path: ["to"], params: { code: "range_too_long" }, message: "range_too_long" });
+  }
+}
 export const memoStockListSchema = z.object({
-  vendorId: uuid,
+  /** Memo Return sends its vendor; Memo Out From Stock lists every vendor (SA-MO-15). */
+  vendorId: uuid.optional(),
   currency: z.string().regex(/^[A-Z]{3}$/).optional(),
   q: z.string().trim().max(100).optional(),
   from: z.iso.date().optional(),
@@ -110,11 +156,23 @@ export const memoStockListSchema = z.object({
   /** Sent by tRPC infinite queries (the Add Memo Stock "Load more"); pages only go forward. */
   direction: z.enum(["forward", "backward"]).optional(),
   limit: z.number().int().min(1).max(50).default(50),
-}).strict().superRefine((value, ctx) => {
-  if (value.from && value.to) {
-    const days = (Date.parse(value.to) - Date.parse(value.from)) / DAY_MS;
-    if (days < 0) ctx.addIssue({ code: "custom", path: ["to"], params: { code: "before_from" }, message: "before_from" });
-    else if (days > 366) ctx.addIssue({ code: "custom", path: ["to"], params: { code: "range_too_long" }, message: "range_too_long" });
-  }
-});
+}).strict().superRefine(dateRange);
 export type MemoStockListInput = z.output<typeof memoStockListSchema>;
+
+/**
+ * memoOutReturn.outstanding (SA-MOR-15): a customer's approved Memo Out From Stock lines not fully returned, in one
+ * currency, for the Memo Out Return "Memo Outstanding" dialog. `from` / `to` filter the Memo Out Doc Date (≤ 366 days);
+ * `excludeReturnId` leaves out the lines already in the return being edited.
+ */
+export const memoOutOutstandingSchema = z.object({
+  customerId: uuid,
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  q: z.string().trim().max(100).optional(),
+  from: z.iso.date().optional(),
+  to: z.iso.date().optional(),
+  excludeReturnId: uuid.optional(),
+  cursor: z.string().max(200).nullish(),
+  direction: z.enum(["forward", "backward"]).optional(),
+  limit: z.number().int().min(1).max(50).default(50),
+}).strict().superRefine(dateRange);
+export type MemoOutOutstandingInput = z.output<typeof memoOutOutstandingSchema>;

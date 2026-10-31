@@ -6,17 +6,24 @@ import { DateInput } from "@/components/ui/date-input";
 import { Badge, Button, cx, IconButton } from "@/features/quotation/components/ui";
 import { dec, toFixed } from "@/features/quotation/lib/decimal";
 import { formatMoneyText, formatWeight } from "@/features/quotation/lib/format";
-import { memoReturnLoadError, useMemoStock, type MemoStockItem } from "../api";
+import { memoStockLoadError, useMemoStock, type MemoStockItem } from "./memo-stock-api";
 
 /**
- * "Add Memo Stock" (memo-return design, SA-MR-11): the vendor's Memo Stock items in the return's currency with
- * something still pending — Stock ID, location Memo, Pending Pcs / Weight, price after the line discount (Q-MR-13)
- * and amount. Search + Start → Due (memo receive Doc Date, Q-MR-10) filter; rows already on the return are left out;
- * 50 a page with Load more. OK adds the checked rows.
+ * Memo Stock picker (shared):
+ * - Memo Return "Add Memo Stock" (memo-return design, SA-MR-11): the vendor's items in the return's currency, with the
+ *   price after the line discount (Q-MR-13) and amount.
+ * - Memo Out "From Stock" (memo-out rev 2, SA-MO-15): every vendor's items (`vendorId` left out), without the vendor's
+ *   cost.
+ * Each row shows Stock ID, location Memo and Pending Pcs / Weight. Search + Start → Due (memo receive Doc Date, Q-MR-10)
+ * filter; rows already on the document are left out; 50 a page with Load more. OK adds the checked rows.
  */
-export function MemoStockModal({ vendorId, currency, pickedIds, onCancel, onConfirm }: {
-  vendorId: string;
-  currency: string;
+export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText, pickedIds, onCancel, onConfirm }: {
+  title: string;
+  /** Leave out to list every vendor (From Stock). */
+  vendorId?: string;
+  currency?: string;
+  showPrice: boolean;
+  emptyText: string;
   pickedIds: Set<string>;
   onCancel: () => void;
   onConfirm: (items: MemoStockItem[]) => void;
@@ -41,6 +48,7 @@ export function MemoStockModal({ vendorId, currency, pickedIds, onCancel, onConf
   const stock = useMemoStock({ vendorId, currency, q, from, to });
   const items = (stock.data?.pages ?? []).flatMap((page) => page.items).filter((item) => !pickedIds.has(item.id));
   const allChecked = items.length > 0 && items.every((item) => checked.has(item.id));
+  const columns = showPrice ? 11 : 9;
   const toggle = (id: string) =>
     setChecked((prev) => {
       const next = new Set(prev);
@@ -60,7 +68,7 @@ export function MemoStockModal({ vendorId, currency, pickedIds, onCancel, onConf
       >
         <header className="flex items-center justify-between border-b border-[#E3E6EA] px-6 py-4">
           <h2 id="memo-stock-title" className="text-lg font-medium text-[#1C252E]">
-            Add Memo Stock
+            {title}
           </h2>
           <IconButton label="Close" onClick={onCancel}>
             <X className="size-5" />
@@ -109,8 +117,8 @@ export function MemoStockModal({ vendorId, currency, pickedIds, onCancel, onConf
                     <Th title="Color · Clarity" sub="Cutting · Quality" />
                     <Th title="Cer Type" sub="Cer No." />
                     <th colSpan={2} className="border-b border-l border-[#E3E6EA] px-3 py-3 text-center font-medium">Pending</th>
-                    <Th title="Price" sub="Unit" right divider />
-                    <Th title="Amount" right />
+                    {showPrice && <Th title="Price" sub="Unit" right divider />}
+                    {showPrice && <Th title="Amount" right />}
                   </tr>
                   <tr>
                     <th className="w-[90px] border-l border-[#E3E6EA] px-3 py-2.5 text-right font-medium">Pcs</th>
@@ -120,17 +128,17 @@ export function MemoStockModal({ vendorId, currency, pickedIds, onCancel, onConf
                 <tbody>
                   {stock.isPending && (
                     <tr>
-                      <td colSpan={11} className="py-16 text-center text-[#6B7480]">Loading…</td>
+                      <td colSpan={columns} className="py-16 text-center text-[#6B7480]">Loading…</td>
                     </tr>
                   )}
                   {stock.isError && (
                     <tr>
-                      <td colSpan={11} className="py-16 text-center text-[#E5484D]">{memoReturnLoadError(stock.error)}</td>
+                      <td colSpan={columns} className="py-16 text-center text-[#E5484D]">{memoStockLoadError(stock.error)}</td>
                     </tr>
                   )}
                   {stock.isSuccess && items.length === 0 && (
                     <tr>
-                      <td colSpan={11} className="py-16 text-center text-[#6B7480]">No memo stock from this vendor in {currency}.</td>
+                      <td colSpan={columns} className="py-16 text-center text-[#6B7480]">{emptyText}</td>
                     </tr>
                   )}
                   {items.map((item, index) => (
@@ -150,7 +158,7 @@ export function MemoStockModal({ vendorId, currency, pickedIds, onCancel, onConf
                         <div className="font-medium">{item.stockId}</div>
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6B7480]">
                           {item.lot && <span>{item.lot}</span>}
-                          <span>from {item.memoReceive.docNo}</span>
+                          <span>from {item.memoReceive.docNo}{vendorId === undefined ? ` · ${item.vendor.code}` : ""}</span>
                         </div>
                         {item.itemNote && (
                           <div className="mt-1 flex items-center gap-1.5 text-xs text-[#6B7480]">
@@ -173,16 +181,18 @@ export function MemoStockModal({ vendorId, currency, pickedIds, onCancel, onConf
                       </td>
                       <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">{item.pendingPcs}</td>
                       <td className="px-3 py-4 text-right">{formatWeight(dec(item.pendingWeightCt))}</td>
-                      <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">
-                        {formatMoneyText(toFixed(dec(item.netUnitPrice), 2))} {currency}
-                        <div className="mt-1 text-xs text-[#6B7480]">{item.priceUnit === "PCS" ? "pcs" : "cts"}</div>
-                      </td>
-                      <td className="px-3 py-4 text-right">{formatMoneyText(item.amount)}</td>
+                      {showPrice && (
+                        <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">
+                          {formatMoneyText(toFixed(dec(item.netUnitPrice), 2))} {item.currency}
+                          <div className="mt-1 text-xs text-[#6B7480]">{item.priceUnit === "PCS" ? "pcs" : "cts"}</div>
+                        </td>
+                      )}
+                      {showPrice && <td className="px-3 py-4 text-right">{formatMoneyText(item.amount)}</td>}
                     </tr>
                   ))}
                   {stock.hasNextPage && (
                     <tr>
-                      <td colSpan={11} className="py-4 text-center">
+                      <td colSpan={columns} className="py-4 text-center">
                         <Button size="sm" disabled={stock.isFetchingNextPage} onClick={() => void stock.fetchNextPage()}>
                           {stock.isFetchingNextPage ? "Loading…" : "Load more"}
                         </Button>
