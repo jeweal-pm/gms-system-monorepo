@@ -35,7 +35,7 @@ const quotation = {
   submit: vi.fn(), approve: vi.fn(), reject: vi.fn(), cancel: vi.fn(), delete: vi.fn(),
 };
 const memoOut = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
-const memoOutReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
+const memoOutReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), outstanding: vi.fn(), approve: vi.fn() };
 const memoReceive = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
 const memoStock = { list: vi.fn() };
 const memoReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
@@ -264,8 +264,8 @@ describe("staged master domain tRPC boundary", () => {
       lot: "", location: "", cerType: "", cerNo: "", pcs: 1, weightCt: "1", priceUnit: "PER_CT" as const, unitPrice: "100", discount: { type: "NONE" as const, value: "0" }, itemNote: "", photoIds: [] as string[] };
     const shared = { docDate: "2026-10-28", dueDate: "2026-11-28", currency: "THB", exchangeRate: null, ref: "", documentNote: "", lines: [line],
       discount: { type: "NONE" as const, value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null };
-    const out = { ...shared, customerId: ID, shippingAddressId: ID2, invoiceAddressId: ID2 };
-    const back = { ...shared, lines: [{ ...line, outstandingPcs: 1, outstandingWeightCt: "1" }], vendorId: ID, addressId: ID2 };
+    const out = { ...shared, lines: [{ ...line, memoStockId: ID2 }], customerId: ID, shippingAddressId: ID2, invoiceAddressId: ID2 };
+    const back = { ...shared, lines: [{ ...line, memoOutLineId: ID2, outstandingPcs: 1, outstandingWeightCt: "1" }], customerId: ID, shippingAddressId: ID2, invoiceAddressId: ID2 };
 
     const outCaller = router.createCaller(context(["memo-out:VIEW", "memo-out:ADD", "memo-out:EDIT", "memo-out:DELETE"]));
     await outCaller.memoOut.list({ q: "gem", partyId: ID });
@@ -284,9 +284,18 @@ describe("staged master domain tRPC boundary", () => {
     await expect(router.createCaller(context(["memo-out:ADD"], { csrfVerified: false })).memoOut.create(out)).rejects.toMatchObject({ code: "FORBIDDEN" });
 
     const backCaller = router.createCaller(context(["memo-out-return:VIEW", "memo-out-return:ADD"]));
-    await backCaller.memoOutReturn.options({ vendorId: ID });
+    await backCaller.memoOutReturn.options({ customerId: ID });
+    expect(memoOutReturn.options).toHaveBeenCalledWith(ID);
     await backCaller.memoOutReturn.create(back);
-    expect(memoOutReturn.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ vendorId: ID, addressId: ID2 }));
+    expect(memoOutReturn.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ customerId: ID, shippingAddressId: ID2, lines: [expect.objectContaining({ memoOutLineId: ID2 })] }));
+    // memo-out-return rev 4: the Memo Outstanding dialog with VIEW; approve needs APPROVE + CSRF.
+    await backCaller.memoOutReturn.outstanding({ customerId: ID, currency: "THB", q: "26" });
+    expect(memoOutReturn.outstanding).toHaveBeenCalledWith(expect.objectContaining({ customerId: ID, currency: "THB", q: "26", limit: 50 }));
+    await expect(backCaller.memoOutReturn.outstanding({ customerId: ID, currency: "THB", from: "2026-10-02", to: "2026-10-01" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(backCaller.memoOutReturn.approve({ id: ID, expectedVersion: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await router.createCaller(context(["memo-out-return:APPROVE"])).memoOutReturn.approve({ id: ID, expectedVersion: 1 });
+    expect(memoOutReturn.approve).toHaveBeenCalledWith("user-1", ID, 1);
+    await expect(router.createCaller(context(["memo-out-return:APPROVE"], { csrfVerified: false })).memoOutReturn.approve({ id: ID, expectedVersion: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(backCaller.memoOutReturn.create(out as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(router.createCaller(context(["memo-out:VIEW"])).memoOutReturn.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(router.createCaller(context(["memo-out-return:VIEW"])).memoOutReturn.delete({ id: ID, expectedVersion: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -487,7 +496,7 @@ describe("staged master domain tRPC boundary", () => {
       lot: "", location: "", cerType: "", cerNo: "", pcs: 1, weightCt: "1", priceUnit: "PER_CT" as const, unitPrice: "100", discount: { type: "NONE" as const, value: "0" }, itemNote: "", photoIds: [] as string[] };
     const out = { docDate: "2026-10-31", dueDate: "2026-11-30", currency: "THB", exchangeRate: null, ref: "", documentNote: "", customerId: ID, shippingAddressId: ID2, invoiceAddressId: ID2,
       discount: { type: "NONE" as const, value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
-      lines: [{ ...line, memoStockId: ID2 }, { ...line, memoStockId: null }] };
+      lines: [{ ...line, memoStockId: ID2 }] };
     const versioned = { id: ID, expectedVersion: 1 };
     const all = ["VIEW", "ADD", "EDIT", "DELETE", "APPROVE"].map((action) => `memo-out:${action}`);
     const caller = router.createCaller(context(all));
@@ -496,7 +505,9 @@ describe("staged master domain tRPC boundary", () => {
     expect(memoOut.list).toHaveBeenCalledWith(expect.objectContaining({ status: "PENDING_APPROVAL" }));
     await expect(caller.memoOut.list({ status: "DRAFT" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await caller.memoOut.create(out);
-    expect(memoOut.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ lines: [expect.objectContaining({ memoStockId: ID2 }), expect.objectContaining({ memoStockId: null })] }));
+    expect(memoOut.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ lines: [expect.objectContaining({ memoStockId: ID2 })] }));
+    // memo-out rev 3: rows can't be keyed in by hand.
+    await expect(caller.memoOut.create({ ...out, lines: [{ ...line, memoStockId: ID2 }, { ...line, memoStockId: null }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.memoOut.create({ ...out, lines: [{ ...line, memoStockId: ID2, unitPrice: "0" }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     await caller.memoOut.approve(versioned);

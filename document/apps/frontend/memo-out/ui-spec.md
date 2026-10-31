@@ -92,3 +92,12 @@ Owner 2026-10-31 (verbatim): "sa frontend backend Memo Out คือการต
 - Sale.
 - Our own stock in From Stock (inventory).
 - Line photos.
+
+## Revision 3 (2026-10-31): From Stock rows only — owner instruction
+
+Owner 2026-10-31 (verbatim): "Q-MOR-13 ไม่ใช่คือหน้า memoout ทำผิดฝากเเก้ด้วยคือพิมไม่ได้เลยเเต่เเรกต้องเป็นของที่มาจาก from stock เท่านั้นเอาปุ่ม add row ออกด้วย". A direct instruction to fix the page; it replaces the revision 2 answer to Q-MO-09.
+
+- No **Add row** button. Clicking an empty row opens **From Stock** instead of the row panel ("Empty row · click to pick From Stock").
+- The row panel opens only for picked rows; it edits Pcs / Weight (≤ pending), Sale Price, discount and item note, as revision 2. Next row stops at the last row instead of adding one.
+- Duplicate stays hidden (an item appears once per document). Clear empties a row, which is then filled from From Stock.
+- The server rejects a line without `memoStockId` (`VALIDATION_ERROR lines.N.memoStockId required`).

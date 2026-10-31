@@ -11,8 +11,12 @@ import {
   MEMO_OUT_RETURN_NOTE_MAX,
   memoOutReturnHref,
   memoOutReturnSchema,
+  memoOutstandingInput,
+  outstandingToLine,
+  pickedOutLineIds,
   toMemoOutReturnInput,
   type MemoOutReturnDetail,
+  type MemoOutstandingItem,
   type MemoOutReturnFormValues,
   type MemoOutReturnLine,
 } from "@/features/memo-out-return/api";
@@ -23,12 +27,12 @@ import { emptyLine, emptyQuotation } from "@/features/quotation/lib/defaults";
 import { documentAccess } from "@/features/trade-document/document-api";
 import { gatewayError } from "../partner/helpers";
 
-/** UT-MOR-01…06: memo-out-return UI rev 3 + SA rev 1 (owner 2026-10-28). */
+/** UT-MOR-01…06, UT-MOR-21…23: memo-out-return UI rev 3 (table) + rev 4 / SA rev 2 (owner 2026-10-31: customer, Memo Outstanding, Approve). */
 
 const ID = "11111111-1111-4111-8111-111111111111";
 const noop = () => undefined;
-const blank = (): MemoOutReturnLine => ({ ...emptyLine(), outstandingPcs: "", outstandingWeightCt: "" });
-const filled: MemoOutReturnLine = { ...emptyLine(), stone: "Ruby", stoneCode: "RU-1", lot: "L7", pcs: "2", weightCt: "1.5", unitPrice: "1000", outstandingPcs: "3", outstandingWeightCt: "2.25" };
+const blank = (): MemoOutReturnLine => ({ ...emptyLine(), memoOutLineId: "", memoOutNo: "", outstandingPcs: "", outstandingWeightCt: "" });
+const filled: MemoOutReturnLine = { ...emptyLine(), stone: "Ruby", stoneCode: "RU-1", lot: "L7", pcs: "2", weightCt: "1.5", unitPrice: "1000", memoOutLineId: ID, memoOutNo: "MO-1", outstandingPcs: "3", outstandingWeightCt: "2.25" };
 const props = (lines: MemoOutReturnLine[] = [blank(), blank()], emptyRowText?: string) => ({
   lines,
   currency: "THB",
@@ -43,7 +47,7 @@ const props = (lines: MemoOutReturnLine[] = [blank(), blank()], emptyRowText?: s
   onAddRow: () => 0,
   ...(emptyRowText ? { emptyRowText } : {}),
 });
-const values = (patch: Partial<MemoOutReturnFormValues> = {}): MemoOutReturnFormValues => ({ ...emptyMemoOutReturn(), dueDate: "2026-11-28", currency: "THB", vendorId: ID, addressId: ID, lines: [filled, blank()], ...patch });
+const values = (patch: Partial<MemoOutReturnFormValues> = {}): MemoOutReturnFormValues => ({ ...emptyMemoOutReturn(), dueDate: "2026-11-28", currency: "THB", customerId: ID, shippingAddressId: ID, invoiceAddressId: ID, lines: [filled, blank()], ...patch });
 
 /** The Return cells register with the document form, so the table renders inside one. */
 function InForm({ lines, children }: { lines: MemoOutReturnLine[]; children?: ReactNode }) {
@@ -91,10 +95,10 @@ describe("return item table (UT-MOR-02/03, design rev 3)", () => {
 });
 
 describe("form and mapping (UT-MOR-04)", () => {
-  it("needs a vendor and an address; note up to 250", () => {
+  it("needs a customer and both addresses (rev 4, Q-MOR-11/12); note up to 250", () => {
     const paths = (v: MemoOutReturnFormValues) => (memoOutReturnSchema.safeParse(v).error?.issues ?? []).map((issue) => issue.path.join("."));
     expect(paths(values())).toEqual([]);
-    expect(paths(values({ vendorId: "", addressId: "" }))).toEqual(["vendorId", "addressId"]);
+    expect(paths(values({ customerId: "", shippingAddressId: "", invoiceAddressId: "" }))).toEqual(["customerId", "shippingAddressId", "invoiceAddressId"]);
     expect(paths(values({ documentNote: "x".repeat(MEMO_OUT_RETURN_NOTE_MAX + 1) }))).toEqual(["documentNote"]);
   });
 
@@ -102,36 +106,65 @@ describe("form and mapping (UT-MOR-04)", () => {
     const paths = (v: MemoOutReturnFormValues) => (memoOutReturnSchema.safeParse(v).error?.issues ?? []).map((issue) => issue.path.join("."));
     expect(paths(values({ lines: [{ ...filled, pcs: "3", weightCt: "2.25" }, blank()] }))).toEqual([]);
     expect(paths(values({ lines: [{ ...filled, pcs: "4", weightCt: "2.3" }, blank()] }))).toEqual(["lines.0.pcs", "lines.0.weightCt"]);
+    expect(paths(values({ lines: [{ ...filled, pcs: "0", weightCt: "0" }] }))).toEqual(["lines.0.pcs"]);
   });
 
-  it("sends vendor + address, drops empty rows and never sends photos; loads a saved document back", () => {
+  it("sends the customer + both addresses and each row's Memo Out line, drops empty rows, never sends photos; loads a saved document back", () => {
     const input = toMemoOutReturnInput(values());
-    expect(input).toMatchObject({ vendorId: ID, addressId: ID });
-    expect(input).not.toHaveProperty("customerId");
+    expect(input).toMatchObject({ customerId: ID, shippingAddressId: ID, invoiceAddressId: ID });
+    expect(input).not.toHaveProperty("vendorId");
     expect(input.lines).toHaveLength(1);
-    expect(input.lines[0]).toMatchObject({ stone: "Ruby", pcs: 2, weightCt: "1.5", outstandingPcs: 3, outstandingWeightCt: "2.25", photoIds: [] });
+    expect(input.lines[0]).toMatchObject({ stone: "Ruby", pcs: 2, weightCt: "1.5", memoOutLineId: ID, outstandingPcs: 3, outstandingWeightCt: "2.25", photoIds: [] });
     const detail = {
-      id: ID, docNo: "MOR-1", status: "DRAFT", version: 3, docDate: "2026-10-28", dueDate: "2026-11-28",
-      vendorId: ID, vendor: { code: "V001", name: "Bangkok Gems" }, addressId: null, addressText: "A",
-      currency: "THB", exchangeRate: null, ref: "", documentNote: "",
+      id: ID, docNo: "MOR-1", status: "APPROVED", version: 3, docDate: "2026-10-28", dueDate: "2026-11-28",
+      customerId: ID, customer: { code: "C001", name: "Siam Gems" }, shippingAddressId: null, shippingAddressText: "A", invoiceAddressId: ID, invoiceAddressText: "B",
+      currency: "THB", exchangeRate: null, ref: "", documentNote: "", approvedAt: "2026-10-31T03:00:00.000Z", approvedBy: "u1",
       lines: [{
-        id: ID, source: "MANUAL", stoneCodeId: null, stoneCode: "RU-1", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "",
-        location: "", cerType: "", cerNo: "", pcs: 1, weightCt: "1.000", priceUnit: "PER_CT", unitPrice: "100.00", discount: { type: "NONE", value: "0" },
+        id: ID, source: "STOCK", stoneCode: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "",
+        location: "Memo", cerType: "", cerNo: "", pcs: 1, weightCt: "1.000", priceUnit: "PER_CT", unitPrice: "100.00", discount: { type: "NONE", value: "0" },
         discountAmount: "0.00", amount: "100.00", itemNote: "", photoIds: [], outstandingPcs: 2, outstandingWeightCt: "1.500",
+        memoOutLineId: ID, memoOut: { id: ID, docNo: "MO-1" }, memoStockId: ID, stockId: "260002",
       }],
       discount: { type: "NONE", value: "0" },
       tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "0.00", discountAmount: "0.00", priceBeforeTax: "0.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "0.00" },
       createdAt: "", createdBy: "", updatedAt: "",
     } satisfies MemoOutReturnDetail;
-    expect(fromMemoOutReturn(detail)).toMatchObject({ id: ID, docNo: "MOR-1", version: 3, status: "DRAFT", vendorId: ID, addressId: "", lines: [{ pcs: "1", outstandingPcs: "2", outstandingWeightCt: "1.500" }] });
+    expect(fromMemoOutReturn(detail)).toMatchObject({
+      id: ID, docNo: "MOR-1", version: 3, status: "APPROVED", customerId: ID, shippingAddressId: "", invoiceAddressId: ID,
+      lines: [{ pcs: "1", stockId: "260002", memoOutLineId: ID, memoOutNo: "MO-1", outstandingPcs: "2", outstandingWeightCt: "1.500" }],
+    });
+  });
+});
+
+describe("Memo Outstanding picker (UT-MOR-21/22, rev 4)", () => {
+  const item: MemoOutstandingItem = {
+    memoOutLineId: ID, memoOut: { id: ID, docNo: "MO-7", docDate: "2026-10-31", dueDate: "2026-11-30" },
+    memoStockId: ID, stockId: "260003", lot: "LOT-R", location: "Memo", stone: "Sapphire", shape: "Cushion", size: "", color: "Blue", clarity: "", cutting: "", quality: "",
+    cerType: "GIA", cerNo: "C-9", itemNote: "viewing", outPcs: 4, outWeightCt: "2.000", returnedPcs: 1, returnedWeightCt: "0.500",
+    outstandingPcs: 3, outstandingWeightCt: "1.500", priceUnit: "PER_CT", unitPrice: "2700.00", amount: "4050.00", currency: "THB",
+  };
+
+  it("a picked row copies the Memo Out line: Stock ID, stone, Memo price, Outstanding; Return starts empty", () => {
+    const line = outstandingToLine(item);
+    expect(line).toMatchObject({ stockId: "260003", lot: "LOT-R", locationId: "Memo", stone: "Sapphire", priceUnit: "PER_CT", unitPrice: "2700.00", memoOutLineId: ID, memoOutNo: "MO-7", outstandingPcs: "3", outstandingWeightCt: "1.500", pcs: "", weightCt: "" });
+    expect(pickedOutLineIds([line, blank()])).toEqual(new Set([ID]));
+  });
+
+  it("asks for nothing until a customer and a currency are chosen; sends only set filters", () => {
+    expect(memoOutstandingInput({ customerId: "", currency: "THB", q: "", from: "", to: "" })).toBeNull();
+    expect(memoOutstandingInput({ customerId: ID, currency: "", q: "", from: "", to: "" })).toBeNull();
+    expect(memoOutstandingInput({ customerId: ID, currency: "THB", q: " 26 ", from: "2026-10-01", to: "", excludeReturnId: ID }))
+      .toEqual({ customerId: ID, currency: "THB", limit: 50, q: "26", from: "2026-10-01", excludeReturnId: ID });
   });
 });
 
 describe("errors (UT-MOR-05)", () => {
   it("maps MEMO_OUT_RETURN_* codes to fields and messages", () => {
-    expect(mapMemoOutReturnSaveError(gatewayError({ domainCode: "MEMO_OUT_RETURN_REFERENCE_INVALID", httpStatus: 422, fieldErrors: [{ path: "addressId", code: "invalid_reference" }] })))
-      .toMatchObject({ fieldErrors: [{ name: "addressId", message: "Choose an active option" }] });
+    expect(mapMemoOutReturnSaveError(gatewayError({ domainCode: "MEMO_OUT_RETURN_REFERENCE_INVALID", httpStatus: 422, fieldErrors: [{ path: "shippingAddressId", code: "invalid_reference" }] })))
+      .toMatchObject({ fieldErrors: [{ name: "shippingAddressId", message: "Choose an active option" }] });
+    // UT-MOR-23: another return took the quantity first at Approve.
+    expect(mapMemoOutReturnSaveError(gatewayError({ domainCode: "MEMO_OUT_RETURN_OUTSTANDING_SHORT", httpStatus: 409, code: "CONFLICT" })).message).toContain("already returned by another document");
     expect(mapMemoOutReturnSaveError(gatewayError({ domainCode: "MEMO_OUT_RETURN_CHANGED", httpStatus: 409, code: "CONFLICT" })).message).toContain("Someone else changed this memo out return");
   });
 });

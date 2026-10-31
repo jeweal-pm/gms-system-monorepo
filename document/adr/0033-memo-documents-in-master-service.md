@@ -72,3 +72,32 @@ Memo Out (stones sent to a customer on memo) and Memo Out Return (a vendor docum
 - Memo Out Return does not yet return Reserve to pending (Q-MO-12), so reserved stones stay reserved until that revision.
 - This is still the interim deviation from ADR-0027 that ADR-0034 accepted. When inventory exists, From Stock also lists our own stock.
 - No new process, cache or package. Approval is one transaction locking ≤ 200 rows.
+
+## Revision 3 (2026-10-31): Memo Out Return brings Memo Out goods back — **Accepted** (Owner 2026-10-31: "อนุมัติ memo-out-return revision 4")
+
+- Source: owner 2026-10-31, "memoout คือการนำของของเราไปให้เขายืม … หน้า memo out return คือนำของๆเราที่ทำ memo out กลับมาเข้าคลังตัวเอง กดที่ปุ่มmem outstanding จะสามารถดูของที่ทำmemo out ออกไปได้เเล้วเลือกเพื่อนำกลับเข้ามาคืนคลังตัวเอง".
+- Questions: Q-MOR-11…18 (proposed defaults). SA: [memo-out-return SA revision 2](../apps/backend/master/memo-out-return/decisions.md). Flow: [memo-out-return-flow](../diagram/memo-out-return-flow.md).
+
+**Context.** Revision 2 made Memo Out approval move Memo Stock pending into Reserve, and left the return for later (Q-MO-12). Memo Out Return is still draft-only, vendor-based and has no line source (Q-MOR-10). The owner now defines it as bringing the lent goods back from the borrower into our store.
+
+**Decision.**
+1. The Memo Out Return party becomes the **customer** with Shipping and Invoice addresses, the same as on Memo Out. This replaces the 2026-10-28 vendor answer (Q-MOR-11/12, owner 2026-10-31).
+2. Memo Out Return gets PENDING_APPROVAL → APPROVED with `memoOutReturn.approve`.
+3. Lines come only from **Memo Outstanding**: approved Memo Out **From Stock** lines (Q-MOR-13: manual rows can't be returned) of that customer and currency that are not fully returned. Each return line references its Memo Out line.
+4. Each Memo Out line keeps `returned_pcs` / `returned_weight_ct` counters. Outstanding = out − returned.
+5. Approval, under row locks with an over-return guard, adds to the Memo Out line counters. It also moves the Memo Stock item's quantity from **Reserve back to pending**, only at approval (Q-MOR-14).
+
+**Alternatives.**
+
+| Alternative | Reason not chosen |
+|---|---|
+| Keep vendor as the party | The goods are with the customer who borrowed them. A vendor-side return of Memo Stock is already Memo Return. |
+| Compute outstanding by summing approved returns each time | It needs aggregation on every picker load and every approval. Counters with a CHECK follow the ADR-0035 bucket pattern and lock cleanly. |
+| Return on save | Same reasoning as Q-MR-15: approval is the cut point, and save stays undo-free. |
+| A stock ledger | Belongs to the inventory service (ADR-0027), as ADR-0035 already decided. |
+
+**Consequences.**
+- One guarded migration. It stops if Memo Out Return rows exist, because the party columns change.
+- The Memo Outstanding › Vendor report shows Reserve falling with no change of its own.
+- Our own stock and the Memo Outstanding › Customer report remain later work.
+- No new process, cache, package or container. Approval locks ≤ 200 + ≤ 200 rows in one transaction.

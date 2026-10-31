@@ -16,9 +16,12 @@ import {
   type MemoOutFormValues,
   type MemoOutLine,
 } from "@/features/memo-out/api";
-import { canViewMemoOut, MEMO_OUT_HREF } from "@/features/memo-out/components/MemoOutPage";
+import { canViewMemoOut, MEMO_OUT_HREF, MEMO_OUT_KIND } from "@/features/memo-out/components/MemoOutPage";
+import { ItemTable } from "@/features/quotation/components/items/ItemTable";
+import { DocumentKindContext, QUOTATION_KIND, type DocumentKind } from "@/features/quotation/document-kind";
+import { calculateTotals } from "@/features/quotation/lib/calculate";
 import { QuotationHeader } from "@/features/quotation/components/header/QuotationHeader";
-import { emptyLine } from "@/features/quotation/lib/defaults";
+import { emptyLine, emptyQuotation } from "@/features/quotation/lib/defaults";
 import type { MemoStockItem } from "@/features/trade-document/memo-stock-api";
 import { gatewayError } from "../partner/helpers";
 
@@ -143,5 +146,37 @@ describe("From Stock rows (UT-MO-201…205, memo-out rev 2)", () => {
   it("UT-MO-205 the approval badges and a new memo out waiting for approval", () => {
     expect(emptyMemoOut()).toMatchObject({ status: "PENDING_APPROVAL" });
     expect(header({ status: "PENDING_APPROVAL", statusLabels: { PENDING_APPROVAL: { label: "Pending Approval", tone: "" } } })).toContain("Pending Approval");
+  });
+});
+
+/** UT-MO-F12 memo-out rev 3 (owner 2026-10-31): every row comes from From Stock, nothing keyed in by hand. */
+describe("UT-MO-F12 From Stock rows only", () => {
+  const table = (kind: DocumentKind) =>
+    renderToStaticMarkup(
+      createElement(
+        DocumentKindContext.Provider,
+        { value: kind },
+        createElement(ItemTable, {
+          lines: [emptyLine()],
+          currency: "THB",
+          totals: calculateTotals(emptyQuotation()),
+          selectedIndex: null,
+          checkedKeys: new Set<string>(),
+          readOnly: false,
+          onSelectRow: () => undefined,
+          onToggleCheck: () => undefined,
+          onToggleAll: () => undefined,
+          onRowAction: () => undefined,
+          onAddRow: () => undefined,
+        }),
+      ),
+    );
+
+  it("hides Add row and points empty rows at From Stock; Quotation keeps Add row", () => {
+    expect(MEMO_OUT_KIND.pickOnly).toBe(true);
+    const memoOut = table(MEMO_OUT_KIND);
+    expect(memoOut).not.toContain("Add row");
+    expect(memoOut).toContain("Empty row · click to pick From Stock");
+    expect(table(QUOTATION_KIND)).toContain("Add row");
   });
 });

@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 /**
  * IT-MO-01…05 (memo-out SA rev 2 / ADR-0033 rev 2, owner 2026-10-31) against real PostgreSQL:
  * - From Stock lines are completed from Memo Stock and saving reserves nothing.
- * - Manual lines cut nothing.
+ * - Rows keyed in by hand are refused (memo-out rev 3, owner 2026-10-31).
  * - Save rejects a missing item or more than pending.
  * - Approval moves pending into Reserve (CHECK memo_stock_balance) and the document becomes read-only.
  * - The over-pull guard refuses a second document over the rest, and parallel approvals never exceed pending.
@@ -51,6 +51,10 @@ const stockLine = (memoStockId: string, pcs: number, weightCt: string, patch: Re
   itemNote: "for viewing", photoIds: [] as string[], memoStockId, ...patch,
 });
 const manualLine = () => ({ ...stockLine("", 1, "0.5", { stone: "Topaz", location: "Shelf 1" }), memoStockId: null });
+const issuesOf = (lines: Record<string, unknown>[]) => createMemoOutSchema.safeParse({
+  docDate: "2026-10-31", dueDate: "2026-11-30", currency: "THB", exchangeRate: null, ref: "", documentNote: "", ...money, lines,
+  customerId: customer.id, shippingAddressId: customer.shipping, invoiceAddressId: customer.invoice,
+}).error?.issues.map((issue) => `${issue.path.join(".")}:${((issue as { params?: { code?: string } }).params?.code ?? "")}`);
 const outInput = (lines: Record<string, unknown>[], patch: Record<string, unknown> = {}) => createMemoOutSchema.parse({
   docDate: "2026-10-31", dueDate: "2026-11-30", currency: "THB", exchangeRate: null, ref: "", documentNote: "", ...money, lines,
   customerId: customer.id, shippingAddressId: customer.shipping, invoiceAddressId: customer.invoice, ...patch,
@@ -138,9 +142,10 @@ describe.runIf(canRun)("IT-MO memo out From Stock on PostgreSQL", () => {
     vi.unstubAllEnvs();
   });
 
-  it("IT-MO-01 save copies a From Stock row from Memo Stock (any vendor), keeps the Sale Price, reserves nothing; manual rows stay manual", async () => {
+  it("IT-MO-01 save copies a From Stock row from Memo Stock (any vendor), keeps the Sale Price, reserves nothing; a typed row is refused", async () => {
     const [item] = await approvedStock(vendorA, [receiveLine()]);
-    const saved = await memoOut.create(ACTOR, outInput([stockLine(item.id, 4, "2"), manualLine()]));
+    expect(issuesOf([stockLine(item.id, 4, "2"), manualLine()])).toEqual(["lines.1.memoStockId:required"]);
+    const saved = await memoOut.create(ACTOR, outInput([stockLine(item.id, 4, "2")]));
     expect(saved).toMatchObject({ docNo: expect.any(String), version: 1 });
     const detail = await memoOut.get(saved.id);
     expect(detail).toMatchObject({ status: "PENDING_APPROVAL", approvedAt: null, approvedBy: null });
@@ -149,7 +154,6 @@ describe.runIf(canRun)("IT-MO memo out From Stock on PostgreSQL", () => {
       cerType: "GIA", cerNo: "C-1", priceUnit: "PER_CT", pcs: 4, weightCt: "2.000", unitPrice: "2500.00", amount: "5000.00", itemNote: "for viewing",
       stockPendingPcs: 10, stockPendingWeightCt: "5.000",
     });
-    expect(detail.lines[1]).toMatchObject({ source: "MANUAL", memoStockId: null, stockId: null, stockPendingPcs: null, stone: "Topaz", location: "Shelf 1" });
     expect(await bucketsOf(item.id)).toEqual({ pending: [10, "5.000"], reserved: [0, "0.000"] });
     // From Stock lists every vendor's items (no vendorId).
     const listed = (await stock.list({ limit: 50 })).items.map((row) => row.id);
@@ -164,28 +168,24 @@ describe.runIf(canRun)("IT-MO memo out From Stock on PostgreSQL", () => {
       .toMatchObject({ status: 400, fieldErrors: [{ path: "lines.0.weightCt", code: "exceeds_pending" }] });
     expect(await failure(memoOut.create(ACTOR, outInput([stockLine(randomUUID(), 1, "0.5")]))))
       .toMatchObject({ status: 422, code: "MEMO_OUT_REFERENCE_INVALID", fieldErrors: [{ path: "lines.0.memoStockId", code: "invalid_reference" }] });
-    const paths = (lines: Record<string, unknown>[]) => createMemoOutSchema.safeParse({ ...outInput([manualLine()]), lines }).error?.issues.map((issue) => `${issue.path.join(".")}:${((issue as { params?: { code?: string } }).params?.code ?? "")}`);
+    const paths = issuesOf;
     expect(paths([stockLine(item.id, 1, "0.5"), stockLine(item.id, 1, "0.5")])).toEqual(["lines.1.memoStockId:duplicate"]);
     expect(paths([stockLine(item.id, 1, "0.5", { unitPrice: "0" })])).toEqual(["lines.0.unitPrice:required"]);
     expect(paths([stockLine(item.id, 0, "0")])).toEqual(["lines.0.pcs:required"]);
   });
 
-  it("IT-MO-03 approve moves pending into Reserve; the memo out is then read-only; manual rows cut nothing", async () => {
+  it("IT-MO-03 approve moves pending into Reserve; the memo out is then read-only", async () => {
     const [item] = await approvedStock(vendorA, [receiveLine()]);
-    const saved = await memoOut.create(ACTOR, outInput([stockLine(item.id, 4, "2"), manualLine()]));
-    const updated = await memoOut.update(ACTOR, saved.id, 1, outInput([stockLine(item.id, 6, "3"), manualLine()]));
+    const saved = await memoOut.create(ACTOR, outInput([stockLine(item.id, 4, "2")]));
+    const updated = await memoOut.update(ACTOR, saved.id, 1, outInput([stockLine(item.id, 6, "3")]));
     expect(await failure(memoOut.approve(ACTOR, saved.id, 1))).toMatchObject({ status: 409, code: "MEMO_OUT_CHANGED" });
     await expect(memoOut.approve(ACTOR, saved.id, updated.version)).resolves.toEqual({ id: saved.id, version: 3, status: "APPROVED", stockLineCount: 1 });
     expect(await bucketsOf(item.id)).toEqual({ pending: [4, "2.000"], reserved: [6, "3.000"] });
     expect(await memoOut.get(saved.id)).toMatchObject({ status: "APPROVED", approvedBy: ACTOR, approvedAt: expect.any(String) });
     expect(await failure(memoOut.approve(ACTOR, saved.id, 3))).toMatchObject({ status: 409, code: "MEMO_OUT_STATUS_INVALID" });
-    expect(await failure(memoOut.update(ACTOR, saved.id, 3, outInput([manualLine()])))).toMatchObject({ status: 409, code: "MEMO_OUT_STATUS_INVALID" });
+    expect(await failure(memoOut.update(ACTOR, saved.id, 3, outInput([stockLine(item.id, 1, "0.5")])))).toMatchObject({ status: 409, code: "MEMO_OUT_STATUS_INVALID" });
     expect(await failure(memoOut.delete(ACTOR, saved.id, 3))).toMatchObject({ status: 409, code: "MEMO_OUT_STATUS_INVALID" });
-    // A memo out with only manual rows approves and changes no stock.
-    const manual = await memoOut.create(ACTOR, outInput([manualLine()]));
-    await expect(memoOut.approve(ACTOR, manual.id, 1)).resolves.toMatchObject({ status: "APPROVED", stockLineCount: 0 });
-    expect(await bucketsOf(item.id)).toEqual({ pending: [4, "2.000"], reserved: [6, "3.000"] });
-    expect((await memoOut.list({ partyId: customer.id, status: "APPROVED", limit: 50 })).items.map((row) => row.id)).toEqual(expect.arrayContaining([saved.id, manual.id]));
+    expect((await memoOut.list({ partyId: customer.id, status: "APPROVED", limit: 50 })).items.map((row) => row.id)).toContain(saved.id);
   });
 
   it("IT-MO-04 over-pull guard: of two memo outs that together take more than pending, only the first approval passes", async () => {

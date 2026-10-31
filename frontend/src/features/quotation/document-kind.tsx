@@ -30,6 +30,11 @@ export type DocumentKind = {
    * appears once per document). Off (Quotation): stock rows keep their quantity locked.
    */
   stockQuantity?: boolean;
+  /**
+   * Rows come only from the picker (memo-out rev 3, owner 2026-10-31): no Add row button, and clicking an empty row opens
+   * the picker instead of the row panel, so nothing can be keyed in by hand.
+   */
+  pickOnly?: boolean;
   /** Stone choices when they don't come from `quotation.options`. */
   stone?: StoneChoices;
   uploadPhoto: (file: File) => Promise<PhotoRef>;

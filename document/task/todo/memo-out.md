@@ -82,3 +82,13 @@ None.
   4. Approve (confirm "Its 1 stock item is cut from Memo Stock…") → Approved, read-only, no Edit / Delete / Approve. Memo Stock 1 / 0.680; Memo Outstanding Reserve 1 / 0.680.
   5. Test data removed afterwards: MO-1 deleted and 260003 restored by SQL in the dev database.
 - Not done: sec-auditor / security-auditor reviews, manual test.
+
+## Revision 3 (2026-10-31): From Stock rows only — **done** (owner direct instruction)
+
+- Evidence: owner 2026-10-31 "Q-MOR-13 ไม่ใช่คือหน้า memoout ทำผิดฝากเเก้ด้วยคือพิมไม่ได้เลยเเต่เเรกต้องเป็นของที่มาจาก from stock เท่านั้นเอาปุ่ม add row ออกด้วย". Spec: [ui-spec revision 3](../../apps/frontend/memo-out/ui-spec.md); SA-MO-18.
+
+| Done | ID | Owner | Task | Verification |
+|---|---|---|---|---|
+| [x] | BE-MO-301 | backend | `memoOutRules`: line without `memoStockId` → `required` | UT-MO-B12, GP-MT-MO/MO2 updated; backend 417 tests, tsc, eslint pass |
+| [x] | FE-MO-301 | frontend | `DocumentKind.pickOnly`: no Add row, empty row opens From Stock, Next row doesn't add; Memo Out uses it | UT-MO-F12; frontend 523 tests, tsc pass, eslint 0 errors |
+| [ ] | FE-MO-302 | parent | Dual security review with memo-out-return revision 4 (same source revision) | — |

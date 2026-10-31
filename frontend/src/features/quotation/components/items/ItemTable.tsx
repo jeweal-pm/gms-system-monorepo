@@ -193,7 +193,7 @@ export function ItemTable({
           </tfoot>
         </table>
       </div>
-      {!readOnly && (
+      {!readOnly && !kind.pickOnly && (
         <Button size="sm" className="mt-3 bg-[#F6F7F8]" onClick={addRow}>
           <Plus className="size-4" /> Add row
         </Button>

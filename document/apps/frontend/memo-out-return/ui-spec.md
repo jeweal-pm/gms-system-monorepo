@@ -68,3 +68,17 @@ Replaces the item table row above where they differ.
 - Selecting a row shows "Item entry comes with the Memo Out Return API."
 - The rail shows Summary Value and an empty Daybook ("No memo out returns yet").
 - Permission: `memo-out-return:VIEW`.
+
+## Revision 4 (2026-10-31): customer party, Memo Outstanding picker, Approve — **approved** (Owner 2026-10-31: "อนุมัติ memo-out-return revision 4")
+
+Owner 2026-10-31 (verbatim): "memoout คือการนำของของเราไปให้เขายืม … หน้า memo out return คือนำของๆเราที่ทำ memo out กลับมาเข้าคลังตัวเอง กดที่ปุ่มmem outstanding จะสามารถดูของที่ทำmemo out ออกไปได้เเล้วเลือกเพื่อนำกลับเข้ามาคืนคลังตัวเอง". This revision uses the defaults of Q-MOR-11…18 ([open-questions](open-questions.md)). Flow: [memo-out-return-flow](../../../diagram/memo-out-return-flow.md).
+
+| Area | Revision 4 |
+|---|---|
+| Header | As Memo Out: Doc Date · **Customer** · **Shipping Address** · **Invoice Address** (Q-MOR-12); replaces Vendor / Address |
+| Memo Outstanding button | Enabled once a customer and a currency are chosen; otherwise its tooltip says "Choose a customer and currency first" |
+| Memo Outstanding dialog | Same layout as the Memo Return "Add Memo Stock" dialog (shared `memo-stock-modal` look). Columns: checkbox · Memo Out No. (Doc Date) · Stock ID · Lot · Stone (Shape · Size) · Color · Clarity · Cer · **Outstanding** Pcs / Weight · Memo Price (unit) · Amount. Search: Memo Out No., Stock ID, Lot, Stone, Cer No. Date range: Memo Out Doc Date. Load more by 50. Rows already in the document are ticked and disabled. Empty: "Nothing outstanding for this customer." |
+| Item table | As revision 3. Only From Stock rows of a Memo Out can be returned (Q-MOR-13). Rows come only from the dialog; Return Pcs / Weight are the only editable cells, ≤ Outstanding, default = Outstanding |
+| Status and buttons | Status chip Pending Approval / Approved (Memo Receive colors). **Approve** button with confirm ("Approve this Memo Out Return? Its n items come back to stock. It can no longer be edited."). Approved = read-only |
+| Errors | Over outstanding → "More than outstanding" on the cell. `MEMO_OUT_RETURN_OUTSTANDING_SHORT` at Approve → "Some items were already returned by another document. Edit the Return quantity and approve again." |
+| Permission | `memo-out-return` VIEW / ADD / EDIT / DELETE / APPROVE |

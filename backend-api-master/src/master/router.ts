@@ -15,7 +15,6 @@ import type { StoneKind } from "../stone-master/stone-master.kinds";
 import type { CurrencyService } from "../currency/currency.service";
 import { createCurrencyBodySchema, updateCurrencyBodySchema } from "../currency/currency.schemas";
 import type { QuotationService } from "../quotation/quotation.service";
-import { documentListSchema } from "../trade-document/document-engine";
 import type { MemoOutService } from "../trade-document/memo-out.service";
 import type { MemoOutReturnService } from "../trade-document/memo-out-return.service";
 import type { MemoReceiveService } from "../trade-document/memo-receive.service";
@@ -35,6 +34,7 @@ import {
   createMemoReturnSchema,
   memoNextNumberSchema,
   memoOutListSchema,
+  memoOutOutstandingSchema,
   memoReceiveListSchema,
   memoReturnListSchema,
   memoStockListSchema,
@@ -275,17 +275,21 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       approve: permitted("memo-out", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOut.approve(ctx.userId, input.id, input.expectedVersion))),
     }),
     memoOutReturn: t.router({
-      list: permitted("memo-out-return", "VIEW").input(documentListSchema).query(({ input }) => domainCall(() => memoOutReturn.list(input))),
+      list: permitted("memo-out-return", "VIEW").input(memoOutListSchema).query(({ input }) => domainCall(() => memoOutReturn.list(input))),
       get: permitted("memo-out-return", "VIEW").input(idInput).query(({ input }) => domainCall(() => memoOutReturn.get(input.id))),
       nextNumber: permitted("memo-out-return", "VIEW").input(memoNextNumberSchema).query(({ input }) => domainCall(() => memoOutReturn.nextNumber(input.docDate))),
-      options: permitted("memo-out-return", "VIEW").input(z.object({ vendorId: z.uuid().optional() }).strict())
-        .query(({ input }) => domainCall(() => memoOutReturn.options(input.vendorId))),
+      options: permitted("memo-out-return", "VIEW").input(z.object({ customerId: z.uuid().optional() }).strict())
+        .query(({ input }) => domainCall(() => memoOutReturn.options(input.customerId))),
+      // memo-out-return SA rev 2 (SA-MOR-15): the Memo Outstanding dialog, the customer's open Memo Out From Stock lines.
+      outstanding: permitted("memo-out-return", "VIEW").input(memoOutOutstandingSchema).query(({ input }) => domainCall(() => memoOutReturn.outstanding(input))),
       create: permitted("memo-out-return", "ADD", true).input(createMemoOutReturnSchema).mutation(({ ctx, input }) => domainCall(() => memoOutReturn.create(ctx.userId, input))),
       update: permitted("memo-out-return", "EDIT", true).input(updateMemoOutReturnSchema).mutation(({ ctx, input }) => {
         const { id, expectedVersion, ...body } = input;
         return domainCall(() => memoOutReturn.update(ctx.userId, id, expectedVersion, body));
       }),
       delete: permitted("memo-out-return", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOutReturn.delete(ctx.userId, input.id, input.expectedVersion))),
+      // SA-MOR-17: approval adds to the Memo Out lines' returned and moves Memo Stock Reserve back to pending.
+      approve: permitted("memo-out-return", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOutReturn.approve(ctx.userId, input.id, input.expectedVersion))),
     }),
     // memo-receive SA rev 1 / ADR-0034 (owner 2026-10-29): PENDING_APPROVAL → APPROVED; approval fills Memo Stock.
     memoReceive: t.router({

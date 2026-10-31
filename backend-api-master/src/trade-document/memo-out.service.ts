@@ -6,8 +6,8 @@ import { prisma } from "../database/prisma-client";
 import { Prisma } from "../generated/prisma/client";
 import { CHARGE_TYPES } from "../quotation/quotation.schemas";
 import { customerLineOptions, formatAddress, stoneLineOptions } from "../quotation/quotation.service";
-import { documentErrors } from "./document-errors";
-import { TradeDocumentEngine, type LineHook, type PartyAdapter } from "./document-engine";
+import { documentErrors, type DocumentErrors } from "./document-errors";
+import { TradeDocumentEngine, type LineHook, type PartyAdapter, type TradeDocumentInput } from "./document-engine";
 import type { MemoOutInput, MemoReceiveListInput, MemoReceiveStatus } from "./memo-schemas";
 import { takeFromMemoStock } from "./memo-stock.service";
 
@@ -22,8 +22,8 @@ const APPROVED: MemoOutStatus = "APPROVED";
 /** A stock line after `prepare`: the item's Stock ID and its pending at save, stored on the line (SA-MO-12). */
 type PreparedLine = MemoOutInput["lines"][number] & { stockId?: string; stockPendingPcs?: number; stockPendingWeightCt?: string };
 
-/** Customer + its SHIPPING and INVOICE address, like a quotation (memo-out SA-MO-05). */
-type CustomerOut = {
+/** Customer + its SHIPPING and INVOICE address, like a quotation (memo-out SA-MO-05; memo out return SA-MOR-11). */
+export type CustomerOut = {
   customerId: string;
   customer: { code: string; name: string };
   shippingAddressId: string | null;
@@ -32,43 +32,48 @@ type CustomerOut = {
   invoiceAddressText: string;
 };
 
-const customerParty: PartyAdapter<MemoOutInput, CustomerOut> = {
-  storedSelect: { customerId: true },
-  nameColumn: "customerNameSnapshot",
-  listNameKey: "customerName",
-  partyColumn: "customerId",
-  async check(tx, input, stored) {
-    const errors: FieldError[] = [];
-    const customer = await tx.customer.findUnique({ where: { id: input.customerId }, select: { code: true, name: true, active: true, addresses: true } });
-    if (!customer || (!customer.active && input.customerId !== stored?.customerId)) throw memoOutErrors.referenceInvalid([{ path: "customerId", code: "invalid_reference" }]);
-    const shipping = customer.addresses.find((address) => address.id === input.shippingAddressId && address.type === "SHIPPING");
-    const invoice = customer.addresses.find((address) => address.id === input.invoiceAddressId && address.type === "INVOICE");
-    if (!shipping) errors.push({ path: "shippingAddressId", code: "invalid_reference" });
-    if (!invoice) errors.push({ path: "invoiceAddressId", code: "invalid_reference" });
-    return {
-      errors,
-      columns: {
-        customerId: input.customerId,
-        customerCodeSnapshot: customer.code,
-        customerNameSnapshot: customer.name,
-        shippingAddressId: input.shippingAddressId,
-        shippingAddressSnapshot: shipping ? formatAddress(shipping) : "",
-        invoiceAddressId: input.invoiceAddressId,
-        invoiceAddressSnapshot: invoice ? formatAddress(invoice) : "",
-      },
-    };
-  },
-  output(row) {
-    return {
-      customerId: row.customerId as string,
-      customer: { code: row.customerCodeSnapshot as string, name: row.customerNameSnapshot as string },
-      shippingAddressId: row.shippingAddressId as string | null,
-      shippingAddressText: row.shippingAddressSnapshot as string,
-      invoiceAddressId: row.invoiceAddressId as string | null,
-      invoiceAddressText: row.invoiceAddressSnapshot as string,
-    };
-  },
-};
+type CustomerInput = TradeDocumentInput & { customerId: string; shippingAddressId: string; invoiceAddressId: string };
+
+/** Customer party adapter, shared by memo out and memo out return (Q-MOR-11/12); errors use the document's codes. */
+export function customerParty<Input extends CustomerInput>(codes: DocumentErrors): PartyAdapter<Input, CustomerOut> {
+  return {
+    storedSelect: { customerId: true },
+    nameColumn: "customerNameSnapshot",
+    listNameKey: "customerName",
+    partyColumn: "customerId",
+    async check(tx, input, stored) {
+      const errors: FieldError[] = [];
+      const customer = await tx.customer.findUnique({ where: { id: input.customerId }, select: { code: true, name: true, active: true, addresses: true } });
+      if (!customer || (!customer.active && input.customerId !== stored?.customerId)) throw codes.referenceInvalid([{ path: "customerId", code: "invalid_reference" }]);
+      const shipping = customer.addresses.find((address) => address.id === input.shippingAddressId && address.type === "SHIPPING");
+      const invoice = customer.addresses.find((address) => address.id === input.invoiceAddressId && address.type === "INVOICE");
+      if (!shipping) errors.push({ path: "shippingAddressId", code: "invalid_reference" });
+      if (!invoice) errors.push({ path: "invoiceAddressId", code: "invalid_reference" });
+      return {
+        errors,
+        columns: {
+          customerId: input.customerId,
+          customerCodeSnapshot: customer.code,
+          customerNameSnapshot: customer.name,
+          shippingAddressId: input.shippingAddressId,
+          shippingAddressSnapshot: shipping ? formatAddress(shipping) : "",
+          invoiceAddressId: input.invoiceAddressId,
+          invoiceAddressSnapshot: invoice ? formatAddress(invoice) : "",
+        },
+      };
+    },
+    output(row) {
+      return {
+        customerId: row.customerId as string,
+        customer: { code: row.customerCodeSnapshot as string, name: row.customerNameSnapshot as string },
+        shippingAddressId: row.shippingAddressId as string | null,
+        shippingAddressText: row.shippingAddressSnapshot as string,
+        invoiceAddressId: row.invoiceAddressId as string | null,
+        invoiceAddressText: row.invoiceAddressSnapshot as string,
+      };
+    },
+  };
+}
 
 /**
  * Completes stock lines from their Memo Stock items inside the save transaction (engine `prepare`, SA-MO-13). Each item
@@ -155,7 +160,7 @@ export class MemoOutService {
     chargeModel: "memoOutCharge",
     parentKey: "memoOutId",
     errors: memoOutErrors,
-    party: customerParty,
+    party: customerParty<MemoOutInput>(memoOutErrors),
     createStatus: PENDING,
     editableStatuses: [PENDING],
     prepare: completeStockLines,
@@ -224,25 +229,30 @@ export class MemoOutService {
   /** Same shape as `quotation.options`, so the page reuses the quotation header fields and item editor. */
   async options(includeCustomerId?: string) {
     try {
-      const [stone, customers, company, setup, currencies] = await Promise.all([
-        stoneLineOptions(),
-        customerLineOptions(includeCustomerId),
-        prisma.companyProfile.findUnique({ where: { id: 1 }, select: { currencyCode: true } }),
-        prisma.documentSetup.findUnique({ where: { transactionKey: "memo-out" }, select: { transactionKey: true } }),
-        currencyOptions(prisma),
-      ]);
-      return {
-        customers,
-        currencies: currencies.filter((item) => item.active).map((item) => item.code),
-        companyCurrency: company?.currencyCode ?? null,
-        chargeTypes: [...CHARGE_TYPES],
-        numbering: { configured: setup !== null },
-        stone,
-      };
+      return await customerDocumentOptions("memo-out", includeCustomerId);
     } catch (error) {
       throw memoOutErrors.map(error, "options");
     }
   }
+}
+
+/** `quotation.options` shape for a customer document with Document Setup key `transactionKey` (memo out, memo out return). */
+export async function customerDocumentOptions(transactionKey: string, includeCustomerId?: string) {
+  const [stone, customers, company, setup, currencies] = await Promise.all([
+    stoneLineOptions(),
+    customerLineOptions(includeCustomerId),
+    prisma.companyProfile.findUnique({ where: { id: 1 }, select: { currencyCode: true } }),
+    prisma.documentSetup.findUnique({ where: { transactionKey }, select: { transactionKey: true } }),
+    currencyOptions(prisma),
+  ]);
+  return {
+    customers,
+    currencies: currencies.filter((item) => item.active).map((item) => item.code),
+    companyCurrency: company?.currencyCode ?? null,
+    chargeTypes: [...CHARGE_TYPES],
+    numbering: { configured: setup !== null },
+    stone,
+  };
 }
 
 type EngineDetail = Awaited<ReturnType<TradeDocumentEngine<MemoOutInput, CustomerOut, MemoOutStatus>["get"]>>;

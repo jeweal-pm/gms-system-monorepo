@@ -237,6 +237,10 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
 
   const openRow = (index: number) => {
     setSelectedIndex(index);
+    if (config.kind?.pickOnly && config.picker && !readOnly && lines[index] && !isFilledLine(lines[index])) {
+      openPicker();
+      return;
+    }
     if (config.rowEditor === false) {
       const empty = !readOnly && lines[index] && !isFilledLine(lines[index]);
       if (empty && config.picker) openPicker();
@@ -404,7 +408,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
                   readOnly={readOnly}
                   onPrev={() => setSelectedIndex(Math.max(0, editorIndex - 1))}
                   onNext={() => setSelectedIndex(Math.min(lines.length - 1, editorIndex + 1))}
-                  onNextRow={() => setSelectedIndex(editorIndex < lines.length - 1 ? editorIndex + 1 : addRow())}
+                  onNextRow={() => setSelectedIndex(editorIndex < lines.length - 1 ? editorIndex + 1 : config.kind?.pickOnly ? editorIndex : addRow())}
                   onRemove={() => removeRow(editorIndex)}
                   onClose={() => setEditorOpen(false)}
                 />

@@ -49,15 +49,18 @@ function MemoOutDaybook() {
   );
 }
 
-/** From Stock rows take part or all of their Memo Stock item (Q-MO-10); the rest is the Quotation table and panel. */
-const MEMO_OUT_KIND: DocumentKind = { ...QUOTATION_KIND, stockQuantity: true, documentNote: { ...QUOTATION_KIND.documentNote, hint: "Printed on the memo out for the customer" } };
+/**
+ * From Stock rows take part or all of their Memo Stock item (Q-MO-10); the rest is the Quotation table and panel.
+ * memo-out rev 3 (owner 2026-10-31): every row comes from From Stock, so there is no Add row and no keying in by hand.
+ */
+export const MEMO_OUT_KIND: DocumentKind = { ...QUOTATION_KIND, stockQuantity: true, pickOnly: true, emptyRowText: "Empty row · click to pick From Stock", documentNote: { ...QUOTATION_KIND.documentNote, hint: "Printed on the memo out for the customer" } };
 
 const stockRowCount = (lines: readonly unknown[]) => lines.filter((line) => Boolean((line as Partial<MemoOutLine>).memoStockId)).length;
 
 /**
  * memo-out UI rev 2 + SA rev 2 (owner 2026-10-31): the Quotation layout with a customer and both addresses; the number
  * comes from Document Setup › Memo Out. From Stock picks Memo Stock items (every vendor), which Approve cuts into
- * Reserve; rows keyed in by hand cut nothing (Q-MO-09). Saved memo outs wait as Pending Approval.
+ * Reserve; rows can't be keyed in by hand (rev 3). Saved memo outs wait as Pending Approval.
  */
 const CONFIG: DocumentFormConfig<MemoOutFormValues, MemoOutInput, MemoOutOptions> = {
   noun: "memo out",

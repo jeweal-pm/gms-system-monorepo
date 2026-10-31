@@ -19,10 +19,10 @@ These supersede the revision 1 defaults of Q-MO-01 (approval) and Q-MO-02 (stock
 
 | ID | Question | Answer |
 |---|---|---|
-| Q-MO-09 | Must every row come from From Stock? | **No, both kinds of row.** "สามารถตัดของจาก from stock และถ้า add row manual ไม่ต้องตัดอะไรจากไหนเลย": From Stock rows are cut at approval, and rows added by hand cut nothing. |
+| Q-MO-09 | Must every row come from From Stock? | **Changed by the owner 2026-10-31 (memo-out revision 3):** "Q-MOR-13 ไม่ใช่คือหน้า memoout ทำผิดฝากเเก้ด้วยคือพิมไม่ได้เลยเเต่เเรกต้องเป็นของที่มาจาก from stock เท่านั้นเอาปุ่ม add row ออกด้วย". Every row comes from From Stock; no Add row, no keying in. (Revision 2 answer "both kinds of row" is superseded.) |
 | Q-MO-10 | Can a row take part of an item? | **Yes, part or all** (up to the item's pending). |
 | Q-MO-11 | What is the starting Sale Price of a From Stock row? | **Typed by the user, empty.** The Memo Stock price is the vendor's cost, so the user types the Sale Price, which is required. |
-| Q-MO-12 | Does Memo Out Return put Reserve back now? | **Later revision.** This revision covers Memo Out only (approve → Reserve). |
+| Q-MO-12 | Does Memo Out Return put Reserve back now? | **Now:** Memo Out Return revision 4 (Q-MOR-11…18, owner 2026-10-31) puts Reserve back to pending at its approval. |
 | Q-MO-13 | When is stock cut? | **At Approve** (owner Q-MR-15 2026-10-29: "ตัดตอน approve เอกสารนั้น"). Saving reserves nothing; approval re-checks pending under a row lock. |
 | Q-MO-14 | Which Memo Outstanding column does an approved Memo Out fill? | **Reserve** (owner Q-MOV-04 2026-10-29: "Reserve = Reserve or Memo Out approved"). |
 | Q-MO-15 | Starting Pcs / Weight of a picked row; is From Stock tied to the customer or currency? | **Approved with revision 2** (owner 2026-10-31): start at the item's full pending; any vendor's items, not tied to the customer or currency. |
