@@ -1,10 +1,11 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ScanLine, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { FormProvider, useFieldArray, useForm, useWatch } from "react-hook-form";
+import { ScanIcon } from "@/components/ui/scan-icon";
 import {
   isEditableStatus,
   mapSaveError,
@@ -262,7 +263,7 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
                 </span>
                 {/* TODO: scan barcode เพื่อเพิ่มรายการ */}
                 <IconButton label="Scan to add" disabled={readOnly} className="bg-[#F6F7F8]">
-                  <ScanLine className="size-4" />
+                  <ScanIcon />
                 </IconButton>
                 {checkedKeys.size > 0 && !readOnly && (
                   <Button size="sm" variant="danger-outline" onClick={removeChecked}>

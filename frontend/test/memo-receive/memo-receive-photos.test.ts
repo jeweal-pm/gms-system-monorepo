@@ -165,7 +165,22 @@ describe("row-panel photos and item card (UT-MR-F3)", () => {
     const html = render(createElement(ItemPhotoBox, { index: 0 }), [line([P2, P1])]);
     expect(html).toContain(`src="/api/v1/memo-receive/photos/${P2}"`);
     expect(html).not.toContain(`/api/v1/memo-receive/photos/${P1}`);
-    expect(html).toContain("Photo · 1 / 2");
     expect(html).toContain('aria-label="Main photo"');
+    // Design (owner 2026-10-31): no title / "Photo · n / N" row on the card; a zoom button; Item Note below.
+    expect(html).not.toContain("Photo · ");
+    expect(html).not.toContain("<header");
+    expect(html).toContain('aria-label="Zoom in"');
+    // The design magnifier follows the pointer, so the photo hides the system cursor (no second zoom cursor).
+    expect(html).toMatch(/aria-label="View larger"[^>]*class="[^"]*cursor-none/);
+    expect(html).not.toContain("cursor-zoom-in");
+    expect(html).toContain("Item Note");
+  });
+
+  it("an empty card is dashed with \"Add up to 5 photos\", or \"No photos\" where photos can't be added yet", () => {
+    const empty = render(createElement(ItemPhotoBox, { index: 0 }), [line([])]);
+    expect(empty).toContain("Add up to 5 photos");
+    expect(empty).toContain("border-dashed");
+    expect(render(createElement(ItemPhotoBox, { index: null }), [line([])])).toContain("Add up to 5 photos");
+    expect(render(createElement(ItemPhotoBox, { index: 0 }), [line([])], { upload: null, url: (id) => id })).toContain("No photos");
   });
 });

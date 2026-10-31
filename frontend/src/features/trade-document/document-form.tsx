@@ -1,12 +1,13 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CircleCheck, ScanLine, Trash2 } from "lucide-react";
+import { CircleCheck, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { FormProvider, useFieldArray, useForm, useWatch, type DefaultValues, type FieldValues, type Path, type Resolver } from "react-hook-form";
 import type { z } from "zod";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ScanIcon } from "@/components/ui/scan-icon";
 import { QuotationHeader, type StatusLabels } from "@/features/quotation/components/header/QuotationHeader";
 import { ItemEditorPanel } from "@/features/quotation/components/items/ItemEditorPanel";
 import { ItemPhotoBox } from "@/features/quotation/components/items/ItemPhotoBox";
@@ -348,7 +349,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
                         </span>
                         {/* TODO: scan barcode เพื่อเพิ่มรายการ */}
                         <IconButton label="Scan to add" disabled={readOnly} className="bg-[#F6F7F8]">
-                          <ScanLine className="size-4" />
+                          <ScanIcon />
                         </IconButton>
                       </>
                     )}

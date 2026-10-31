@@ -1,8 +1,9 @@
 "use client";
 
-import { Calculator, FileSearch } from "lucide-react";
+import { FileSearch } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { DaybookIcon, SummaryValueIcon } from "@/components/ui/rail-icons";
 import { loadErrorMessage, useDaybook, type QuotationStatus } from "../../api";
 import type { QuotationTotals } from "../../lib/calculate";
 import { formatDate } from "../../lib/format";
@@ -13,8 +14,8 @@ export type RailPanel = "daybook" | "summary" | null;
 
 export function RailButtons({ active, onChange }: { active: RailPanel; onChange: (panel: RailPanel) => void }) {
   const items = [
-    { id: "daybook" as const, label: "Daybook", icon: FileSearch },
-    { id: "summary" as const, label: "Summary Value", icon: Calculator },
+    { id: "daybook" as const, label: "Daybook", icon: DaybookIcon },
+    { id: "summary" as const, label: "Summary Value", icon: SummaryValueIcon },
   ];
   return (
     <div className="flex flex-col gap-2 pt-4">

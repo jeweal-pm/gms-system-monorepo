@@ -1,7 +1,8 @@
 "use client";
 
-import { Copy, FileSpreadsheet, Pencil, Plus, Printer, RefreshCw, ScanLine, Trash2 } from "lucide-react";
+import { Copy, FileSpreadsheet, Pencil, Plus, Printer, RefreshCw, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { ScanIcon } from "@/components/ui/scan-icon";
 import type { ReactNode } from "react";
 import type { QuotationStatus } from "../../schema";
 import { Button, cx, IconButton } from "../ui";
@@ -77,7 +78,7 @@ export function QuotationHeader({
           {badge && <span className={cx("rounded-full px-3 py-1 text-xs font-medium", badge.tone)}>{badge.label}</span>}
           {/* TODO: scan barcode / เปิดเอกสารจากเลข */}
           <IconButton label="Scan" className="bg-[#F6F7F8]">
-            <ScanLine className="size-4" />
+            <ScanIcon />
           </IconButton>
         </div>
         {isPreview && <p className="mt-1 text-xs text-[#6B7480]">{previewNote}</p>}

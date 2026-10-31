@@ -48,3 +48,56 @@ describe("DateInput calendar button", () => {
     expect(renderToStaticMarkup(createElement(DateInput, { value: "", onChange: () => {}, disabled: true }))).toMatch(/aria-label="Open calendar"[^>]*disabled=""|disabled=""[^>]*aria-label="Open calendar"/);
   });
 });
+
+describe("scan icon (owner 2026-10-31: one barcode icon for every scan button)", () => {
+  it("UT-ICON-01 draws the owner's barcode frame in the text color and is hidden from screen readers", async () => {
+    const { ScanIcon } = await import("@/components/ui/scan-icon");
+    const html = renderToStaticMarkup(createElement(ScanIcon));
+    expect(html).toContain('viewBox="0 0 16 16"');
+    expect(html).toContain('stroke="currentColor"');
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain('class="size-4"');
+    expect(html.match(/<path /g)).toHaveLength(7);
+    expect(html).toContain('d="M8 4.6665V11.3332"');
+  });
+});
+
+describe("crown icon (owner 2026-10-31: the design crown marks the main photo)", () => {
+  it("UT-ICON-02 draws the owner's crown in the text color; labelled when it means something, hidden otherwise", async () => {
+    const { CrownIcon } = await import("@/components/ui/crown-icon");
+    const labelled = renderToStaticMarkup(createElement(CrownIcon, { "aria-label": "Main photo", className: "size-5 text-[#FFAB00]" }));
+    expect(labelled).toContain('viewBox="0 0 20 20"');
+    expect(labelled).toContain('stroke="currentColor"');
+    expect(labelled).toContain('role="img"');
+    expect(labelled).toContain('aria-label="Main photo"');
+    expect(labelled.match(/<path /g)).toHaveLength(3);
+    expect(renderToStaticMarkup(createElement(CrownIcon))).toContain('aria-hidden="true"');
+  });
+});
+
+describe("rail icons (owner 2026-10-31: Daybook and Summary Value)", () => {
+  it("UT-ICON-03 draws the owner's Daybook and Summary Value icons in the text color, hidden from screen readers", async () => {
+    const { DaybookIcon, SummaryValueIcon } = await import("@/components/ui/rail-icons");
+    const daybook = renderToStaticMarkup(createElement(DaybookIcon));
+    const summary = renderToStaticMarkup(createElement(SummaryValueIcon));
+    for (const html of [daybook, summary]) {
+      expect(html).toContain('viewBox="0 0 16 16"');
+      expect(html).toContain('stroke="currentColor"');
+      expect(html).toContain('aria-hidden="true"');
+    }
+    expect(daybook.match(/<path /g)).toHaveLength(4);
+    expect(summary.match(/<path /g)).toHaveLength(2);
+    expect(daybook).toContain('d="M4.66602 4.66699H9.99935"');
+  });
+});
+
+describe("sort icon (owner 2026-10-31: Memo Outstanding table headers)", () => {
+  it("UT-ICON-04 grey up/down chevrons; the sorted direction turns primary", async () => {
+    const { SortIcon } = await import("@/components/ui/sort-icon");
+    const paths = (direction?: "asc" | "desc") => [...renderToStaticMarkup(createElement(SortIcon, { direction })).matchAll(/<path[^>]*class="([^"]*)"/g)].map((m) => m[1]);
+    expect(renderToStaticMarkup(createElement(SortIcon))).toContain('viewBox="0 0 6 9"');
+    expect(paths()).toEqual(["stroke-[#8A939D]", "stroke-[#8A939D]"]);
+    expect(paths("asc")).toEqual(["stroke-gms-primary", "stroke-[#8A939D]"]);
+    expect(paths("desc")).toEqual(["stroke-[#8A939D]", "stroke-gms-primary"]);
+  });
+});
