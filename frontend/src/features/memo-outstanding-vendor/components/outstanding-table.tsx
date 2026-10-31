@@ -1,9 +1,10 @@
 "use client";
 
-import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronDown, ChevronRight, MessageSquare } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { Fragment, type CSSProperties } from "react";
 import { cx, focusRing } from "@/components/ui/button";
+import { SortIcon } from "@/components/ui/sort-icon";
 import {
   BUCKET_COLUMNS,
   BUCKET_LABEL,
@@ -47,7 +48,8 @@ type TableProps = {
 // Frozen left part (expand · Doc · Due · Vendor); the bucket groups scroll sideways on narrow screens.
 // Their left offsets follow the column widths (`stickyOffsets`).
 const sticky = ["sticky", "sticky", "sticky", "sticky border-r border-gms-border"];
-const headCell = "relative overflow-hidden px-3 py-2 text-left text-gms-label font-semibold text-gms-text";
+/** Header cells (design 2026-10-31): 14 px semibold labels, grey 12 px sub-labels; each cell sets its own alignment. */
+const headCell = "relative overflow-hidden px-3 py-3 text-gms-body font-semibold text-gms-text";
 const numCell = "overflow-hidden px-3 py-2.5 text-right tabular-nums whitespace-nowrap text-ellipsis";
 
 /** Column order of the table; the keys name the widths kept by `useColumnWidths`. */
@@ -65,16 +67,15 @@ export function tableColumns(buckets: readonly Bucket[], showPrice: boolean): Ta
   ];
 }
 
-function SortButton({ label, sortKey, sort, onSort, sub }: { label: string; sortKey: SortKey; sort: TableProps["sort"]; onSort: (key: SortKey) => void; sub?: string }) {
+function SortButton({ label, sortKey, sort, onSort, sub, align = "left" }: { label: string; sortKey: SortKey; sort: TableProps["sort"]; onSort: (key: SortKey) => void; sub?: string; align?: "left" | "right" }) {
   const active = sort.key === sortKey;
-  const Icon = active ? (sort.dir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
   return (
-    <button type="button" onClick={() => onSort(sortKey)} className={cx("inline-flex items-center gap-1 rounded text-left", focusRing)} aria-label={`Sort by ${label}`}>
+    <button type="button" onClick={() => onSort(sortKey)} className={cx("inline-flex items-center gap-1 rounded", align === "right" ? "text-right" : "text-left", focusRing)} aria-label={`Sort by ${label}`}>
       <span>
         <span className="block">{label}</span>
         {sub && <span className="block text-gms-label font-normal text-gms-text-secondary">{sub}</span>}
       </span>
-      <Icon size={12} className={active ? "text-gms-primary" : "text-gms-text-placeholder"} aria-hidden />
+      <SortIcon direction={active ? sort.dir : undefined} className="ml-0.5 shrink-0" />
     </button>
   );
 }
@@ -174,15 +175,15 @@ export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggl
         <thead className="bg-gms-surface">
           <tr className="border-b border-gms-border">
             <th rowSpan={2} style={left[0]} className={cx(sticky[0], "bg-gms-surface")}><span className="sr-only">Expand</span></th>
-            <th rowSpan={2} scope="col" aria-sort={ariaSort(sort, "docNo")} style={left[1]} className={cx(sticky[1], headCell, "bg-gms-surface")}>
+            <th rowSpan={2} scope="col" aria-sort={ariaSort(sort, "docNo")} style={left[1]} className={cx(sticky[1], headCell, "bg-gms-surface text-left")}>
               <SortButton label="Doc Number" sub="Doc Date" sortKey="docNo" sort={sort} onSort={onSort} />
               {handle("docNo", "Doc Number")}
             </th>
-            <th rowSpan={2} scope="col" aria-sort={ariaSort(sort, "dueDate")} style={left[2]} className={cx(sticky[2], headCell, "bg-gms-surface")}>
+            <th rowSpan={2} scope="col" aria-sort={ariaSort(sort, "dueDate")} style={left[2]} className={cx(sticky[2], headCell, "bg-gms-surface text-left")}>
               <SortButton label="Due Date" sub="Overdue" sortKey="dueDate" sort={sort} onSort={onSort} />
               {handle("dueDate", "Due Date")}
             </th>
-            <th rowSpan={2} scope="col" aria-sort={ariaSort(sort, "vendorName")} style={left[3]} className={cx(sticky[3], headCell, "bg-gms-surface")}>
+            <th rowSpan={2} scope="col" aria-sort={ariaSort(sort, "vendorName")} style={left[3]} className={cx(sticky[3], headCell, "bg-gms-surface text-left")}>
               <SortButton label="Vendor Name" sortKey="vendorName" sort={sort} onSort={onSort} />
               {handle("vendor", "Vendor Name")}
             </th>
@@ -193,7 +194,7 @@ export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggl
             ))}
             {showPrice && (
               <th rowSpan={2} scope="col" aria-sort={ariaSort(sort, "openValue")} className={cx(headCell, "border-l border-gms-border text-right")}>
-                <SortButton label="PRICE" sub="UNIT" sortKey="openValue" sort={sort} onSort={onSort} />
+                <SortButton label="PRICE" sub="UNIT" sortKey="openValue" sort={sort} onSort={onSort} align="right" />
                 {handle("price", "Price")}
               </th>
             )}
@@ -201,11 +202,11 @@ export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggl
           <tr className="border-b border-gms-border">
             {buckets.map((bucket) => (
               <Fragment key={bucket}>
-                <th scope="col" className="relative border-l border-gms-border px-3 py-1.5 text-right text-gms-label font-normal text-gms-text-secondary">
+                <th scope="col" className="relative border-l border-gms-border px-3 py-2 text-right text-gms-body font-medium text-gms-text">
                   Pcs
                   {handle(`${bucket}.pcs`, `${BUCKET_LABEL[bucket]} Pcs`)}
                 </th>
-                <th scope="col" className="relative px-3 py-1.5 text-right text-gms-label font-normal text-gms-text-secondary">
+                <th scope="col" className="relative px-3 py-2 text-right text-gms-body font-medium text-gms-text">
                   Weight
                   {handle(`${bucket}.weight`, `${BUCKET_LABEL[bucket]} Weight`)}
                 </th>

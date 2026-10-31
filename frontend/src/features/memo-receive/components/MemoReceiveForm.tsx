@@ -1,12 +1,13 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CircleCheck, FileSearch, ScanLine, Trash2 } from "lucide-react";
+import { CircleCheck, FileSearch, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { FormProvider, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ScanIcon } from "@/components/ui/scan-icon";
 import { QuotationHeader, type StatusLabels } from "@/features/quotation/components/header/QuotationHeader";
 import { ItemEditorPanel } from "@/features/quotation/components/items/ItemEditorPanel";
 import { ItemPhotoBox } from "@/features/quotation/components/items/ItemPhotoBox";
@@ -311,7 +312,7 @@ export function MemoReceiveForm({ initial, access }: { initial?: MemoReceiveForm
                     <h2 className="text-lg font-medium text-[#1C252E]">Item</h2>
                     <span className="text-xs text-[#6B7480]">{lines.length} rows</span>
                     <IconButton label="Scan to add" disabled={readOnly} className="bg-[#F6F7F8]">
-                      <ScanLine className="size-4" />
+                      <ScanIcon />
                     </IconButton>
                     {checkedKeys.size > 0 && !readOnly && (
                       <Button size="sm" variant="danger-outline" onClick={removeChecked}>

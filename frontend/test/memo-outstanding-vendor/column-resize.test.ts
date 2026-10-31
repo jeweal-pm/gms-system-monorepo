@@ -59,5 +59,15 @@ describe("UT-MOV-F3 column widths", () => {
     expect(markup.match(/role="separator"/g)).toHaveLength(all.length - 1);
     expect(markup).toContain('aria-label="Resize Vendor Name column"');
     expect(markup).toContain("cursor-col-resize");
+    // Design 2026-10-31: group headings centred over Pcs / Weight (no text-left on them); Pcs / Weight right, dark 14 px.
+    const groups = [...markup.matchAll(/<th[^>]*scope="colgroup"[^>]*class="([^"]*)"/g)].map((m) => m[1]);
+    expect(groups).toHaveLength(5);
+    for (const cls of groups) {
+      expect(cls).toContain("text-center");
+      expect(cls).not.toContain("text-left");
+    }
+    const subHeads = [...markup.matchAll(/<th scope="col" class="([^"]*)">(?:Pcs|Weight)/g)].map((m) => m[1]);
+    expect(subHeads).toHaveLength(10);
+    for (const cls of subHeads) expect(cls).toMatch(/text-right.*text-gms-body.*text-gms-text(?!-)/);
   });
 });

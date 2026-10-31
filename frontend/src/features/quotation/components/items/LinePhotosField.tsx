@@ -1,6 +1,7 @@
 "use client";
 
-import { Crown, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
+import { CrownIcon } from "@/components/ui/crown-icon";
 import { useRef, useState, type DragEvent } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import { PhotoUploadError, PHOTO_TYPES } from "../../api";
@@ -152,10 +153,10 @@ function PhotoTile({
         onClick={() => onSetMain(photo.id)}
         className={cx(
           "absolute top-1.5 left-1.5 rounded-full p-1",
-          isMain ? "text-[#F5A524]" : "bg-white/80 text-[#95A0A9] opacity-0 group-hover:opacity-100 hover:text-[#F5A524] focus:opacity-100",
+          isMain ? "text-[#FFAB00]" : "bg-white/80 text-[#95A0A9] opacity-0 group-hover:opacity-100 hover:text-[#FFAB00] focus:opacity-100",
         )}
       >
-        <Crown className="size-4" fill={isMain ? "currentColor" : "none"} />
+        <CrownIcon className="size-4" />
       </button>
       {!readOnly && (
         <button
