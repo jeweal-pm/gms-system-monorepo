@@ -2,6 +2,7 @@
 
 | Feature ID | UI revision | Central TODO | Frontend TODO | Status | Backend bundle | Updated at |
 |---|---|---|---|---|---|---|
+| `memo-outstanding-vendor` | 1 | [memo-outstanding-vendor](todo/memo-outstanding-vendor.md) | [memo-outstanding-vendor](todo/memo-outstanding-vendor.md) | approved 2026-10-29, in progress | [SA rev 1](../apps/backend/master/memo-outstanding-vendor/decisions.md) + [ADR-0035](../adr/0035-memo-outstanding-vendor-report.md) Accepted; no infra change | 2026-10-29 +07:00 |
 | `memo-return` | 1 | [memo-return](todo/memo-return.md) | [memo-return](todo/memo-return.md) | implemented 2026-10-29 (API + Document Setup numbering, Memo Stock from Memo Receive; Memo Receive page on the API, Stock IDs and stock later) | [SA rev 1](../apps/backend/master/memo-return/decisions.md) implemented (memo receive + memo return API) | 2026-10-29 +07:00 |
 | `memo-out-return` | 3 | [memo-out-return](todo/memo-out-return.md) | [memo-out-return](todo/memo-out-return.md) | implemented 2026-10-28 (API + Document Setup numbering, vendor party; Memo Outstanding/photos/stock later) | [SA rev 1](../apps/backend/master/memo-out/decisions.md) + [ADR-0033](../adr/0033-memo-documents-in-master-service.md) implemented | 2026-10-28 +07:00 |
 | `memo-out` | 1 | [memo-out](todo/memo-out.md) | [memo-out](todo/memo-out.md) | implemented 2026-10-28 (API + Document Setup numbering; photos/stock later) | [SA rev 1](../apps/backend/master/memo-out/decisions.md) + [ADR-0033](../adr/0033-memo-documents-in-master-service.md) implemented | 2026-10-28 +07:00 |

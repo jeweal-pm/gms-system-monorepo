@@ -925,49 +925,58 @@ model MemoReceiveCharge {
 /// in the master service until the inventory service exists; Memo Return (later revision) is the only writer of
 /// pending_*. net_unit_price = line_amount / received basis (weight for PER_CT, pcs for PER_PCS).
 model MemoStock {
-  id                 String           @id @db.Uuid
-  stockId            String           @unique(map: "memo_stock_stock_id_key") @map("stock_id") @db.VarChar(10)
-  memoReceiveId      String           @map("memo_receive_id") @db.Uuid
-  memoReceiveLineId  String           @unique(map: "memo_stock_memo_receive_line_id_key") @map("memo_receive_line_id") @db.Uuid
-  receivedDocNo      String           @map("received_doc_no") @db.VarChar(40)
-  receivedDocDate    DateTime         @map("received_doc_date") @db.Date
-  dueDate            DateTime         @map("due_date") @db.Date
-  vendorId           String           @map("vendor_id") @db.Uuid
-  vendorCodeSnapshot String           @map("vendor_code_snapshot") @db.VarChar(120)
-  vendorNameSnapshot String           @map("vendor_name_snapshot") @db.VarChar(200)
-  location           String           @default("Memo") @db.VarChar(40)
-  stone              String           @default("") @db.VarChar(60)
-  shape              String           @default("") @db.VarChar(60)
-  size               String           @default("") @db.VarChar(60)
-  color              String           @default("") @db.VarChar(60)
-  clarity            String           @default("") @db.VarChar(60)
-  cutting            String           @default("") @db.VarChar(60)
-  quality            String           @default("") @db.VarChar(60)
-  lot                String           @default("") @db.VarChar(40)
-  cerType            String           @default("") @map("cer_type") @db.VarChar(20)
-  cerNo              String           @default("") @map("cer_no") @db.VarChar(60)
-  itemNote           String           @default("") @map("item_note") @db.VarChar(500)
-  receivedPcs        Int              @map("received_pcs")
-  receivedWeightCt   Decimal          @map("received_weight_ct") @db.Decimal(12, 3)
-  pendingPcs         Int              @map("pending_pcs")
-  pendingWeightCt    Decimal          @map("pending_weight_ct") @db.Decimal(12, 3)
-  priceUnit          String           @map("price_unit") @db.VarChar(10)
-  unitPrice          Decimal          @map("unit_price") @db.Decimal(18, 2)
-  lineAmount         Decimal          @map("line_amount") @db.Decimal(18, 2)
-  netUnitPrice       Decimal          @map("net_unit_price") @db.Decimal(18, 4)
-  currencyCode       String           @map("currency_code") @db.Char(3)
-  version            Int              @default(1)
-  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamp(3)
-  createdBy          String           @map("created_by") @db.VarChar(64)
-  updatedAt          DateTime         @default(now()) @map("updated_at") @db.Timestamp(3)
-  memoReceive        MemoReceive      @relation(fields: [memoReceiveId], references: [id], onDelete: Restrict)
-  memoReceiveLine    MemoReceiveLine  @relation(fields: [memoReceiveLineId], references: [id], onDelete: Restrict)
-  vendor             Vendor           @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  id                 String          @id @db.Uuid
+  stockId            String          @unique(map: "memo_stock_stock_id_key") @map("stock_id") @db.VarChar(10)
+  memoReceiveId      String          @map("memo_receive_id") @db.Uuid
+  memoReceiveLineId  String          @unique(map: "memo_stock_memo_receive_line_id_key") @map("memo_receive_line_id") @db.Uuid
+  receivedDocNo      String          @map("received_doc_no") @db.VarChar(40)
+  receivedDocDate    DateTime        @map("received_doc_date") @db.Date
+  dueDate            DateTime        @map("due_date") @db.Date
+  vendorId           String          @map("vendor_id") @db.Uuid
+  vendorCodeSnapshot String          @map("vendor_code_snapshot") @db.VarChar(120)
+  vendorNameSnapshot String          @map("vendor_name_snapshot") @db.VarChar(200)
+  location           String          @default("Memo") @db.VarChar(40)
+  stone              String          @default("") @db.VarChar(60)
+  shape              String          @default("") @db.VarChar(60)
+  size               String          @default("") @db.VarChar(60)
+  color              String          @default("") @db.VarChar(60)
+  clarity            String          @default("") @db.VarChar(60)
+  cutting            String          @default("") @db.VarChar(60)
+  quality            String          @default("") @db.VarChar(60)
+  lot                String          @default("") @db.VarChar(40)
+  cerType            String          @default("") @map("cer_type") @db.VarChar(20)
+  cerNo              String          @default("") @map("cer_no") @db.VarChar(60)
+  itemNote           String          @default("") @map("item_note") @db.VarChar(500)
+  receivedPcs        Int             @map("received_pcs")
+  receivedWeightCt   Decimal         @map("received_weight_ct") @db.Decimal(12, 3)
+  pendingPcs         Int             @map("pending_pcs")
+  pendingWeightCt    Decimal         @map("pending_weight_ct") @db.Decimal(12, 3)
+  /// Buckets (memo-outstanding-vendor SA-MOV-02): pending = received - returned - sold - reserved (CHECK memo_stock_balance).
+  returnedPcs        Int             @default(0) @map("returned_pcs")
+  returnedWeightCt   Decimal         @default(0) @map("returned_weight_ct") @db.Decimal(12, 3)
+  soldPcs            Int             @default(0) @map("sold_pcs")
+  soldWeightCt       Decimal         @default(0) @map("sold_weight_ct") @db.Decimal(12, 3)
+  reservedPcs        Int             @default(0) @map("reserved_pcs")
+  reservedWeightCt   Decimal         @default(0) @map("reserved_weight_ct") @db.Decimal(12, 3)
+  priceUnit          String          @map("price_unit") @db.VarChar(10)
+  unitPrice          Decimal         @map("unit_price") @db.Decimal(18, 2)
+  lineAmount         Decimal         @map("line_amount") @db.Decimal(18, 2)
+  netUnitPrice       Decimal         @map("net_unit_price") @db.Decimal(18, 4)
+  currencyCode       String          @map("currency_code") @db.Char(3)
+  version            Int             @default(1)
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamp(3)
+  createdBy          String          @map("created_by") @db.VarChar(64)
+  updatedAt          DateTime        @default(now()) @map("updated_at") @db.Timestamp(3)
+  memoReceive        MemoReceive     @relation(fields: [memoReceiveId], references: [id], onDelete: Restrict)
+  memoReceiveLine    MemoReceiveLine @relation(fields: [memoReceiveLineId], references: [id], onDelete: Restrict)
+  vendor             Vendor          @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   returnLines        MemoReturnLine[]
 
   /// Add Memo Stock dialog: a vendor's items with something still pending, newest receive first (SA-MR-11).
   @@index([vendorId, receivedDocDate(sort: Desc), stockId(sort: Desc)], where: raw("((pending_pcs > 0) OR (pending_weight_ct > (0)::numeric))"), map: "memo_stock_pending_idx")
   @@index([memoReceiveId], map: "memo_stock_memo_receive_idx")
+  /// Outstanding report: items with Reserve or Outstanding above 0 (SA-MOV-04).
+  @@index([memoReceiveId], where: raw("((pending_pcs > 0) OR (pending_weight_ct > (0)::numeric) OR (reserved_pcs > 0) OR (reserved_weight_ct > (0)::numeric))"), map: "memo_stock_open_idx")
   @@map("memo_stock")
   @@schema("partner")
 }

@@ -14,6 +14,7 @@ import type { MemoOutReturnService } from "../../src/trade-document/memo-out-ret
 import type { MemoReceiveService } from "../../src/trade-document/memo-receive.service";
 import type { MemoReturnService } from "../../src/trade-document/memo-return.service";
 import type { MemoStockService } from "../../src/trade-document/memo-stock.service";
+import type { MemoOutstandingService } from "../../src/trade-document/memo-outstanding.service";
 import { customerBody, withVersion } from "../partner-shared/fixtures";
 
 vi.mock("../../src/database/prisma-client", async () => (await import("../partner-shared/prisma-fake")).prismaModule);
@@ -38,6 +39,7 @@ const memoOutReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), option
 const memoReceive = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
 const memoStock = { list: vi.fn() };
 const memoReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
+const memoOutstanding = { vendorSummary: vi.fn(), vendorList: vi.fn(), vendorItems: vi.fn(), vendorOptions: vi.fn() };
 const router = createMasterRouter({
   customer: customer as unknown as CustomerService,
   vendor: vendor as unknown as VendorService,
@@ -51,6 +53,7 @@ const router = createMasterRouter({
   memoReceive: memoReceive as unknown as MemoReceiveService,
   memoStock: memoStock as unknown as MemoStockService,
   memoReturn: memoReturn as unknown as MemoReturnService,
+  memoOutstanding: memoOutstanding as unknown as MemoOutstandingService,
 });
 
 function context(grants: string[], overrides: Partial<MasterContext> = {}): MasterContext {
@@ -61,7 +64,7 @@ function context(grants: string[], overrides: Partial<MasterContext> = {}): Mast
 }
 
 beforeEach(() => {
-  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(currency), ...Object.values(quotation), ...Object.values(memoOut), ...Object.values(memoOutReturn), ...Object.values(memoReceive), ...Object.values(memoStock), ...Object.values(memoReturn)]) fn.mockReset().mockResolvedValue({ ok: true });
+  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(currency), ...Object.values(quotation), ...Object.values(memoOut), ...Object.values(memoOutReturn), ...Object.values(memoReceive), ...Object.values(memoStock), ...Object.values(memoReturn), ...Object.values(memoOutstanding)]) fn.mockReset().mockResolvedValue({ ok: true });
 });
 
 describe("staged master domain tRPC boundary", () => {
@@ -415,5 +418,66 @@ describe("staged master domain tRPC boundary", () => {
     expect(currency.options).toHaveBeenCalledTimes(1);
     memoReturn.approve.mockRejectedValueOnce(new HttpException({ error: { code: "MEMO_RETURN_PENDING_SHORT", message: "x" } }, 409));
     await expect(caller.memoReturn.approve(versioned)).rejects.toMatchObject({ code: "CONFLICT", message: "MEMO_RETURN_PENDING_SHORT" });
+  });
+
+  it("UT-MOV-R1 memoOutstanding.*: memo-outstanding-vendor VIEW on every procedure; bounds refused with contract field errors", async () => {
+    const fieldErrorsOf = async (promise: Promise<unknown>) => {
+      try { await promise; } catch (error) {
+        const cause = (error as { cause?: unknown }).cause;
+        expect(error).toMatchObject({ code: "BAD_REQUEST", message: "VALIDATION_ERROR" });
+        expect(cause).toBeInstanceOf(HttpException);
+        return ((cause as HttpException).getResponse() as { error: { code: string; fieldErrors: { path: string; code: string }[] } }).error;
+      }
+      throw new Error("expected a refusal");
+    };
+    const viewer = router.createCaller(context(["memo-outstanding-vendor:VIEW"]));
+    await viewer.memoOutstanding.vendorSummary({ q: " MR-1 ", vendorIds: [ID], from: "2026-01-01", to: "2026-10-29" });
+    expect(memoOutstanding.vendorSummary).toHaveBeenCalledWith({ q: "MR-1", vendorIds: [ID], from: "2026-01-01", to: "2026-10-29" });
+    await viewer.memoOutstanding.vendorList({ pageSize: 25, sort: "openValue", dir: "desc" });
+    expect(memoOutstanding.vendorList).toHaveBeenCalledWith({ page: 1, pageSize: 25, sort: "openValue", dir: "desc" });
+    await viewer.memoOutstanding.vendorItems({ memoReceiveIds: [ID] });
+    expect(memoOutstanding.vendorItems).toHaveBeenCalledWith({ memoReceiveIds: [ID] });
+    await viewer.memoOutstanding.vendorOptions({});
+    await viewer.memoOutstanding.vendorOptions();
+    expect(memoOutstanding.vendorOptions).toHaveBeenCalledTimes(2);
+
+    // Grant: exactly memo-outstanding-vendor:VIEW; memo-receive / vendor grants are not enough; live checks first.
+    for (const grants of [["memo-receive:VIEW", "vendor:VIEW", "memo-return:VIEW"], ["memo-outstanding-vendor:PRINT"], []]) {
+      const caller = router.createCaller(context(grants));
+      await expect(caller.memoOutstanding.vendorSummary({})).rejects.toMatchObject({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+      await expect(caller.memoOutstanding.vendorList({ pageSize: 10 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller.memoOutstanding.vendorItems({ memoReceiveIds: [ID] })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller.memoOutstanding.vendorOptions({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    }
+    await expect(router.createCaller(context(["memo-outstanding-vendor:VIEW"], { principal: null })).memoOutstanding.vendorList({ pageSize: 10 })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(router.createCaller(context(["memo-outstanding-vendor:VIEW"], { authorization: "UNAVAILABLE" })).memoOutstanding.vendorSummary({})).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE", message: "AUTHORIZATION_UNAVAILABLE" });
+    // Reads need no CSRF proof.
+    await router.createCaller(context(["memo-outstanding-vendor:VIEW"], { csrfVerified: false })).memoOutstanding.vendorSummary({});
+    // A bad input from a caller without the grant is refused by the grant, not by validation.
+    await expect(router.createCaller(context([])).memoOutstanding.vendorList({ pageSize: 100 } as never)).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    // Bounds (testing.md): pageSize 100, 26 ids, 51 vendors, 400-day range; plus from > to, bad sort, empty ids, q > 100.
+    expect(await fieldErrorsOf(viewer.memoOutstanding.vendorList({ pageSize: 100 } as never))).toMatchObject({ code: "VALIDATION_ERROR", fieldErrors: [{ path: "pageSize" }] });
+    const ids = (count: number) => Array.from({ length: count }, (_, n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`);
+    expect(await fieldErrorsOf(viewer.memoOutstanding.vendorItems({ memoReceiveIds: ids(26) }))).toMatchObject({ fieldErrors: [{ path: "memoReceiveIds", code: "too_big" }] });
+    expect(await fieldErrorsOf(viewer.memoOutstanding.vendorItems({ memoReceiveIds: [] }))).toMatchObject({ fieldErrors: [{ path: "memoReceiveIds", code: "too_small" }] });
+    expect(await fieldErrorsOf(viewer.memoOutstanding.vendorItems({ memoReceiveIds: ["not-a-uuid"] }))).toMatchObject({ fieldErrors: [{ path: "memoReceiveIds.0" }] });
+    expect(await fieldErrorsOf(viewer.memoOutstanding.vendorSummary({ vendorIds: ids(51) }))).toMatchObject({ fieldErrors: [{ path: "vendorIds", code: "too_big" }] });
+    expect(await fieldErrorsOf(viewer.memoOutstanding.vendorList({ pageSize: 10, vendorIds: ids(51) }))).toMatchObject({ fieldErrors: [{ path: "vendorIds", code: "too_big" }] });
+    expect(await fieldErrorsOf(viewer.memoOutstanding.vendorSummary({ from: "2026-01-01", to: "2027-02-05" }))).toMatchObject({ fieldErrors: [{ path: "to", code: "range_too_long" }] });
+    expect(await fieldErrorsOf(viewer.memoOutstanding.vendorList({ pageSize: 10, from: "2026-01-01", to: "2027-02-05" }))).toMatchObject({ fieldErrors: [{ path: "to", code: "range_too_long" }] });
+    expect(await fieldErrorsOf(viewer.memoOutstanding.vendorSummary({ from: "2026-10-29", to: "2026-10-28" }))).toMatchObject({ fieldErrors: [{ path: "to", code: "before_from" }] });
+    expect(await fieldErrorsOf(viewer.memoOutstanding.vendorList({ pageSize: 10, sort: "createdAt" } as never))).toMatchObject({ fieldErrors: [{ path: "sort" }] });
+    expect(await fieldErrorsOf(viewer.memoOutstanding.vendorList({ pageSize: 10, page: 0 }))).toMatchObject({ fieldErrors: [{ path: "page" }] });
+    expect(await fieldErrorsOf(viewer.memoOutstanding.vendorSummary({ q: "x".repeat(101) }))).toMatchObject({ fieldErrors: [{ path: "q" }] });
+    expect(await fieldErrorsOf(viewer.memoOutstanding.vendorOptions({ extra: 1 } as never))).toMatchObject({ code: "VALIDATION_ERROR" });
+    // 366 days is still allowed.
+    await viewer.memoOutstanding.vendorSummary({ from: "2026-01-01", to: "2027-01-02" });
+    expect(memoOutstanding.vendorSummary).toHaveBeenCalledTimes(3);
+    expect(memoOutstanding.vendorList).toHaveBeenCalledTimes(1);
+    expect(memoOutstanding.vendorItems).toHaveBeenCalledTimes(1);
+
+    memoOutstanding.vendorList.mockRejectedValueOnce(new Error("db down"));
+    await expect(viewer.memoOutstanding.vendorList({ pageSize: 10 })).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE", message: "DEPENDENCY_UNAVAILABLE" });
   });
 });

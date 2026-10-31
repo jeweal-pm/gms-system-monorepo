@@ -139,7 +139,8 @@ export class MemoReturnService {
   }
 
   /**
-   * PENDING_APPROVAL → APPROVED and the returned pcs / weight come off each Memo Stock item, in one transaction. The
+   * PENDING_APPROVAL → APPROVED and the returned pcs / weight move from each Memo Stock item's pending into its Return
+   * bucket (memo-outstanding-vendor SA-MOV-02, CHECK memo_stock_balance), in one transaction. The
    * guarded UPDATE serializes approvals of this document; the items are locked in id order (`FOR UPDATE`) so two
    * returns of the same item can't both pass. An item with less pending than the line → `MEMO_RETURN_PENDING_SHORT`
    * (409, the short line fields) and nothing changes.
@@ -179,7 +180,9 @@ export class MemoReturnService {
           const values = document.lines.map((line) => Prisma.sql`(${line.memoStockId}::uuid, ${line.pcs}::int, ${line.weightCt.toFixed(3)}::numeric)`);
           await tx.$executeRaw(Prisma.sql`
             UPDATE "partner"."memo_stock" AS s
-            SET pending_pcs = s.pending_pcs - r.pcs, pending_weight_ct = s.pending_weight_ct - r.weight, version = s.version + 1, updated_at = ${now}
+            SET pending_pcs = s.pending_pcs - r.pcs, pending_weight_ct = s.pending_weight_ct - r.weight,
+                returned_pcs = s.returned_pcs + r.pcs, returned_weight_ct = s.returned_weight_ct + r.weight,
+                version = s.version + 1, updated_at = ${now}
             FROM (VALUES ${Prisma.join(values)}) AS r(id, pcs, weight)
             WHERE s.id = r.id`);
         }

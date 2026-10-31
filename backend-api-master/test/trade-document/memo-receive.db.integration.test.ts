@@ -105,19 +105,24 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     const unused = {} as never;
     router = createMasterRouter({
       customer: unused, vendor: unused, companyProfile: unused, stoneMaster: unused, documentSetup: unused, currency: unused, quotation: unused,
-      memoOut: unused, memoOutReturn: unused, memoReceive: receive, memoStock: stock, memoReturn: unused,
+      memoOut: unused, memoOutReturn: unused, memoReceive: receive, memoStock: stock, memoReturn: unused, memoOutstanding: unused,
     });
 
+    // A concurrent DB integration file may create the same shared fixture first (P2002): keep its row.
+    const createIfAbsent = async (create: () => Promise<unknown>) => {
+      try { await create(); return true; } catch (error) {
+        if ((error as { code?: string }).code === "P2002") return false;
+        throw error;
+      }
+    };
     if (!(await prisma.currency.findUnique({ where: { code: "THB" } }))) {
-      await prisma.currency.create({ data: { code: "THB", name: "Thai Baht", createdBy: ACTOR, updatedBy: ACTOR } });
-      created.currency = true;
+      created.currency = await createIfAbsent(() => prisma.currency.create({ data: { code: "THB", name: "Thai Baht", createdBy: ACTOR, updatedBy: ACTOR } }));
     }
     if (!(await prisma.documentSetup.findUnique({ where: { transactionKey: "memo-receive" } }))) {
-      await prisma.documentSetup.create({ data: {
+      created.setup = await createIfAbsent(() => prisma.documentSetup.create({ data: {
         transactionKey: "memo-receive", name: "Memo Receive", code: "MR", startFrom: 1, updatedBy: ACTOR,
         rows: { create: [{ id: randomUUID(), effectiveDate: new Date("2026-01-01T00:00:00Z"), prefix: "MR", separator: "-", startNo: 1 }] },
-      } });
-      created.setup = true;
+      } }));
     }
     await prisma.memoStockIdCounter.deleteMany({ where: { year: { in: YEARS } } });
     vendorA = await vendorFixture("MR IT Vendor A");
@@ -139,8 +144,10 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     // Disposable test database only: photo rows this run created (product code never deletes uploads, ADR-0030).
     await prisma.storedFile.deleteMany({ where: { createdBy: ACTOR } });
     await prisma.memoStockIdCounter.deleteMany({ where: { year: { in: YEARS } } });
-    if (created.setup) await prisma.documentSetup.deleteMany({ where: { transactionKey: "memo-receive" } });
-    if (created.currency) await prisma.currency.deleteMany({ where: { code: "THB" } });
+    // Shared fixtures stay while another DB integration file's documents still use them (memo-outstanding IT).
+    const stillUsed = (await prisma.memoReceive.count()) + (await prisma.memoOut.count());
+    if (created.setup && stillUsed === 0) await prisma.documentSetup.deleteMany({ where: { transactionKey: "memo-receive" } });
+    if (created.currency && stillUsed === 0) await prisma.currency.deleteMany({ where: { code: "THB" } });
     await prisma.$disconnect();
     if (storageDir) await rm(storageDir, { recursive: true, force: true });
     vi.unstubAllEnvs();
@@ -276,8 +283,11 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     const mar = await approve("2026-03-10", [line({ lot: "MAR-1" }), line({ lot: "MAR-2", cerNo: "FINDME" })]);
     await receive.create(ACTOR, input(vendorB, [line({ lot: "PENDING-DOC" })], { docDate: "2026-03-20", dueDate: "2026-12-31" }));
     // Fully returned item (Memo Return later): pending 0 → not listed. Partly returned PCS item: amount by pieces.
-    await prisma.memoStock.update({ where: { stockId: mar.stockIds[0] }, data: { pendingPcs: 0, pendingWeightCt: "0" } });
-    await prisma.memoStock.update({ where: { stockId: feb.stockIds[0] }, data: { pendingPcs: 1, pendingWeightCt: "0.5" } });
+    // The returned quantity moves into the Return bucket (memo-outstanding-vendor SA-MOV-02 CHECK memo_stock_balance).
+    await prisma.$executeRaw`UPDATE "partner"."memo_stock" SET returned_pcs = received_pcs, returned_weight_ct = received_weight_ct,
+      pending_pcs = 0, pending_weight_ct = 0 WHERE stock_id = ${mar.stockIds[0]}`;
+    await prisma.$executeRaw`UPDATE "partner"."memo_stock" SET returned_pcs = received_pcs - 1, returned_weight_ct = received_weight_ct - 0.5,
+      pending_pcs = 1, pending_weight_ct = 0.5 WHERE stock_id = ${feb.stockIds[0]}`;
 
     const seen: string[] = [];
     let cursor: string | null = null;

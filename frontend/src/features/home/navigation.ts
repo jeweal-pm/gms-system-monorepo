@@ -51,6 +51,8 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   "memo-return": "/memo/memo-return",
   "memo-out": "/memo/memo-out",
   "memo-out-return": "/memo/memo-out-return",
+  // memo-outstanding-vendor UI rev 1 (ADR-0035): Memo Outstanding › Vendor.
+  "memo-outstanding-from-vendor": "/memo/memo-outstanding/vendor",
 };
 
 export function navigationHref(item: NavigationItem): string {
@@ -210,7 +212,7 @@ export const sidebarSections: NavSection[] = [
       // DV-03: the design text "From Vender" is spelled "From Vendor".
       // Owner 2026-10-28: sub-items read "Vendor" / "Customer" (no "From"); ids and catalog keys unchanged.
       disclosure("memo-outstanding", "Memo Outstanding", FileOutstandingIcon, [
-        link("memo-outstanding-from-vendor", "Vendor"),
+        link("memo-outstanding-from-vendor", "Vendor", undefined, REAL_PAGE_HREFS["memo-outstanding-from-vendor"]),
         link("memo-outstanding-from-customer", "Customer"),
       ]),
     ],

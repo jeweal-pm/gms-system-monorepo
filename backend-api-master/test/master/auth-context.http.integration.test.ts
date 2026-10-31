@@ -11,6 +11,7 @@ import type { MemoOutReturnService } from "../../src/trade-document/memo-out-ret
 import type { MemoReceiveService } from "../../src/trade-document/memo-receive.service";
 import type { MemoReturnService } from "../../src/trade-document/memo-return.service";
 import type { MemoStockService } from "../../src/trade-document/memo-stock.service";
+import type { MemoOutstandingService } from "../../src/trade-document/memo-outstanding.service";
 import type { DocumentSetupService } from "../../src/document-setup/document-setup.service";
 import type { CustomerService } from "../../src/customer/customer.service";
 import type { VendorService } from "../../src/vendor/vendor.service";
@@ -61,6 +62,7 @@ async function startHttp(authReader = vi.fn(async () => ({
     memoReceive: {} as unknown as MemoReceiveService,
     memoReturn: {} as unknown as MemoReturnService,
     memoStock: {} as unknown as MemoStockService,
+    memoOutstanding: {} as unknown as MemoOutstandingService,
   });
   const handler = createHTTPHandler({ router, createContext: ({ req }) => adapter.create(req) });
   const server = createServer(handler);

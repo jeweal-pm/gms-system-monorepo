@@ -171,6 +171,13 @@ describe.runIf(canRun)("IT-MRT memo return on PostgreSQL", () => {
     await expect(memoReturn.approve(ACTOR, saved.id, updated.version)).resolves.toEqual({ id: saved.id, version: 3, status: "APPROVED" });
     expect(await pendingOf(part.id)).toEqual([1, "0.500"]);
     expect(await pendingOf(whole.id)).toEqual([0, "0.000"]);
+    // The returned quantity moves into the Return bucket (SA-MOV-02: pending = received − returned − sold − reserved).
+    const returnedOf = async (stockId: string) => {
+      const item = await prisma.memoStock.findUniqueOrThrow({ where: { id: stockId }, select: { returnedPcs: true, returnedWeightCt: true } });
+      return [item.returnedPcs, item.returnedWeightCt.toFixed(3)];
+    };
+    expect(await returnedOf(part.id)).toEqual([2, "1.000"]);
+    expect(await returnedOf(whole.id)).toEqual([2, "0.800"]);
     expect(await memoReturn.get(saved.id)).toMatchObject({ status: "APPROVED", approvedBy: ACTOR, approvedAt: expect.any(String) });
     expect(await failure(memoReturn.approve(ACTOR, saved.id, 3))).toMatchObject({ status: 409, code: "MEMO_RETURN_STATUS_INVALID" });
     expect(await failure(memoReturn.update(ACTOR, saved.id, 3, returnInput(vendorA, [returnLine(part.id, 1, "0.5")])))).toMatchObject({ status: 409, code: "MEMO_RETURN_STATUS_INVALID" });
