@@ -9,14 +9,14 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
  *
  * Opt-in like the other DB integrations (INV-20261021-007): runs only with `PARTNER_TEST_DATABASE_URL` pointing at
  * a disposable `f1_system` database on 127.0.0.1 with an explicit port other than 5432, migrated with
- * `prisma migrate deploy`. Rows are scoped to vendors created here and Stock ID year 60 (clock faked to 2060); all
+ * `prisma migrate deploy`. Rows are scoped to vendors created here and Stock ID year 70 (clock faked to 2070; 50–59 memo receive, 60–69 memo outstanding); all
  * are removed in `afterAll`.
  */
 
 const testUrl = process.env.PARTNER_TEST_DATABASE_URL;
 const canRun = Boolean(testUrl && /^postgresql:\/\/[^/]+@127\.0\.0\.1:(?!5432\/)[0-9]+\/f1_system$/.test(testUrl));
 const ACTOR = `mrt-it-${randomUUID().slice(0, 8)}`;
-const YEAR = 60;
+const YEAR = 70;
 
 type Prisma = typeof import("../../src/database/prisma-client").prisma;
 type Receive = InstanceType<typeof import("../../src/trade-document/memo-receive.service").MemoReceiveService>;

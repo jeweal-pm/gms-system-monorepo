@@ -34,7 +34,7 @@ const quotation = {
   list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(),
   submit: vi.fn(), approve: vi.fn(), reject: vi.fn(), cancel: vi.fn(), delete: vi.fn(),
 };
-const memoOut = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
+const memoOut = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
 const memoOutReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
 const memoReceive = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
 const memoStock = { list: vi.fn() };
@@ -356,7 +356,7 @@ describe("staged master domain tRPC boundary", () => {
     await expect(viewer.memoStock.list({ vendorId: ID, q: "x".repeat(101) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(viewer.memoStock.list({ vendorId: ID, from: "2026-10-29", to: "2026-01-01" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(viewer.memoStock.list({ vendorId: ID, from: "2025-01-01", to: "2026-10-29" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await expect(viewer.memoStock.list({} as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(viewer.memoStock.list({ vendorId: "not-a-uuid" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(memoStock.list).toHaveBeenCalledTimes(2);
 
     await router.createCaller(context(["memo-receive:VIEW"])).currency.options();
@@ -479,5 +479,38 @@ describe("staged master domain tRPC boundary", () => {
 
     memoOutstanding.vendorList.mockRejectedValueOnce(new Error("db down"));
     await expect(viewer.memoOutstanding.vendorList({ pageSize: 10 })).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE", message: "DEPENDENCY_UNAVAILABLE" });
+  });
+
+  it("GP-MT-MO2 memo out rev 2: From Stock lines, status filter, approve needs APPROVE + CSRF, From Stock list with memo-out VIEW and no vendor", async () => {
+    const ID2 = "0b9f3c4e-1d2a-4b3c-8d4e-5f6a7b8c9d0f";
+    const line = { source: "MANUAL" as const, stoneCodeId: null, stoneCode: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "",
+      lot: "", location: "", cerType: "", cerNo: "", pcs: 1, weightCt: "1", priceUnit: "PER_CT" as const, unitPrice: "100", discount: { type: "NONE" as const, value: "0" }, itemNote: "", photoIds: [] as string[] };
+    const out = { docDate: "2026-10-31", dueDate: "2026-11-30", currency: "THB", exchangeRate: null, ref: "", documentNote: "", customerId: ID, shippingAddressId: ID2, invoiceAddressId: ID2,
+      discount: { type: "NONE" as const, value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
+      lines: [{ ...line, memoStockId: ID2 }, { ...line, memoStockId: null }] };
+    const versioned = { id: ID, expectedVersion: 1 };
+    const all = ["VIEW", "ADD", "EDIT", "DELETE", "APPROVE"].map((action) => `memo-out:${action}`);
+    const caller = router.createCaller(context(all));
+
+    await caller.memoOut.list({ status: "PENDING_APPROVAL" });
+    expect(memoOut.list).toHaveBeenCalledWith(expect.objectContaining({ status: "PENDING_APPROVAL" }));
+    await expect(caller.memoOut.list({ status: "DRAFT" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await caller.memoOut.create(out);
+    expect(memoOut.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ lines: [expect.objectContaining({ memoStockId: ID2 }), expect.objectContaining({ memoStockId: null })] }));
+    await expect(caller.memoOut.create({ ...out, lines: [{ ...line, memoStockId: ID2, unitPrice: "0" }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    await caller.memoOut.approve(versioned);
+    expect(memoOut.approve).toHaveBeenCalledWith("user-1", ID, 1);
+    await expect(router.createCaller(context(["memo-out:VIEW", "memo-out:EDIT"])).memoOut.approve(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["memo-receive:APPROVE"])).memoOut.approve(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(all, { csrfVerified: false })).memoOut.approve(versioned)).rejects.toMatchObject({ message: "CSRF_INVALID" });
+    expect(memoOut.approve).toHaveBeenCalledTimes(1);
+    memoOut.approve.mockRejectedValueOnce(new HttpException({ error: { code: "MEMO_OUT_PENDING_SHORT", message: "x" } }, 409));
+    await expect(caller.memoOut.approve(versioned)).rejects.toMatchObject({ code: "CONFLICT", message: "MEMO_OUT_PENDING_SHORT" });
+
+    await router.createCaller(context(["memo-out:VIEW"])).memoStock.list({ limit: 50 });
+    expect(memoStock.list).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 50 }));
+    expect(memoStock.list.mock.lastCall?.[0]).not.toHaveProperty("vendorId");
+    await expect(router.createCaller(context(["memo-out:ADD"])).memoStock.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

@@ -34,6 +34,7 @@ const messages: Record<string, string> = {
   MEMO_OUT_CHANGED: "The memo out was changed by someone else",
   MEMO_OUT_STATUS_INVALID: "The memo out can't be changed in its current status",
   MEMO_OUT_REFERENCE_INVALID: "A selected item is missing or inactive",
+  MEMO_OUT_PENDING_SHORT: "Some stock items no longer have enough pending",
   MEMO_OUT_RETURN_NOT_FOUND: "The memo out return was not found",
   MEMO_OUT_RETURN_CHANGED: "The memo out return was changed by someone else",
   MEMO_OUT_RETURN_STATUS_INVALID: "The memo out return can't be changed in its current status",

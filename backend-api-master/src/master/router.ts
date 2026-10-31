@@ -34,6 +34,7 @@ import {
   createMemoReceiveSchema,
   createMemoReturnSchema,
   memoNextNumberSchema,
+  memoOutListSchema,
   memoReceiveListSchema,
   memoReturnListSchema,
   memoStockListSchema,
@@ -259,7 +260,7 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
     }),
     // memo-out / memo-out-return SA rev 1 / ADR-0033 (owner 2026-10-28): numbers from Document Setup, drafts only.
     memoOut: t.router({
-      list: permitted("memo-out", "VIEW").input(documentListSchema).query(({ input }) => domainCall(() => memoOut.list(input))),
+      list: permitted("memo-out", "VIEW").input(memoOutListSchema).query(({ input }) => domainCall(() => memoOut.list(input))),
       get: permitted("memo-out", "VIEW").input(idInput).query(({ input }) => domainCall(() => memoOut.get(input.id))),
       nextNumber: permitted("memo-out", "VIEW").input(memoNextNumberSchema).query(({ input }) => domainCall(() => memoOut.nextNumber(input.docDate))),
       options: permitted("memo-out", "VIEW").input(z.object({ customerId: z.uuid().optional() }).strict())
@@ -270,6 +271,8 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
         return domainCall(() => memoOut.update(ctx.userId, id, expectedVersion, body));
       }),
       delete: permitted("memo-out", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOut.delete(ctx.userId, input.id, input.expectedVersion))),
+      // memo-out SA rev 2 (SA-MO-14): approval cuts the stock lines into Memo Stock Reserve; APPROVE is checked on every call.
+      approve: permitted("memo-out", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOut.approve(ctx.userId, input.id, input.expectedVersion))),
     }),
     memoOutReturn: t.router({
       list: permitted("memo-out-return", "VIEW").input(documentListSchema).query(({ input }) => domainCall(() => memoOutReturn.list(input))),
@@ -300,9 +303,9 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       // The creator may approve (like quotation Q-QT-02); the server checks APPROVE on every call.
       approve: permitted("memo-receive", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoReceive.approve(ctx.userId, input.id, input.expectedVersion))),
     }),
-    // Memo Return "Add Memo Stock" dialog (SA-MR-11): readable from either memo page.
+    // Memo Stock list (SA-MR-11): Memo Return "Add Memo Stock" (its vendor) and Memo Out "From Stock" (every vendor, SA-MO-15).
     memoStock: t.router({
-      list: permittedAny(["memo-return", "memo-receive"], "VIEW").input(memoStockListSchema).query(({ input }) => domainCall(() => memoStock.list(input))),
+      list: permittedAny(["memo-return", "memo-receive", "memo-out"], "VIEW").input(memoStockListSchema).query(({ input }) => domainCall(() => memoStock.list(input))),
     }),
     // memo-return SA rev 2 (owner 2026-10-29): Memo Stock items back to their vendor; approval reduces pending (Q-MR-15).
     memoReturn: t.router({

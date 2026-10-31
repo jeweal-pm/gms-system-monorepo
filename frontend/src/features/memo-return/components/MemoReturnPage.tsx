@@ -2,8 +2,7 @@
 
 import { useFormContext } from "react-hook-form";
 import { DocumentDaybook, useDocumentAccess } from "@/features/trade-document/document-api";
-import { DocumentForm, type DocumentFormConfig } from "@/features/trade-document/document-form";
-import type { StatusLabels } from "@/features/quotation/components/header/QuotationHeader";
+import { APPROVAL_STATUS_LABELS, DocumentForm, type DocumentFormConfig } from "@/features/trade-document/document-form";
 import { returnItemTable } from "@/features/trade-document/return-item-table";
 import { VendorDocumentDetails, VendorDocumentInfoForm } from "@/features/trade-document/vendor-info-form";
 import { isFilledLine } from "@/features/quotation/schema";
@@ -26,7 +25,7 @@ import {
   type MemoReturnInput,
   type MemoReturnOptions,
 } from "../api";
-import { MemoStockModal } from "./MemoStockModal";
+import { MemoStockModal } from "@/features/trade-document/memo-stock-modal";
 
 export { MEMO_RETURN_HREF };
 
@@ -42,12 +41,6 @@ function MemoReturnInfoForm({ options }: { options: MemoReturnOptions | undefine
   };
   return <VendorDocumentInfoForm options={options} onVendorChange={onVendorChange} />;
 }
-
-/** Memo Receive colors (orange pending, green approved). */
-const MEMO_RETURN_STATUS_LABELS: StatusLabels = {
-  PENDING_APPROVAL: { label: "Pending Approval", tone: "bg-[#FFF4E0] text-[#B45309]" },
-  APPROVED: { label: "Approved", tone: "bg-[#E7F7EE] text-[#15803D]" },
-};
 
 function MemoReturnDaybook() {
   const daybook = useMemoReturnDaybook();
@@ -93,8 +86,11 @@ const CONFIG: DocumentFormConfig<MemoReturnFormValues, MemoReturnInput, MemoRetu
     blockedReason: (values) => (!values.vendorId ? "Choose a vendor first" : !values.currency ? "Choose a currency first" : null),
     render: ({ values, onClose, onAdd }) => (
       <MemoStockModal
+        title="Add Memo Stock"
         vendorId={values.vendorId}
         currency={values.currency}
+        showPrice
+        emptyText={`No memo stock from this vendor in ${values.currency}.`}
         pickedIds={pickedStockIds(values.lines)}
         onCancel={onClose}
         onConfirm={(items) => onAdd(items.map(memoStockToLine))}
@@ -103,10 +99,10 @@ const CONFIG: DocumentFormConfig<MemoReturnFormValues, MemoReturnInput, MemoRetu
     addedToast: (count) => `Added ${count} item${count === 1 ? "" : "s"} from Memo Stock`,
   },
   approval: {
-    statusLabels: MEMO_RETURN_STATUS_LABELS,
+    statusLabels: APPROVAL_STATUS_LABELS,
     pendingStatus: "PENDING_APPROVAL",
     confirmTitle: "Approve Memo Return",
-    confirmBody: (count) => `Approve this Memo Return? Its ${count} ${count === 1 ? "item goes" : "items go"} back to the vendor and come off Memo Stock. It can no longer be edited.`,
+    confirmBody: ({ length: count }) => `Approve this Memo Return? Its ${count} ${count === 1 ? "item goes" : "items go"} back to the vendor and come off Memo Stock. It can no longer be edited.`,
   },
   noteMax: MEMO_RETURN_NOTE_MAX,
   notePlaceholder: "e.g. Returned in good condition.",

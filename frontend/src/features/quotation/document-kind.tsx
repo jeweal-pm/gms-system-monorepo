@@ -24,6 +24,12 @@ export type DocumentKind = {
   emptyRowText: string;
   itemNote: { section: string; max: number; placeholder?: string };
   documentNote: { max: number; hint: string };
+  /**
+   * From Stock rows take part or all of a real stock item (memo-out rev 2, Q-MO-10): Pcs / Weight stay editable up to the
+   * item's pending (Pcs fills Weight in proportion), the price unit stays the item's, and Duplicate is hidden (an item
+   * appears once per document). Off (Quotation): stock rows keep their quantity locked.
+   */
+  stockQuantity?: boolean;
   /** Stone choices when they don't come from `quotation.options`. */
   stone?: StoneChoices;
   uploadPhoto: (file: File) => Promise<PhotoRef>;

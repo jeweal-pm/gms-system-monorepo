@@ -434,7 +434,7 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     await expect(prisma.storedFile.delete({ where: { id: ids[1] } })).rejects.toThrow();
   });
 
-  it("IT-MR-08 Document Setup row is used once a memo receive references it; Memo Out still creates and edits DRAFT", async () => {
+  it("IT-MR-08 Document Setup row is used once a memo receive references it; Memo Out creates and edits a pending memo out with a manual line", async () => {
     const { setup } = await setupService.get("memo-receive");
     expect(setup?.rows.find((row) => row.effectiveDate === "2026-01-01")?.used).toBe(true);
 
@@ -450,8 +450,8 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     const { vendorId: _vendorId, addressId: _addressId, ...shared } = input(vendorA, [{ ...line(), stoneCodeId: null, location: "Shelf 1" } as never]);
     const out = await memoOut.create(ACTOR, { ...shared, customerId, shippingAddressId: shipping, invoiceAddressId: invoice } as never);
     const detail = await memoOut.get(out.id);
-    expect(detail).toMatchObject({ status: "DRAFT", version: 1, lines: [expect.objectContaining({ location: "Shelf 1", stoneCodeId: null })] });
-    expect(detail.lines[0]).not.toHaveProperty("stockId");
+    // memo-out SA rev 2 (SA-MO-11/12): Memo Out now starts PENDING_APPROVAL; a manual line has no Memo Stock item.
+    expect(detail).toMatchObject({ status: "PENDING_APPROVAL", version: 1, lines: [expect.objectContaining({ location: "Shelf 1", stoneCodeId: null, source: "MANUAL", memoStockId: null, stockId: null })] });
     await expect(memoOut.update(ACTOR, out.id, 1, { ...shared, customerId, shippingAddressId: shipping, invoiceAddressId: invoice } as never)).resolves.toEqual({ id: out.id, version: 2 });
     await expect(memoOut.delete(ACTOR, out.id, 2)).resolves.toEqual({ ok: true });
   });
