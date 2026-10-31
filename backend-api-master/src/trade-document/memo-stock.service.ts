@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
-import { validationException } from "../common/errors";
-import { escapeLike } from "../common/persistence";
+import { validationException, type FieldError } from "../common/errors";
+import { escapeLike, type Tx } from "../common/persistence";
 import { prisma } from "../database/prisma-client";
 import { fromDbDate, toDbDate } from "../document-setup/document-setup.service";
 import { Prisma } from "../generated/prisma/client";
@@ -9,6 +9,45 @@ import type { MemoStockListInput } from "./memo-schemas";
 
 const Decimal = Prisma.Decimal;
 type Dec = Prisma.Decimal;
+
+/** One approved line taking quantity off a Memo Stock item; `index` is its line position for error paths. */
+export type MemoStockTake = { memoStockId: string; pcs: number; weightCt: Dec; index: number };
+
+/** Memo Stock buckets a document approval fills (memo-outstanding-vendor SA-MOV-02, Q-MOV-04). Fixed SQL, never input. */
+const BUCKET_SQL = {
+  returned: Prisma.sql`returned_pcs = s.returned_pcs + r.pcs, returned_weight_ct = s.returned_weight_ct + r.weight`,
+  reserved: Prisma.sql`reserved_pcs = s.reserved_pcs + r.pcs, reserved_weight_ct = s.reserved_weight_ct + r.weight`,
+} as const;
+
+/**
+ * Inside an approval transaction: locks the items in id order (`FOR UPDATE`, so concurrent approvals of the same item
+ * queue up instead of deadlocking), re-checks each line against the item's current pending (owner Q-MR-15 over-pull
+ * guard) and moves the quantity from pending into `bucket` in one UPDATE (CHECK memo_stock_balance holds). A line asking
+ * more than pending → `short(fields)` is thrown and the caller's transaction rolls back. Memo Return → returned
+ * (memo-return SA rev 2); Memo Out → reserved (memo-out SA-MO-14).
+ */
+export async function takeFromMemoStock(tx: Tx, takes: MemoStockTake[], bucket: keyof typeof BUCKET_SQL, short: (fields: FieldError[]) => Error, now: Date): Promise<void> {
+  if (takes.length === 0) return;
+  const ids = takes.map((take) => take.memoStockId);
+  const locked = await tx.$queryRaw<{ id: string; pending_pcs: number; pending_weight_ct: Dec | string }[]>(Prisma.sql`
+    SELECT id::text AS id, pending_pcs, pending_weight_ct FROM "partner"."memo_stock"
+    WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR UPDATE`);
+  const pending = new Map(locked.map((row) => [row.id, row]));
+  const shortFields: FieldError[] = [];
+  for (const take of takes) {
+    const item = pending.get(take.memoStockId);
+    if (!item || take.pcs > item.pending_pcs) shortFields.push({ path: `lines.${take.index}.pcs`, code: "exceeds_pending" });
+    if (!item || take.weightCt.gt(new Decimal(item.pending_weight_ct.toString()))) shortFields.push({ path: `lines.${take.index}.weightCt`, code: "exceeds_pending" });
+  }
+  if (shortFields.length > 0) throw short(shortFields);
+  const values = takes.map((take) => Prisma.sql`(${take.memoStockId}::uuid, ${take.pcs}::int, ${take.weightCt.toFixed(3)}::numeric)`);
+  await tx.$executeRaw(Prisma.sql`
+    UPDATE "partner"."memo_stock" AS s
+    SET pending_pcs = s.pending_pcs - r.pcs, pending_weight_ct = s.pending_weight_ct - r.weight, ${BUCKET_SQL[bucket]},
+        version = s.version + 1, updated_at = ${now}
+    FROM (VALUES ${Prisma.join(values)}) AS r(id, pcs, weight)
+    WHERE s.id = r.id`);
+}
 
 type StockRow = {
   id: string;
@@ -79,10 +118,9 @@ function decodeStockCursor(value: string): { docDate: string; stockId: string } 
 @Injectable()
 export class MemoStockService {
   async list(input: MemoStockListInput) {
-    const filters: Prisma.Sql[] = [
-      Prisma.sql`vendor_id = ${input.vendorId}::uuid`,
-      Prisma.sql`(pending_pcs > 0 OR pending_weight_ct > 0)`,
-    ];
+    const filters: Prisma.Sql[] = [Prisma.sql`(pending_pcs > 0 OR pending_weight_ct > 0)`];
+    // With a vendor (Memo Return): memo_stock_pending_idx; without (Memo Out From Stock): memo_stock_pending_all_idx.
+    if (input.vendorId) filters.push(Prisma.sql`vendor_id = ${input.vendorId}::uuid`);
     if (input.currency) filters.push(Prisma.sql`currency_code = ${input.currency}::char(3)`);
     if (input.q) {
       const pattern = `%${escapeLike(input.q)}%`;

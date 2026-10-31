@@ -148,7 +148,7 @@ describe("numbering from Document Setup (SA-MO-04)", () => {
     await expect(memoOut.create("actor", outInput())).resolves.toMatchObject({ docNo: "MO-2609001", version: 1 });
     expect(db.rawSql[0].values[0]).toBe("memo-out");
     expect(db.rawSql[0].text).toContain("FOR UPDATE");
-    expect(db.created[0]).toMatchObject({ model: "memoOut", data: { numberingId: NUMBERING, runningNo: 2609001, status: "DRAFT", createdBy: "actor" } });
+    expect(db.created[0]).toMatchObject({ model: "memoOut", data: { numberingId: NUMBERING, runningNo: 2609001, status: "PENDING_APPROVAL", createdBy: "actor" } });
     db.maxRunning = 2609004;
     await expect(memoOut.create("actor", outInput())).resolves.toMatchObject({ docNo: "MO-2609005" });
   });
@@ -219,10 +219,10 @@ describe("update and delete (SA-MO-07)", () => {
     expect(await failure(memoOut.update("editor", DOC, 2, outInput()))).toMatchObject({ status: 404, code: "MEMO_OUT_NOT_FOUND" });
   });
 
-  it("UT-MO-B08 delete needs the current version of a draft", async () => {
+  it("UT-MO-B08 delete needs the current version of a pending memo out (SA-MO-11)", async () => {
     await expect(memoOut.delete("actor", DOC, 1)).resolves.toEqual({ ok: true });
     db.writeCount = 0;
-    db.stored = { status: "DRAFT", version: 4 };
+    db.stored = { status: "PENDING_APPROVAL", version: 4 };
     expect(await failure(memoOut.delete("actor", DOC, 1))).toMatchObject({ status: 409, code: "MEMO_OUT_CHANGED" });
     db.stored = null;
     expect(await failure(memoOutReturn.delete("actor", DOC, 1))).toMatchObject({ status: 404, code: "MEMO_OUT_RETURN_NOT_FOUND" });

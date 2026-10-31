@@ -7,6 +7,7 @@ import { documentErrors } from "./document-errors";
 import { TradeDocumentEngine, type LineHook } from "./document-engine";
 import { vendorDocumentOptions, vendorParty, type VendorOut } from "./memo-out-return.service";
 import type { MemoReceiveListInput, MemoReceiveStatus, MemoReturnInput } from "./memo-schemas";
+import { takeFromMemoStock } from "./memo-stock.service";
 
 export const memoReturnErrors = documentErrors("MEMO_RETURN", "MemoReturn", "memo_return");
 /** Approval found a Memo Stock item with less pending than the line returns (another return took it first). */
@@ -164,28 +165,8 @@ export class MemoReturnService {
           where: { id },
           select: { docNo: true, lines: { orderBy: { position: "asc" }, select: { memoStockId: true, pcs: true, weightCt: true } } },
         });
-        const ids = document.lines.map((line) => line.memoStockId);
-        const locked = await tx.$queryRaw<{ id: string; pending_pcs: number; pending_weight_ct: Prisma.Decimal }[]>(Prisma.sql`
-          SELECT id::text AS id, pending_pcs, pending_weight_ct FROM "partner"."memo_stock"
-          WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR UPDATE`);
-        const pending = new Map(locked.map((row) => [row.id, row]));
-        const short: FieldError[] = [];
-        document.lines.forEach((line, index) => {
-          const item = pending.get(line.memoStockId);
-          if (!item || line.pcs > item.pending_pcs) short.push({ path: `lines.${index}.pcs`, code: "exceeds_pending" });
-          if (!item || line.weightCt.gt(new Prisma.Decimal(item.pending_weight_ct.toString()))) short.push({ path: `lines.${index}.weightCt`, code: "exceeds_pending" });
-        });
-        if (short.length > 0) throw memoReturnPendingShort(short);
-        if (document.lines.length > 0) {
-          const values = document.lines.map((line) => Prisma.sql`(${line.memoStockId}::uuid, ${line.pcs}::int, ${line.weightCt.toFixed(3)}::numeric)`);
-          await tx.$executeRaw(Prisma.sql`
-            UPDATE "partner"."memo_stock" AS s
-            SET pending_pcs = s.pending_pcs - r.pcs, pending_weight_ct = s.pending_weight_ct - r.weight,
-                returned_pcs = s.returned_pcs + r.pcs, returned_weight_ct = s.returned_weight_ct + r.weight,
-                version = s.version + 1, updated_at = ${now}
-            FROM (VALUES ${Prisma.join(values)}) AS r(id, pcs, weight)
-            WHERE s.id = r.id`);
-        }
+        const takes = document.lines.map((line, index) => ({ memoStockId: line.memoStockId, pcs: line.pcs, weightCt: line.weightCt, index }));
+        await takeFromMemoStock(tx, takes, "returned", memoReturnPendingShort, now);
         return { docNo: document.docNo, lineCount: document.lines.length };
       }, WRITE_TX);
       this.logger.log({ event: "memo_return.approved", actorId, id, docNo: approved.docNo, lineCount: approved.lineCount });

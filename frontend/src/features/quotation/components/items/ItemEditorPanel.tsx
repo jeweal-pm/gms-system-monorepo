@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp, Lock, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import { lineGross } from "../../lib/calculate";
+import { dec, div, mul, toFixed, ZERO } from "../../lib/decimal";
 import { CER_TYPES, toOptions, type Option } from "../../lib/options";
 import { ATTRIBUTE_KEYS, rebuildStoneCode } from "../../lib/stone-code";
 import { DiscountPair } from "../DiscountPair";
@@ -48,6 +49,14 @@ export function ItemEditorPanel({
 
   const fromStock = line.source === "STOCK";
   const locked = readOnly || fromStock;
+  // memo-out rev 2: a From Stock row takes part or all of its item, up to the pending it was picked with.
+  const stockQuantity = fromStock && Boolean(kind.stockQuantity);
+  const stockPending = line as typeof line & { stockPendingPcs?: string; stockPendingWeightCt?: string };
+  const fillWeight = (pcsText: string) => {
+    const pendingPcs = dec(stockPending.stockPendingPcs);
+    if (!stockQuantity || pendingPcs <= ZERO || pcsText === "") return;
+    set("weightCt", toFixed(div(mul(dec(stockPending.stockPendingWeightCt), dec(pcsText)), pendingPcs), 2));
+  };
   const name = <K extends keyof typeof line>(key: K) => `lines.${index}.${key}` as const;
 
   const set = (key: keyof typeof line, value: unknown) => setValue(`lines.${index}.${key}` as never, value as never, { shouldDirty: true });
@@ -196,16 +205,27 @@ export function ItemEditorPanel({
 
         {/* ราคาแก้ได้แม้มาจาก stock; จำนวน/น้ำหนักล็อกตาม stock */}
         <Section title="Quantity & Price">
-          <Field label="PCS">
-            <NumberInput compact decimals={0} placeholder="0" readOnly={fromStock} {...register(name("pcs"))} />
+          <Field label="PCS" error={stockQuantity ? lineErrors?.pcs?.message : undefined}>
+            <NumberInput
+              compact
+              decimals={0}
+              placeholder="0"
+              readOnly={readOnly || (fromStock && !stockQuantity)}
+              {...register(name("pcs"), { onChange: (event: { target: { value: string } }) => fillWeight(event.target.value) })}
+            />
           </Field>
-          <Field label="Weight (ct)">
-            <NumberInput compact decimals={3} placeholder="0.00" readOnly={fromStock} {...register(name("weightCt"))} />
+          <Field label="Weight (ct)" error={stockQuantity ? lineErrors?.weightCt?.message : undefined}>
+            <NumberInput compact decimals={3} placeholder="0.00" readOnly={readOnly || (fromStock && !stockQuantity)} {...register(name("weightCt"))} />
           </Field>
+          {stockQuantity && (
+            <p className="col-span-full -mt-2 text-xs text-[#6B7480]">
+              Pending {stockPending.stockPendingPcs || "0"} pcs / {stockPending.stockPendingWeightCt || "0"} ct
+            </p>
+          )}
           <Field label="Price Unit">
-            <FormSelect<QuotationFormValues> compact name={name("priceUnit")} options={PRICE_UNITS} />
+            <FormSelect<QuotationFormValues> compact disabled={readOnly || stockQuantity} name={name("priceUnit")} options={PRICE_UNITS} />
           </Field>
-          <Field label="Sale Price">
+          <Field label="Sale Price" error={stockQuantity ? lineErrors?.unitPrice?.message : undefined}>
             <NumberInput compact placeholder="0.00" suffix={currency || undefined} {...register(name("unitPrice"))} />
           </Field>
           {/* Owner 2026-10-27: typing either one fills the other; the Amount shows in the table, not here. */}

@@ -17,6 +17,7 @@ import { SummaryValue } from "@/features/quotation/components/summary/SummaryVal
 import { Button, IconButton, Toast } from "@/features/quotation/components/ui";
 import { calculateTotals } from "@/features/quotation/lib/calculate";
 import { emptyLine, newKey } from "@/features/quotation/lib/defaults";
+import { DocumentKindContext, QUOTATION_KIND, type DocumentKind } from "@/features/quotation/document-kind";
 import { LineOptionsContext, LinePhotoContext, type LineOptions } from "@/features/quotation/options-context";
 import { isFilledLine, type QuotationFormValues, type QuotationLine, type QuotationStatus } from "@/features/quotation/schema";
 
@@ -81,12 +82,21 @@ export type DocumentFormConfig<V extends FieldValues & Saved, Input, Options ext
     statusLabels: StatusLabels;
     pendingStatus: QuotationStatus;
     confirmTitle: string;
-    confirmBody: (itemCount: number) => string;
+    /** The confirm text from the document's filled rows (memo out counts its stock rows). */
+    confirmBody: (lines: QuotationLine[]) => string;
   };
+  /** What the shared item table / row panel do differently (memo out: From Stock quantities); default Quotation. */
+  kind?: DocumentKind;
   noteMax?: number;
   notePlaceholder: string;
   noteHint: string;
   daybook: ReactNode;
+};
+
+/** Status badges of documents with an approval step (Memo Receive colors: orange pending, green approved). */
+export const APPROVAL_STATUS_LABELS: StatusLabels = {
+  PENDING_APPROVAL: { label: "Pending Approval", tone: "bg-[#FFF4E0] text-[#B45309]" },
+  APPROVED: { label: "Approved", tone: "bg-[#E7F7EE] text-[#15803D]" },
 };
 
 /** Photos aren't available on the memo documents yet (ADR-0033 rev 1). */
@@ -274,6 +284,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   const Table = config.itemTable ?? ItemTable;
 
   return (
+    <DocumentKindContext.Provider value={config.kind ?? QUOTATION_KIND}>
     <LineOptionsContext.Provider value={api.options}>
       <LinePhotoContext.Provider value={NO_PHOTOS}>
         <FormProvider {...form}>
@@ -411,7 +422,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
             <ConfirmDialog
               open={approving}
               title={approval.confirmTitle}
-              body={approval.confirmBody(lines.filter(isFilledLine).length)}
+              body={approval.confirmBody(lines.filter(isFilledLine))}
               cancelLabel="Cancel"
               confirmLabel="Approve"
               pendingLabel="Approving…"
@@ -424,5 +435,6 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
         </FormProvider>
       </LinePhotoContext.Provider>
     </LineOptionsContext.Provider>
+    </DocumentKindContext.Provider>
   );
 }

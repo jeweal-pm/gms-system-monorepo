@@ -9,6 +9,7 @@ import { emptyQuotation, newKey } from "@/features/quotation/lib/defaults";
 import { isFilledLine, lineSchema, tradeDocumentRules, tradeDocumentShape, type QuotationLine } from "@/features/quotation/schema";
 import { documentLoadError, mapDocumentSaveError } from "@/features/trade-document/document-api";
 import type { DocumentApi } from "@/features/trade-document/document-form";
+import type { MemoStockItem } from "@/features/trade-document/memo-stock-api";
 import { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError, retryTransient } from "@/lib/trpc-error";
 
@@ -19,7 +20,7 @@ import { readDomainError, retryTransient } from "@/lib/trpc-error";
  */
 export type MemoReturnDetail = InferQueryLikeData<typeof masterTrpc.memoReturn.get>;
 export type MemoReturnOptions = InferQueryLikeData<typeof masterTrpc.memoReturn.options>;
-export type MemoStockItem = InferQueryLikeData<typeof masterTrpc.memoStock.list>["items"][number];
+export type { MemoStockItem };
 export type MemoReturnInput = ReturnType<typeof toMemoReturnInput>;
 
 export const MEMO_RETURN_HREF = "/memo/memo-return";
@@ -175,29 +176,6 @@ export function useMemoReturnDetail(id: string | null) {
 
 export function useMemoReturnDaybook() {
   return masterTrpc.memoReturn.list.useQuery({ limit: 50 }, { staleTime: 15_000, retry: retryTransient });
-}
-
-export type MemoStockFilter = { vendorId: string; currency: string; q: string; from: string; to: string };
-export const MEMO_STOCK_PAGE_SIZE = 50;
-
-/**
- * The vendor's Memo Stock in the return's currency, newest receipt first, 50 a page (SA-MR-11). Pending is what
- * approved memo returns left; an unapproved return doesn't hold items (approval re-checks).
- */
-export function useMemoStock(filter: MemoStockFilter) {
-  const input = {
-    vendorId: filter.vendorId,
-    currency: filter.currency,
-    limit: MEMO_STOCK_PAGE_SIZE,
-    ...(filter.q.trim() ? { q: filter.q.trim() } : {}),
-    ...(filter.from ? { from: filter.from } : {}),
-    ...(filter.to ? { to: filter.to } : {}),
-  };
-  return masterTrpc.memoStock.list.useInfiniteQuery(filter.vendorId && filter.currency ? input : skipToken, {
-    getNextPageParam: (page) => page.nextCursor ?? undefined,
-    staleTime: 10_000,
-    retry: retryTransient,
-  });
 }
 
 export function useMemoReturnApi(vendorId: string | undefined, docDate: string, isNew: boolean): DocumentApi<MemoReturnInput, MemoReturnOptions> {

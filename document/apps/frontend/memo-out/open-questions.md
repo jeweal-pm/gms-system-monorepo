@@ -12,3 +12,17 @@ These need answers before the API step (FE-MO-002…004, SA revision). The page 
 | Q-MO-06 | Document Note length: the design shows 0/250, Quotation allows 500. | 500, same as Quotation (shared component). |
 | Q-MO-07 | Can a memo out be turned into a Sale or a Memo Out Return from this page? | Not in revision 1. Those pages will pick up open memo outs later. |
 | Q-MO-08 | Backend owner | `backend-api-master`, tables `memo_out_*` in schema `partner`, the same document engine as Quotation (needs an ADR and SA approval). |
+
+## Revision 2 answers (owner 2026-10-31)
+
+These supersede the revision 1 defaults of Q-MO-01 (approval) and Q-MO-02 (stock). Q-MO-01: Memo Out now has approval. Q-MO-02: From Stock is enabled and cuts Memo Stock at approval (Q-MR-15).
+
+| ID | Question | Answer |
+|---|---|---|
+| Q-MO-09 | Must every row come from From Stock? | **No, both kinds of row.** "สามารถตัดของจาก from stock และถ้า add row manual ไม่ต้องตัดอะไรจากไหนเลย": From Stock rows are cut at approval, and rows added by hand cut nothing. |
+| Q-MO-10 | Can a row take part of an item? | **Yes, part or all** (up to the item's pending). |
+| Q-MO-11 | What is the starting Sale Price of a From Stock row? | **Typed by the user, empty.** The Memo Stock price is the vendor's cost, so the user types the Sale Price, which is required. |
+| Q-MO-12 | Does Memo Out Return put Reserve back now? | **Later revision.** This revision covers Memo Out only (approve → Reserve). |
+| Q-MO-13 | When is stock cut? | **At Approve** (owner Q-MR-15 2026-10-29: "ตัดตอน approve เอกสารนั้น"). Saving reserves nothing; approval re-checks pending under a row lock. |
+| Q-MO-14 | Which Memo Outstanding column does an approved Memo Out fill? | **Reserve** (owner Q-MOV-04 2026-10-29: "Reserve = Reserve or Memo Out approved"). |
+| Q-MO-15 | Starting Pcs / Weight of a picked row; is From Stock tied to the customer or currency? | **Approved with revision 2** (owner 2026-10-31): start at the item's full pending; any vendor's items, not tied to the customer or currency. |
