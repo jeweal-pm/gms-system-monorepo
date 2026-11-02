@@ -16,6 +16,7 @@ import type { CurrencyService } from "../currency/currency.service";
 import { createCurrencyBodySchema, updateCurrencyBodySchema } from "../currency/currency.schemas";
 import type { QuotationService } from "../quotation/quotation.service";
 import type { MemoOutService } from "../trade-document/memo-out.service";
+import type { ReserveService } from "../trade-document/reserve.service";
 import type { MemoOutReturnService } from "../trade-document/memo-out-return.service";
 import type { MemoReceiveService } from "../trade-document/memo-receive.service";
 import type { MemoReturnService } from "../trade-document/memo-return.service";
@@ -30,17 +31,20 @@ import {
 import {
   createMemoOutReturnSchema,
   createMemoOutSchema,
+  createReserveSchema,
   createMemoReceiveSchema,
   createMemoReturnSchema,
   memoNextNumberSchema,
   memoOutListSchema,
   memoOutOutstandingSchema,
+  reserveListSchema,
   memoReceiveListSchema,
   memoReturnListSchema,
   memoStockListSchema,
   memoVersionedIdSchema,
   updateMemoOutReturnSchema,
   updateMemoOutSchema,
+  updateReserveSchema,
   updateMemoReceiveSchema,
   updateMemoReturnSchema,
 } from "../trade-document/memo-schemas";
@@ -158,7 +162,8 @@ export type MasterServices = Pick<{
   memoStock: MemoStockService;
   memoReturn: MemoReturnService;
   memoOutstanding: MemoOutstandingService;
-}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "currency" | "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoStock" | "memoReturn" | "memoOutstanding">;
+  reserve: ReserveService;
+}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "currency" | "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoStock" | "memoReturn" | "memoOutstanding" | "reserve">;
 
 function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
   const schemas = bodySchemasFor(kind);
@@ -175,7 +180,7 @@ function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
 }
 
 /** Direct service calls preserve IDs, transaction behavior and existing partner/stone schemas. */
-export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, currency, quotation, memoOut, memoOutReturn, memoReceive, memoStock, memoReturn, memoOutstanding }: MasterServices) {
+export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, currency, quotation, memoOut, memoOutReturn, memoReceive, memoStock, memoReturn, memoOutstanding, reserve }: MasterServices) {
   return t.router({
     customer: t.router({
       list: permitted("customer", "VIEW").input(listInput).query(({ input }) => domainCall(() => customer.list(toListQuery(input)))),
@@ -232,7 +237,7 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       list: permitted("currency", "VIEW").input(listInput).query(({ input }) => domainCall(() => currency.list({ q: input.q, cursor: input.cursor, limit: input.limit }))),
       get: permitted("currency", "VIEW").input(idInput).query(({ input }) => domainCall(() => currency.get(input.id))),
       // Read by the document pages for currency choices and rates (currency SA-CUR-07, memo out ADR-0033, memo receive ADR-0034, memo return).
-      options: permittedAny(["currency", "quotation", "memo-out", "memo-out-return", "memo-receive", "memo-return"], "VIEW").query(() => domainCall(() => currency.options())),
+      options: permittedAny(["currency", "quotation", "memo-out", "memo-out-return", "memo-receive", "memo-return", "reserve"], "VIEW").query(() => domainCall(() => currency.options())),
       create: permitted("currency", "ADD", true).input(createCurrencyBodySchema).mutation(({ ctx, input }) => domainCall(() => currency.create(ctx.userId, input))),
       update: permitted("currency", "EDIT", true).input(updateCurrencyBodySchema.extend({ id: z.uuid() })).mutation(({ ctx, input }) => {
         const { id, ...body } = input;
@@ -274,6 +279,22 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       // memo-out SA rev 2 (SA-MO-14): approval cuts the stock lines into Memo Stock Reserve; APPROVE is checked on every call.
       approve: permitted("memo-out", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOut.approve(ctx.userId, input.id, input.expectedVersion))),
     }),
+    // reserve SA rev 1 / ADR-0036 (owner 2026-11-02): holds stones for a later Sale; approval moves the stock lines into
+    // Memo Stock Reserve (SA-RS-07). APPROVE is checked on every call.
+    reserve: t.router({
+      list: permitted("reserve", "VIEW").input(reserveListSchema).query(({ input }) => domainCall(() => reserve.list(input))),
+      get: permitted("reserve", "VIEW").input(idInput).query(({ input }) => domainCall(() => reserve.get(input.id))),
+      nextNumber: permitted("reserve", "VIEW").input(memoNextNumberSchema).query(({ input }) => domainCall(() => reserve.nextNumber(input.docDate))),
+      options: permitted("reserve", "VIEW").input(z.object({ customerId: z.uuid().optional() }).strict())
+        .query(({ input }) => domainCall(() => reserve.options(input.customerId))),
+      create: permitted("reserve", "ADD", true).input(createReserveSchema).mutation(({ ctx, input }) => domainCall(() => reserve.create(ctx.userId, input))),
+      update: permitted("reserve", "EDIT", true).input(updateReserveSchema).mutation(({ ctx, input }) => {
+        const { id, expectedVersion, ...body } = input;
+        return domainCall(() => reserve.update(ctx.userId, id, expectedVersion, body));
+      }),
+      delete: permitted("reserve", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => reserve.delete(ctx.userId, input.id, input.expectedVersion))),
+      approve: permitted("reserve", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => reserve.approve(ctx.userId, input.id, input.expectedVersion))),
+    }),
     memoOutReturn: t.router({
       list: permitted("memo-out-return", "VIEW").input(memoOutListSchema).query(({ input }) => domainCall(() => memoOutReturn.list(input))),
       get: permitted("memo-out-return", "VIEW").input(idInput).query(({ input }) => domainCall(() => memoOutReturn.get(input.id))),
@@ -309,7 +330,7 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
     }),
     // Memo Stock list (SA-MR-11): Memo Return "Add Memo Stock" (its vendor) and Memo Out "From Stock" (every vendor, SA-MO-15).
     memoStock: t.router({
-      list: permittedAny(["memo-return", "memo-receive", "memo-out"], "VIEW").input(memoStockListSchema).query(({ input }) => domainCall(() => memoStock.list(input))),
+      list: permittedAny(["memo-return", "memo-receive", "memo-out", "reserve"], "VIEW").input(memoStockListSchema).query(({ input }) => domainCall(() => memoStock.list(input))),
     }),
     // memo-return SA rev 2 (owner 2026-10-29): Memo Stock items back to their vendor; approval reduces pending (Q-MR-15).
     memoReturn: t.router({
