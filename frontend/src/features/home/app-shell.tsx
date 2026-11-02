@@ -4,27 +4,31 @@ import { useQueryClient } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ToastProvider } from "@/components/ui/toast";
 import { authClient } from "@/lib/auth-client";
 import { clearAccountCache } from "@/lib/session-cache";
-import { contextNavFor, type Breadcrumb, type ContextNav } from "./navigation";
+import { Breadcrumbs } from "./breadcrumbs";
+import { contextNavFor, type ContextNav } from "./navigation";
 import { Sidebar } from "./sidebar";
 import { SidebarContextPanel } from "./sidebar-context-panel";
 import { SidebarRail, type SidebarFocusRequest } from "./sidebar-rail";
+import { TabBar } from "./tabs/tab-bar";
+import { TabPanels, TabsProvider, useTabs } from "./tabs/tab-host";
 import { Topbar, topbarIconButton } from "./topbar";
 import { useSidebarCollapsed } from "./use-sidebar-collapsed";
 
 export type { Breadcrumb } from "./navigation";
 
-const defaultBreadcrumbs: Breadcrumb[] = [{ label: "Home" }];
 const sidebarContainerId = "app-sidebar";
 
 /**
- * Authenticated application shell (C-01, FE-UP-017): Sidebar + Topbar + content slot.
- * Every signed-in page renders inside it and passes its breadcrumbs as data; the last item
- * is the current page. The session guard (fresh check, redirect to /login, loading
- * skeleton, sign-out) is unchanged from the previous AppShell.
+ * Authenticated application shell (C-01, FE-UP-017): Sidebar + Topbar (tab bar) + breadcrumbs + content.
+ * app-shell-tabs (ADR-0037): rendered once by the `(app)` route-group layout; pages hand their content and
+ * breadcrumbs over with `<TabPage>` and stay alive in their tabs. The session guard (fresh check, redirect
+ * to /login, loading skeleton, sign-out) is as before, except that a signed-in shell is never swapped for
+ * the skeleton again (that would drop every open tab).
  */
-export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonly<{ children: React.ReactNode; breadcrumbs?: Breadcrumb[] }>) {
+export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const pathname = usePathname();
@@ -36,10 +40,11 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
   const [isSidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed();
   const [animateSidebarWidth, setAnimateSidebarWidth] = useState(false);
   // Revision 2: context routes (Setup › Partner master) show the rail + context panel. Expanding there
-  // opens the full sidebar for this page only; the stored preference is not changed. Each page renders
-  // its own AppShell, so this resets on navigation.
+  // opens the full sidebar for this page only; the stored preference is not changed, and another page
+  // starts collapsed again.
   const contextNav = contextNavFor(pathname);
-  const [isContextExpanded, setIsContextExpanded] = useState(false);
+  const [contextExpandedFor, setContextExpandedFor] = useState<string | null>(null);
+  const isContextExpanded = contextExpandedFor === pathname;
   const showRail = contextNav ? !isContextExpanded : isSidebarCollapsed;
   const focusRequestRef = useRef<SidebarFocusRequest | null>(null);
   const takeFocusRequest = useCallback(() => {
@@ -68,7 +73,7 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
   function switchSidebar(collapsed: boolean, request: SidebarFocusRequest) {
     focusRequestRef.current = request;
     setAnimateSidebarWidth(true);
-    if (contextNav) setIsContextExpanded(!collapsed);
+    if (contextNav) setContextExpandedFor(collapsed ? null : pathname);
     else setSidebarCollapsed(collapsed);
   }
 
@@ -77,9 +82,7 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
     if (returnFocus) menuButtonRef.current?.focus();
   }
 
-  if (isPending || (!session && !isSessionChecked)) return <AppShellSkeleton />;
-
-  if (!session) return null;
+  if (!session) return isSessionChecked && !isPending ? null : <AppShellSkeleton />;
 
   return (
     <div className="flex h-screen overflow-hidden bg-gms-surface">
@@ -116,19 +119,41 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
 
       {isNavigationOpen && <MobileNavigation pathname={pathname} contextNav={contextNav} onClose={closeNavigation} />}
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar
-          breadcrumbs={breadcrumbs}
-          user={{ name: session.user.name, username: session.user.username ?? "" }}
-          onSignOut={handleSignOut}
-          menuButtonRef={menuButtonRef}
-          isNavigationOpen={isNavigationOpen}
-          onOpenNavigation={() => setIsNavigationOpen(true)}
-        />
-        <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-auto outline-none">
-          {children}
-        </main>
-      </div>
+      <ToastProvider>
+        <TabsProvider key={session.user.id} userId={session.user.id}>
+          <div className="flex min-w-0 flex-1 flex-col">
+            <Topbar
+              tabs={<ShellTabBar />}
+              user={{ name: session.user.name, username: session.user.username ?? "" }}
+              onSignOut={handleSignOut}
+              menuButtonRef={menuButtonRef}
+              isNavigationOpen={isNavigationOpen}
+              onOpenNavigation={() => setIsNavigationOpen(true)}
+            />
+            <ShellBreadcrumbs />
+            {/* Each tab scrolls inside its own pane (TabPanels), so it keeps its scroll position. */}
+            <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-hidden outline-none">
+              <TabPanels>{children}</TabPanels>
+            </main>
+          </div>
+        </TabsProvider>
+      </ToastProvider>
+    </div>
+  );
+}
+
+function ShellTabBar() {
+  const tabs = useTabs();
+  if (!tabs) return null;
+  return <TabBar tabs={tabs.tabs} activeId={tabs.activeId} onSelect={tabs.select} onClose={tabs.close} onCloseAll={tabs.closeAll} />;
+}
+
+/** Source 01: the active page's breadcrumbs sit in their own row under the tab bar. */
+function ShellBreadcrumbs() {
+  const breadcrumbs = useTabs()?.breadcrumbs ?? [];
+  return (
+    <div className="flex h-11 shrink-0 items-center border-b border-gms-border-header bg-gms-surface px-4 md:px-6">
+      {breadcrumbs.length > 0 && <Breadcrumbs items={breadcrumbs} />}
     </div>
   );
 }

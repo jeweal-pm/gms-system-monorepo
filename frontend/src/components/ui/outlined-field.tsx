@@ -54,8 +54,10 @@ export type LabelPosition = "notch" | "above";
  * fill, so the border does not cross the text and no colored strip shows around the label in any state.
  */
 function labelBackground({ invalid, readOnly, disabled }: { invalid: boolean; readOnly?: boolean; disabled?: boolean }) {
-  if (disabled || readOnly) return "bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-field-disabled)_8px)]";
+  // Same order as fieldBoxClass: an invalid read-only field (Stone Code in Auto mode) is pink, not grey.
+  if (disabled) return "bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-field-disabled)_8px)]";
   if (invalid) return "bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-danger-subtle)_8px)]";
+  if (readOnly) return "bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-field-disabled)_8px)]";
   return "bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-surface)_8px)]";
 }
 

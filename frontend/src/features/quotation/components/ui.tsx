@@ -183,6 +183,7 @@ export function SelectMenu({
   compact,
   invalid,
   className,
+  onOpen,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -192,6 +193,8 @@ export function SelectMenu({
   compact?: boolean;
   invalid?: boolean;
   className?: string;
+  /** Called each time the list opens (e.g. to fetch the latest options). */
+  onOpen?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
@@ -211,6 +214,7 @@ export function SelectMenu({
   const openMenu = () => {
     setActive(Math.max(0, options.findIndex((o) => o.value === value)));
     setOpen(true);
+    onOpen?.();
   };
   const choose = (index: number) => {
     const option = options[index];
@@ -282,6 +286,176 @@ export function SelectMenu({
               {o.value === value && <Check className="size-4 shrink-0 text-gms-primary" />}
             </li>
           ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Rows shown at once; typing narrows the rest. */
+const AUTOCOMPLETE_VISIBLE_MAX = 100;
+
+/** Suggestions for typed text: every option until the user types, then those containing it (any case). */
+export function autocompleteMatches(options: readonly Option[], query: string | null): readonly Option[] {
+  const needle = (query ?? "").trim().toLowerCase();
+  return needle ? options.filter((o) => o.label.toLowerCase().includes(needle)) : options;
+}
+
+/**
+ * Text field with suggestions, styled like SelectMenu (owner 2026-11-02, Stone Code): type freely or pick a
+ * suggestion. Opening it lists every option; typing filters them (contains, any case).
+ */
+export function AutocompleteInput({
+  value,
+  onChange,
+  options,
+  placeholder = "Select",
+  disabled,
+  readOnly,
+  compact,
+  invalid,
+  maxLength,
+  onOpen,
+  className,
+}: {
+  value: string;
+  /** Called with typed text and with a chosen suggestion. */
+  onChange: (value: string) => void;
+  options: readonly Option[];
+  placeholder?: string;
+  disabled?: boolean;
+  readOnly?: boolean;
+  compact?: boolean;
+  invalid?: boolean;
+  maxLength?: number;
+  /** Called each time the list opens (e.g. to fetch the latest options). */
+  onOpen?: () => void;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  /** null = list everything (just opened); text = filter by what was typed. */
+  const [query, setQuery] = useState<string | null>(null);
+  const [active, setActive] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
+  const inactive = disabled || readOnly;
+
+  const matches = autocompleteMatches(options, query);
+  const visible = matches.slice(0, AUTOCOMPLETE_VISIBLE_MAX);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const openList = () => {
+    if (inactive || open) return;
+    setQuery(null);
+    setActive(Math.max(0, options.findIndex((o) => o.value === value)));
+    setOpen(true);
+    onOpen?.();
+  };
+  const choose = (option: Option | undefined) => {
+    if (option) onChange(option.value);
+    setOpen(false);
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") return setOpen(false);
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!open) return openList();
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      if (visible.length > 0) setActive((i) => (i + step + visible.length) % visible.length);
+    }
+    if (e.key === "Enter" && open) {
+      e.preventDefault();
+      choose(visible[active]);
+    }
+  };
+
+  return (
+    <div ref={rootRef} className={cx("relative", className)}>
+      <input
+        ref={inputRef}
+        type="text"
+        role="combobox"
+        autoComplete="off"
+        spellCheck={false}
+        aria-autocomplete="list"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-invalid={invalid || undefined}
+        disabled={disabled}
+        readOnly={readOnly}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        value={value}
+        onClick={openList}
+        onChange={(e) => {
+          onChange(e.target.value);
+          setQuery(e.target.value);
+          setActive(0);
+          if (!open) {
+            setOpen(true);
+            onOpen?.();
+          }
+        }}
+        onKeyDown={onKeyDown}
+        className={cx(controlClass, readOnlyInputClass, "pr-10", compact && "h-10 px-3 pr-10 text-sm", open && "border-gms-primary ring-2 ring-gms-primary/20")}
+      />
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-hidden
+        disabled={inactive}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          if (open) return setOpen(false);
+          inputRef.current?.focus();
+          openList();
+        }}
+        className="absolute top-1/2 right-2 flex size-7 -translate-y-1/2 items-center justify-center disabled:cursor-not-allowed"
+      >
+        <ChevronDown className={cx("size-4 shrink-0 transition-transform", open && "rotate-180", inactive ? "text-gms-checkbox-readonly" : "text-gms-text")} />
+      </button>
+      {open && (
+        <ul
+          id={listId}
+          role="listbox"
+          // อยู่ใน <label> ของ Field: กันไม่ให้ label ส่ง click กลับไปเปิดซ้ำ
+          onClick={(e) => e.preventDefault()}
+          className="absolute right-0 left-0 z-30 mt-2 max-h-64 overflow-y-auto rounded-gms-lg border border-gms-border bg-gms-surface py-2 shadow-gms-overlay"
+        >
+          {visible.length === 0 && <li className="px-5 py-2.5 text-sm text-gms-text-placeholder">No matches</li>}
+          {visible.map((o, i) => (
+            <li
+              key={o.value}
+              role="option"
+              aria-selected={o.value === value}
+              onMouseEnter={() => setActive(i)}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => choose(o)}
+              className={cx(
+                "flex cursor-pointer items-center justify-between gap-2 px-5 py-2.5 text-[15px] text-gms-text",
+                i === active && "bg-gms-surface-sunken",
+                o.value === value && "font-medium",
+              )}
+            >
+              <span className="truncate">{o.label}</span>
+              {o.value === value && <Check className="size-4 shrink-0 text-gms-primary" />}
+            </li>
+          ))}
+          {matches.length > visible.length && (
+            <li aria-hidden className="border-t border-gms-border px-5 py-2 text-xs text-gms-text-placeholder italic">
+              {`Showing ${visible.length} of ${matches.length} — keep typing to narrow`}
+            </li>
+          )}
         </ul>
       )}
     </div>

@@ -17,6 +17,8 @@ import { PartOrderList } from "./part-order-list";
 export type OptionsState = { data: StoneOptions | undefined; status: "loading" | "error" | "ready"; onRetry: () => void };
 
 type StoneFieldsCardProps = {
+  /** Unique per page instance (several Stone Master pages can be open in tabs). */
+  idPrefix: string;
   page: StonePage;
   form: UseFormReturn<StoneFormValues>;
   readOnly: boolean;
@@ -25,7 +27,6 @@ type StoneFieldsCardProps = {
   autoCode: string;
 };
 
-const ID = "stone";
 /** S1: one 404 px column of fields (Stone Code field 530 px). */
 const column = "flex w-full max-w-[404px] flex-col gap-5";
 
@@ -39,8 +40,8 @@ function selectOptions(list: readonly StoneOption[] | undefined, current: string
  * Stone Master card (S1–S6): title = page name, Active switch in the header, then the page's fields.
  * Read-only/view mode uses the shared read-only field style.
  */
-export function StoneFieldsCard({ page, form, readOnly, options, autoCode }: StoneFieldsCardProps) {
-  const { control, register, setValue, getValues } = form;
+export function StoneFieldsCard({ idPrefix: ID, page, form, readOnly, options, autoCode }: StoneFieldsCardProps) {
+  const { control, register, setValue, getValues, clearErrors } = form;
   const { errors } = useFormState({ control });
   const [mode, shapeId, manualCode, partOrder] = useWatch({ control, name: ["mode", "shapeId", "code", "partOrder"] });
   const status = options.status;
@@ -129,6 +130,8 @@ export function StoneFieldsCard({ page, form, readOnly, options, autoCode }: Sto
                       onChange={() => {
                         // Auto → Manual keeps the current code as the starting text.
                         if (value === "MANUAL" && field.value === "AUTO") setValue("code", autoCode, { shouldDirty: true });
+                        // A Manual "Stone Code is required" no longer applies once the code is built automatically.
+                        if (value === "AUTO" && field.value === "MANUAL") clearErrors("code");
                         field.onChange(value);
                       }}
                       className="h-5 w-5 accent-[var(--color-gms-primary)]"

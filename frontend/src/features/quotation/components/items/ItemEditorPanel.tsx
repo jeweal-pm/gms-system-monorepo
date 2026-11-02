@@ -9,10 +9,10 @@ import { CER_TYPES, toOptions, type Option } from "../../lib/options";
 import { ATTRIBUTE_KEYS, rebuildStoneCode } from "../../lib/stone-code";
 import { DiscountPair } from "../DiscountPair";
 import { useDocumentKind } from "../../document-kind";
-import { useLineOptions } from "../../options-context";
+import { useLineOptions, useRefreshLineOptions } from "../../options-context";
 import { isFilledLine, MAX_LINE_PHOTOS, type QuotationFormValues } from "../../schema";
 import { LinePhotosField } from "./LinePhotosField";
-import { Button, Field, FormSelect, IconButton, NumberInput, ReadonlyBox, TextInput } from "../ui";
+import { AutocompleteInput, Button, Field, FormSelect, IconButton, NumberInput, ReadonlyBox, TextInput } from "../ui";
 
 const PRICE_UNITS = [
   { value: "PER_CT", label: "per cts" },
@@ -45,6 +45,7 @@ export function ItemEditorPanel({
   const kind = useDocumentKind();
   const lineStone = useLineOptions()?.stone;
   const stone = kind.stone ?? lineStone;
+  const refreshOptions = useRefreshLineOptions();
   if (!line) return null;
 
   const fromStock = line.source === "STOCK";
@@ -70,8 +71,8 @@ export function ItemEditorPanel({
     for (const key of ATTRIBUTE_KEYS) set(key, code[key]);
   };
 
-  // Owner 2026-10-27: the Stone Code can be typed; a master code that matches is linked, anything else
-  // stays a quotation-only code (the stone master is never changed).
+  // Owner 2026-10-27 / 2026-11-02: the Stone Code is an autocomplete: type it or pick a master code. A master
+  // code that matches is linked, anything else stays a document-only code (the stone master is never changed).
   const onStoneCodeTyped = (text: string) => {
     const match = masterByCode(text);
     if (match) return applyMasterCode(match);
@@ -96,7 +97,6 @@ export function ItemEditorPanel({
   /** Active choices, plus the saved value so an old/inactive one still shows. */
   const withCurrent = (options: Option[], current: string) =>
     current && !options.some((option) => option.value === current) ? [{ value: current, label: current }, ...options] : options;
-  const datalistId = `stone-codes-${index}`;
 
   const select = (key: (typeof ATTRIBUTE_KEYS)[number], items: readonly { name: string }[] | undefined) => (
     <FormSelect<QuotationFormValues>
@@ -105,6 +105,7 @@ export function ItemEditorPanel({
       name={name(key)}
       options={withCurrent(toOptions((items ?? []).map((item) => item.name)), String(line[key] ?? ""))}
       onValueChange={(value) => onPartChange(key, value)}
+      onOpen={refreshOptions}
     />
   );
 
@@ -169,18 +170,16 @@ export function ItemEditorPanel({
 
         <Section title="Stone">
           {kind.stoneCode && <Field label="Stone Code" className="col-span-2">
-            <TextInput
+            <AutocompleteInput
               compact
-              list={datalistId}
               readOnly={locked}
               maxLength={60}
               placeholder="Choose or type a stone code"
               value={line.stoneCode}
-              onChange={(event) => onStoneCodeTyped(event.target.value.toUpperCase())}
+              options={toOptions((stone?.codes ?? []).map((code) => code.code))}
+              onChange={(text) => onStoneCodeTyped(text.toUpperCase())}
+              onOpen={refreshOptions}
             />
-            <datalist id={datalistId}>
-              {(stone?.codes ?? []).map((code) => <option key={code.id} value={code.code} />)}
-            </datalist>
           </Field>}
           <Field label="Stone">{select("stone", stone?.stones)}</Field>
           <Field label="Shape">{select("shape", stone?.shapes)}</Field>
