@@ -3,14 +3,16 @@
  * server, so at most 14 integer digits and 4 decimals, greater than 0. Strings only, so large values
  * never lose precision in a JavaScript number.
  */
+import { stripLeadingZeros } from "@/features/quotation/lib/number";
+
 export const RATE_PATTERN = /^\d{1,14}(\.\d{1,4})?$/;
 
-/** Keeps digits and the first dot, at most 14 integer digits and 4 decimals (thousands commas dropped). */
+/** Keeps digits and the first dot, at most 14 integer digits and 4 decimals, no leading zeros (thousands commas dropped). */
 export function sanitizeRate(value: string): string {
   const cleaned = value.replace(/[^\d.]/g, "");
   const dot = cleaned.indexOf(".");
-  if (dot === -1) return cleaned.slice(0, 14);
-  const whole = cleaned.slice(0, dot).slice(0, 14);
+  if (dot === -1) return stripLeadingZeros(cleaned).slice(0, 14);
+  const whole = stripLeadingZeros(cleaned.slice(0, dot)).slice(0, 14);
   const decimals = cleaned.slice(dot + 1).replace(/\./g, "").slice(0, 4);
   return `${whole}.${decimals}`;
 }
