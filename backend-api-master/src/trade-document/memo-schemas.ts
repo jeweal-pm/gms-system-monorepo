@@ -131,6 +131,10 @@ export type MemoReturnInput = z.output<typeof createMemoReturnSchema>;
 /** Memo return and memo out (SA-MO-11) statuses are the memo receive ones: PENDING_APPROVAL → APPROVED. */
 export const memoReturnListSchema = memoReceiveListSchema;
 export const memoOutListSchema = memoReceiveListSchema;
+/** Reserve (reserve SA rev 1, SA-RS-04/06): the Memo Out revision 2 input — customer, addresses, From Stock lines. */
+export const createReserveSchema = createMemoOutSchema;
+export const updateReserveSchema = updateMemoOutSchema;
+export const reserveListSchema = memoReceiveListSchema;
 
 /**
  * memoStock.list (SA-MR-11): a vendor's pending items for the Memo Return "Add Memo Stock" dialog. `from`/`to`

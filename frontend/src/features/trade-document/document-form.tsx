@@ -2,8 +2,8 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CircleCheck, Trash2 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { useTabDirty, useTabDocument, useTabReplace } from "@/features/home/tabs/tab-host";
 import { FormProvider, useFieldArray, useForm, useWatch, type DefaultValues, type FieldValues, type Path, type Resolver } from "react-hook-form";
 import type { z } from "zod";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -134,7 +134,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   canDelete: boolean;
   canApprove?: boolean;
 }) {
-  const router = useRouter();
+  const replaceTab = useTabReplace();
   const [saved, setSaved] = useState<V | undefined>(initial);
   const [mode, setMode] = useState<"view" | "edit">(initial ? "view" : "edit");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -160,6 +160,9 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   /** An approved document is read-only (approval documents edit only while pending). */
   const locked = Boolean(approval && status && status !== approval.pendingStatus);
   const showApprove = Boolean(approval && api.approve && saved?.id && status === approval.pendingStatus && readOnly && !formState.isDirty && canApprove);
+  // app-shell-tabs T-03 / Q-TAB-03: the tab shows the document number and a dot while edits are unsaved.
+  useTabDocument(saved?.docNo);
+  useTabDirty(formState.isDirty && !readOnly);
 
   // A new document starts in the company currency once the options arrive.
   useEffect(() => {
@@ -189,7 +192,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
         } else {
           const result = await api.create(input);
           await api.invalidate();
-          router.replace(config.detailHref(result.id));
+          replaceTab(config.detailHref(result.id));
         }
       } catch (error) {
         showError(error);
@@ -220,7 +223,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
     try {
       await api.remove({ id: saved.id, expectedVersion: saved.version });
       await api.invalidate();
-      router.push(config.newHref);
+      replaceTab(config.newHref);
     } catch (error) {
       showError(error);
     }

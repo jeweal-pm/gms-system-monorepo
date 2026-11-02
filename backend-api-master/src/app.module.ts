@@ -14,6 +14,7 @@ import { QuotationPhotoPublicController } from "./quotation/quotation-photo.publ
 import { MemoReceivePhotoPublicController } from "./trade-document/memo-receive-photo.public.controller";
 import { QuotationService } from "./quotation/quotation.service";
 import { MemoOutService } from "./trade-document/memo-out.service";
+import { ReserveService } from "./trade-document/reserve.service";
 import { MemoOutReturnService } from "./trade-document/memo-out-return.service";
 import { MemoReceiveService } from "./trade-document/memo-receive.service";
 import { MemoReturnService } from "./trade-document/memo-return.service";
@@ -63,6 +64,7 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
     MemoReturnService,
     MemoStockService,
     MemoOutstandingService,
+    ReserveService,
     MasterAuthzDatabase,
     MasterLicenseClient,
     MasterTrpcHandler,

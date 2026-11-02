@@ -30,7 +30,7 @@
 | ID | Change |
 |---|---|
 | SA-QT-08b | **Linked discount fields** (line and document): the UI shows Discount (%) and Discount Amt together; typing a percent fills the amount and typing an amount fills the percent. The field typed last is saved as `discount {type, value}` — contract and server rule unchanged. Percent/currency units sit inside the input boxes; every money value shows the document currency code. |
-| SA-QT-07b | **Editable stone code on a line:** the Stone Code can be typed or picked; changing stone/shape/size/… rebuilds it from the parts’ codes in the chosen master code’s part order (default order otherwise). A code that matches a master stone code is linked (`stoneCodeId`), otherwise it is a quotation-only snapshot; the stone master is never changed. `quotation.options.stone` part lists become `{name, code}[]` (a size uses its name as code) and stone codes carry `partOrder` (additive). |
+| SA-QT-07b | **Editable stone code on a line:** the Stone Code can be typed or picked; changing stone/shape/size/… rebuilds it from the parts’ codes in the chosen master code’s part order (default order otherwise). A code that matches a master stone code is linked (`stoneCodeId`), otherwise it is a quotation-only snapshot; the stone master is never changed. Owner 2026-11-02 (UI only, contract unchanged): the row panel Stone Code is an autocomplete styled like the shared selects (type, or pick a master code), and opening it or a stone dropdown refetches the options so codes added meanwhile appear. `quotation.options.stone` part lists become `{name, code}[]` (a size uses its name as code) and stone codes carry `partOrder` (additive). |
 
 ## Correction 2026-10-26 — no approval for quotations
 

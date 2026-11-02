@@ -19,6 +19,8 @@ const db = vi.hoisted(() => ({
   /** Numbering rows referenced by a memo receive (SA-MR-08). */
   memoReceiveUsedIds: new Set<string>(),
   returnUsedIds: new Set<string>(),
+  /** Numbering rows referenced by a reserve (SA-RS-03). */
+  reserveUsedIds: new Set<string>(),
   failWith: null as unknown,
 }));
 
@@ -82,6 +84,10 @@ vi.mock("../../src/database/prisma-client", () => {
       groupBy: vi.fn(async ({ where }: { where: { numberingId: { in: string[] } } }) =>
         where.numberingId.in.filter((id) => db.returnUsedIds.has(id)).map((numberingId) => ({ numberingId }))),
     },
+    reserve: {
+      groupBy: vi.fn(async ({ where }: { where: { numberingId: { in: string[] } } }) =>
+        where.numberingId.in.filter((id) => db.reserveUsedIds.has(id)).map((numberingId) => ({ numberingId }))),
+    },
   });
   return { prisma: { ...tx, $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) } };
 });
@@ -113,6 +119,7 @@ beforeEach(() => {
   db.memoUsedIds = new Set();
   db.memoReceiveUsedIds = new Set();
   db.returnUsedIds = new Set();
+  db.reserveUsedIds = new Set();
   db.failWith = null;
 });
 
@@ -209,6 +216,10 @@ describe("saveDocumentSetupBodySchema", () => {
     db.returnUsedIds.add(used.id);
     expect((await service.get("purchase-order")).setup!.rows.map((row) => row.used)).toEqual([true, false]);
     db.returnUsedIds.clear();
+    // UT-RS-B01: a reserve number counts too (reserve SA rev 1, SA-RS-03).
+    db.reserveUsedIds.add(used.id);
+    expect((await service.get("purchase-order")).setup!.rows.map((row) => row.used)).toEqual([true, false]);
+    db.reserveUsedIds.clear();
     db.usedIds.add(used.id);
 
     // Same values back: the used row keeps its id; the unused row is replaced.

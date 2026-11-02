@@ -3,8 +3,6 @@
 import { Bell, Menu, Minimize, Scan } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AccountMenu, type AccountMenuUser } from "./account-menu";
-import { Breadcrumbs } from "./breadcrumbs";
-import type { Breadcrumb } from "./navigation";
 
 export const topbarIconButton =
   "relative flex size-8 shrink-0 items-center justify-center rounded-gms-md text-gms-text transition-colors hover:bg-gms-nav-active focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-gms-primary";
@@ -117,18 +115,19 @@ function NotificationsButton() {
 /* ---------- Topbar ---------- */
 
 /**
- * C-01 topbar (FE-UP-017, source 07-topbar.png): 48 px, white, 1 px #E3E7EC bottom border,
- * 24 px side padding; breadcrumbs left; clock, fullscreen, bell and avatar right.
+ * C-01 topbar (FE-UP-017, source 07-topbar.png): 48 px, 1 px #E3E7EC bottom border; app-shell-tabs
+ * (source 01): the tab bar fills it from the sidebar edge, then clock, fullscreen, bell and avatar.
+ * The breadcrumbs moved to their own row below.
  */
 export function Topbar({
-  breadcrumbs,
+  tabs,
   user,
   onSignOut,
   menuButtonRef,
   isNavigationOpen,
   onOpenNavigation,
 }: Readonly<{
-  breadcrumbs: Breadcrumb[];
+  tabs: React.ReactNode;
   user: AccountMenuUser;
   onSignOut: () => void | Promise<void>;
   menuButtonRef: React.RefObject<HTMLButtonElement | null>;
@@ -136,7 +135,7 @@ export function Topbar({
   onOpenNavigation: () => void;
 }>) {
   return (
-    <header className="flex h-gms-topbar shrink-0 items-center gap-3 border-b border-gms-border-header bg-gms-surface px-4 md:px-6">
+    <header className="flex h-gms-topbar shrink-0 items-stretch gap-3 border-b border-gms-border-header bg-gms-page pl-4 pr-4 md:pl-2 md:pr-6">
       <button
         ref={menuButtonRef}
         type="button"
@@ -144,14 +143,12 @@ export function Topbar({
         aria-label="Open main menu"
         aria-expanded={isNavigationOpen}
         aria-controls="mobile-navigation"
-        className={`${topbarIconButton} -ml-1.5 lg:hidden`}
+        className={`${topbarIconButton} -ml-1.5 self-center lg:hidden`}
       >
         <Menu aria-hidden size={20} strokeWidth={1.5} />
       </button>
-      <div className="min-w-0 flex-1">
-        <Breadcrumbs items={breadcrumbs} />
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
+      {tabs}
+      <div className="flex shrink-0 items-center gap-2 border-l border-gms-border-header pl-3">
         <HeaderClock />
         <FullscreenButton />
         <NotificationsButton />

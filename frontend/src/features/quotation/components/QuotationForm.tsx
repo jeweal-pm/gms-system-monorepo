@@ -2,8 +2,8 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Trash2 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { useTabDirty, useTabDocument, useTabReplace } from "@/features/home/tabs/tab-host";
 import { FormProvider, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { ScanIcon } from "@/components/ui/scan-icon";
 import {
@@ -41,7 +41,7 @@ function stockToLine({ note, loadedAt, ...fields }: StockItem): QuotationLine {
  * with the new server version after every write (QuotationPage keys on id + version).
  */
 export function QuotationForm({ initial, access }: { initial?: QuotationFormValues; access: QuotationAccess }) {
-  const router = useRouter();
+  const replaceTab = useTabReplace();
   const [saved, setSaved] = useState<QuotationFormValues | undefined>(initial);
   const [mode, setMode] = useState<"view" | "edit">(initial ? "view" : "edit");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -57,6 +57,9 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
   });
   const { control, reset, getValues, handleSubmit, formState, setValue, setError } = form;
   const lineArray = useFieldArray({ control, name: "lines", keyName: "_rhfId" });
+  // app-shell-tabs T-03 / Q-TAB-03: the tab shows the document number and a dot while edits are unsaved.
+  useTabDocument(saved?.docNo);
+  useTabDirty(formState.isDirty && mode === "edit");
 
   const values = useWatch({ control }) as QuotationFormValues;
   const lines = useMemo(() => values.lines ?? [], [values.lines]);
@@ -109,7 +112,7 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
         } else {
           const result = await mutations.create.mutateAsync(input);
           await mutations.invalidate();
-          router.replace(`/pre-sale/quotation/${result.id}`);
+          replaceTab(`/pre-sale/quotation/${result.id}`);
         }
       } catch (error) {
         showError(error);
@@ -133,7 +136,7 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
     try {
       await mutations.remove.mutateAsync({ id: saved.id, expectedVersion: saved.version });
       await mutations.invalidate();
-      router.push("/pre-sale/quotation");
+      replaceTab("/pre-sale/quotation");
     } catch (error) {
       showError(error);
     }

@@ -33,6 +33,9 @@ describe("field labels", () => {
     expect(render({})).toContain("transparent_8px,var(--color-gms-surface)_8px");
     expect(render({ error: "Required" })).toContain("transparent_8px,var(--color-gms-danger-subtle)_8px");
     expect(render({ disabled: true })).toContain("transparent_8px,var(--color-gms-field-disabled)_8px");
-    expect(render({ readOnly: true, error: "x" })).toContain("transparent_8px,var(--color-gms-field-disabled)_8px");
+    expect(render({ readOnly: true })).toContain("transparent_8px,var(--color-gms-field-disabled)_8px");
+    expect(render({ disabled: true, error: "x" })).toContain("transparent_8px,var(--color-gms-field-disabled)_8px");
+    // Owner 2026-11-02: a read-only field with an error (Stone Code in Auto mode) is pink like its box.
+    expect(render({ readOnly: true, error: "x" })).toContain("transparent_8px,var(--color-gms-danger-subtle)_8px");
   });
 });

@@ -3,8 +3,8 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CircleCheck, FileSearch, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { useTabDirty, useTabDocument, useTabReplace } from "@/features/home/tabs/tab-host";
 import { FormProvider, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ScanIcon } from "@/components/ui/scan-icon";
@@ -70,7 +70,7 @@ export const approveMessage = (count: number) =>
 
 /** One Memo Receive document (ADR-0033/0034): Quotation's layout and components, Memo Receive's data. */
 export function MemoReceiveForm({ initial, access }: { initial?: MemoReceiveFormValues; access: MemoReceiveAccess }) {
-  const router = useRouter();
+  const replaceTab = useTabReplace();
   const [saved, setSaved] = useState<MemoReceiveFormValues | undefined>(initial);
   const [mode, setMode] = useState<"view" | "edit">(initial ? "view" : "edit");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -95,6 +95,9 @@ export function MemoReceiveForm({ initial, access }: { initial?: MemoReceiveForm
   const writes = useMemoReceiveWrites();
   const docNo = saved?.docNo ?? next.data?.docNo ?? "—";
   const kind = useMemo(() => ({ ...MEMO_RECEIVE_KIND, stone: stoneChoices(options.data) }), [options.data]);
+  // app-shell-tabs T-03 / Q-TAB-03: the tab shows the document number and a dot while edits are unsaved.
+  useTabDocument(saved?.docNo);
+  useTabDirty(formState.isDirty && !readOnly);
   const showApprove = canApproveMemo({ saved: Boolean(saved?.id), status, editing: !readOnly, dirty: formState.isDirty, approve: access.approve });
 
   // Rev 3: the mock store is gone; drop what it left in this browser.
@@ -131,7 +134,7 @@ export function MemoReceiveForm({ initial, access }: { initial?: MemoReceiveForm
     setToast(outcome.message);
     if (outcome.gone) {
       await writes.invalidate();
-      router.push(MEMO_RECEIVE_HREF);
+      replaceTab(MEMO_RECEIVE_HREF);
     } else if (outcome.reload) {
       await reloadSaved();
       setToast(outcome.message);
@@ -150,7 +153,7 @@ export function MemoReceiveForm({ initial, access }: { initial?: MemoReceiveForm
         } else {
           const created = await writes.create(toMemoReceiveInput(input));
           await writes.invalidate();
-          router.replace(memoReceiveHref(created.id));
+          replaceTab(memoReceiveHref(created.id));
         }
       } catch (error) {
         await showError(error);
@@ -172,7 +175,7 @@ export function MemoReceiveForm({ initial, access }: { initial?: MemoReceiveForm
     try {
       await writes.remove({ id: saved.id, expectedVersion: saved.version });
       await writes.invalidate();
-      router.push(MEMO_RECEIVE_HREF);
+      replaceTab(MEMO_RECEIVE_HREF);
     } catch (error) {
       await showError(error);
     }

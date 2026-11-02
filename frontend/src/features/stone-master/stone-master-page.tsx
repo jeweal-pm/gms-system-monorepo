@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { useForm, useWatch, type FieldErrors, type Path } from "react-hook-form";
 import { cx } from "@/components/ui/button";
@@ -40,7 +40,6 @@ import type { StonePage } from "./kinds";
 import { emptyStoneForm, FIELD_ORDER, STONE_SEARCH_MAX, stoneFormSchema, type StoneFormValues } from "./schema";
 import { buildAutoCode, PART_FIELD, PART_KEYS, PART_LABEL } from "./stone-code";
 
-const FORM_ID = "stone-master-form";
 
 /**
  * Setup › Stone Master pages (stone-master UI revision 1, ADR-0024). One shared workspace for all nine
@@ -60,6 +59,9 @@ type FocusRequest = { name: Path<StoneFormValues>; seq: number } | null;
 
 function StoneWorkspace({ page, access }: { page: StonePage; access: PartnerAccess }) {
   const { kind, fields, entity } = page;
+  // app-shell-tabs: several Stone Master pages can be open in tabs at once, so the form's id (Save's
+  // `form=` target) and the field ids are unique per page instead of fixed strings.
+  const formId = `stone-master-form-${useId()}`;
   const toast = useToast();
   const cache = useStoneCache(kind);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -375,7 +377,7 @@ function StoneWorkspace({ page, access }: { page: StonePage; access: PartnerAcce
         <div className={cx("relative flex min-w-0 flex-1 flex-col overflow-y-auto p-4 sm:pb-6 sm:pl-6 sm:pr-10 sm:pt-6 print:hidden", drawer.open && DRAWER_PUSH_CLASS)}>
           <PartnerPageHeader
             entity={entity}
-            formId={FORM_ID}
+            formId={formId}
             mode={mode}
             recordName={recordTitle}
             total={total}
@@ -408,14 +410,14 @@ function StoneWorkspace({ page, access }: { page: StonePage; access: PartnerAcce
 
           {showForm && (
             <form
-              id={FORM_ID}
+              id={formId}
               noValidate
               onSubmit={(event) => void form.handleSubmit(onValid, onInvalid)(event)}
               aria-label={mode === "create" ? `Create ${entity.singular.toLowerCase()}` : mode === "edit" ? `Edit ${entity.singular.toLowerCase()}` : `${entity.singular} details`}
               className="flex flex-1 flex-col gap-4"
             >
               {formError && <FormErrorBanner message={formError.message} onReload={formError.stale ? reloadLatest : undefined} reloading={detail.isFetching} />}
-              <StoneFieldsCard page={page} form={form} readOnly={readOnly} options={optionsState} autoCode={autoCode} />
+              <StoneFieldsCard idPrefix={formId} page={page} form={form} readOnly={readOnly} options={optionsState} autoCode={autoCode} />
             </form>
           )}
         </div>

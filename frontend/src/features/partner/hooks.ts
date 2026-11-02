@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useFormState, useWatch, type FieldValues, type UseFormReturn } from "react-hook-form";
 import { retryServiceRead, serviceRestartRetryDelay } from "@/lib/trpc-error";
 import { authTrpc } from "@/lib/auth-trpc";
+import { useTabDirty } from "@/features/home/tabs/tab-host";
 import { replacedTakenCodeMessage, shouldPrefillCode } from "./code-suggestion";
 
 /** Existing approved contract; shares the tRPC cache entry with the shell and other pages. */
@@ -46,8 +47,9 @@ export function useSuggestedCodePrefill<TForm extends FieldValues & { code: stri
   }, [codeForm, enabled, suggestion, current, codeDirty]);
 }
 
-/** Native prompt on close/reload while the form has unsaved changes. */
+/** Native prompt on close/reload while the form has unsaved changes; its App Shell tab shows them too (Q-TAB-03). */
 export function useUnsavedChangesPrompt(dirty: boolean) {
+  useTabDirty(dirty);
   useEffect(() => {
     if (!dirty) return;
     const handler = (event: BeforeUnloadEvent) => {

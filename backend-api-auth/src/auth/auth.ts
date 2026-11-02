@@ -8,6 +8,7 @@ import { createHmac, randomUUID } from "node:crypto";
 import { prisma } from "../database/prisma-client";
 import { isValidUsername, normalizeUsername, USERNAME_MAX_LENGTH, USERNAME_MIN_LENGTH } from "./username-policy";
 import { accessTokenIssuerFromEnvironment, issueAccessCookieAfterEligibleLogin } from "./access-token";
+import { trustedOriginsFor } from "./trusted-origins";
 
 /** ADR-0020: the only sign-in route. `/sign-in/email` is disabled. */
 import { AUTH_RATE_LIMIT_RULES, SIGN_IN_PATH } from "./rate-limit";
@@ -25,20 +26,16 @@ export const accessJwksEndpoint = createAuthEndpoint("/jwks", { method: "GET" },
   return ctx.json(accessTokenIssuer.publicJwks());
 });
 
+// Dev LAN preview (owner 2026-10-28): AUTH_EXTRA_TRUSTED_ORIGINS adds origins such as http://192.168.0.104.
 const frontendUrl = new URL(process.env.FRONTEND_URL ?? "http://localhost:3000");
-const trustedOrigins = new Set([frontendUrl.origin]);
-if (frontendUrl.hostname === "localhost") {
-  const loopbackUrl = new URL(frontendUrl);
-  loopbackUrl.hostname = "127.0.0.1";
-  trustedOrigins.add(loopbackUrl.origin);
-}
+const trustedOrigins = trustedOriginsFor(frontendUrl.href, process.env.AUTH_EXTRA_TRUSTED_ORIGINS);
 
 export const auth = betterAuth({
   appName: "GMS",
   baseURL: process.env.AUTH_BASE_URL ?? "http://localhost:3101",
   basePath: "/api/auth",
   secret: process.env.AUTH_SECRET ?? "local-build-secret-change-before-deploy-00000000",
-  trustedOrigins: [...trustedOrigins],
+  trustedOrigins,
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   // ADR-0015 (no password reset) + ADR-0020 (username is the only identity; email is internal,
   // username is immutable, no public availability probe). Profile password change uses
@@ -98,7 +95,7 @@ export const auth = betterAuth({
       await recordLoginAttempt(user?.id ?? null, username, false);
       throw new APIError("LOCKED", {
         code: "ACCOUNT_LOCKED",
-        message: "ใส่รหัสผ่านผิด 3 ครั้ง กรุณารอสักครู่ก่อนลองใหม่",
+        message: "Wrong password 3 times. Please wait a moment and try again.",
         retryAfterSeconds: Math.max(1, Math.ceil(remainingMs / 1_000)),
       });
     }),
@@ -137,7 +134,7 @@ export const auth = betterAuth({
         if (lockout?.locked_until) {
           return jsonStatusResponse({
             code: "ACCOUNT_LOCKED",
-            message: "ใส่รหัสผ่านผิด 3 ครั้ง กรุณารอ 1 นาที",
+            message: "Wrong password 3 times. Please wait 1 minute.",
             retryAfterSeconds: 60,
           }, 423);
         }
@@ -145,7 +142,7 @@ export const auth = betterAuth({
         // A raw Response pins the status (ctx.json keeps the endpoint's original 422 status).
         return jsonStatusResponse({
           code: "INVALID_USERNAME_OR_PASSWORD",
-          message: "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง",
+          message: "Incorrect username or password",
           attemptsRemaining: Math.max(0, 3 - (lockout?.failed_login_count ?? 3)),
         }, 401);
       }
@@ -162,7 +159,7 @@ export const auth = betterAuth({
           await recordLoginAttempt(session.user.id, username, false);
           return jsonStatusResponse({
             code: "ACCOUNT_INACTIVE",
-            message: "บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อผู้ดูแลระบบ",
+            message: "This account is disabled. Please contact your administrator.",
           }, 403);
         }
         if (session.session.id) await retainOnlyNewestSession(session.user.id);

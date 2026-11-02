@@ -15,6 +15,7 @@ import type { MemoReceiveService } from "../../src/trade-document/memo-receive.s
 import type { MemoReturnService } from "../../src/trade-document/memo-return.service";
 import type { MemoStockService } from "../../src/trade-document/memo-stock.service";
 import type { MemoOutstandingService } from "../../src/trade-document/memo-outstanding.service";
+import type { ReserveService } from "../../src/trade-document/reserve.service";
 import { customerBody, withVersion } from "../partner-shared/fixtures";
 
 vi.mock("../../src/database/prisma-client", async () => (await import("../partner-shared/prisma-fake")).prismaModule);
@@ -40,6 +41,7 @@ const memoReceive = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options:
 const memoStock = { list: vi.fn() };
 const memoReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
 const memoOutstanding = { vendorSummary: vi.fn(), vendorList: vi.fn(), vendorItems: vi.fn(), vendorOptions: vi.fn() };
+const reserve = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
 const router = createMasterRouter({
   customer: customer as unknown as CustomerService,
   vendor: vendor as unknown as VendorService,
@@ -54,6 +56,7 @@ const router = createMasterRouter({
   memoStock: memoStock as unknown as MemoStockService,
   memoReturn: memoReturn as unknown as MemoReturnService,
   memoOutstanding: memoOutstanding as unknown as MemoOutstandingService,
+  reserve: reserve as unknown as ReserveService,
 });
 
 function context(grants: string[], overrides: Partial<MasterContext> = {}): MasterContext {
@@ -64,7 +67,7 @@ function context(grants: string[], overrides: Partial<MasterContext> = {}): Mast
 }
 
 beforeEach(() => {
-  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(currency), ...Object.values(quotation), ...Object.values(memoOut), ...Object.values(memoOutReturn), ...Object.values(memoReceive), ...Object.values(memoStock), ...Object.values(memoReturn), ...Object.values(memoOutstanding)]) fn.mockReset().mockResolvedValue({ ok: true });
+  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(currency), ...Object.values(quotation), ...Object.values(memoOut), ...Object.values(memoOutReturn), ...Object.values(memoReceive), ...Object.values(memoStock), ...Object.values(memoReturn), ...Object.values(memoOutstanding), ...Object.values(reserve)]) fn.mockReset().mockResolvedValue({ ok: true });
 });
 
 describe("staged master domain tRPC boundary", () => {
@@ -523,5 +526,63 @@ describe("staged master domain tRPC boundary", () => {
     expect(memoStock.list).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 50 }));
     expect(memoStock.list.mock.lastCall?.[0]).not.toHaveProperty("vendorId");
     await expect(router.createCaller(context(["memo-out:ADD"])).memoStock.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("GP-MT-RS reserve: exact grants per procedure, CSRF on writes and approve, strict From Stock input, reads with reserve VIEW", async () => {
+    const ID2 = "0b9f3c4e-1d2a-4b3c-8d4e-5f6a7b8c9d0f";
+    const line = { source: "MANUAL" as const, stoneCodeId: null, stoneCode: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "",
+      lot: "", location: "", cerType: "", cerNo: "", pcs: 1, weightCt: "1", priceUnit: "PER_CT" as const, unitPrice: "100", discount: { type: "NONE" as const, value: "0" }, itemNote: "", photoIds: [] as string[] };
+    const body = { docDate: "2026-11-02", dueDate: "2026-11-30", currency: "THB", exchangeRate: null, ref: "", documentNote: "", customerId: ID, shippingAddressId: ID2, invoiceAddressId: ID2,
+      discount: { type: "NONE" as const, value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
+      lines: [{ ...line, memoStockId: ID2 }] };
+    const versioned = { id: ID, expectedVersion: 1 };
+    const all = ["VIEW", "ADD", "EDIT", "DELETE", "APPROVE"].map((action) => `reserve:${action}`);
+    const caller = router.createCaller(context(all));
+
+    await caller.reserve.list({ status: "APPROVED", partyId: ID });
+    await caller.reserve.get({ id: ID });
+    await caller.reserve.nextNumber({ docDate: "2026-11-02" });
+    await caller.reserve.options({ customerId: ID });
+    await caller.reserve.create(body);
+    await caller.reserve.update({ ...body, ...versioned });
+    await caller.reserve.delete(versioned);
+    await caller.reserve.approve(versioned);
+    expect(reserve.list).toHaveBeenCalledWith(expect.objectContaining({ status: "APPROVED", partyId: ID, limit: 50 }));
+    expect(reserve.options).toHaveBeenCalledWith(ID);
+    expect(reserve.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ lines: [expect.objectContaining({ memoStockId: ID2 })] }));
+    expect(reserve.update).toHaveBeenCalledWith("user-1", ID, 1, expect.objectContaining({ customerId: ID }));
+    expect(reserve.approve).toHaveBeenCalledWith("user-1", ID, 1);
+
+    const only = (action: string) => router.createCaller(context([`reserve:${action}`]));
+    await expect(only("VIEW").reserve.create(body)).rejects.toMatchObject({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+    await expect(only("ADD").reserve.update({ ...body, ...versioned })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(only("EDIT").reserve.delete(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(only("EDIT").reserve.approve(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(only("ADD").reserve.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["memo-out:APPROVE", "memo-out:VIEW"])).reserve.approve(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const noCsrf = router.createCaller(context(all, { csrfVerified: false }));
+    await expect(noCsrf.reserve.create(body)).rejects.toMatchObject({ message: "CSRF_INVALID" });
+    await expect(noCsrf.reserve.update({ ...body, ...versioned })).rejects.toMatchObject({ message: "CSRF_INVALID" });
+    await expect(noCsrf.reserve.delete(versioned)).rejects.toMatchObject({ message: "CSRF_INVALID" });
+    await expect(noCsrf.reserve.approve(versioned)).rejects.toMatchObject({ message: "CSRF_INVALID" });
+    expect(reserve.create).toHaveBeenCalledTimes(1);
+    expect(reserve.approve).toHaveBeenCalledTimes(1);
+
+    // Strict input: every row From Stock (owner 2026-11-02, the Memo Out rev 3 rule), Sale Price, one row per item, status enum, no photos.
+    await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: null }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2, unitPrice: "0" }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2 }, { ...line, memoStockId: ID2 }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2, photoIds: [ID] }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.reserve.list({ status: "DRAFT" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    // From Stock and the currency list read with reserve VIEW.
+    await router.createCaller(context(["reserve:VIEW"])).memoStock.list({ limit: 50 });
+    expect(memoStock.list).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 50 }));
+    await router.createCaller(context(["reserve:VIEW"])).currency.options();
+    expect(currency.options).toHaveBeenCalledTimes(1);
+    await expect(router.createCaller(context(["reserve:ADD"])).memoStock.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    reserve.approve.mockRejectedValueOnce(new HttpException({ error: { code: "RESERVE_PENDING_SHORT", message: "x" } }, 409));
+    await expect(caller.reserve.approve(versioned)).rejects.toMatchObject({ code: "CONFLICT", message: "RESERVE_PENDING_SHORT" });
   });
 });

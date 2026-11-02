@@ -47,6 +47,8 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   "document-setup": "/setup/document-setup",
   currency: "/setup/currency",
   quotation: "/pre-sale/quotation",
+  // reserve UI rev 1 (ADR-0036): Pre-Sale › Reserve.
+  reserve: "/pre-sale/reserve",
   "memo-receive": "/memo/memo-receive",
   "memo-return": "/memo/memo-return",
   "memo-out": "/memo/memo-out",
@@ -194,7 +196,7 @@ export const sidebarSections: NavSection[] = [
     items: [
       // quotation (draft ADR-0001, mock data): real page; stays active on /pre-sale/quotation/[id].
       { ...link("quotation", "Quotation", QuotationIcon, REAL_PAGE_HREFS.quotation), activePrefix: REAL_PAGE_HREFS.quotation },
-      link("reserve", "Reserve", ReserveIcon),
+      { ...link("reserve", "Reserve", ReserveIcon, REAL_PAGE_HREFS.reserve), activePrefix: REAL_PAGE_HREFS.reserve },
     ],
   },
   {

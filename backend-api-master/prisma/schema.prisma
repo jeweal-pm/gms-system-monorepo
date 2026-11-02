@@ -46,6 +46,7 @@ model Customer {
   quotations     Quotation[]
   memoOuts       MemoOut[]
   memoOutReturns MemoOutReturn[]
+  reserves       Reserve[]
 
   @@index([nameKey, id], map: "customer_name_key_id_idx")
   @@index([active, nameKey, id], map: "customer_active_name_key_id_idx")
@@ -73,6 +74,8 @@ model CustomerAddress {
   invoiceMemoOuts        MemoOut[]       @relation("MemoOutInvoiceAddress")
   shippingMemoOutReturns MemoOutReturn[] @relation("MemoOutReturnShippingAddress")
   invoiceMemoOutReturns  MemoOutReturn[] @relation("MemoOutReturnInvoiceAddress")
+  shippingReserves       Reserve[]       @relation("ReserveShippingAddress")
+  invoiceReserves        Reserve[]       @relation("ReserveInvoiceAddress")
 
   @@unique([customerId, type, position], map: "customer_address_position_key")
   @@unique([customerId, type], where: { isDefault: true }, map: "customer_address_one_default_key")
@@ -379,6 +382,7 @@ model StoneCode {
   quality            StoneQuality?       @relation(fields: [qualityId], references: [id], onDelete: Restrict)
   quotationLines     QuotationLine[]
   memoOutLines       MemoOutLine[]
+  reserveLines       ReserveLine[]
   memoOutReturnLines MemoOutReturnLine[]
 
   @@index([stoneNameId], map: "stone_code_stone_name_id_idx")
@@ -426,6 +430,7 @@ model DocumentNumbering {
   /// Owner 2026-10-26 (SA-QT-04/05): a row referenced by a quotation is "used" and locked.
   quotations     Quotation[]
   memoOuts       MemoOut[]
+  reserves       Reserve[]
   memoOutReturns MemoOutReturn[]
   memoReceives   MemoReceive[]
   memoReturns    MemoReturn[]
@@ -1003,6 +1008,7 @@ model MemoStock {
   vendor             Vendor           @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   returnLines        MemoReturnLine[]
   memoOutLines       MemoOutLine[]
+  reserveLines       ReserveLine[]
 
   /// Add Memo Stock dialog: a vendor's items with something still pending, newest receive first (SA-MR-11).
   @@index([vendorId, receivedDocDate(sort: Desc), stockId(sort: Desc)], where: raw("((pending_pcs > 0) OR (pending_weight_ct > (0)::numeric))"), map: "memo_stock_pending_idx")
@@ -1133,5 +1139,127 @@ model MemoReturnCharge {
 
   @@id([memoReturnId, chargeType])
   @@map("memo_return_charge")
+  @@schema("partner")
+}
+
+// ---- Reserve (reserve SA revision 1 / ADR-0036, owner 2026-11-02): holds stones for a customer for a later Sale ----
+// Same shape as Memo Out after revision 2 (customer + shipping / invoice address, From Stock lines). Approval moves the
+// stock lines from Memo Stock pending into Reserve (SA-RS-07). CHECKs are in the migration SQL.
+
+model Reserve {
+  id                      String             @id @db.Uuid
+  /// null = plain running number 1, 2, 3 … (no Document Setup row in effect).
+  numberingId             String?            @map("numbering_id") @db.Uuid
+  runningNo               Int                @map("running_no")
+  docNo                   String             @unique(map: "reserve_doc_no_key") @map("doc_no") @db.VarChar(40)
+  status                  String             @db.VarChar(20)
+  docDate                 DateTime           @map("doc_date") @db.Date
+  dueDate                 DateTime           @map("due_date") @db.Date
+  customerId              String             @map("customer_id") @db.Uuid
+  customerCodeSnapshot    String             @map("customer_code_snapshot") @db.VarChar(120)
+  customerNameSnapshot    String             @map("customer_name_snapshot") @db.VarChar(200)
+  shippingAddressId       String?            @map("shipping_address_id") @db.Uuid
+  shippingAddressSnapshot String             @map("shipping_address_snapshot") @db.VarChar(1000)
+  invoiceAddressId        String?            @map("invoice_address_id") @db.Uuid
+  invoiceAddressSnapshot  String             @map("invoice_address_snapshot") @db.VarChar(1000)
+  currencyCode            String             @map("currency_code") @db.Char(3)
+  exchangeRate            Decimal?           @map("exchange_rate") @db.Decimal(18, 6)
+  ref                     String             @default("") @db.VarChar(100)
+  documentNote            String             @default("") @map("document_note") @db.VarChar(500)
+  discountType            String             @map("discount_type") @db.VarChar(10)
+  discountValue           Decimal            @map("discount_value") @db.Decimal(18, 4)
+  taxEnabled              Boolean            @map("tax_enabled")
+  taxRate                 Decimal            @map("tax_rate") @db.Decimal(9, 4)
+  taxIncluded             Boolean            @map("tax_included")
+  laborWork               String?            @map("labor_work") @db.VarChar(120)
+  laborBasis              String?            @map("labor_basis") @db.VarChar(10)
+  laborQty                Decimal?           @map("labor_qty") @db.Decimal(18, 3)
+  laborRate               Decimal?           @map("labor_rate") @db.Decimal(18, 2)
+  subtotal                Decimal            @db.Decimal(18, 2)
+  discountAmount          Decimal            @map("discount_amount") @db.Decimal(18, 2)
+  priceBeforeTax          Decimal            @map("price_before_tax") @db.Decimal(18, 2)
+  taxAmount               Decimal            @map("tax_amount") @db.Decimal(18, 2)
+  chargesAmount           Decimal            @map("charges_amount") @db.Decimal(18, 2)
+  laborAmount             Decimal            @map("labor_amount") @db.Decimal(18, 2)
+  grandTotal              Decimal            @map("grand_total") @db.Decimal(18, 2)
+  /// reserve SA revision 1 (SA-RS-05/07): PENDING_APPROVAL -> APPROVED; approval holds the stock lines in Memo Stock Reserve.
+  approvedAt              DateTime?          @map("approved_at") @db.Timestamp(3)
+  approvedBy              String?            @map("approved_by") @db.VarChar(64)
+  version                 Int                @default(1)
+  createdAt               DateTime           @default(now()) @map("created_at") @db.Timestamp(3)
+  createdBy               String             @map("created_by") @db.VarChar(64)
+  updatedAt               DateTime           @default(now()) @map("updated_at") @db.Timestamp(3)
+  updatedBy               String             @map("updated_by") @db.VarChar(64)
+  numbering               DocumentNumbering? @relation(fields: [numberingId], references: [id], onDelete: Restrict)
+  customer                Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  shippingAddress         CustomerAddress?   @relation("ReserveShippingAddress", fields: [shippingAddressId], references: [id], onDelete: SetNull)
+  invoiceAddress          CustomerAddress?   @relation("ReserveInvoiceAddress", fields: [invoiceAddressId], references: [id], onDelete: SetNull)
+  lines                   ReserveLine[]
+  charges                 ReserveCharge[]
+
+  @@unique([numberingId, runningNo], map: "reserve_numbering_running_no_key")
+  @@unique([runningNo], where: { numberingId: null }, map: "reserve_plain_running_no_key")
+  @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "reserve_list_idx")
+  @@index([customerId, docDate(sort: Desc)], map: "reserve_customer_idx")
+  @@index([status, docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "reserve_status_idx")
+  @@index([shippingAddressId], map: "reserve_shipping_address_idx")
+  @@index([invoiceAddressId], map: "reserve_invoice_address_idx")
+  @@map("reserve")
+  @@schema("partner")
+}
+
+model ReserveLine {
+  id                   String     @id @db.Uuid
+  reserveId            String     @map("reserve_id") @db.Uuid
+  position             Int        @db.SmallInt
+  source               String     @db.VarChar(10)
+  stoneCodeId          String?    @map("stone_code_id") @db.Uuid
+  stoneCodeSnapshot    String     @default("") @map("stone_code_snapshot") @db.VarChar(60)
+  stone                String     @default("") @db.VarChar(60)
+  shape                String     @default("") @db.VarChar(60)
+  size                 String     @default("") @db.VarChar(60)
+  color                String     @default("") @db.VarChar(60)
+  clarity              String     @default("") @db.VarChar(60)
+  cutting              String     @default("") @db.VarChar(60)
+  quality              String     @default("") @db.VarChar(60)
+  lot                  String     @default("") @db.VarChar(40)
+  location             String     @default("") @db.VarChar(40)
+  cerType              String     @default("") @map("cer_type") @db.VarChar(20)
+  cerNo                String     @default("") @map("cer_no") @db.VarChar(60)
+  pcs                  Int
+  weightCt             Decimal    @map("weight_ct") @db.Decimal(12, 3)
+  priceUnit            String     @map("price_unit") @db.VarChar(10)
+  unitPrice            Decimal    @map("unit_price") @db.Decimal(18, 2)
+  discountType         String     @default("NONE") @map("discount_type") @db.VarChar(10)
+  discountValue        Decimal    @default(0) @map("discount_value") @db.Decimal(18, 4)
+  discountAmount       Decimal    @default(0) @map("discount_amount") @db.Decimal(18, 2)
+  amount               Decimal    @db.Decimal(18, 2)
+  itemNote             String     @default("") @map("item_note") @db.VarChar(500)
+  /// SA-RS-06: a stock line names its Memo Stock item (From Stock); NULL = manual line, holds nothing.
+  memoStockId          String?    @map("memo_stock_id") @db.Uuid
+  stockId              String?    @map("stock_id") @db.VarChar(10)
+  /// The item's pending when the line was saved: the row's maximum (pcs / weightCt ≤ it).
+  stockPendingPcs      Int?       @map("stock_pending_pcs")
+  stockPendingWeightCt Decimal?   @map("stock_pending_weight_ct") @db.Decimal(12, 3)
+  document             Reserve    @relation(fields: [reserveId], references: [id], onDelete: Cascade)
+  stoneCode            StoneCode? @relation(fields: [stoneCodeId], references: [id], onDelete: SetNull)
+  memoStock            MemoStock? @relation(fields: [memoStockId], references: [id], onDelete: Restrict)
+
+  @@unique([reserveId, position], map: "reserve_line_position_key")
+  @@unique([reserveId, memoStockId], map: "reserve_line_memo_stock_key")
+  @@index([stoneCodeId], map: "reserve_line_stone_code_idx")
+  @@index([memoStockId], map: "reserve_line_memo_stock_idx")
+  @@map("reserve_line")
+  @@schema("partner")
+}
+
+model ReserveCharge {
+  reserveId  String  @map("reserve_id") @db.Uuid
+  chargeType String  @map("charge_type") @db.VarChar(20)
+  amount     Decimal @db.Decimal(18, 2)
+  document   Reserve @relation(fields: [reserveId], references: [id], onDelete: Cascade)
+
+  @@id([reserveId, chargeType])
+  @@map("reserve_charge")
   @@schema("partner")
 }
