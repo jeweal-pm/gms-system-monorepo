@@ -94,6 +94,24 @@ export type DocumentFormConfig<V extends FieldValues & Saved, Input, Options ext
   daybook: ReactNode;
 };
 
+type LineErrors = readonly (Record<string, { message?: unknown } | undefined> | undefined)[] | undefined;
+
+/** The first message of each row's errors (INV-20261102-003), in row order. */
+export function lineErrorMessages(lines: LineErrors, count: number): (string | undefined)[] {
+  return Array.from({ length: count }, (_, index) => {
+    const row = lines?.[index];
+    if (!row) return undefined;
+    const found = Object.values(row).find((error) => typeof error?.message === "string" && error.message);
+    return found ? String(found.message) : undefined;
+  });
+}
+
+/** Toast of a failed Save: names the first bad row and what to fix, else the generic header message. */
+export function invalidSaveMessage(rowMessages: readonly (string | undefined)[]): string {
+  const index = rowMessages.findIndex(Boolean);
+  return index < 0 ? "Please complete the required fields" : `Row ${index + 1}: ${rowMessages[index]}`;
+}
+
 /** Status badges of documents with an approval step (Memo Receive colors: orange pending, green approved). */
 export const APPROVAL_STATUS_LABELS: StatusLabels = {
   PENDING_APPROVAL: { label: "Pending Approval", tone: "bg-[#FFF4E0] text-[#B45309]" },
@@ -180,7 +198,16 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
         showError(error);
       }
     },
-    () => setToast("Please complete the required fields"),
+    (errors) => {
+      // INV-20261102-003: say which row is wrong and go to it (its row panel opens where there is one).
+      const rowMessages = lineErrorMessages((errors as { lines?: LineErrors }).lines, getValues("lines" as Path<V>)?.length ?? 0);
+      const first = rowMessages.findIndex(Boolean);
+      if (first >= 0) {
+        setSelectedIndex(first);
+        if (config.rowEditor !== false) setEditorOpen(true);
+      }
+      setToast(invalidSaveMessage(rowMessages));
+    },
   );
 
   const onCancel = () => {
@@ -375,6 +402,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
                         checkedKeys={checkedKeys}
                         readOnly={readOnly}
                         emptyRowText={config.emptyRowText}
+                        rowErrors={formState.isSubmitted ? lineErrorMessages(formState.errors.lines as unknown as LineErrors, lines.length) : undefined}
                         onSelectRow={openRow}
                         onToggleCheck={(key) =>
                           setCheckedKeys((prev) => {

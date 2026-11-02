@@ -11,7 +11,7 @@ import { accessTokenIssuerFromEnvironment, issueAccessCookieAfterEligibleLogin }
 import { trustedOriginsFor } from "./trusted-origins";
 
 /** ADR-0020: the only sign-in route. `/sign-in/email` is disabled. */
-const SIGN_IN_PATH = "/sign-in/username";
+import { AUTH_RATE_LIMIT_RULES, SIGN_IN_PATH } from "./rate-limit";
 export const accessTokenIssuer = accessTokenIssuerFromEnvironment(process.env);
 
 /** Public route shares Better Auth's existing /api/auth mount; no login/session hook is changed. */
@@ -74,12 +74,7 @@ export const auth = betterAuth({
     storage: "database",
     window: 60,
     max: 30,
-    customRules: {
-      [SIGN_IN_PATH]: { window: 60, max: 5 },
-      // Public, bounded static keys must remain available during a database outage.
-      // Better Auth's database-backed global limiter otherwise queries RateLimit here.
-      "/jwks": false,
-    },
+    customRules: AUTH_RATE_LIMIT_RULES,
   },
   hooks: {
     before: createAuthMiddleware(async (ctx) => {

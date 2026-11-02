@@ -18,6 +18,7 @@ import {
   dueLabel,
   emptyListState,
   formatDecimal,
+  formatUnitPrice,
   formatMoney,
   formatWeight,
   hasFilters,
@@ -87,6 +88,13 @@ describe("UT-MOV-F1 KPI cards and number formats", () => {
     expect(formatDecimal("1850.0000")).toBe("1,850.00");
     expect(formatDecimal("760.1250")).toBe("760.125");
     expect(formatDecimal("1234567890123.4500")).toBe("1,234,567,890,123.45");
+  });
+
+  it("UT-MOV-P1 shows the unit price as keyed in, 2 dp (INV-20261102-004)", () => {
+    expect(formatUnitPrice("1234.4995")).toBe("1,234.50");
+    expect(formatUnitPrice("760.1250")).toBe("760.13");
+    expect(formatUnitPrice("1850.0000")).toBe("1,850.00");
+    expect(formatUnitPrice("1234567890123.4500")).toBe("1,234,567,890,123.45");
   });
 });
 

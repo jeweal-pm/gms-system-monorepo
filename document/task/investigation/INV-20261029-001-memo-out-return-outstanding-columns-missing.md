@@ -3,7 +3,7 @@
 ## Tracking
 
 - Ticket revision: 1
-- Status: pending-review
+- Status: resolved (closed by owner 2026-11-02)
 - Owner: backend (schema/migration decision may need sa)
 - Priority: awaiting user review
 - Auditor / mode / run ID: found by backend during memo-receive rev 3 integration tests (not an audit)
@@ -31,6 +31,12 @@
 
 ## User selection and approval
 
-- Approved ticket revision:
-- Actual user instruction / approval evidence:
-- Approval date:
+- Approved ticket revision: 1
+- Actual user instruction / approval evidence: owner 2026-11-02 "แก้ INV-20261102-004 - 5    INV-20261029-001 แก้เสร็จเเล้วปิด ticket เลย"
+- Approval date: 2026-11-02
+
+## Resolution
+
+- Fixed by migration `20261028120000_memo_out_return_outstanding` (adds `memo_out_return_line.outstanding_pcs` / `outstanding_weight_ct`), kept by the memo-out-return rev 4 migration `20261101090000_memo_out_return_customer`.
+- Evidence: both columns exist in the dev database (`partner.memo_out_return_line`, checked 2026-11-02); Memo Out Return documents 2 and 4 saved and approved during the 2026-11-02 full-system manual test.
+- Final status / date: resolved 2026-11-02, closed on the owner's instruction.

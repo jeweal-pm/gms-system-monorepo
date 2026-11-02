@@ -5,6 +5,7 @@ import { useFormContext, useWatch } from "react-hook-form";
 import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
 import { quotationCurrencyOptions, quotationExchangeRate } from "../../lib/currency";
+import { exchangeRateLabel } from "../../lib/format";
 import { useOptions } from "../../options-context";
 import type { QuotationFormValues } from "../../schema";
 import { Field, FormDateInput, FormSelect, TextInput } from "../ui";
@@ -61,7 +62,9 @@ export function QuotationInfoForm() {
   }, [exchangeRate, initialRate, setValue]);
 
   return (
-    <div className="grid grid-cols-1 gap-x-4 gap-y-5 px-6 py-6 md:grid-cols-[200px_1fr_1fr_1fr]">
+    // Columns follow the form's own width (the row panel narrows it), not the window (INV-20261102-005).
+    <div className="@container px-6 py-6">
+    <div className="grid grid-cols-1 gap-x-4 gap-y-5 @2xl:grid-cols-2 @4xl:grid-cols-[200px_1fr_1fr_1fr]">
       <Field label="Doc Date" required error={errors.docDate?.message}>
         <FormDateInput<QuotationFormValues> name="docDate" />
       </Field>
@@ -81,12 +84,13 @@ export function QuotationInfoForm() {
       <Field label="Currency" required error={errors.currency?.message}>
         <FormSelect<QuotationFormValues> name="currency" options={quotationCurrencyOptions(items, currency)} onValueChange={onCurrencyChange} />
       </Field>
-      <Field label={baseCode && currency && currency !== baseCode ? `Exchange Rate (1 ${currency} = ? ${baseCode})` : "Exchange Rate"} error={errors.exchangeRate?.message}>
+      <Field label={exchangeRateLabel(baseCode, currency)} error={errors.exchangeRate?.message}>
         <TextInput readOnly tabIndex={-1} placeholder="Exchange Rate" {...register("exchangeRate")} />
       </Field>
       <Field label="Ref.">
         <TextInput maxLength={100} {...register("ref")} />
       </Field>
+    </div>
     </div>
   );
 }

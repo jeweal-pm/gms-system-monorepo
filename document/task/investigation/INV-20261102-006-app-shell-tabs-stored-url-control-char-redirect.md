@@ -1,4 +1,4 @@
-# INV-20261102-001 — App Shell tabs: stored tab URL with tab/newline characters escapes the same-origin check
+# INV-20261102-006 — App Shell tabs: stored tab URL with tab/newline characters escapes the same-origin check
 
 ## Tracking
 

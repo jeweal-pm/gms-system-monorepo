@@ -1,11 +1,15 @@
+/** No leading zeros on the whole part (owner 2026-11-02): "022" → "22", "00" → "0"; "0.5" stays. */
+export const stripLeadingZeros = (whole: string): string => whole.replace(/^0+(?=\d)/, "");
+
 /**
- * กรองค่าที่พิมพ์ในช่องตัวเลข: เหลือเฉพาะตัวเลขและจุดทศนิยมจุดเดียว, จำกัดจำนวนทศนิยม
+ * กรองค่าที่พิมพ์ในช่องตัวเลข: เหลือเฉพาะตัวเลขและจุดทศนิยมจุดเดียว, จำกัดจำนวนทศนิยม, ไม่มี 0 นำหน้า
  * ใช้กับช่องราคา / จำนวน / น้ำหนัก / % (ห้ามกรอกตัวอักษร)
  */
 export function sanitizeDecimal(raw: string, decimals: number): string {
   const cleaned = raw.replace(/,/g, "").replace(/[^\d.]/g, "");
-  if (decimals === 0) return cleaned.replace(/\./g, "");
-  const [whole, ...rest] = cleaned.split(".");
+  if (decimals === 0) return stripLeadingZeros(cleaned.replace(/\./g, ""));
+  const [first, ...rest] = cleaned.split(".");
+  const whole = stripLeadingZeros(first);
   if (rest.length === 0) return whole;
   return `${whole}.${rest.join("").slice(0, decimals)}`;
 }

@@ -11,6 +11,11 @@ export const formatWeight = (value: Dec): string => groupThousands(toFixed(value
 export const formatMoneyText = (value: string): string => formatMoney(dec(value));
 
 /** yyyy-mm-dd → dd/mm/yyyy */
+/** Exchange Rate label: how many company-currency units one unit of the document currency is (INV-20261102-005). */
+export function exchangeRateLabel(baseCode: string | null | undefined, currency: string | null | undefined): string {
+  return baseCode && currency && currency !== baseCode ? `Exchange Rate (${baseCode} per 1 ${currency})` : "Exchange Rate";
+}
+
 export function formatDate(iso: string): string {
   const [y, m, d] = iso.slice(0, 10).split("-");
   return y && m && d ? `${d}/${m}/${y}` : iso;
