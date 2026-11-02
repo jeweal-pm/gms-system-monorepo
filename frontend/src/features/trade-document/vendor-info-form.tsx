@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import { Field, FormDateInput, FormSelect, TextInput } from "@/features/quotation/components/ui";
 import { quotationCurrencyOptions, quotationExchangeRate } from "@/features/quotation/lib/currency";
-import { formatDate } from "@/features/quotation/lib/format";
+import { exchangeRateLabel, formatDate } from "@/features/quotation/lib/format";
 import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
 
@@ -52,8 +52,8 @@ export function VendorDocumentInfoForm({ options, onVendorChange: afterVendorCha
   }, [exchangeRate, initialRate, setValue]);
 
   return (
-    <div className="flex flex-col gap-5 px-6 py-6">
-      <div className="grid grid-cols-1 gap-x-4 gap-y-5 md:grid-cols-[200px_1fr_1fr]">
+    <div className="@container flex flex-col gap-5 px-6 py-6">
+      <div className="grid grid-cols-1 gap-x-4 gap-y-5 @2xl:grid-cols-2 @4xl:grid-cols-[200px_1fr_1fr]">
         <Field label="Doc Date" required error={errors.docDate?.message}>
           <FormDateInput<VendorHeaderValues> name="docDate" />
         </Field>
@@ -64,14 +64,14 @@ export function VendorDocumentInfoForm({ options, onVendorChange: afterVendorCha
           <FormSelect<VendorHeaderValues> name="addressId" options={addressOptions} />
         </Field>
       </div>
-      <div className="grid grid-cols-1 gap-x-4 gap-y-5 md:grid-cols-[200px_1fr_1fr_1fr]">
+      <div className="grid grid-cols-1 gap-x-4 gap-y-5 @2xl:grid-cols-2 @4xl:grid-cols-[200px_1fr_1fr_1fr]">
         <Field label="Due Date" required error={errors.dueDate?.message}>
           <FormDateInput<VendorHeaderValues> name="dueDate" notBefore="docDate" />
         </Field>
         <Field label="Currency" required error={errors.currency?.message}>
           <FormSelect<VendorHeaderValues> name="currency" options={quotationCurrencyOptions(items, currency)} onValueChange={onCurrencyChange} />
         </Field>
-        <Field label={baseCode && currency && currency !== baseCode ? `Exchange Rate (1 ${currency} = ? ${baseCode})` : "Exchange Rate"} error={errors.exchangeRate?.message}>
+        <Field label={exchangeRateLabel(baseCode, currency)} error={errors.exchangeRate?.message}>
           <TextInput readOnly tabIndex={-1} placeholder="Exchange Rate" {...register("exchangeRate")} />
         </Field>
         <Field label="Ref.">

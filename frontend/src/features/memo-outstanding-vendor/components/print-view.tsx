@@ -7,7 +7,7 @@ import {
   BUCKET_LABEL,
   dueLabel,
   formatDate,
-  formatDecimal,
+  formatUnitPrice,
   formatMoney,
   formatPcs,
   formatWeight,
@@ -102,7 +102,7 @@ export function PrintContent({ entries, prefs, filters, scope, printedAt }: Prin
                         <td className={num}>{formatWeight(item[bucket].weightCt)}</td>
                       </Fragment>
                     ))}
-                    {showPrice && <td className={num}>{`${formatDecimal(item.netUnitPrice)} ${item.currency} ${unitCaption(item.priceUnit)}`}</td>}
+                    {showPrice && <td className={num}>{`${formatUnitPrice(item.netUnitPrice)} ${item.currency} ${unitCaption(item.priceUnit)}`}</td>}
                   </tr>
                 );
               })}

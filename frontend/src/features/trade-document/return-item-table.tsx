@@ -230,13 +230,17 @@ function ReturnInput({ index, field, label, line, autoWeight }: { index: number;
           if (outstanding <= ZERO) return;
           // An emptied pcs empties the weight too (back to its placeholder).
           if (event.target.value === "") return setValue(`lines.${index}.weightCt`, "", { shouldDirty: true });
-          // Two decimals, as the design shows (7 of 10 pcs, 3.20 ct → 2.24); the weight stays editable.
-          const weight = div(mul(dec(line.outstandingWeightCt), dec(event.target.value)), outstanding);
-          setValue(`lines.${index}.weightCt`, toFixed(weight, 2), { shouldDirty: true });
+          // All of it → exactly the Outstanding weight; part of it → two decimals, as the design shows (7 of 10 pcs,
+          // 3.20 ct → 2.24), never above the Outstanding weight. The weight stays editable.
+          const pcs = dec(event.target.value);
+          const full = dec(line.outstandingWeightCt);
+          const weight = div(mul(full, pcs), outstanding);
+          setValue(`lines.${index}.weightCt`, pcs === outstanding ? line.outstandingWeightCt : toFixed(weight > full ? full : weight, 2), { shouldDirty: true });
         }
       : undefined,
   });
   return (
+    <>
     <input
       {...registered}
       onChange={(event) => {
@@ -256,6 +260,9 @@ function ReturnInput({ index, field, label, line, autoWeight }: { index: number;
       inputMode={limits.decimals === 0 ? "numeric" : "decimal"}
       className={cx("h-9 w-full rounded-md border bg-white px-2 text-right outline-none placeholder:text-gms-text-placeholder focus:border-[#0E5E63]", error ? "border-[#E5484D]" : "border-[#DFE3E8]")}
     />
+    {/* INV-20261102-003: the reason shows under the cell, not only as a red border. */}
+    {error?.message && <p className="mt-1 text-left text-xs leading-tight text-[#E5484D]">{error.message}</p>}
+    </>
   );
 }
 

@@ -145,9 +145,9 @@ describe("Memo Outstanding picker (UT-MOR-21/22, rev 4)", () => {
     outstandingPcs: 3, outstandingWeightCt: "1.500", priceUnit: "PER_CT", unitPrice: "2700.00", amount: "4050.00", currency: "THB",
   };
 
-  it("a picked row copies the Memo Out line: Stock ID, stone, Memo price, Outstanding; Return starts empty", () => {
+  it("a picked row copies the Memo Out line: Stock ID, stone, Memo price, Outstanding; Return starts at Outstanding (INV-20261102-002)", () => {
     const line = outstandingToLine(item);
-    expect(line).toMatchObject({ stockId: "260003", lot: "LOT-R", locationId: "Memo", stone: "Sapphire", priceUnit: "PER_CT", unitPrice: "2700.00", memoOutLineId: ID, memoOutNo: "MO-7", outstandingPcs: "3", outstandingWeightCt: "1.500", pcs: "", weightCt: "" });
+    expect(line).toMatchObject({ stockId: "260003", lot: "LOT-R", locationId: "Memo", stone: "Sapphire", priceUnit: "PER_CT", unitPrice: "2700.00", memoOutLineId: ID, memoOutNo: "MO-7", outstandingPcs: "3", outstandingWeightCt: "1.500", pcs: "3", weightCt: "1.500" });
     expect(pickedOutLineIds([line, blank()])).toEqual(new Set([ID]));
   });
 

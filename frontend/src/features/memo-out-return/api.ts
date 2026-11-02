@@ -80,8 +80,9 @@ export function emptyMemoOutReturn(): MemoOutReturnFormValues {
 }
 
 /**
- * A Memo Outstanding row → a return row with an empty Return. Item fields and the Memo Out net price come from the Memo
- * Out line, as the server stores them; Memo Stock items have no stone code.
+ * A Memo Outstanding row → a return row whose Return starts at the Outstanding quantity (ui-spec rev 4, INV-20261102-002).
+ * Item fields and the Memo Out net price come from the Memo Out line, as the server stores them; Memo Stock items have no
+ * stone code.
  */
 export function outstandingToLine(item: MemoOutstandingItem): MemoOutReturnLine {
   return {
@@ -101,8 +102,8 @@ export function outstandingToLine(item: MemoOutstandingItem): MemoOutReturnLine 
     quality: item.quality,
     cerType: item.cerType,
     cerNo: item.cerNo,
-    pcs: "",
-    weightCt: "",
+    pcs: String(item.outstandingPcs),
+    weightCt: item.outstandingWeightCt,
     priceUnit: item.priceUnit,
     unitPrice: item.unitPrice,
     discountType: "PERCENT",
