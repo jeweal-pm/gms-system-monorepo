@@ -5,6 +5,7 @@
  */
 import type { QueryClient } from "@tanstack/react-query";
 import type { InferQueryLikeData } from "@trpc/react-query/shared";
+import { dec, toFixed } from "@/features/quotation/lib/decimal";
 import type { masterTrpc } from "@/lib/master-trpc";
 
 export type VendorSummary = InferQueryLikeData<typeof masterTrpc.memoOutstanding.vendorSummary>;
@@ -185,6 +186,12 @@ export function formatMoney(value: string): string {
   if (Math.abs(n) < 1e15) return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return formatDecimal(value, 2);
 }
+
+/**
+ * PRICE / UNIT: the stored net unit price (4 dp) rounded half up to the 2 money decimals, so it reads as the price
+ * keyed in (1234.4995 → "1,234.50", INV-20261102-004). The string is rounded exactly, without floating point.
+ */
+export const formatUnitPrice = (value: string): string => formatDecimal(toFixed(dec(value), 2), 2);
 
 export const unitCaption = (priceUnit: "CTS" | "PCS") => (priceUnit === "CTS" ? "per cts" : "per pcs");
 

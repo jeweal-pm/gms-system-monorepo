@@ -83,10 +83,11 @@ export function Field({
   // the control's own fill from the border line (8 px) down — read from the control (invalid / disabled /
   // read-only), so no colored strip or patch shows around the label in any state.
   return (
-    <label className={cx("group/field relative block", className)}>
+    <label className={cx("group/field relative block min-w-0", className)}>
       <span
+        title={label}
         className={cx(
-          "absolute -top-2 left-3 z-10 px-1 text-gms-label font-medium leading-4",
+          "absolute -top-2 left-3 z-10 max-w-[calc(100%-1.5rem)] truncate px-1 text-gms-label font-medium leading-4",
           error ? "text-gms-danger" : "text-gms-text",
           "bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-surface)_8px)]",
           "group-has-[[aria-invalid=true]]/field:bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-danger-subtle)_8px)]",

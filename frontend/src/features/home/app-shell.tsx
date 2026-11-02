@@ -16,6 +16,23 @@ import { useSidebarCollapsed } from "./use-sidebar-collapsed";
 export type { Breadcrumb } from "./navigation";
 
 const defaultBreadcrumbs: Breadcrumb[] = [{ label: "Home" }];
+/** A refused session check (429 / 5xx / network) is retried after this delay instead of signing out. */
+export const SESSION_RETRY_MS = 5_000;
+
+export type SessionView = "loading" | "ready" | "retry" | "signed-out";
+
+/**
+ * What the shell shows (INV-20261102-001). Only a completed check that says "no session" signs the user out. A check
+ * that failed (rate limited, server down) keeps the last known session on screen, so unsaved work stays; with no known
+ * session yet it shows a retry notice instead of the login page.
+ */
+export function sessionView(state: { hasSession: boolean; hasLastSession: boolean; failed: boolean; isPending: boolean; isChecked: boolean }): SessionView {
+  if (state.failed && state.hasLastSession) return "ready";
+  // The shared store can hold a stale result from another page, so wait for this mount's fresh check.
+  if (state.isPending || !state.isChecked) return "loading";
+  if (state.hasSession) return "ready";
+  return state.failed ? "retry" : "signed-out";
+}
 const sidebarContainerId = "app-sidebar";
 
 /**
@@ -28,8 +45,19 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
   const router = useRouter();
   const queryClient = useQueryClient();
   const pathname = usePathname();
-  const { data: session, isPending, refetch } = authClient.useSession();
+  const { data: currentSession, isPending, error: sessionError, refetch } = authClient.useSession();
   const [isSessionChecked, setIsSessionChecked] = useState(false);
+  // The last session this shell saw; kept while a session check fails (INV-20261102-001).
+  const [lastSession, setLastSession] = useState(currentSession);
+  if (currentSession && currentSession !== lastSession) setLastSession(currentSession);
+  const view = sessionView({
+    hasSession: Boolean(currentSession),
+    hasLastSession: Boolean(lastSession),
+    failed: Boolean(sessionError),
+    isPending,
+    isChecked: isSessionChecked,
+  });
+  const session = currentSession ?? (view === "ready" ? lastSession : null);
   const [isNavigationOpen, setIsNavigationOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   // FE-NAV-003: expanded sidebar or collapsed rail at ≥ md (server/hydration render: expanded).
@@ -55,8 +83,15 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
   }, [refetch]);
 
   useEffect(() => {
-    if (isSessionChecked && !isPending && !session) router.replace("/login");
-  }, [isPending, isSessionChecked, router, session]);
+    if (view === "signed-out") router.replace("/login");
+  }, [router, view]);
+
+  // A refused check is retried quietly; the page stays as it is.
+  useEffect(() => {
+    if (!sessionError) return;
+    const timer = setTimeout(() => void refetch(), SESSION_RETRY_MS);
+    return () => clearTimeout(timer);
+  }, [refetch, sessionError]);
 
   async function handleSignOut() {
     await authClient.signOut();
@@ -77,7 +112,15 @@ export function AppShell({ children, breadcrumbs = defaultBreadcrumbs }: Readonl
     if (returnFocus) menuButtonRef.current?.focus();
   }
 
-  if (isPending || (!session && !isSessionChecked)) return <AppShellSkeleton />;
+  if (view === "loading") return <AppShellSkeleton />;
+
+  if (view === "retry") {
+    return (
+      <div role="status" className="flex h-screen items-center justify-center bg-gms-surface p-6 text-center text-gms-body text-gms-text-secondary">
+        Can&apos;t confirm your session right now. Trying again…
+      </div>
+    );
+  }
 
   if (!session) return null;
 

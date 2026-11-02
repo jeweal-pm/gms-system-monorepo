@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronsUpDown, CircleMinus, Ellipsis, MessageSquare, Plus } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { lineAmount, lineDiscount, type QuotationTotals } from "../../lib/calculate";
 import { dec, toFixed, ZERO } from "../../lib/decimal";
 import { formatMoney, formatMoneyText, formatWeight } from "../../lib/format";
@@ -39,6 +39,7 @@ export function ItemTable({
   onRowAction,
   onAddRow,
   emptyRowText,
+  rowErrors,
 }: {
   lines: QuotationLine[];
   currency: string;
@@ -53,6 +54,8 @@ export function ItemTable({
   onAddRow: () => void;
   /** Placeholder of an empty row (memo out return fills rows From Memo Out). */
   emptyRowText?: string;
+  /** The first problem of each row after a failed Save, shown under it (INV-20261102-003). */
+  rowErrors?: readonly (string | undefined)[];
 }) {
   const kind = useDocumentKind();
   const COLUMNS = itemColumns(kind.stoneCode, kind.location);
@@ -124,12 +127,15 @@ export function ItemTable({
             {lines.map((line, index) => {
               const filled = isFilledLine(line);
               const selected = index === selectedIndex;
+              const rowError = rowErrors?.[index];
               return (
+                <Fragment key={line.key}>
                 <tr
-                  key={line.key}
                   onClick={() => onSelectRow(index)}
+                  aria-invalid={rowError ? true : undefined}
                   className={cx(
-                    "cursor-pointer border-b border-[#EEF0F2] align-top",
+                    "cursor-pointer align-top",
+                    rowError ? "bg-[#FDECEC]" : "border-b border-[#EEF0F2]",
                     selected ? "bg-[#E6F1F1]" : "hover:bg-[#FAFBFB]",
                   )}
                 >
@@ -174,6 +180,14 @@ export function ItemTable({
                     <RowMenu disabled={readOnly} filled={filled} canDuplicate={!(kind.stockQuantity && line.source === "STOCK")} onAction={(a) => onRowAction(index, a)} />
                   </td>
                 </tr>
+                {rowError && (
+                  <tr className="border-b border-[#EEF0F2] bg-[#FDECEC]">
+                    <td colSpan={COLUMNS.length + 4} className="px-3 pb-2 text-xs text-[#E5484D]" role="alert">
+                      {`Row ${index + 1}: ${rowError}`}
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>

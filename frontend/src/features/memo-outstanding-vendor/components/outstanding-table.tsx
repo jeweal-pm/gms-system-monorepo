@@ -10,7 +10,7 @@ import {
   BUCKET_LABEL,
   BUCKET_SORT,
   formatDate,
-  formatDecimal,
+  formatUnitPrice,
   formatMoney,
   formatPcs,
   formatWeight,
@@ -135,7 +135,7 @@ function ItemRow({ item, prefs, buckets, showPrice, checked, onToggle, left }: {
       <BucketCells value={item} buckets={buckets} />
       {showPrice && (
         <td className={cx(numCell, "border-l border-gms-border")}>
-          <span className="block font-medium">{`${formatDecimal(item.netUnitPrice)} ${item.currency}`}</span>
+          <span className="block font-medium">{`${formatUnitPrice(item.netUnitPrice)} ${item.currency}`}</span>
           <span className="block text-gms-label text-gms-text-secondary">{unitCaption(item.priceUnit)}</span>
         </td>
       )}

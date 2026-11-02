@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import { Field, FormDateInput, FormSelect, TextInput } from "@/features/quotation/components/ui";
 import { quotationCurrencyOptions, quotationExchangeRate } from "@/features/quotation/lib/currency";
+import { exchangeRateLabel } from "@/features/quotation/lib/format";
 import { memoReceiveLoadError, useCurrencyRates, type MemoReceiveOptions } from "../api";
 import { MAX_REF, type MemoReceiveFormValues } from "../schema";
 
@@ -54,7 +55,9 @@ export function MemoReceiveInfoForm({ options, optionsError }: { options: MemoRe
   const optionsMessage = optionsError ? memoReceiveLoadError(optionsError, "vendors") : undefined;
 
   return (
-    <div className="grid grid-cols-1 gap-x-4 gap-y-5 px-6 py-6 md:grid-cols-[200px_1fr_1fr_1fr]">
+    // Columns follow the form's own width (the row panel narrows it), not the window (INV-20261102-005).
+    <div className="@container px-6 py-6">
+    <div className="grid grid-cols-1 gap-x-4 gap-y-5 @2xl:grid-cols-2 @4xl:grid-cols-[200px_1fr_1fr_1fr]">
       <Field label="Doc Date" required error={errors.docDate?.message}>
         <FormDateInput<MemoReceiveFormValues> name="docDate" />
       </Field>
@@ -63,7 +66,7 @@ export function MemoReceiveInfoForm({ options, optionsError }: { options: MemoRe
           <FormSelect<MemoReceiveFormValues> name="vendorId" options={vendorOptions} onValueChange={onVendorChange} />
         </Field>
       </LoadNote>
-      <div className="md:col-span-2">
+      <div className="@2xl:col-span-2">
         <Field label="Address" required error={errors.addressId?.message}>
           <FormSelect<MemoReceiveFormValues> name="addressId" options={addressOptions} disabled={!vendorId} />
         </Field>
@@ -77,12 +80,13 @@ export function MemoReceiveInfoForm({ options, optionsError }: { options: MemoRe
           <FormSelect<MemoReceiveFormValues> name="currency" options={quotationCurrencyOptions(items, currency)} onValueChange={onCurrencyChange} />
         </Field>
       </LoadNote>
-      <Field label={baseCode && currency && currency !== baseCode ? `Exchange Rate (1 ${currency} = ? ${baseCode})` : "Exchange Rate"} error={errors.exchangeRate?.message}>
+      <Field label={exchangeRateLabel(baseCode, currency)} error={errors.exchangeRate?.message}>
         <TextInput readOnly tabIndex={-1} placeholder="Exchange Rate" {...register("exchangeRate")} />
       </Field>
       <Field label="Ref." error={errors.ref?.message}>
         <TextInput maxLength={MAX_REF} {...register("ref")} />
       </Field>
+    </div>
     </div>
   );
 }
