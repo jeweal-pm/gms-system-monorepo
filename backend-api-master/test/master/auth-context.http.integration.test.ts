@@ -14,6 +14,7 @@ import type { MemoStockService } from "../../src/trade-document/memo-stock.servi
 import type { MemoOutstandingService } from "../../src/trade-document/memo-outstanding.service";
 import type { ReserveService } from "../../src/trade-document/reserve.service";
 import type { DocumentSetupService } from "../../src/document-setup/document-setup.service";
+import type { DecimalSetupService } from "../../src/decimal-setup/decimal-setup.service";
 import type { CustomerService } from "../../src/customer/customer.service";
 import type { VendorService } from "../../src/vendor/vendor.service";
 import type { CompanyProfileService } from "../../src/company-profile/company-profile.service";
@@ -50,12 +51,20 @@ async function startHttp(authReader = vi.fn(async () => ({
   };
   const companyProfile = { get: vi.fn(async () => ({ profile: null })), options: vi.fn(), save: vi.fn(), removeLogo: vi.fn() };
   const stoneMaster = { list: vi.fn(async () => ({ items: [], nextCursor: null, total: 0 })), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
+  const setup = { weightPlaces: 2, pricePlaces: 2, version: 1, updatedAt: "2026-11-03T02:00:00.000Z", updatedBy: null };
+  const decimalSetup = {
+    get: vi.fn(async () => ({ setup })),
+    save: vi.fn(async (actorId: string, input: { weightPlaces: number; pricePlaces: number; expectedVersion: number }) => ({
+      setup: { weightPlaces: input.weightPlaces, pricePlaces: input.pricePlaces, version: input.expectedVersion + 1, updatedAt: "2026-11-03T03:10:00.000Z", updatedBy: actorId },
+    })),
+  };
   const router = createMasterRouter({
     customer: customer as unknown as CustomerService,
     vendor: vendor as unknown as VendorService,
     companyProfile: companyProfile as unknown as CompanyProfileService,
     stoneMaster: stoneMaster as unknown as StoneMasterService,
     documentSetup: { list: vi.fn(), get: vi.fn(), save: vi.fn() } as unknown as DocumentSetupService,
+    decimalSetup: decimalSetup as unknown as DecimalSetupService,
     currency: { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as unknown as CurrencyService,
     quotation: {} as unknown as QuotationService,
     memoOut: {} as unknown as MemoOutService,
@@ -76,7 +85,7 @@ async function startHttp(authReader = vi.fn(async () => ({
     .setIssuer(issuer).setAudience("gms-domain-api").setSubject("user-1")
     .setIssuedAt(1_800_000_000).setNotBefore(1_800_000_000).setExpirationTime(1_800_000_900).sign(privateKey);
   const baseUrl = `http://127.0.0.1:${address.port}`;
-  return { baseUrl, url: `${baseUrl}/customer.list?input=${encodeURIComponent(JSON.stringify({ limit: 25 }))}`, token, customer, vendor, companyProfile, stoneMaster, authReader, checkLicense, fetcher };
+  return { baseUrl, url: `${baseUrl}/customer.list?input=${encodeURIComponent(JSON.stringify({ limit: 25 }))}`, token, customer, vendor, companyProfile, stoneMaster, decimalSetup, authReader, checkLicense, fetcher };
 }
 
 afterEach(async () => {
@@ -126,6 +135,46 @@ describe("master HTTP/tRPC adapter integration", () => {
     const invalidContext = await fetch(staleAuthSession.url, { headers: { cookie: `gms_access=${staleAuthSession.token}` } });
     expect(invalidContext.status).toBe(401);
     expect(staleAuthSession.customer.list).not.toHaveBeenCalled();
+  });
+
+  it("IT-DEC-B01 decimalSetup.get serves any licensed session; save needs decimal-setup:EDIT, CSRF and a valid body", async () => {
+    const grants = (permissions: string[]) => vi.fn(async () => ({
+      session_id: "sid-1", user_id: "user-1", session_expires_at: new Date("2027-02-01T00:00:00Z"),
+      account_active: true, account_role: "user", permissions, location_keys: [],
+    }));
+    const csrf = { origin, "x-gms-csrf": "1", "sec-fetch-site": "same-origin", "content-type": "application/json" };
+    const body = JSON.stringify({ weightPlaces: 3, pricePlaces: 0, expectedVersion: 1 });
+
+    // AC-DEC-01 shape: zero grants still read the setting.
+    const reader = await startHttp(grants([]));
+    const read = await fetch(`${reader.baseUrl}/decimalSetup.get`, { headers: { cookie: `gms_access=${reader.token}` } });
+    expect(read.status).toBe(200);
+    expect(await read.json()).toMatchObject({ result: { data: { setup: { weightPlaces: 2, pricePlaces: 2, version: 1, updatedBy: null } } } });
+    expect(reader.decimalSetup.get).toHaveBeenCalledOnce();
+    const denied = await fetch(`${reader.baseUrl}/decimalSetup.save`, { method: "POST", headers: { cookie: `gms_access=${reader.token}`, ...csrf }, body });
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({ error: { data: { domainCode: "PERMISSION_DENIED" } } });
+
+    const noSession = await fetch(`${reader.baseUrl}/decimalSetup.get`);
+    expect(noSession.status).toBe(401);
+    const unlicensed = await startHttp(grants([]), "DENIED");
+    const licence = await fetch(`${unlicensed.baseUrl}/decimalSetup.get`, { headers: { cookie: `gms_access=${unlicensed.token}` } });
+    expect(licence.status).toBe(403);
+    expect(await licence.json()).toMatchObject({ error: { data: { domainCode: "LICENSE_REQUIRED" } } });
+    expect(unlicensed.decimalSetup.get).not.toHaveBeenCalled();
+
+    const editor = await startHttp(grants(["decimal-setup:VIEW", "decimal-setup:EDIT"]));
+    const noCsrf = await fetch(`${editor.baseUrl}/decimalSetup.save`, { method: "POST", headers: { cookie: `gms_access=${editor.token}`, "content-type": "application/json" }, body });
+    expect(noCsrf.status).toBe(403);
+    const invalid = await fetch(`${editor.baseUrl}/decimalSetup.save`, { method: "POST", headers: { cookie: `gms_access=${editor.token}`, ...csrf }, body: JSON.stringify({ weightPlaces: 4, pricePlaces: 0, expectedVersion: 1 }) });
+    expect(invalid.status).toBe(400);
+    expect(await invalid.json()).toMatchObject({ error: { data: { domainCode: "VALIDATION_ERROR", fieldErrors: [expect.objectContaining({ path: "weightPlaces" })] } } });
+    expect(editor.decimalSetup.save).not.toHaveBeenCalled();
+    const saved = await fetch(`${editor.baseUrl}/decimalSetup.save`, { method: "POST", headers: { cookie: `gms_access=${editor.token}`, ...csrf }, body });
+    const savedBody = await saved.text();
+    expect(saved.status, savedBody).toBe(200);
+    expect(JSON.parse(savedBody) as unknown).toMatchObject({ result: { data: { setup: { weightPlaces: 3, pricePlaces: 0, version: 2, updatedBy: "user-1" } } } });
+    expect(editor.decimalSetup.save).toHaveBeenCalledWith("user-1", { weightPlaces: 3, pricePlaces: 0, expectedVersion: 1 });
   });
 
   it("IT-MAUTH-03 rejects bad mutation CSRF before JWKS, auth view, license, or customer/vendor services", async () => {

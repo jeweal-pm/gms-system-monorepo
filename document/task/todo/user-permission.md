@@ -371,6 +371,17 @@ Photo upload (FE-UP-013) remains blocked on photo storage (BE-UP-009); Excel exp
 
 Details: [changelog](../../changelog/2026-10-17-delegated-user-admin.md).
 
+### Show subtasks menu (owner design 2026-11-03, frontend only)
+
+- source: [rev3-01](../../apps/frontend/user-permission/source/rev3-01-show-subtasks-page.png), [rev3-02](../../apps/frontend/user-permission/source/rev3-02-show-subtasks-menu.png); [ui-spec](../../apps/frontend/user-permission/ui-spec.md#show-subtasks-owner-design-2026-11-03)
+- approval-evidence: 2026-11-03 owner: "User and Permission มีเปลี่ยน ui Expand All Collapse All" with the two screenshots and the icon SVG (direct instruction to change the UI). No API, schema or package change.
+
+| Done | ID | Status | Owner | Task | Paths | Depends on | Acceptance | Tests |
+|---|---|---|---|---|---|---|---|---|
+| [x] | FE-UP3-002 | done (unit; security review passed by sec-auditor and security-auditor 2026-11-03; browser not run) | frontend | Replace Expand All / Collapse All with the "Show subtasks" icon menu (Collapsed (default) / Expanded) next to the permission counter; groups start collapsed | `frontend/src/features/user-permission/**`, `frontend/test/user-permission/subtask-view.test.ts` | — | Matches rev3-01/02; chevrons still flip one group; disabled while searching | UT-UP-F07…F11; TC-UP2-10 |
+
+Details: [changelog](../../changelog/2026-11-03-user-permission-show-subtasks.md).
+
 ### User photo with file storage (SA revision 4, user-photo.md PH-01…10, approved 2026-10-17 "อนุมัติ PH")
 
 | Done | ID | Status | Owner | Task | Paths | Depends on | Acceptance | Tests |

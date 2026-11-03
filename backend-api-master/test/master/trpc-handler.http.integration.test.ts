@@ -13,6 +13,7 @@ import type { MemoStockService } from "../../src/trade-document/memo-stock.servi
 import type { MemoOutstandingService } from "../../src/trade-document/memo-outstanding.service";
 import type { ReserveService } from "../../src/trade-document/reserve.service";
 import type { DocumentSetupService } from "../../src/document-setup/document-setup.service";
+import type { DecimalSetupService } from "../../src/decimal-setup/decimal-setup.service";
 import type { CustomerService } from "../../src/customer/customer.service";
 import type { VendorService } from "../../src/vendor/vendor.service";
 import type { CompanyProfileService } from "../../src/company-profile/company-profile.service";
@@ -64,7 +65,8 @@ describe("IT-MAUTH-07 mounted Express tRPC adapter", () => {
     const license = { check: vi.fn(async () => "ELIGIBLE" as const) } as unknown as MasterLicenseClient;
     const documentSetup = { list: vi.fn(), get: vi.fn(), save: vi.fn() } as unknown as DocumentSetupService;
     const currency = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as unknown as CurrencyService;
-    const handler = new MasterTrpcHandler(customer, vendor, companyProfile, stoneMaster, authz, license, documentSetup, currency, {} as unknown as QuotationService, {} as unknown as MemoOutService, {} as unknown as MemoOutReturnService, {} as unknown as MemoReceiveService, {} as unknown as MemoStockService, {} as unknown as MemoReturnService, {} as unknown as MemoOutstandingService, {} as unknown as ReserveService);
+    const decimalSetup = { get: vi.fn(async () => ({ setup: { weightPlaces: 2, pricePlaces: 2, version: 1, updatedAt: "2026-11-03T02:00:00.000Z", updatedBy: null } })), save: vi.fn() } as unknown as DecimalSetupService;
+    const handler = new MasterTrpcHandler(customer, vendor, companyProfile, stoneMaster, authz, license, documentSetup, currency, {} as unknown as QuotationService, {} as unknown as MemoOutService, {} as unknown as MemoOutReturnService, {} as unknown as MemoReceiveService, {} as unknown as MemoStockService, {} as unknown as MemoReturnService, {} as unknown as MemoOutstandingService, {} as unknown as ReserveService, decimalSetup);
     const app = express();
     app.use(express.json({ limit: "256kb" }));
     app.use("/api/master/trpc", handler.handle.bind(handler));
@@ -102,5 +104,13 @@ describe("IT-MAUTH-07 mounted Express tRPC adapter", () => {
     expect(stonesResponse.status).toBe(200);
     expect(await stonesResponse.json()).toMatchObject({ result: { data: { items: [], nextCursor: null, total: 0 } } });
     expect(stoneMaster.list).toHaveBeenCalledWith("group", { limit: 10 });
+
+    // IT-DEC-B01: the handler passes DecimalSetupService to the router; read with no decimal-setup grant.
+    const decimalResponse = await fetch(`http://127.0.0.1:${address.port}/api/master/trpc/decimalSetup.get`, {
+      headers: { cookie: `gms_access=${token}` },
+    });
+    expect(decimalResponse.status).toBe(200);
+    expect(await decimalResponse.json()).toMatchObject({ result: { data: { setup: { weightPlaces: 2, pricePlaces: 2, version: 1 } } } });
+    expect(decimalSetup.get).toHaveBeenCalledOnce();
   });
 });

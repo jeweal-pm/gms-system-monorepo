@@ -1,4 +1,4 @@
-# UI specification: decimal-setup
+﻿# UI specification: decimal-setup
 
 - Feature ID / revision: `decimal-setup` / 1
 - Status: **approved** 2026-10-27 ("อนุมัติ decimal-setup UI rev 1"; frontend + mock data only, no backend/database)
@@ -87,3 +87,69 @@ example text is `aria-live="polite"` only while editing; the table has a caption
 ## Out of scope (this revision)
 
 API, database, permission catalog entry, and using the setting on Quotation/other pages (Q-DEC-06).
+
+---
+
+## Revision 2 — one setting for the whole website (pending review)
+
+- Status: **pending-review** (2026-11-03). Replaces the rev 1 layout below once approved; rev 1 above is kept as history.
+- Owner request (2026-11-03, verbatim): "sa uxui Decimal Setup ให้มันไม่ต้องมี Decimal Places by Page ให้มัน set decimal ทั้ง web เลย frontend backend ทำ ui และ api ด้วย"
+- Source: owner text only (no design image). Layout reuses the rev 1 frame and the other Setup pages (**A** = assumption).
+- Backend/API: SA bundle [document/apps/backend/master/decimal-setup/](../../backend/master/decimal-setup/) and the ADR it adds; questions Q-DEC-08… in [open-questions.md](open-questions.md); TODO [decimal-setup.md](../../../task/todo/decimal-setup.md) revision 2.
+
+### What changes from rev 1
+
+| Rev 1 | Rev 2 |
+|---|---|
+| "Default" card + **Apply to all pages** | Removed — there is only one value per kind |
+| "Decimal Places by Page" table (15 pages, search) | Removed |
+| Preview note "kept in this browser only…" | Removed — saved on the server, used by every page |
+| Choices 0–4 | Limited to what the database stores (weight 0–3, price 0–2 by default; Q-DEC-08) |
+| Gate: `document-setup` permission | Own `decimal-setup` permission (VIEW, EDIT); reading the value needs only a signed-in, licensed user (Q-DEC-11) |
+
+### Page structure (A)
+
+```
+[ Topbar: Home › Setup › Decimal Setup                                                   ]
+[ Header: "Decimal Setup"   "Weight and price decimal places for the whole website"       ]
+[                                                        [Cancel] [Save] [Edit]           ]
+[ Card "Decimal Places"                                                                    ]
+[   Weight (ct) decimals [ 2 ▾ ]   Example 1.23 ct                                         ]
+[   Price decimals       [ 2 ▾ ]   Example 12,345.68                                       ]
+[   Note: Applies to every page (Quotation, Reserve, Memo, Purchase, Inventory, Sale,      ]
+[   Account, reports). Pieces are always whole numbers. Percentages and exchange rates     ]
+[   keep their own decimals.                                                               ]
+[   Last updated {dd/mm/yyyy HH:mm} by {name}                                              ]
+```
+
+- One card, max width ~640 px, left aligned like Company Profile fields; below `sm` the two rows stack (label above the select).
+
+### Input fields
+
+| ID | Field | Control | Values | Default | Rule |
+|---|---|---|---|---|---|
+| F2-01 | Weight (ct) decimals | select | 0–3 (Q-DEC-08) | from the server (seed 2, Q-DEC-09) | Used to show and type every carat weight in the website |
+| F2-02 | Price decimals | select | 0–2 (Q-DEC-08) | from the server (seed 2, Q-DEC-09) | Used to show and type every price and money amount (unit price, amount, discount amount, charges, labor, subtotal, tax, grand total) |
+| F2-03 | Example (weight) | read-only | `1.23456` → e.g. `1.23 ct` (2) / `1.235 ct` (3) | — | Live, half-up rounding (Q-DEC-04 unchanged) |
+| F2-04 | Example (price) | read-only | `12,345.6789` → e.g. `12,345.68` | — | Live, thousands separator |
+| F2-05 | Last updated | read-only text | date/time + user | — | From the server; hidden before the first save |
+
+### Modes and states
+
+- **View** (default): selects read-only; **Edit** enabled only with `decimal-setup:EDIT`.
+- **Edit**: selects enabled; **Save** / **Cancel**; leaving with changes asks to discard (existing dialog).
+- **Save**: sends the values with the loaded version; success toast "Decimal setup saved"; every page in this browser re-formats without a reload; other users get the new places on their next load or within 10 minutes (Q-DEC-15).
+- **Conflict** (409 `DECIMAL_SETUP_CHANGED`, someone saved first): message "Someone else changed the decimal setup. Reload to see the latest values." with **Reload**; the draft is kept until Reload.
+- **Loading**: card skeleton. **Load error**: existing `DetailLoadError` with Retry.
+- **No permission**: existing `PartnerAccessGuard` page (VIEW required to open).
+
+### Website-wide behaviour (frontend)
+
+- Every money value and carat weight shown in the app uses these places (tables, summaries, dialogs, print views, the Memo Outstanding report). Inputs accept at most the chosen places (extra digits are not typed in).
+- Pieces stay whole numbers; percentages, exchange rates and currency rates are unchanged.
+- If the setting cannot be loaded, pages fall back to weight 2 / price 2 (Q-DEC-16) and keep working; only the Decimal Setup page shows the load error.
+- The rev 1 browser-only value (`localStorage` key `gms.decimal-setup.v1`) is deleted on load.
+
+### Accessibility
+
+Each select has a visible label; examples are `aria-live="polite"` while editing; the conflict message is `role="alert"`.

@@ -417,6 +417,22 @@ model DocumentSetup {
   @@schema("partner")
 }
 
+/// Decimal Setup (decimal-setup SA rev 1, ADR-0038): one global row; display/entry places for weight and price.
+/// CHECKs (id = 1, weight 0..3, price 0..2, version >= 1) live in migration 20261103090000_decimal_setup.
+model DecimalSetup {
+  id           Int      @id @default(1) @db.SmallInt
+  weightPlaces Int      @default(2) @map("weight_places") @db.SmallInt
+  pricePlaces  Int      @default(2) @map("price_places") @db.SmallInt
+  /// Optimistic version: +1 on every save.
+  version      Int      @default(1)
+  /// null = seeded by the migration.
+  updatedBy    String?  @map("updated_by") @db.VarChar(64)
+  updatedAt    DateTime @default(now()) @map("updated_at") @db.Timestamp(3)
+
+  @@map("decimal_setup")
+  @@schema("partner")
+}
+
 /// A numbering period: applies from `effectiveDate` until the next row's date (owner 2026-10-23).
 /// Document number = prefix + separator + running number, no zero padding (Q-DS-04, Q-DS-05).
 model DocumentNumbering {
