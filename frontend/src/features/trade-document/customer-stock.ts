@@ -5,7 +5,7 @@ import { z } from "zod";
 import { fromTradeDocument, toTradeDocumentInput } from "@/features/quotation/api";
 import { dec, toFixed } from "@/features/quotation/lib/decimal";
 import { emptyQuotation, newKey } from "@/features/quotation/lib/defaults";
-import { isFilledLine, lineSchema, tradeDocumentRules, tradeDocumentShape, type QuotationLine } from "@/features/quotation/schema";
+import { isFilledLine, lineSchema, stockLineRules, tradeDocumentRules, tradeDocumentShape, type QuotationLine } from "@/features/quotation/schema";
 import type { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError } from "@/lib/trpc-error";
 import { mapDocumentSaveError } from "./document-api";
@@ -48,16 +48,7 @@ export const customerStockSchema = z
   })
   .superRefine((value, ctx) => {
     tradeDocumentRules(value, ctx);
-    value.lines.forEach((line, index) => {
-      if (!isFilledLine(line) || !line.memoStockId) return;
-      const issue = (field: "pcs" | "weightCt" | "unitPrice", message: string) => ctx.addIssue({ code: "custom", path: ["lines", index, field], message });
-      const pcs = Number(line.pcs || 0);
-      const weight = Number(line.weightCt || 0);
-      if (pcs <= 0 && weight <= 0) issue("pcs", "Enter the quantity");
-      if (pcs > Number(line.stockPendingPcs || 0)) issue("pcs", "More than pending");
-      if (weight > Number(line.stockPendingWeightCt || 0)) issue("weightCt", "More than pending");
-      if (Number(line.unitPrice || 0) <= 0) issue("unitPrice", "Enter the sale price");
-    });
+    stockLineRules(value.lines, ctx);
   });
 
 export type CustomerStockFormValues = z.infer<typeof customerStockSchema>;

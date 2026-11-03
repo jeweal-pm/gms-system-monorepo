@@ -19,6 +19,7 @@ import {
   quotationReferenceInvalid,
   quotationStatusInvalid,
 } from "./quotation.errors";
+import { completeFromMemoStock, type CopiedStockFields, type StockSnapshot } from "../trade-document/stock-lines";
 import { QUOTATION_PHOTO_SOURCE } from "./quotation-photo.storage";
 import { CHARGE_TYPES, type QuotationInput, type QuotationListInput, type QuotationStatus } from "./quotation.schemas";
 
@@ -33,6 +34,9 @@ const COUNTRY_NAME = new Map(COUNTRY_OPTIONS.map((item) => [item.code, item.name
 
 type StoredRefs = { customerId: string; shippingAddressId: string | null; invoiceAddressId: string | null; currencyCode: string; stoneCodeIds: Set<string> };
 type Snapshot = { customerCode: string; customerName: string; shippingText: string; invoiceText: string };
+/** A stock line after the save-time completion (SA-QT-17): the item's fields, Stock ID and pending snapshot. */
+type PreparedInput = Omit<QuotationInput, "lines"> & { lines: (QuotationInput["lines"][number] & Partial<Pick<CopiedStockFields, "stockId" | "stockPendingPcs" | "stockPendingWeightCt">>)[] };
+type StoredStockLine = { memoStockId: string | null; pcs: number; weightCt: Prisma.Decimal; stockPendingPcs: number | null; stockPendingWeightCt: Prisma.Decimal | null };
 
 /** Printed address text kept on the quotation (SA-QT-06 snapshot). */
 export function formatAddress(address: { name: string; taxId: string | null; address: string; city: string; state: string; postcode: string; countryCode: string }): string {
@@ -95,7 +99,11 @@ export function toQuotation(row: DetailRow) {
     documentNote: row.documentNote,
     lines: row.lines.map((line) => ({
       id: line.id,
-      source: line.source as "MANUAL",
+      source: line.source as "MANUAL" | "STOCK",
+      memoStockId: line.memoStockId,
+      stockId: line.stockId,
+      stockPendingPcs: line.stockPendingPcs,
+      stockPendingWeightCt: line.stockPendingWeightCt === null ? null : line.stockPendingWeightCt.toFixed(3),
       stoneCodeId: line.stoneCodeId,
       stoneCode: line.stoneCodeSnapshot,
       stone: line.stone,
@@ -344,6 +352,7 @@ export class QuotationService {
     try {
       const created = await prisma.$transaction(async (tx) => {
         const snapshot = await this.checkReferences(tx, input, null);
+        const prepared = await this.prepareStockLines(tx, input, []);
         const { numberingId, runningNo, docNo } = await this.issueNumber(tx, input.docDate, true);
         if (docNo.length > DOC_NO_MAX) throw validationException([{ path: "docNo", code: "too_big" }]);
         const id = uuidV7();
@@ -357,14 +366,14 @@ export class QuotationService {
             status: "APPROVED",
             approvedAt: now,
             approvedBy: actorId,
-            ...this.headerData(input, snapshot),
+            ...this.headerData(prepared, snapshot),
             createdAt: now,
             createdBy: actorId,
             updatedAt: now,
             updatedBy: actorId,
           },
         });
-        await this.writeChildren(tx, id, input);
+        await this.writeChildren(tx, id, prepared);
         return { id, docNo, version: 1 };
       }, WRITE_TX);
       this.logger.log({ event: "quotation.created", actorId, id: created.id, docNo: created.docNo });
@@ -379,7 +388,7 @@ export class QuotationService {
       const version = await prisma.$transaction(async (tx) => {
         const stored = await tx.quotation.findUnique({
           where: { id },
-          select: { status: true, version: true, customerId: true, shippingAddressId: true, invoiceAddressId: true, currencyCode: true, lines: { select: { stoneCodeId: true } } },
+          select: { status: true, version: true, customerId: true, shippingAddressId: true, invoiceAddressId: true, currencyCode: true, lines: { select: { stoneCodeId: true, memoStockId: true, pcs: true, weightCt: true, stockPendingPcs: true, stockPendingWeightCt: true } } },
         });
         if (!stored) throw quotationNotFound();
         if (stored.version !== expectedVersion) throw quotationChanged();
@@ -391,10 +400,11 @@ export class QuotationService {
           currencyCode: stored.currencyCode,
           stoneCodeIds: new Set(stored.lines.flatMap((line) => (line.stoneCodeId ? [line.stoneCodeId] : []))),
         });
+        const prepared = await this.prepareStockLines(tx, input, stored.lines);
         const result = await tx.quotation.updateMany({
           where: { id, version: expectedVersion, status: { in: [...EDITABLE] } },
           data: {
-            ...this.headerData(input, snapshot),
+            ...this.headerData(prepared, snapshot),
             // An older row is approved by its first save after the change.
             ...(stored.status === "APPROVED" ? {} : { status: "APPROVED" as const, approvedAt: new Date(), approvedBy: actorId, statusReason: null }),
             version: { increment: 1 },
@@ -405,7 +415,7 @@ export class QuotationService {
         if (result.count === 0) throw quotationChanged();
         await tx.quotationLine.deleteMany({ where: { quotationId: id } });
         await tx.quotationCharge.deleteMany({ where: { quotationId: id } });
-        await this.writeChildren(tx, id, input);
+        await this.writeChildren(tx, id, prepared);
         return expectedVersion + 1;
       }, WRITE_TX);
       this.logger.log({ event: "quotation.updated", actorId, id, version });
@@ -518,7 +528,24 @@ export class QuotationService {
     };
   }
 
-  private headerData(input: QuotationInput, snapshot: Snapshot) {
+  /**
+   * SA-QT-17/18 (ADR-0038): stock lines take their item's fields from Memo Stock; nothing is taken or held. A line whose
+   * item was already on the stored quotation and whose quantity was not raised keeps its stored pending snapshot and
+   * is not re-checked (Q-QTS-03), so later Memo Out / Reserve approvals never block editing a saved quotation.
+   */
+  private async prepareStockLines(tx: Tx, input: QuotationInput, storedLines: readonly StoredStockLine[]): Promise<PreparedInput> {
+    if (!input.lines.some((line) => line.memoStockId)) return input;
+    const stored = new Map(storedLines.flatMap((line) => (line.memoStockId ? [[line.memoStockId, line] as const] : [])));
+    const kept = (line: QuotationInput["lines"][number]): StockSnapshot | null => {
+      const before = line.memoStockId ? stored.get(line.memoStockId) : undefined;
+      if (!before || before.stockPendingPcs === null || before.stockPendingWeightCt === null) return null;
+      if (line.pcs > before.pcs || new Prisma.Decimal(line.weightCt).gt(before.weightCt)) return null;
+      return { stockPendingPcs: before.stockPendingPcs, stockPendingWeightCt: before.stockPendingWeightCt.toFixed(3) };
+    };
+    return { ...input, lines: await completeFromMemoStock(tx, input.lines, quotationReferenceInvalid, kept) };
+  }
+
+  private headerData(input: PreparedInput, snapshot: Snapshot) {
     const totals = calculateTotals(input);
     // Amounts must fit DECIMAL(18,2); otherwise the write would fail as a database error.
     const oversize = oversizeAmounts(totals);
@@ -557,13 +584,18 @@ export class QuotationService {
   }
 
   /** Lines, their photos and the charges, written in batches (≤ 3 statements). */
-  private async writeChildren(tx: Tx, quotationId: string, input: QuotationInput) {
+  private async writeChildren(tx: Tx, quotationId: string, input: PreparedInput) {
     const { lineAmounts, lineDiscounts } = calculateTotals(input);
     const lines = input.lines.map((line, index) => ({
       id: uuidV7(),
       quotationId,
       position: index + 1,
-      source: line.source,
+      // SA-QT-15: a stock line stores its item, Stock ID and pending snapshot; a typed line keeps NULLs.
+      source: line.memoStockId ? "STOCK" : "MANUAL",
+      memoStockId: line.memoStockId ?? null,
+      stockId: line.memoStockId ? (line.stockId ?? null) : null,
+      stockPendingPcs: line.memoStockId ? (line.stockPendingPcs ?? null) : null,
+      stockPendingWeightCt: line.memoStockId ? (line.stockPendingWeightCt ?? null) : null,
       stoneCodeId: line.stoneCodeId,
       stoneCodeSnapshot: line.stoneCode,
       stone: line.stone,

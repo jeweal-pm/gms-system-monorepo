@@ -124,3 +124,24 @@ erDiagram
 - Rollback: drop the 4 tables in reverse FK order; photo bytes stay in storage as permanent files.
 - Prisma models use `@@schema("partner")`. Later documents (reserve, memo, …) reuse the same
   "lock numbering row, max + 1" rule with their own `numbering_id` / `running_no` columns.
+
+## SA revision 2 (2026-11-03) — From Stock columns (approved)
+
+```mermaid
+erDiagram
+  memo_stock ||--o{ quotation_line : "memo_stock_id (RESTRICT, nullable)"
+  quotation_line {
+    varchar10 source "MANUAL | STOCK"
+    uuid memo_stock_id FK "nullable; UNIQUE (quotation_id, memo_stock_id)"
+    varchar10 stock_id "nullable; Memo Stock Stock ID"
+    int stock_pending_pcs "nullable; pending when picked or raised"
+    numeric12_3 stock_pending_weight_ct "nullable"
+  }
+```
+
+- Migration `20261103090000_quotation_from_stock` (additive; no backfill):
+  - `ALTER TABLE quotation_line ADD` the four columns, the FK, index `quotation_line_memo_stock_idx (memo_stock_id)` and unique `quotation_line_memo_stock_key (quotation_id, memo_stock_id)`.
+  - CHECK `quotation_line_stock_check`, the `reserve_line_stock_check` rule: MANUAL has all four NULL; STOCK has all four set, with `pcs <= stock_pending_pcs` and `weight_ct <= stock_pending_weight_ct`.
+  - If a `source` CHECK exists, it becomes `IN ('MANUAL', 'STOCK')`.
+- `memo_stock` is read only and never written by a quotation. RESTRICT matches Memo Out and Reserve; Memo Stock items are not deleted.
+- Rollback: drop the CHECK, unique key, index, FK and columns. This is safe while no STOCK line exists.

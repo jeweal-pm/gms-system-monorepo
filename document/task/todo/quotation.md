@@ -1,7 +1,7 @@
 # TODO: quotation
 
 - feature-id: `quotation`
-- revision: 1
+- revision: 2 approved (From Stock, 2026-11-03); revision 1 approved and implemented
 - status: **approved** 2026-10-26 (SA revision 1 + ADR-0032); implemented 2026-10-26; security review clear; browser check by the owner pending
 - source: frontend built under [ADR-0025](../../adr/0025-quotation-frontend.md) (mock data); owner request 2026-10-26 "frontend backend ต่อ api ในหน้า quotation ให้หน่อย ออกเอกสารมาหน่อยเปิดเเก้ไง adr ด้วย"
 - backend-bundle: [decisions.md](../../apps/backend/master/quotation/decisions.md), [api-contract.md](../../apps/backend/master/quotation/api-contract.md), [database-diagram.md](../../apps/backend/master/quotation/database-diagram.md), [sequence-diagram.md](../../apps/backend/master/quotation/sequence-diagram.md), [ADR-0032](../../adr/0032-quotation-backend-in-master-service.md)
@@ -11,6 +11,49 @@
 - approved-by: project owner
 - approval-evidence: owner 2026-10-26 "อนุมัติ SA quotation rev 1"
 - updated-at: 2026-10-28
+
+## Revision 2 (2026-11-03): From Stock — approved
+
+- revision: 2 (UI rev 2 + SA rev 2)
+- status: **implemented** 2026-11-03 (approved 2026-11-03; dual security review clear; live browser check pending)
+- request: owner 2026-11-03 "เปิด branches ใหม่นำมาจากchange-to-nginx-with-new-skill-agent ไว้สำหรับสร้าง memo outstanding และ และต่อปุ่ม from stock ใน quotation". Answers the same day: "ปุ่ม From Stock แบบเดียวกับ Memo Out คือ มาจาก memostock + stockเราเอง … แค่ดึงรายละเอียดของมาใส่ในใบเสนอราคา ไม่ตัดยอดอะไรทั้งนั้นไม่ approve ด้วย ทำเอกสาร เเละ adr มา"
+- branch: `feat/03-11-26-memo-outstanding-quotation-from-stock`
+- review-bundle:
+  - [ui-spec rev 2](../../apps/frontend/quotation/ui-spec.md), [open questions Q-QTS-01…10](../../apps/frontend/quotation/open-questions.md), [testing](../../apps/frontend/quotation/testing.md)
+  - SA revision 2 sections of [decisions](../../apps/backend/master/quotation/decisions.md#sa-revision-2-2026-11-03--from-stock-approved), [API contract](../../apps/backend/master/quotation/api-contract.md), [database diagram](../../apps/backend/master/quotation/database-diagram.md), [sequence diagram](../../apps/backend/master/quotation/sequence-diagram.md)
+  - [main flow](../../diagram/quotation-flow.md), [ADR-0038](../../adr/0038-quotation-from-stock.md) (Accepted)
+- dependencies: none new
+- infra: none (no container, route or volume change)
+- approved-revision: UI rev 2 + SA rev 2 (with the Q-QTS-03…10 defaults)
+- approved-by: owner
+- approved-at: 2026-11-03
+- approval-evidence: owner 2026-11-03: "อนุมัติ quotation revision 2 Memo Outstanding ไว้ก่อน"
+
+| Done | ID | Owner | Task | Allowed files | Depends on | Verification |
+|---|---|---|---|---|---|---|
+| [x] | BE-QT-008 | backend | Migration `20261103090000_quotation_from_stock` and Prisma model: four stock columns, FK, index, unique key and stock CHECK on `quotation_line` (SA-QT-15) | `backend-api-master/prisma/**` | approval | migrate deploy (fresh + dev); no drift |
+| [x] | BE-QT-009 | backend | Extract the stock-line helper from `customer-stock-document.ts` (Memo Out / Reserve unchanged, SA-QT-20). Quotation schemas: `source` STOCK and `memoStockId`. `QuotationService` stock-line rules, including the unchanged-row rule (SA-QT-16/17/18). Output stock fields. `memoStock.list` gets `quotation:VIEW` (SA-QT-19). | `backend-api-master/src/quotation/**`, `src/trade-document/**`, `src/master/router.ts`, tests | BE-QT-008 | UT-QT-B25/B26, GP-MT-QT2, IT-QT-01…03, existing memo-out / reserve / quotation tests |
+| [x] | FE-QT-008 | frontend | Enable From Stock on the Quotation page with the shared `MemoStockModal` ("Add From Stock"). Stock rows: Stock ID, read-only copied fields, Pcs/Weight ≤ picked pending, Sale Price required, no Duplicate. Typed rows and Add row unchanged. Map `source` / `memoStockId` and the saved stock fields. Error messages. Remove the mock `FromStockModal` and `mock/stock.ts`. | `frontend/src/features/quotation/**`, `src/features/trade-document/**` (shared helpers only), tests | BE-QT-009 | UT-QT-09…12 |
+| [~] | FE-QT-009 | frontend + parent | Tests, typecheck, lint; live TC-QT-FS-01; sec-auditor + security-auditor on the final code | — | all | all suites pass |
+
+### Evidence, revision 2 (2026-11-03)
+
+- **backend-api-master:** typecheck and lint clean.
+  - The full suite ran against a disposable PostgreSQL 18.6 (127.0.0.1:55439, migrated with `prisma migrate deploy`; removed afterwards): 462 passed, 18 skipped.
+  - New tests: UT-QT-B25a (schema rules), GP-MT-QT2 (`memoStock.list` with `quotation:VIEW`), and IT-QT-01…03 (`quotation-from-stock.db.integration.test.ts`: nothing held on create, update or delete; CHECK and unique key; an unchanged or lowered row survives a later Memo Out approval, while a raised row is re-checked).
+  - The old UT-QT-B10 assertion "STOCK rejected" was updated for revision 2.
+  - Memo Out and Reserve now use the shared `stock-lines.ts` helper; their tests are unchanged and pass.
+- **Migration `20261103090000_quotation_from_stock`:** applied cleanly on a fresh database and on the dev database.
+- **frontend:** typecheck clean (apart from stale generated `.next/types`), lint 0 errors (2 old warnings), 572 tests.
+  - New tests: UT-QT-09…12 (`test/quotation/from-stock.test.ts`).
+  - Shared changes:
+    - `stockLineRules` in `quotation/schema.ts` is now used by Quotation, Memo Out and Reserve.
+    - The row-panel Pcs → Weight fill gives exactly the pending weight when all pcs are taken, and is never above it.
+    - Quotation Save names the first bad row ("Row N: …").
+- **Not done:**
+  - Live TC-QT-FS-01: the dev stack had only api-master and postgres running (no nginx, frontend or auth), so it was not run through :8080.
+- **Security review** (2026-11-03, same uncommitted revision on base 4bdc9ff): sec-auditor and security-auditor are both clear, with no INV records.
+  - Advisory, accepted by design (SA-QT-19, Q-QT-07 / SA-QT-21 deferred): with `quotation:VIEW`, `memoStock.list` also returns the vendor and the vendor's prices (`unitPrice`, `netUnitPrice`, `amount`). The Quotation picker hides them (`showPrice={false}`), but the API does not. Narrowing this is an owner decision for the PRICE work.
 
 ## Changes after delivery (owner 2026-10-26)
 

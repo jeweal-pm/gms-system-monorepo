@@ -39,7 +39,7 @@ const detail: QuotationDetail = {
   customerId: ID, customer: { code: "C001", name: "Siam Gems" }, shippingAddressId: ID, shippingAddressText: "A", invoiceAddressId: null, invoiceAddressText: "B",
   currency: "USD", exchangeRate: "36.25", ref: "PO-1", documentNote: "Note",
   lines: [{
-    id: "l1", source: "MANUAL", stoneCodeId: null, stoneCode: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "",
+    id: "l1", source: "MANUAL", memoStockId: null, stockId: null, stockPendingPcs: null, stockPendingWeightCt: null, stoneCodeId: null, stoneCode: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "",
     lot: "L1", location: "BKK-01", cerType: "GIA", cerNo: "1", pcs: 1, weightCt: "1.120", priceUnit: "PER_CT", unitPrice: "65000.00", discount: { type: "PERCENT", value: "5" }, discountAmount: "3640.00", amount: "69160.00", itemNote: "", photoIds: ["p1", "p2"],
   }],
   discount: { type: "AMOUNT", value: "100" },

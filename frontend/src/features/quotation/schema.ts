@@ -48,6 +48,13 @@ export const lineSchema = z.object({
   stonePartOrder: z.array(z.string()),
   photos: z.array(photoSchema).max(MAX_LINE_PHOTOS),
   itemNote: z.string(),
+  /**
+   * From Stock (memo-out rev 2, reserve rev 1, quotation rev 2): the Memo Stock item and the pending it was picked with
+   * (the row's maximum). Typed rows and empty rows have none.
+   */
+  memoStockId: z.string().optional(),
+  stockPendingPcs: z.string().optional(),
+  stockPendingWeightCt: z.string().optional(),
 });
 export type QuotationLine = z.infer<typeof lineSchema>;
 
@@ -114,6 +121,23 @@ export function tradeDocumentRules(value: TradeDocumentValues, ctx: z.Refinement
   }
 }
 
+/**
+ * From Stock rows (Q-MO-10/11, Q-QTS-03/04): pcs or weight > 0, never above the pending they were picked with, and a
+ * typed Sale Price. Typed rows are not checked here.
+ */
+export function stockLineRules(lines: readonly QuotationLine[], ctx: z.RefinementCtx) {
+  lines.forEach((line, index) => {
+    if (!isFilledLine(line) || !line.memoStockId) return;
+    const issue = (field: "pcs" | "weightCt" | "unitPrice", message: string) => ctx.addIssue({ code: "custom", path: ["lines", index, field], message });
+    const pcs = Number(line.pcs || 0);
+    const weight = Number(line.weightCt || 0);
+    if (pcs <= 0 && weight <= 0) issue("pcs", "Enter the quantity");
+    if (pcs > Number(line.stockPendingPcs || 0)) issue("pcs", "More than pending");
+    if (weight > Number(line.stockPendingWeightCt || 0)) issue("weightCt", "More than pending");
+    if (Number(line.unitPrice || 0) <= 0) issue("unitPrice", "Enter the sale price");
+  });
+}
+
 export const quotationSchema = z
   .object({
     ...tradeDocumentShape,
@@ -123,7 +147,11 @@ export const quotationSchema = z
     shippingAddressId: z.string().min(1, "Required"),
     invoiceAddressId: z.string().min(1, "Required"),
   })
-  .superRefine(tradeDocumentRules);
+  .superRefine((value, ctx) => {
+    tradeDocumentRules(value, ctx);
+    // quotation rev 2 (ADR-0038): From Stock rows only copy the item; their quantity stays within its pending.
+    stockLineRules(value.lines, ctx);
+  });
 
 export type QuotationFormValues = z.infer<typeof quotationSchema>;
 

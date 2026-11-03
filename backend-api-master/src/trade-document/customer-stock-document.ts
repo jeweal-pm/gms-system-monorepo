@@ -1,5 +1,5 @@
 import { HttpStatus, Logger } from "@nestjs/common";
-import { partnerException, validationException, type FieldError } from "../common/errors";
+import { partnerException, type FieldError } from "../common/errors";
 import { WRITE_TX, type Tx } from "../common/persistence";
 import { currencyOptions } from "../currency/currency-directory";
 import { prisma } from "../database/prisma-client";
@@ -12,6 +12,7 @@ import { documentErrors, type DocumentErrors } from "./document-errors";
 import { TradeDocumentEngine, type LineHook, type PartyAdapter, type TradeDocumentInput } from "./document-engine";
 import type { MemoOutInput, MemoReceiveListInput, MemoReceiveStatus } from "./memo-schemas";
 import { takeFromMemoStock } from "./memo-stock.service";
+import { completeFromMemoStock } from "./stock-lines";
 
 /**
  * A customer document whose lines may come From Stock (memo-out SA rev 2 SA-MO-11…15; reserve SA rev 1 SA-RS-04…08):
@@ -91,43 +92,8 @@ export function customerParty<Input extends CustomerInput>(errors: DocumentError
  */
 function completeStockLines(errors: DocumentErrors) {
   return async (tx: Tx, input: CustomerStockInput): Promise<CustomerStockInput> => {
-    const ids = input.lines.flatMap((line) => (line.memoStockId ? [line.memoStockId] : []));
-    if (ids.length === 0) return input;
-    const items = new Map((await tx.memoStock.findMany({ where: { id: { in: ids } } })).map((item) => [item.id, item]));
-    const references: FieldError[] = [];
-    const quantities: FieldError[] = [];
-    const lines = input.lines.map((line, index): PreparedLine => {
-      if (!line.memoStockId) return line;
-      const item = items.get(line.memoStockId);
-      if (!item) {
-        references.push({ path: `lines.${index}.memoStockId`, code: "invalid_reference" });
-        return line;
-      }
-      if (line.pcs > item.pendingPcs) quantities.push({ path: `lines.${index}.pcs`, code: "exceeds_pending" });
-      if (new Prisma.Decimal(line.weightCt).gt(item.pendingWeightCt)) quantities.push({ path: `lines.${index}.weightCt`, code: "exceeds_pending" });
-      return {
-        ...line,
-        stoneCodeId: null,
-        stoneCode: "",
-        stone: item.stone,
-        shape: item.shape,
-        size: item.size,
-        color: item.color,
-        clarity: item.clarity,
-        cutting: item.cutting,
-        quality: item.quality,
-        lot: item.lot,
-        location: item.location,
-        cerType: item.cerType,
-        cerNo: item.cerNo,
-        priceUnit: item.priceUnit as "PER_CT" | "PER_PCS",
-        stockId: item.stockId,
-        stockPendingPcs: item.pendingPcs,
-        stockPendingWeightCt: item.pendingWeightCt.toFixed(3),
-      };
-    });
-    if (references.length > 0) throw errors.referenceInvalid(references);
-    if (quantities.length > 0) throw validationException(quantities);
+    if (!input.lines.some((line) => line.memoStockId)) return input;
+    const lines: PreparedLine[] = await completeFromMemoStock(tx, input.lines, errors.referenceInvalid);
     return { ...input, lines };
   };
 }

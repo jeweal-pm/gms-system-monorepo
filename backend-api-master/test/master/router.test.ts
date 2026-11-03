@@ -360,6 +360,9 @@ describe("staged master domain tRPC boundary", () => {
     await router.createCaller(context(["memo-return:VIEW"])).memoStock.list({ vendorId: ID });
     await router.createCaller(context(["memo-receive:VIEW"])).memoStock.list({ vendorId: ID, q: "ruby", from: "2026-01-01", to: "2026-10-29", limit: 10 });
     expect(memoStock.list).toHaveBeenCalledTimes(2);
+    // GP-MT-QT2 (quotation SA rev 2, SA-QT-19): Quotation From Stock reads Memo Stock with quotation:VIEW.
+    await router.createCaller(context(["quotation:VIEW"])).memoStock.list({ vendorId: ID, q: "ruby", from: "2026-01-01", to: "2026-10-29", limit: 10 });
+    expect(memoStock.list).toHaveBeenCalledTimes(3);
     expect(memoStock.list).toHaveBeenLastCalledWith(expect.objectContaining({ vendorId: ID, q: "ruby", limit: 10 }));
     await expect(router.createCaller(context(["memo-out-return:VIEW"])).memoStock.list({ vendorId: ID })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(router.createCaller(context(["memo-return:ADD"])).memoStock.list({ vendorId: ID })).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -369,7 +372,7 @@ describe("staged master domain tRPC boundary", () => {
     await expect(viewer.memoStock.list({ vendorId: ID, from: "2026-10-29", to: "2026-01-01" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(viewer.memoStock.list({ vendorId: ID, from: "2025-01-01", to: "2026-10-29" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(viewer.memoStock.list({ vendorId: "not-a-uuid" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(memoStock.list).toHaveBeenCalledTimes(2);
+    expect(memoStock.list).toHaveBeenCalledTimes(3);
 
     await router.createCaller(context(["memo-receive:VIEW"])).currency.options();
     expect(currency.options).toHaveBeenCalledTimes(1);

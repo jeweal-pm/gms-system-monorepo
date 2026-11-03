@@ -27,7 +27,7 @@ export type DocumentKind = {
   /**
    * From Stock rows take part or all of a real stock item (memo-out rev 2, Q-MO-10): Pcs / Weight stay editable up to the
    * item's pending (Pcs fills Weight in proportion), the price unit stays the item's, and Duplicate is hidden (an item
-   * appears once per document). Off (Quotation): stock rows keep their quantity locked.
+   * appears once per document). Quotation rev 2 (Q-QTS-03) uses it too.
    */
   stockQuantity?: boolean;
   /**
@@ -46,6 +46,7 @@ export const QUOTATION_KIND: DocumentKind = {
   location: true,
   locations: null,
   emptyRowText: "Empty row · click to key in, or use From Stock to fill it",
+  stockQuantity: true,
   itemNote: { section: "Item Note", max: 500 },
   documentNote: { max: MAX_DOCUMENT_NOTE, hint: "Printed on the quotation for the customer" },
   uploadPhoto: async (file) => {

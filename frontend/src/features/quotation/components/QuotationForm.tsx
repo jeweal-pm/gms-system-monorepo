@@ -17,12 +17,14 @@ import {
 } from "../api";
 import { QuotationOptionsContext } from "../options-context";
 import { calculateTotals } from "../lib/calculate";
+import { memoStockToStockLine, pickedStockIds } from "@/features/trade-document/customer-stock";
+import { invalidSaveMessage, lineErrorMessages } from "@/features/trade-document/document-form";
+import { MemoStockModal } from "@/features/trade-document/memo-stock-modal";
+import type { MemoStockItem } from "@/features/trade-document/memo-stock-api";
 import { emptyLine, emptyQuotation, newKey } from "../lib/defaults";
-import type { StockItem } from "../mock/stock";
-import { isFilledLine, quotationSchema, type QuotationFormValues, type QuotationLine } from "../schema";
+import { isFilledLine, quotationSchema, type QuotationFormValues } from "../schema";
 import { QuotationHeader } from "./header/QuotationHeader";
 import { QuotationInfoForm } from "./info/QuotationInfoForm";
-import { FromStockModal } from "./items/FromStockModal";
 import { ItemEditorPanel } from "./items/ItemEditorPanel";
 import { ItemPhotoBox } from "./items/ItemPhotoBox";
 import { ItemTable, type RowAction } from "./items/ItemTable";
@@ -30,11 +32,6 @@ import { DocumentNote } from "./note/DocumentNote";
 import { RailButtons, RailPanelView, type RailPanel } from "./rail/RightRail";
 import { SummaryValue } from "./summary/SummaryValue";
 import { Button, IconButton, Toast } from "./ui";
-
-function stockToLine({ note, loadedAt, ...fields }: StockItem): QuotationLine {
-  void loadedAt; // วันที่ load stock ไม่เก็บลงเอกสาร
-  return { ...emptyLine(), ...fields, source: "STOCK", itemNote: note };
-}
 
 /**
  * One quotation document (ADR-0025 layout, data from SA quotation rev 1). A saved quotation is remounted
@@ -79,7 +76,6 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
   useEffect(() => {
     if (!saved && companyCurrency && getValues("currency") === "") setValue("currency", companyCurrency);
   }, [saved, companyCurrency, getValues, setValue]);
-  const existingStockIds = useMemo(() => new Set(lines.map((l) => l.stockId).filter(Boolean)), [lines]);
 
   useEffect(() => {
     if (!toast) return;
@@ -118,7 +114,16 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
         showError(error);
       }
     },
-    () => setToast("Please complete the required fields"),
+    (errors) => {
+      // Name the first bad row and open it, as the other document pages do (INV-20261102-003).
+      const rowMessages = lineErrorMessages(errors.lines as Parameters<typeof lineErrorMessages>[0], getValues("lines").length);
+      const first = rowMessages.findIndex(Boolean);
+      if (first >= 0) {
+        setSelectedIndex(first);
+        setEditorOpen(true);
+      }
+      setToast(invalidSaveMessage(rowMessages));
+    },
   );
 
 
@@ -193,7 +198,7 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
     if (action === "duplicate") {
       const source = getValues(`lines.${index}`);
       // ห้าม stock ซ้ำ → สำเนาเป็น manual line ไม่มี stockId
-      lineArray.insert(index + 1, { ...source, key: newKey(), source: "MANUAL", stockId: "", photos: [] });
+      lineArray.insert(index + 1, { ...source, key: newKey(), source: "MANUAL", stockId: "", memoStockId: undefined, stockPendingPcs: undefined, stockPendingWeightCt: undefined, photos: [] });
     }
   };
 
@@ -205,17 +210,18 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
     setEditorOpen(false);
   };
 
-  const fillFromStock = (items: StockItem[]) => {
+  /** quotation rev 2 (ADR-0038): picked Memo Stock items fill the empty rows first, then are appended; nothing is held. */
+  const fillFromStock = (items: MemoStockItem[]) => {
     const next = [...getValues("lines")];
     let cursor = 0;
     for (const item of items) {
       while (cursor < next.length && isFilledLine(next[cursor])) cursor++;
-      if (cursor < next.length) next[cursor] = stockToLine(item);
-      else next.push(stockToLine(item));
+      if (cursor < next.length) next[cursor] = memoStockToStockLine(item);
+      else next.push(memoStockToStockLine(item));
     }
     lineArray.replace(next);
     setFromStockOpen(false);
-    setToast(`Added ${items.length} item${items.length > 1 ? "s" : ""} from stock`);
+    setToast(`Added ${items.length} item${items.length === 1 ? "" : "s"} from Stock`);
   };
 
   const editorIndex = editorOpen && selectedIndex !== null && selectedIndex < lines.length ? selectedIndex : null;
@@ -258,9 +264,9 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
               <div className="mb-4 flex items-center gap-3">
                 <h2 className="text-lg font-medium text-[#1C252E]">Item</h2>
                 <span className="text-xs text-[#6B7480]">{lines.length} rows</span>
-                {/* SA-QT-13: no stock data until the inventory service exists. */}
-                <span title="Stock isn't available yet">
-                  <Button variant="dark" size="sm" disabled onClick={() => setFromStockOpen(true)}>
+                {/* quotation rev 2 (ADR-0038): Memo Stock now, our own stock later; it only copies the item's details. */}
+                <span title="Pick stones from stock (Memo Stock)">
+                  <Button variant="dark" size="sm" disabled={readOnly} onClick={() => setFromStockOpen(true)}>
                     From Stock
                   </Button>
                 </span>
@@ -344,9 +350,11 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
       </div>
 
       {fromStockOpen && (
-        <FromStockModal
-          currency={values.currency ?? ""}
-          existingStockIds={existingStockIds}
+        <MemoStockModal
+          title="Add From Stock"
+          showPrice={false}
+          emptyText="No stock with anything pending."
+          pickedIds={pickedStockIds(lines)}
           onCancel={() => setFromStockOpen(false)}
           onConfirm={fillFromStock}
         />

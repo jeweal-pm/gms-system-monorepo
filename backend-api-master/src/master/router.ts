@@ -330,7 +330,7 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
     }),
     // Memo Stock list (SA-MR-11): Memo Return "Add Memo Stock" (its vendor) and Memo Out "From Stock" (every vendor, SA-MO-15).
     memoStock: t.router({
-      list: permittedAny(["memo-return", "memo-receive", "memo-out", "reserve"], "VIEW").input(memoStockListSchema).query(({ input }) => domainCall(() => memoStock.list(input))),
+      list: permittedAny(["memo-return", "memo-receive", "memo-out", "reserve", "quotation"], "VIEW").input(memoStockListSchema).query(({ input }) => domainCall(() => memoStock.list(input))),
     }),
     // memo-return SA rev 2 (owner 2026-10-29): Memo Stock items back to their vendor; approval reduces pending (Q-MR-15).
     memoReturn: t.router({

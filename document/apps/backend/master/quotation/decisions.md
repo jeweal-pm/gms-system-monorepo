@@ -58,3 +58,26 @@ Owner request (verbatim): "เปลี่ยนเป็นการอัป�
 | Q-QT-06 | Daybook contents | **Owner:** no cancelled, newest first. |
 | Q-QT-07 | Hide prices without PRICE? | **Owner:** not enforced now. Later: lines added from **From Stock** hide prices from users without PRICE, once the load-to-stock page and inventory exist. |
 | Q-QT-08 | Due date default | **Owner:** chosen by the user (no default). |
+
+## SA revision 2 (2026-11-03) — From Stock (approved)
+
+- Status: **approved** 2026-11-03. Approval evidence: owner 2026-11-03: "อนุมัติ quotation revision 2 Memo Outstanding ไว้ก่อน".
+- Owner answers 2026-11-03 (Q-QTS-01/02): "ปุ่ม From Stock แบบเดียวกับ Memo Out คือ มาจาก memostock + stockเราเอง … แค่ดึงรายละเอียดของมาใส่ในใบเสนอราคา ไม่ตัดยอดอะไรทั้งนั้นไม่ approve ด้วย".
+- Source UI: [ui-spec rev 2](../../../frontend/quotation/ui-spec.md); [open questions Q-QTS-01…10](../../../frontend/quotation/open-questions.md).
+- ADR: [ADR-0038](../../../../adr/0038-quotation-from-stock.md) (Accepted). Flow: [diagram/quotation-flow.md](../../../../diagram/quotation-flow.md).
+- Reuses unchanged:
+  - the Memo Stock table and picker query `memoStock.list` (ADR-0034/0035);
+  - the From Stock line columns and CHECK of Memo Out / Reserve (SA-MO-12, SA-RS-01).
+- No new service, container, nginx route, cache or package.
+
+| ID | Decision |
+|---|---|
+| SA-QT-15 | **Columns:** migration `20261103090000_quotation_from_stock` (additive) adds four nullable columns to `quotation_line`, shaped like `reserve_line`:<br>• `memo_stock_id` uuid, FK → `memo_stock`, RESTRICT, indexed<br>• `stock_id` varchar(10)<br>• `stock_pending_pcs` int<br>• `stock_pending_weight_ct` numeric(12,3)<br>It also adds unique `(quotation_id, memo_stock_id)` and CHECK `quotation_line_stock_check`: a MANUAL line has none of the four columns; a STOCK line has all four, with pcs ≤ `stock_pending_pcs` and weight ≤ `stock_pending_weight_ct`. The `source` values become MANUAL or STOCK. Existing rows are MANUAL with NULLs, so there is no backfill. |
+| SA-QT-16 | **Contract:** `LineInput.source` becomes `"MANUAL"` or `"STOCK"`, and `LineInput` gains `memoStockId` (uuid or null; required when STOCK, null when MANUAL). Output lines also carry `stockId`, `memoStockId`, `stockPendingPcs` and `stockPendingWeightCt`. All other fields are unchanged. |
+| SA-QT-17 | **Stock line rules on create / update (Q-QTS-03/04/06/08):** inside the existing save transaction, the server reads the referenced `memo_stock` rows by id, with no lock:<br>• An unknown item gives `QUOTATION_REFERENCE_INVALID` at `lines.N.memoStockId`. An item that appears twice gives `VALIDATION_ERROR` `duplicate`.<br>• The server copies stone, shape, size, color, clarity, cutting, quality, lot, location, cer type, cer no., price unit and Stock ID. Stone code is empty and `stone_code_id` is NULL.<br>• Sale Price must be > 0. Pcs or weight must be > 0.<br>• **Pending check only for new or raised rows.** On update, a stock line whose item was already on the stored quotation, and whose pcs and weight are both ≤ the stored line's, keeps its stored pending snapshot and is not re-checked. Any other stock line must be ≤ the item's current pending (`VALIDATION_ERROR` `exceeds_pending` at `lines.N.pcs` / `weightCt`), and its snapshot becomes the current pending.<br>• Typed lines are unchanged. |
+| SA-QT-18 | **Nothing held (Q-QTS-02):** create, update and delete of a quotation never write `memo_stock`, take no row lock on it and never touch Memo Outstanding. Status handling stays SA-QT-03a: saved APPROVED, with no Approve on this page. |
+| SA-QT-19 | **Permissions:** `memoStock.list` is also readable with `quotation:VIEW`, added to its `permittedAny` list. The quotation procedures keep their grants. |
+| SA-QT-20 | **Code reuse:** the item lookup, field copy and pending check in `customer-stock-document.ts` (`completeStockLines`) move into an exported helper parameterised by the document's errors and an optional "unchanged stored line" rule. Memo Out and Reserve call it with no stored-line rule, so their behaviour is unchanged. `QuotationService` calls it from its own save path, because it does not use the document engine. |
+| SA-QT-21 | **Not in this revision:** our own stock (inventory, ADR-0027); hiding prices without PRICE (Q-QT-07); converting a quotation to a Reserve, Memo Out or Sale; copying Memo Receive photos; warnings on saved quotations whose stock moved (Q-QTS-09). |
+
+Capacity: a save reads ≤ 200 `memo_stock` rows by primary key and locks none of them. The picker is the existing bounded `memoStock.list` (≤ 51 rows per page). Pool and container limits are unchanged.
