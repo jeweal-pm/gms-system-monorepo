@@ -5,6 +5,7 @@ import { useCallback, useRef, useState, type RefObject } from "react";
 import { cx, focusRing, IconButton } from "@/components/ui/button";
 import { DateInput } from "@/components/ui/date-input";
 import { dateRangeProblem, SEARCH_MAX, VENDOR_FILTER_MAX, type SubtaskMode, type VendorOption } from "../model";
+import { useReportSpec } from "./report-context";
 import { trapTab, useDismiss } from "./parts";
 
 export const EXCEL_UNAVAILABLE = "Excel export isn't available yet";
@@ -13,6 +14,7 @@ type VendorFilterProps = { vendors: readonly VendorOption[] | undefined; loading
 
 /** Vendor multi-select popover (D 02): checkboxes by name and a "Clear" link. */
 export function VendorFilter({ vendors, loading, selected, onChange }: VendorFilterProps) {
+  const party = useReportSpec().party;
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -29,31 +31,31 @@ export function VendorFilter({ vendors, loading, selected, onChange }: VendorFil
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        title="Select a vendor to filter the results."
+        title={`Select a ${party.toLowerCase()} to filter the results.`}
         onClick={() => setOpen((current) => !current)}
         className={cx("inline-flex h-9 items-center gap-2 rounded-gms-md border bg-gms-surface px-3 text-gms-body", selected.length ? "border-gms-primary text-gms-primary" : "border-gms-border text-gms-text", focusRing)}
       >
         <UserRound size={16} aria-hidden />
-        {selected.length ? `Vendor (${selected.length})` : "Vendor"}
+        {selected.length ? `${party} (${selected.length})` : party}
         <ChevronDown size={16} aria-hidden />
       </button>
       {open && (
         <div
           ref={box}
           role="dialog"
-          aria-label="Filter by vendor"
+          aria-label={`Filter by ${party.toLowerCase()}`}
           onKeyDown={(event) => trapTab(event, box.current)}
           className="absolute top-full left-0 z-40 mt-1 w-[240px] rounded-gms-md border border-gms-border bg-gms-surface py-2 shadow-lg"
         >
           <div className="flex items-center justify-between px-3 pb-1">
-            <span className="text-gms-label text-gms-text-secondary">Vendor</span>
+            <span className="text-gms-label text-gms-text-secondary">{party}</span>
             <button type="button" className={cx("rounded px-1 text-gms-label font-medium text-gms-primary disabled:opacity-40", focusRing)} disabled={selected.length === 0} onClick={() => onChange([])}>
               Clear
             </button>
           </div>
           <ul className="max-h-[260px] overflow-y-auto">
             {loading && <li className="px-3 py-2 text-gms-body text-gms-text-secondary">Loading…</li>}
-            {!loading && (vendors?.length ?? 0) === 0 && <li className="px-3 py-2 text-gms-body text-gms-text-secondary">No vendors</li>}
+            {!loading && (vendors?.length ?? 0) === 0 && <li className="px-3 py-2 text-gms-body text-gms-text-secondary">{`No ${party.toLowerCase()}s`}</li>}
             {vendors?.map((vendor) => {
               const checked = selected.includes(vendor.id);
               return (
@@ -96,17 +98,18 @@ const dateBox = "h-9 w-[140px] rounded-gms-md border border-gms-border bg-gms-su
 
 /** Search "Search Doc No. / Vendor", Vendor popover, Doc Date range Start → Due (Q-MOV-03). */
 export function Filters({ query, onQuery, vendors, from, to, onFrom, onTo }: FiltersProps) {
+  const searchLabel = `Search Doc No. / ${useReportSpec().party}`;
   const problem = dateRangeProblem(from, to);
   return (
     <div className="flex flex-wrap items-start gap-2.5">
       <label className="relative block w-full sm:w-[260px]">
-        <span className="sr-only">Search Doc No. / Vendor</span>
+        <span className="sr-only">{searchLabel}</span>
         <Search size={16} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-gms-text-secondary" aria-hidden />
         <input
           type="search"
           value={query}
           maxLength={SEARCH_MAX}
-          placeholder="Search Doc No. / Vendor"
+          placeholder={searchLabel}
           onChange={(event) => onQuery(event.target.value)}
           className={cx("h-9 w-full rounded-gms-md border border-gms-border bg-gms-surface pr-3 pl-9 text-gms-body", focusRing)}
         />

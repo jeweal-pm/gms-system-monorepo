@@ -29,7 +29,7 @@ describe("UT-MOV-NAV navigation", () => {
     expect(PAGE_TITLE).toBe("From Vendor");
   });
 
-  it("leaves Customer as a placeholder", () => {
-    expect(navigationHref({ label: "Customer", slug: "memo-outstanding-from-customer" })).toBe("/modules/memo-outstanding-from-customer");
+  it("links Customer to its own page (memo-outstanding-customer rev 1, ADR-0039)", () => {
+    expect(navigationHref({ label: "Customer", slug: "memo-outstanding-from-customer" })).toBe("/memo/memo-outstanding/customer");
   });
 });

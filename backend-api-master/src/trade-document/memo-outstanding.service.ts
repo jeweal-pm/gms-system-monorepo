@@ -3,8 +3,13 @@ import { escapeLike } from "../common/persistence";
 import { prisma } from "../database/prisma-client";
 import { fromDbDate, toDbDate } from "../document-setup/document-setup.service";
 import { Prisma } from "../generated/prisma/client";
+import { documentErrors } from "./document-errors";
 import { memoReceiveErrors } from "./memo-receive.service";
 import type {
+  MemoOutstandingCustomerFilters,
+  MemoOutstandingCustomerItemsInput,
+  MemoOutstandingCustomerListInput,
+  MemoOutstandingCustomerSortKey,
   MemoOutstandingFilters,
   MemoOutstandingItemsInput,
   MemoOutstandingListInput,
@@ -101,6 +106,87 @@ function receiveFilters(input: MemoOutstandingFilters): Prisma.Sql {
   }
   if (input.from) filters.push(Prisma.sql`r.doc_date >= ${toDbDate(input.from)}::date`);
   if (input.to) filters.push(Prisma.sql`r.doc_date <= ${toDbDate(input.to)}::date`);
+  return Prisma.join(filters, " AND ");
+}
+
+// ---- From Customer (memo-outstanding-customer SA-MOC-01…10, ADR-0039): approved Memo Outs and their stock lines ----
+
+const memoOutErrors = documentErrors("MEMO_OUT", "MemoOut", "memo_out");
+export const MEMO_OUTSTANDING_CUSTOMER_OPTIONS_MAX = 1_000;
+
+/** SA-MOC-02: a From Stock line of a Memo Out; lines typed by hand can't be returned and are left out. */
+const STOCK_LINE = Prisma.sql`l.memo_stock_id IS NOT NULL`;
+
+/**
+ * SA-MOC-05: open value = amount × outstanding basis ÷ lent basis (weight for PER_CT, pcs for PER_PCS), 2 dp half-up, in
+ * the document currency; a zero basis uses the unit price × outstanding quantity. Sold is 0 until Sale exists.
+ */
+const CUSTOMER_OPEN_VALUE = Prisma.sql`round(CASE WHEN l.price_unit = 'PER_CT' THEN
+    CASE WHEN l.weight_ct = 0 THEN l.unit_price * (l.weight_ct - l.returned_weight_ct)
+      ELSE l.amount * (l.weight_ct - l.returned_weight_ct) / l.weight_ct END
+  ELSE
+    CASE WHEN l.pcs = 0 THEN l.unit_price * (l.pcs - l.returned_pcs)
+      ELSE l.amount * (l.pcs - l.returned_pcs) / l.pcs END
+  END, 2)`;
+
+/** SA-MOC-05: the Sale Price after the line discount per ct or per pcs (4 dp; the page shows 2). */
+const CUSTOMER_NET_PRICE = Prisma.sql`round(CASE WHEN l.price_unit = 'PER_CT'
+    THEN CASE WHEN l.weight_ct = 0 THEN l.unit_price ELSE l.amount / l.weight_ct END
+    ELSE CASE WHEN l.pcs = 0 THEN l.unit_price ELSE l.amount / l.pcs END END, 4)`;
+
+/** SA-MOC-03: a document is listed while any stock line still has something out. */
+const HAS_OUT_LINE = Prisma.sql`bool_or(l.returned_pcs < l.pcs OR l.returned_weight_ct < l.weight_ct)`;
+
+const CUSTOMER_DOC_SUMS = Prisma.sql`
+  sum(l.pcs)::bigint AS memo_pcs, sum(l.weight_ct) AS memo_wt,
+  sum(l.returned_pcs)::bigint AS return_pcs, sum(l.returned_weight_ct) AS return_wt,
+  0::bigint AS sold_pcs, 0::numeric AS sold_wt,
+  sum(l.pcs - l.returned_pcs)::bigint AS outstanding_pcs, sum(l.weight_ct - l.returned_weight_ct) AS outstanding_wt,
+  sum(${CUSTOMER_OPEN_VALUE}) AS open_value`;
+
+/** Whitelisted ORDER BY columns of the grouped customer `docs` CTE (SA-MOC-04). Never built from client text. */
+const CUSTOMER_SORT_COLUMNS: Record<MemoOutstandingCustomerSortKey, Prisma.Sql> = {
+  docNo: Prisma.sql`doc_no`,
+  dueDate: Prisma.sql`due_date`,
+  customerName: Prisma.sql`customer_name_snapshot`,
+  memoPcs: Prisma.sql`memo_pcs`,
+  returnPcs: Prisma.sql`return_pcs`,
+  soldPcs: Prisma.sql`sold_pcs`,
+  outstandingPcs: Prisma.sql`outstanding_pcs`,
+  openValue: Prisma.sql`open_value`,
+};
+
+type CustomerSums = Omit<BucketSums, "reserve_pcs" | "reserve_wt">;
+type CustomerDocRow = CustomerSums & {
+  id: string; doc_no: string; doc_date: Date; due_date: Date; due_in_days: number;
+  customer_id: string; customer_code_snapshot: string; customer_name_snapshot: string; currency_code: string;
+};
+type CustomerItemRow = CustomerSums & {
+  id: string; memo_out_id: string; position: number; stock_id: string | null; lot: string; location: string;
+  stone: string; shape: string; size: string; color: string; clarity: string; cutting: string; quality: string;
+  cer_type: string; cer_no: string; item_note: string; price_unit: string; net_unit_price: Num; currency_code: string;
+};
+
+const customerBuckets = (row: CustomerSums) => ({
+  memo: qty(row.memo_pcs, row.memo_wt),
+  return: qty(row.return_pcs, row.return_wt),
+  sold: qty(row.sold_pcs, row.sold_wt),
+  outstanding: qty(row.outstanding_pcs, row.outstanding_wt),
+});
+
+/** Header filters on `memo_out o` (SA-MOC-03): approved only, escaped ILIKE, customer ids, doc date range. */
+function memoOutFilters(input: MemoOutstandingCustomerFilters): Prisma.Sql {
+  const filters: Prisma.Sql[] = [Prisma.sql`o.status = ${APPROVED}`];
+  if (input.q) {
+    const pattern = `%${escapeLike(input.q)}%`;
+    filters.push(Prisma.sql`(o.doc_no ILIKE ${pattern} OR o.customer_name_snapshot ILIKE ${pattern})`);
+  }
+  if (input.customerIds && input.customerIds.length > 0) {
+    const ids = [...new Set(input.customerIds)].map((id) => Prisma.sql`${id}::uuid`);
+    filters.push(Prisma.sql`o.customer_id IN (${Prisma.join(ids)})`);
+  }
+  if (input.from) filters.push(Prisma.sql`o.doc_date >= ${toDbDate(input.from)}::date`);
+  if (input.to) filters.push(Prisma.sql`o.doc_date <= ${toDbDate(input.to)}::date`);
   return Prisma.join(filters, " AND ");
 }
 
@@ -243,6 +329,152 @@ export class MemoOutstandingService {
       };
     } catch (error) {
       throw memoReceiveErrors.map(error, "memo_outstanding.vendor_items");
+    }
+  }
+
+  /** SA-MOC-06: KPIs of the listed Memo Outs and their open value in the company currency. */
+  async customerSummary(input: MemoOutstandingCustomerFilters) {
+    const today = toDbDate(bangkokToday(this.clock()));
+    try {
+      const [row] = await prisma.$queryRaw<SummaryRow[]>(Prisma.sql`
+        WITH company AS (SELECT currency_code FROM "partner"."company_profile" WHERE id = 1),
+        docs AS (
+          SELECT o.id, o.due_date, o.currency_code, o.exchange_rate, sum(${CUSTOMER_OPEN_VALUE}) AS open_value
+          FROM "partner"."memo_out" o
+          JOIN "partner"."memo_out_line" l ON l.memo_out_id = o.id AND ${STOCK_LINE}
+          WHERE ${memoOutFilters(input)}
+          GROUP BY o.id
+          HAVING ${HAS_OUT_LINE}
+        )
+        SELECT count(*)::bigint AS documents,
+          count(*) FILTER (WHERE d.due_date < ${today}::date)::bigint AS overdue,
+          count(*) FILTER (WHERE d.due_date >= ${today}::date AND d.due_date <= ${today}::date + 7)::bigint AS due_in_7_days,
+          round(sum(d.open_value * CASE WHEN d.currency_code = (SELECT currency_code FROM company) THEN 1
+            ELSE COALESCE(d.exchange_rate, 1) END), 2) AS grand_total,
+          (SELECT currency_code FROM company) AS company_currency
+        FROM docs d`);
+      return {
+        documents: Number(row?.documents ?? 0),
+        overdue: Number(row?.overdue ?? 0),
+        dueIn7Days: Number(row?.due_in_7_days ?? 0),
+        grandTotal: dec(row?.grand_total ?? 0).toFixed(2),
+        companyCurrency: row?.company_currency?.trim() ?? "",
+      };
+    } catch (error) {
+      throw memoOutErrors.map(error, "memo_outstanding.customer_summary");
+    }
+  }
+
+  /** SA-MOC-03/04: listed Memo Outs with their line sums, whitelisted sort, offset paging. */
+  async customerList(input: MemoOutstandingCustomerListInput) {
+    const today = toDbDate(bangkokToday(this.clock()));
+    const dir = input.dir === "desc" ? Prisma.sql`DESC` : Prisma.sql`ASC`;
+    const sort = input.sort ?? "dueDate";
+    const orderBy = sort === "dueDate"
+      ? Prisma.sql`due_date ${dir}, doc_no ASC, id ASC`
+      : Prisma.sql`${CUSTOMER_SORT_COLUMNS[sort]} ${dir}, id ASC`;
+    const docs = Prisma.sql`
+      SELECT o.id, o.doc_no, o.doc_date, o.due_date, o.customer_id, o.customer_code_snapshot, o.customer_name_snapshot, o.currency_code,
+        ${CUSTOMER_DOC_SUMS}
+      FROM "partner"."memo_out" o
+      JOIN "partner"."memo_out_line" l ON l.memo_out_id = o.id AND ${STOCK_LINE}
+      WHERE ${memoOutFilters(input)}
+      GROUP BY o.id
+      HAVING ${HAS_OUT_LINE}`;
+    try {
+      const [rows, counted] = await Promise.all([
+        prisma.$queryRaw<CustomerDocRow[]>(Prisma.sql`
+          WITH docs AS (${docs})
+          SELECT id::text AS id, doc_no, doc_date, due_date, (due_date - ${today}::date)::int AS due_in_days,
+            customer_id::text AS customer_id, customer_code_snapshot, customer_name_snapshot, currency_code,
+            memo_pcs, memo_wt, return_pcs, return_wt, sold_pcs, sold_wt, outstanding_pcs, outstanding_wt, open_value
+          FROM docs
+          ORDER BY ${orderBy}
+          LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}`),
+        prisma.$queryRaw<{ total: Num }[]>(Prisma.sql`WITH docs AS (${docs}) SELECT count(*)::bigint AS total FROM docs`),
+      ]);
+      return {
+        items: rows.map((row) => ({
+          memoOutId: row.id,
+          docNo: row.doc_no,
+          docDate: fromDbDate(row.doc_date),
+          dueDate: fromDbDate(row.due_date),
+          dueInDays: Number(row.due_in_days),
+          customer: { id: row.customer_id, code: row.customer_code_snapshot, name: row.customer_name_snapshot },
+          currency: row.currency_code.trim(),
+          openValue: dec(row.open_value).toFixed(2),
+          ...customerBuckets(row),
+        })),
+        total: Number(counted[0]?.total ?? 0),
+        page: input.page,
+        pageSize: input.pageSize,
+      };
+    } catch (error) {
+      throw memoOutErrors.map(error, "memo_outstanding.customer_list");
+    }
+  }
+
+  /**
+   * SA-MOC-07: every stock line of the given listed Memo Outs (approved, with a line still out), so the lines sum to the
+   * document row; unknown, unapproved or fully returned ids are skipped. Doc number, then line order.
+   */
+  async customerItems(input: MemoOutstandingCustomerItemsInput) {
+    const ids = [...new Set(input.memoOutIds)].map((id) => Prisma.sql`${id}::uuid`);
+    try {
+      const rows = await prisma.$queryRaw<CustomerItemRow[]>(Prisma.sql`
+        SELECT l.id::text AS id, l.memo_out_id::text AS memo_out_id, l.position, l.stock_id, l.lot, l.location,
+          l.stone, l.shape, l.size, l.color, l.clarity, l.cutting, l.quality, l.cer_type, l.cer_no, l.item_note,
+          l.pcs AS memo_pcs, l.weight_ct AS memo_wt, l.returned_pcs AS return_pcs, l.returned_weight_ct AS return_wt,
+          0 AS sold_pcs, 0 AS sold_wt, (l.pcs - l.returned_pcs) AS outstanding_pcs, (l.weight_ct - l.returned_weight_ct) AS outstanding_wt,
+          ${CUSTOMER_OPEN_VALUE} AS open_value, l.price_unit, ${CUSTOMER_NET_PRICE} AS net_unit_price, o.currency_code
+        FROM "partner"."memo_out_line" l
+        JOIN "partner"."memo_out" o ON o.id = l.memo_out_id
+        WHERE o.status = ${APPROVED} AND o.id IN (${Prisma.join(ids)}) AND ${STOCK_LINE}
+          AND EXISTS (SELECT 1 FROM "partner"."memo_out_line" x WHERE x.memo_out_id = o.id AND x.memo_stock_id IS NOT NULL
+            AND (x.returned_pcs < x.pcs OR x.returned_weight_ct < x.weight_ct))
+        ORDER BY o.doc_no ASC, o.id ASC, l.position ASC`);
+      return {
+        items: rows.map((row) => ({
+          id: row.id,
+          memoOutId: row.memo_out_id,
+          position: Number(row.position),
+          stockId: row.stock_id ?? "",
+          lot: row.lot,
+          location: row.location,
+          stone: row.stone,
+          shape: row.shape,
+          size: row.size,
+          color: row.color,
+          clarity: row.clarity,
+          cutting: row.cutting,
+          quality: row.quality,
+          cerType: row.cer_type,
+          cerNo: row.cer_no,
+          itemNote: row.item_note,
+          priceUnit: (row.price_unit === "PER_CT" ? "CTS" : "PCS") as "CTS" | "PCS",
+          netUnitPrice: dec(row.net_unit_price).toFixed(4),
+          currency: row.currency_code.trim(),
+          openValue: dec(row.open_value).toFixed(2),
+          ...customerBuckets(row),
+        })),
+      };
+    } catch (error) {
+      throw memoOutErrors.map(error, "memo_outstanding.customer_items");
+    }
+  }
+
+  /** SA-MOC-08: distinct customers with approved Memo Out documents, by name, at most 1,000. */
+  async customerOptions() {
+    try {
+      const rows = await prisma.$queryRaw<{ id: string; code: string; name: string }[]>(Prisma.sql`
+        SELECT c.id::text AS id, c.code, c.name
+        FROM "partner"."customer" c
+        WHERE EXISTS (SELECT 1 FROM "partner"."memo_out" o WHERE o.customer_id = c.id AND o.status = ${APPROVED})
+        ORDER BY c.name_key ASC, c.id ASC
+        LIMIT ${MEMO_OUTSTANDING_CUSTOMER_OPTIONS_MAX}`);
+      return { customers: rows.map((row) => ({ id: row.id, code: row.code, name: row.name })) };
+    } catch (error) {
+      throw memoOutErrors.map(error, "memo_outstanding.customer_options");
     }
   }
 

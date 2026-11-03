@@ -45,7 +45,9 @@ describe("menu visibility", () => {
     expect(ids(visibleSections(sidebarSections, canViewFor([])))).not.toContain("memo-outstanding");
     // memo-outstanding-vendor UI rev 1: Vendor is a real page now, so it has no /modules placeholder.
     expect(moduleBreadcrumbs("memo-outstanding-from-vendor")?.label).toBeNull();
-    expect(moduleBreadcrumbs("memo-outstanding-from-customer")?.label).toBe("Customer");
+    // memo-outstanding-customer UI rev 1: Customer is a real page now too.
+    expect(moduleBreadcrumbs("memo-outstanding-from-customer")?.label).toBeNull();
+    expect(ids(visibleSections(sidebarSections, canViewFor(["memo-outstanding-customer:VIEW"])))).toContain("memo-outstanding-from-customer");
   });
 
   it("UT-MENU-06 rail sections follow the visible sidebar sections", () => {

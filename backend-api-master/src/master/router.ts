@@ -23,6 +23,9 @@ import type { MemoReturnService } from "../trade-document/memo-return.service";
 import type { MemoStockService } from "../trade-document/memo-stock.service";
 import type { MemoOutstandingService } from "../trade-document/memo-outstanding.service";
 import {
+  memoOutstandingCustomerFiltersSchema,
+  memoOutstandingCustomerItemsSchema,
+  memoOutstandingCustomerListSchema,
   memoOutstandingFiltersSchema,
   memoOutstandingItemsSchema,
   memoOutstandingListSchema,
@@ -357,6 +360,15 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
         .query(({ input }) => domainCall(() => memoOutstanding.vendorItems(input))),
       vendorOptions: permitted("memo-outstanding-vendor", "VIEW").use(withFieldErrors(memoOutstandingOptionsSchema)).input(memoOutstandingOptionsSchema)
         .query(() => domainCall(() => memoOutstanding.vendorOptions())),
+      // Memo Outstanding From Customer report (memo-outstanding-customer SA-MOC-01/09): read-only, VIEW on its own menu.
+      customerSummary: permitted("memo-outstanding-customer", "VIEW").use(withFieldErrors(memoOutstandingCustomerFiltersSchema)).input(memoOutstandingCustomerFiltersSchema)
+        .query(({ input }) => domainCall(() => memoOutstanding.customerSummary(input))),
+      customerList: permitted("memo-outstanding-customer", "VIEW").use(withFieldErrors(memoOutstandingCustomerListSchema)).input(memoOutstandingCustomerListSchema)
+        .query(({ input }) => domainCall(() => memoOutstanding.customerList(input))),
+      customerItems: permitted("memo-outstanding-customer", "VIEW").use(withFieldErrors(memoOutstandingCustomerItemsSchema)).input(memoOutstandingCustomerItemsSchema)
+        .query(({ input }) => domainCall(() => memoOutstanding.customerItems(input))),
+      customerOptions: permitted("memo-outstanding-customer", "VIEW").use(withFieldErrors(memoOutstandingOptionsSchema)).input(memoOutstandingOptionsSchema)
+        .query(() => domainCall(() => memoOutstanding.customerOptions())),
     }),
   });
 }
