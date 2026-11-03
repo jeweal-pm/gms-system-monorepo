@@ -16,7 +16,7 @@ import {
 import { DECIMAL_SETUP_STALE_MS, placesFrom, removeLegacyStorage, retryDecimalSetupRead, type DecimalSetup, type DecimalSetupOutput } from "./api";
 
 /**
- * Website-wide number format (FE-DEC-102, ADR-0038): the Decimal Setup places plus the bound formatters and input
+ * Website-wide number format (FE-DEC-102, ADR-0040): the Decimal Setup places plus the bound formatters and input
  * caps every page uses. Display: weight/price places 0–4. Typing: min(places, storage scale) (owner Q-DEC-08).
  */
 export type NumberFormat = DecimalPlaces & {

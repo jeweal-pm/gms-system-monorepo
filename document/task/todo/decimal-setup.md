@@ -6,14 +6,14 @@
 - source: owner text 2026-11-03 (verbatim): "sa uxui Decimal Setup ให้มันไม่ต้องมี Decimal Places by Page ให้มัน set decimal ทั้ง web เลย frontend backend ทำ ui และ api ด้วย"
 - ui-spec: [ui-spec.md](../../apps/frontend/decimal-setup/ui-spec.md) (UI revision 2, written by the parent); open questions: [open-questions.md](../../apps/frontend/decimal-setup/open-questions.md) Q-DEC-08…18
 - source-ui-revision: 2
-- backend-bundles: [master/decimal-setup](../../apps/backend/master/decimal-setup/architecture.md) SA revision 1 ([decisions](../../apps/backend/master/decimal-setup/decisions.md), [api-contract](../../apps/backend/master/decimal-setup/api-contract.md), [authorization](../../apps/backend/master/decimal-setup/authorization.md), [database-diagram](../../apps/backend/master/decimal-setup/database-diagram.md), [sequence-diagram](../../apps/backend/master/decimal-setup/sequence-diagram.md), [error-handling](../../apps/backend/master/decimal-setup/error-handling.md), [dependencies](../../apps/backend/master/decimal-setup/dependencies.md), [testing](../../apps/backend/master/decimal-setup/testing.md)); ADR [0038](../../adr/0038-global-decimal-setup.md) (Proposed); main flow [decimal-setup-flow](../../diagram/decimal-setup-flow.md)
+- backend-bundles: [master/decimal-setup](../../apps/backend/master/decimal-setup/architecture.md) SA revision 1 ([decisions](../../apps/backend/master/decimal-setup/decisions.md), [api-contract](../../apps/backend/master/decimal-setup/api-contract.md), [authorization](../../apps/backend/master/decimal-setup/authorization.md), [database-diagram](../../apps/backend/master/decimal-setup/database-diagram.md), [sequence-diagram](../../apps/backend/master/decimal-setup/sequence-diagram.md), [error-handling](../../apps/backend/master/decimal-setup/error-handling.md), [dependencies](../../apps/backend/master/decimal-setup/dependencies.md), [testing](../../apps/backend/master/decimal-setup/testing.md)); ADR [0040](../../adr/0040-global-decimal-setup.md) (Proposed); main flow [decimal-setup-flow](../../diagram/decimal-setup-flow.md)
 - dependencies: none new (no package, container, variable); integration-owned file `backend-api-master/src/app.module.ts` serialized through the parent
-- approved-revision: TODO 2 = UI revision 2 + SA revision 1 (ADR-0038), Q-DEC-14 changed by the owner
+- approved-revision: TODO 2 = UI revision 2 + SA revision 1 (ADR-0040), Q-DEC-14 changed by the owner
 - approved-by: project owner (developer_07)
 - approved-at: 2026-11-03T11:30+07:00
-- approval-evidence: owner 2026-11-03 (AskUserQuestion answers): "Approve, start work (Recommended)" for UI rev 2 + SA rev 1 + ADR-0038 with the Q-DEC-08…18 defaults; Q-DEC-09 weight start "2 places"; Q-DEC-11 "Rounded on display only"; Q-DEC-14 changed to "Copy from Document Setup" (users with document-setup VIEW/EDIT get decimal-setup VIEW/EDIT by a one-time data migration).
+- approval-evidence: owner 2026-11-03 (AskUserQuestion answers): "Approve, start work (Recommended)" for UI rev 2 + SA rev 1 + ADR-0040 with the Q-DEC-08…18 defaults; Q-DEC-09 weight start "2 places"; Q-DEC-11 "Rounded on display only"; Q-DEC-14 changed to "Copy from Document Setup" (users with document-setup VIEW/EDIT get decimal-setup VIEW/EDIT by a one-time data migration).
 - sa-approval: SA revision 1 approved 2026-11-03 (same instruction)
-- review-bundle: ui-spec rev 2 + open-questions Q-DEC-08…18 + SA bundle above + ADR-0038 + this TODO revision 2
+- review-bundle: ui-spec rev 2 + open-questions Q-DEC-08…18 + SA bundle above + ADR-0040 + this TODO revision 2
 - updated-at: 2026-11-03T15:40:00+07:00
 
 ## Revision history
@@ -46,7 +46,7 @@
 
 ## Decisions needed from the owner
 
-1. Approve **decimal-setup UI revision 2** (parent's ui-spec) and **SA revision 1** (bundle above, ADR-0038) — one instruction may approve both.
+1. Approve **decimal-setup UI revision 2** (parent's ui-spec) and **SA revision 1** (bundle above, ADR-0040) — one instruction may approve both.
 2. Accept or change the defaults Q-DEC-08…18 in [open-questions.md](../../apps/frontend/decimal-setup/open-questions.md) (key ones: ranges weight 0–3 / price 0–2, start 2/2, display-and-input only, totals stay 2 dp, read by every signed-in user, new permission leaf → 360 cells).
 
 ## Revision 1 items (history, superseded)

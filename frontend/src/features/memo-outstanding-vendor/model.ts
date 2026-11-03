@@ -20,10 +20,50 @@ export type VendorListRow = VendorListPage["items"][number];
 export type VendorItem = InferQueryLikeData<typeof masterTrpc.memoOutstanding.vendorItems>["items"][number];
 export type VendorOption = InferQueryLikeData<typeof masterTrpc.memoOutstanding.vendorOptions>["vendors"][number];
 
+/**
+ * The shared outstanding report (From Vendor ADR-0035, From Customer ADR-0039). Both pages use these components and
+ * this model; a report spec holds what differs. Rows and items use the From Vendor contract shape, so the customer
+ * report maps its Memo Out rows into it: `memoReceiveId` holds the document id and `vendor` the party.
+ */
+export type ReportSpec = {
+  /** Storage and cache key part, e.g. "memo-outstanding-vendor". */
+  key: string;
+  /** Catalog leaf checked for VIEW / PRINT / EXCEL. */
+  menuKey: string;
+  title: string;
+  /** "Vendor" / "Customer": the party column, filter and print labels. */
+  party: string;
+  /** URL parameter of the party filter. */
+  partyParam: string;
+  docHref: (id: string) => string;
+  /** Number groups shown, in column order. */
+  buckets: readonly Bucket[];
+  sortKeys: readonly SortKey[];
+  openValueCaption: string;
+  emptyText: string;
+  noAccess: string;
+  tableCaption: string;
+};
+
 export const MENU_KEY = "memo-outstanding-vendor";
 export const PAGE_HREF = "/memo/memo-outstanding/vendor";
 export const PAGE_TITLE = "From Vendor";
 export const memoReceiveHref = (id: string) => `/memo/memo-receive/${encodeURIComponent(id)}`;
+
+export const VENDOR_SPEC: ReportSpec = {
+  key: MENU_KEY,
+  menuKey: MENU_KEY,
+  title: PAGE_TITLE,
+  party: "Vendor",
+  partyParam: "vendor",
+  docHref: memoReceiveHref,
+  buckets: ["memo", "return", "sold", "reserve", "outstanding"],
+  sortKeys: ["docNo", "dueDate", "vendorName", "memoPcs", "returnPcs", "soldPcs", "reservePcs", "outstandingPcs", "openValue"],
+  openValueCaption: "open value (reserve + outstanding)",
+  emptyText: "No memo items outstanding from vendors.",
+  noAccess: "You don't have permission to view memo outstanding from vendors.",
+  tableCaption: "Memo outstanding from vendors",
+};
 
 // ---- filters, sort and paging in the URL (ui-spec "Behavior": server-side, back to page 1 on change) ----
 
@@ -57,17 +97,20 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export const emptyListState = (): ListState => ({ q: "", vendorIds: [], from: "", to: "", sort: null, dir: "asc", page: 1, pageSize: DEFAULT_PAGE_SIZE });
 
-/** Reads the list state from URL search params; anything malformed falls back to its default, never to an error. */
-export function parseListState(params: Pick<URLSearchParams, "get" | "getAll">): ListState {
+/**
+ * Reads the list state from URL search params; anything malformed falls back to its default, never to an error.
+ * `vendorIds` holds the report's party filter (vendors, or customers on From Customer).
+ */
+export function parseListState(params: Pick<URLSearchParams, "get" | "getAll">, spec: ReportSpec = VENDOR_SPEC): ListState {
   const state = emptyListState();
   state.q = (params.get("q") ?? "").slice(0, SEARCH_MAX);
-  state.vendorIds = [...new Set(params.getAll("vendor").filter((id) => UUID.test(id)))].slice(0, VENDOR_FILTER_MAX);
+  state.vendorIds = [...new Set(params.getAll(spec.partyParam).filter((id) => UUID.test(id)))].slice(0, VENDOR_FILTER_MAX);
   const from = params.get("from") ?? "";
   const to = params.get("to") ?? "";
   state.from = ISO_DATE.test(from) ? from : "";
   state.to = ISO_DATE.test(to) ? to : "";
   const sort = params.get("sort");
-  state.sort = (SORT_KEYS as readonly string[]).includes(sort ?? "") ? (sort as SortKey) : null;
+  state.sort = (spec.sortKeys as readonly string[]).includes(sort ?? "") ? (sort as SortKey) : null;
   state.dir = params.get("dir") === "desc" ? "desc" : "asc";
   const page = Number(params.get("page"));
   state.page = Number.isInteger(page) && page >= 1 && page <= 10_000 ? page : 1;
@@ -77,10 +120,10 @@ export function parseListState(params: Pick<URLSearchParams, "get" | "getAll">):
 }
 
 /** List state → URL search string (defaults omitted, so a plain visit keeps a clean URL). */
-export function listStateToSearch(state: ListState): string {
+export function listStateToSearch(state: ListState, spec: ReportSpec = VENDOR_SPEC): string {
   const params = new URLSearchParams();
   if (state.q.trim()) params.set("q", state.q.trim());
-  for (const id of state.vendorIds) params.append("vendor", id);
+  for (const id of state.vendorIds) params.append(spec.partyParam, id);
   if (state.from) params.set("from", state.from);
   if (state.to) params.set("to", state.to);
   if (state.sort) {
@@ -262,25 +305,36 @@ export function setColumnShown(prefs: ViewPrefs, key: ViewColumn, shown: boolean
 export const hideAllColumns = (prefs: ViewPrefs): ViewPrefs => ({ ...prefs, hidden: VIEW_COLUMNS.map((column) => column.key) });
 export const showAllColumns = (prefs: ViewPrefs): ViewPrefs => ({ ...prefs, hidden: [] });
 
+/** The switchable columns of a report: its number groups only (From Customer has no Reserve). */
+export const reportColumns = (spec: ReportSpec) =>
+  VIEW_COLUMNS.filter((column) => !(BUCKET_COLUMNS as readonly string[]).includes(column.key) || spec.buckets.includes(column.key as Bucket));
+
 /** Panel lists: shown and hidden switchable columns, each in column-header order. */
-export function viewLists(prefs: ViewPrefs) {
+export function viewLists(prefs: ViewPrefs, spec: ReportSpec = VENDOR_SPEC) {
+  const columns = reportColumns(spec);
   return {
-    shown: VIEW_COLUMNS.filter((column) => !prefs.hidden.includes(column.key)),
-    hidden: VIEW_COLUMNS.filter((column) => prefs.hidden.includes(column.key)),
+    shown: columns.filter((column) => !prefs.hidden.includes(column.key)),
+    hidden: columns.filter((column) => prefs.hidden.includes(column.key)),
   };
 }
+
+/** Number groups on screen: the report's groups that aren't hidden. */
+export const shownBuckets = (prefs: ViewPrefs, spec: ReportSpec = VENDOR_SPEC) => spec.buckets.filter((bucket) => isShown(prefs, bucket));
+
+/** Always-on columns of a report (the party name follows the report). */
+export const lockedColumns = (spec: ReportSpec) => LOCKED_COLUMNS.map((label) => (label === "Vendor Name" ? `${spec.party} Name` : label));
 
 export const isShown = (prefs: ViewPrefs, key: ViewColumn) => !prefs.hidden.includes(key);
 
 /** Per-browser storage with a memory fallback: blocked storage never breaks the page (ui-spec). */
-export function createViewStore(storage: () => Pick<Storage, "getItem" | "setItem"> | undefined) {
+export function createViewStore(storage: () => Pick<Storage, "getItem" | "setItem"> | undefined, storageKey: string = VIEW_STORAGE_KEY) {
   let memory: string | null = null;
   let cachedRaw: string | null | undefined;
   let cached: ViewPrefs = DEFAULT_VIEW;
   const listeners = new Set<() => void>();
   const readRaw = () => {
     try {
-      const stored = storage()?.getItem(VIEW_STORAGE_KEY);
+      const stored = storage()?.getItem(storageKey);
       if (stored !== null && stored !== undefined) return stored;
     } catch {
       // Storage blocked (private mode, site data off): the in-memory copy keeps this visit consistent.
@@ -299,7 +353,7 @@ export function createViewStore(storage: () => Pick<Storage, "getItem" | "setIte
     write(prefs: ViewPrefs) {
       memory = serializeViewPrefs(prefs);
       try {
-        storage()?.setItem(VIEW_STORAGE_KEY, memory);
+        storage()?.setItem(storageKey, memory);
       } catch {
         // Not persisted; the memory copy is used until the page reloads.
       }
@@ -332,7 +386,9 @@ export function printRows<T extends { memoReceiveId: string }>(rows: readonly T[
 // ---- item cache (expand once, Expanded = batched; cached 30 s) ----
 
 export const ITEMS_CACHE_ROOT = ["memo-outstanding-vendor", "items"] as const;
-export const itemsCacheKey = (memoReceiveId: string) => [...ITEMS_CACHE_ROOT, memoReceiveId] as const;
+export const itemsCacheKey = (memoReceiveId: string, root: readonly string[] = ITEMS_CACHE_ROOT) => [...root, memoReceiveId] as const;
+/** Item cache root of a report; From Vendor keeps its original key. */
+export const itemsCacheRoot = (spec: ReportSpec) => [spec.key, "items"] as const;
 
 export type FetchItems = (memoReceiveIds: string[]) => Promise<{ items: VendorItem[] }>;
 
@@ -341,10 +397,10 @@ export type FetchItems = (memoReceiveIds: string[]) => Promise<{ items: VendorIt
  * rest are fetched together in calls of at most 25 documents (one call for a page of 10 or 25). A document the server
  * skipped (settled meanwhile) is cached as empty.
  */
-export async function loadDocItems(client: QueryClient, ids: readonly string[], fetchItems: FetchItems, now = Date.now()): Promise<Map<string, VendorItem[]>> {
+export async function loadDocItems(client: QueryClient, ids: readonly string[], fetchItems: FetchItems, now = Date.now(), root: readonly string[] = ITEMS_CACHE_ROOT): Promise<Map<string, VendorItem[]>> {
   const unique = [...new Set(ids)];
   const fresh = (id: string) => {
-    const state = client.getQueryState<VendorItem[]>(itemsCacheKey(id));
+    const state = client.getQueryState<VendorItem[]>(itemsCacheKey(id, root));
     return state?.data !== undefined && !state.isInvalidated && now - state.dataUpdatedAt < ITEMS_STALE_MS;
   };
   const missing = unique.filter((id) => !fresh(id));
@@ -352,9 +408,9 @@ export async function loadDocItems(client: QueryClient, ids: readonly string[], 
     const chunk = missing.slice(start, start + ITEM_DOCS_MAX);
     const { items } = await fetchItems(chunk);
     const grouped = groupItems(items);
-    for (const id of chunk) client.setQueryData(itemsCacheKey(id), grouped.get(id) ?? [], { updatedAt: now });
+    for (const id of chunk) client.setQueryData(itemsCacheKey(id, root), grouped.get(id) ?? [], { updatedAt: now });
   }
-  return new Map(unique.map((id) => [id, client.getQueryData<VendorItem[]>(itemsCacheKey(id)) ?? []]));
+  return new Map(unique.map((id) => [id, client.getQueryData<VendorItem[]>(itemsCacheKey(id, root)) ?? []]));
 }
 
 export function groupItems(items: readonly VendorItem[]): Map<string, VendorItem[]> {

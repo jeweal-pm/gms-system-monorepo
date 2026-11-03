@@ -1,7 +1,7 @@
 # Backend completion handoff: decimal-setup (BE-DEC-001…005)
 
 - From / to: backend (senior-nestjs-developer) → parent / frontend (FE-DEC-101…106)
-- Feature / revisions: `decimal-setup`; TODO rev 2 = UI rev 2 + SA rev 1; ADR-0038 (Accepted)
+- Feature / revisions: `decimal-setup`; TODO rev 2 = UI rev 2 + SA rev 1; ADR-0040 (Accepted)
 - Approval: owner 2026-11-03 (bundle + Q-DEC-08…18 defaults; Q-DEC-14 changed to "copy grants from Document Setup";
   Q-DEC-09 weight start 2; Q-DEC-11 totals rounded on display only)
 - **Owner-directed deviation, Q-DEC-08 (2026-11-03, "ให้ max decimal ที่ 4", then "Choose 0–4, but show only"):**

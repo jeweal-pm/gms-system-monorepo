@@ -6,7 +6,7 @@ import { mapDecimalSetupError } from "../../src/decimal-setup/decimal-setup.erro
 import { DECIMAL_SETUP_DEFAULTS, PRICE_PLACES_MAX, saveDecimalSetupBodySchema, WEIGHT_PLACES_MAX } from "../../src/decimal-setup/decimal-setup.schemas";
 import { WRITE_TX } from "../../src/common/persistence";
 
-/** UT-DEC-B01…B06: decimal-setup SA rev 1 / ADR-0038 (owner 2026-11-03) against a mocked Prisma. */
+/** UT-DEC-B01…B06: decimal-setup SA rev 1 / ADR-0040 (owner 2026-11-03) against a mocked Prisma. */
 
 type Row = { id: number; weightPlaces: number; pricePlaces: number; version: number; updatedBy: string | null; updatedAt: Date };
 

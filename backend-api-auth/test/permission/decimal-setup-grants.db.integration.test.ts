@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 /**
- * IT-DEC-B06 (decimal-setup SA rev 1 / ADR-0038, owner Q-DEC-14 2026-11-03): the one-time auth data migration
+ * IT-DEC-B06 (decimal-setup SA rev 1 / ADR-0040, owner Q-DEC-14 2026-11-03): the one-time auth data migration
  * `20261103090000_decimal_setup_grants` gives every user with Document Setup VIEW/EDIT the same Decimal Setup action,
  * touches no other grant, and is idempotent. The migration SQL file itself is executed (twice) against fixture users,
  * then `loadSessionAuthz` proves the copied grants are inside the catalog and reach the session authorization block.

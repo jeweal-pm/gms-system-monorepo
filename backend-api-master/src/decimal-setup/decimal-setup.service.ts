@@ -18,7 +18,7 @@ export function missingRowDefaults(): DecimalSetup {
 }
 
 /**
- * Global Decimal Setup (decimal-setup SA rev 1, ADR-0038): weight and price places used by every page for display
+ * Global Decimal Setup (decimal-setup SA rev 1, ADR-0040): weight and price places used by every page for display
  * and keyboard entry. No backend domain reads it (SA-DEC-05): server validation and totals stay at storage scale.
  */
 @Injectable()

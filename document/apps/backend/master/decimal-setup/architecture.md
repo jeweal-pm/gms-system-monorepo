@@ -3,7 +3,7 @@
 - Feature ID / SA revision: `decimal-setup` / 1
 - Source UI revision / TODO: UI rev 2 (parent, in preparation) / [decimal-setup.md](../../../../task/todo/decimal-setup.md) revision 2
 - Status: **pending-review** (2026-11-03)
-- ADRs / main flow / review bundle: [ADR-0038](../../../../adr/0038-global-decimal-setup.md), [decimal-setup-flow](../../../../diagram/decimal-setup-flow.md), [decisions](decisions.md), [api-contract](api-contract.md), [authorization](authorization.md), [database-diagram](database-diagram.md), [sequence-diagram](sequence-diagram.md), [error-handling](error-handling.md), [dependencies](dependencies.md), [testing](testing.md)
+- ADRs / main flow / review bundle: [ADR-0040](../../../../adr/0040-global-decimal-setup.md), [decimal-setup-flow](../../../../diagram/decimal-setup-flow.md), [decisions](decisions.md), [api-contract](api-contract.md), [authorization](authorization.md), [database-diagram](database-diagram.md), [sequence-diagram](sequence-diagram.md), [error-handling](error-handling.md), [dependencies](dependencies.md), [testing](testing.md)
 
 ## Domain and service boundaries
 

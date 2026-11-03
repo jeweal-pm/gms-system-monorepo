@@ -7,7 +7,6 @@ import { cx, focusRing } from "@/components/ui/button";
 import { SortIcon } from "@/components/ui/sort-icon";
 import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import {
-  BUCKET_COLUMNS,
   BUCKET_LABEL,
   BUCKET_SORT,
   formatDate,
@@ -16,8 +15,8 @@ import {
   formatPcs,
   formatWeight,
   isShown,
+  shownBuckets,
   itemSpecParts,
-  memoReceiveHref,
   unitCaption,
   type Bucket,
   type SortDir,
@@ -27,6 +26,7 @@ import {
   type ViewPrefs,
 } from "../model";
 import { ResizeHandle, stickyOffsets, useColumnWidths, type TableColumn } from "./column-resize";
+import { useReportSpec } from "./report-context";
 import { DueLabel } from "./parts";
 
 export type TableEntry = { row: VendorListRow; items: readonly VendorItem[] | undefined };
@@ -161,7 +161,8 @@ export function TableSkeleton() {
  */
 export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggleOpen, itemsLoading, itemsError, onRetryItems, selected, onToggleItem }: TableProps) {
   const nf = useNumberFormat();
-  const buckets = BUCKET_COLUMNS.filter((bucket) => isShown(prefs, bucket));
+  const spec = useReportSpec();
+  const buckets = shownBuckets(prefs, spec);
   const showPrice = isShown(prefs, "price");
   const columns = tableColumns(buckets, showPrice);
   const columnCount = columns.length;
@@ -172,7 +173,7 @@ export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggl
   return (
     <div ref={boxRef} className="overflow-x-auto rounded-gms-md border border-gms-border bg-gms-surface">
       <table className="table-fixed border-collapse text-gms-body" style={{ width: tableWidth }}>
-        <caption className="sr-only">Memo outstanding from vendors</caption>
+        <caption className="sr-only">{spec.tableCaption}</caption>
         <colgroup>
           {columns.map((column) => <col key={column.key} style={{ width: widths[column.key] }} />)}
         </colgroup>
@@ -188,8 +189,8 @@ export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggl
               {handle("dueDate", "Due Date")}
             </th>
             <th rowSpan={2} scope="col" aria-sort={ariaSort(sort, "vendorName")} style={left[3]} className={cx(sticky[3], headCell, "bg-gms-surface text-left")}>
-              <SortButton label="Vendor Name" sortKey="vendorName" sort={sort} onSort={onSort} />
-              {handle("vendor", "Vendor Name")}
+              <SortButton label={`${spec.party} Name`} sortKey="vendorName" sort={sort} onSort={onSort} />
+              {handle("vendor", `${spec.party} Name`)}
             </th>
             {buckets.map((bucket) => (
               <th key={bucket} colSpan={2} scope="colgroup" aria-sort={ariaSort(sort, BUCKET_SORT[bucket])} className={cx(headCell, "border-l border-gms-border text-center")}>
@@ -237,7 +238,7 @@ export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggl
                     </button>
                   </td>
                   <th scope="row" style={left[1]} className={cx(sticky[1], "overflow-hidden bg-inherit px-3 py-2.5 text-left font-normal")}>
-                    <Link href={memoReceiveHref(row.memoReceiveId)} className={cx("block truncate font-semibold text-gms-primary hover:underline", focusRing)}>{row.docNo}</Link>
+                    <Link href={spec.docHref(row.memoReceiveId)} className={cx("block truncate font-semibold text-gms-primary hover:underline", focusRing)}>{row.docNo}</Link>
                     <span className="block text-gms-label text-gms-text-secondary">{formatDate(row.docDate)}</span>
                   </th>
                   <td style={left[2]} className={cx(sticky[2], "overflow-hidden bg-inherit px-3 py-2.5")}>
@@ -251,7 +252,7 @@ export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggl
                   {showPrice && (
                     <td className={cx(numCell, "border-l border-gms-border")}>
                       <span className="block font-semibold">{`${formatMoney(row.openValue, nf.pricePlaces)} ${row.currency}`}</span>
-                      <span className="block text-gms-label text-gms-text-secondary">open value (reserve + outstanding)</span>
+                      <span className="block text-gms-label text-gms-text-secondary">{spec.openValueCaption}</span>
                     </td>
                   )}
                 </tr>

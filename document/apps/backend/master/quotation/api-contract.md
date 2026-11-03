@@ -98,3 +98,38 @@ Envelope as other master features: tRPC `data.domainCode` (+ `fieldErrors[{path,
   used rows) and Document Setup `get` (`used` becomes real).
 - The frontend keeps its `QuotationFormValues` shape; `api.ts` maps form ↔ contract (decimal strings,
   empty rows dropped, `discount.enabled=false` → `NONE`, `labor.enabled=false` → `null`).
+
+## SA revision 2 (2026-11-03) — From Stock lines (approved)
+
+These additions are backward compatible. A request with only `MANUAL` lines is unchanged ([SA-QT-15…19](decisions.md#sa-revision-2-2026-11-03--from-stock-approved)).
+
+```ts
+type LineInput = {
+  source: "MANUAL" | "STOCK";
+  memoStockId: string | null;          // uuid; required for STOCK, null for MANUAL (default null)
+  // …all revision 1 fields unchanged. For STOCK the server overwrites the item fields, location and priceUnit
+  // from Memo Stock; stoneCodeId must be null and stoneCode "".
+};
+
+type QuotationLine = LineInput & {
+  id: string; discountAmount: Decimal; amount: Decimal;
+  stockId: string | null;              // Memo Stock Stock ID (STOCK only)
+  stockPendingPcs: number | null;      // pending when the row was picked or last raised
+  stockPendingWeightCt: Decimal | null;
+};
+```
+
+| Procedure | Change |
+|---|---|
+| `quotation.create` / `quotation.update` | Accept stock lines (SA-QT-17). Never change Memo Stock (SA-QT-18). |
+| `quotation.get` | Lines carry the stock fields above. |
+| `memoStock.list` | Also allowed with `quotation:VIEW` (SA-QT-19). Input and output are unchanged. |
+
+New error cases (existing codes):
+
+| Domain code | When |
+|---|---|
+| `QUOTATION_REFERENCE_INVALID` | `lines.N.memoStockId` names no Memo Stock item |
+| `VALIDATION_ERROR` `duplicate` | `lines.N.memoStockId`: the item is on another line of the same quotation |
+| `VALIDATION_ERROR` `exceeds_pending` | `lines.N.pcs` / `lines.N.weightCt`: a new or raised stock line is above the item's current pending |
+| `VALIDATION_ERROR` | STOCK without `memoStockId`, MANUAL with one, STOCK with a stone code, or Sale Price ≤ 0 on a stock line |

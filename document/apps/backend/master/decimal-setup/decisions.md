@@ -2,7 +2,7 @@
 
 - Feature ID / SA revision / source UI revision: `decimal-setup` / 1 / UI rev 2 (parent, in preparation: [ui-spec](../../../frontend/decimal-setup/ui-spec.md))
 - Status: **pending-review** (2026-11-03). Approval: none.
-- ADR: [ADR-0038](../../../../adr/0038-global-decimal-setup.md). TODO: [decimal-setup.md](../../../../task/todo/decimal-setup.md) revision 2. Questions: [open-questions.md](../../../frontend/decimal-setup/open-questions.md) Q-DEC-08…18.
+- ADR: [ADR-0040](../../../../adr/0040-global-decimal-setup.md). TODO: [decimal-setup.md](../../../../task/todo/decimal-setup.md) revision 2. Questions: [open-questions.md](../../../frontend/decimal-setup/open-questions.md) Q-DEC-08…18.
 - Service: `backend-api-master` (schema `partner`). Auth catalog change in `backend-api-auth`. No new service, container, network, volume, variable or package.
 
 | ID | Decision |

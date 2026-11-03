@@ -417,7 +417,7 @@ model DocumentSetup {
   @@schema("partner")
 }
 
-/// Decimal Setup (decimal-setup SA rev 1, ADR-0038): one global row; display/entry places for weight and price.
+/// Decimal Setup (decimal-setup SA rev 1, ADR-0040): one global row; display/entry places for weight and price.
 /// CHECKs (id = 1, version >= 1) live in migration 20261103090000_decimal_setup; weight/price 0..4 (owner Q-DEC-08)
 /// in 20261103120000_decimal_setup_places_max_4.
 model DecimalSetup {
@@ -524,39 +524,47 @@ model Quotation {
 }
 
 model QuotationLine {
-  id                String               @id @db.Uuid
-  quotationId       String               @map("quotation_id") @db.Uuid
-  position          Int                  @db.SmallInt
-  source            String               @db.VarChar(10)
-  stoneCodeId       String?              @map("stone_code_id") @db.Uuid
-  stoneCodeSnapshot String               @default("") @map("stone_code_snapshot") @db.VarChar(60)
-  stone             String               @default("") @db.VarChar(60)
-  shape             String               @default("") @db.VarChar(60)
-  size              String               @default("") @db.VarChar(60)
-  color             String               @default("") @db.VarChar(60)
-  clarity           String               @default("") @db.VarChar(60)
-  cutting           String               @default("") @db.VarChar(60)
-  quality           String               @default("") @db.VarChar(60)
-  lot               String               @default("") @db.VarChar(40)
-  location          String               @default("") @db.VarChar(40)
-  cerType           String               @default("") @map("cer_type") @db.VarChar(20)
-  cerNo             String               @default("") @map("cer_no") @db.VarChar(60)
-  pcs               Int
-  weightCt          Decimal              @map("weight_ct") @db.Decimal(12, 3)
-  priceUnit         String               @map("price_unit") @db.VarChar(10)
-  unitPrice         Decimal              @map("unit_price") @db.Decimal(18, 2)
+  id                   String               @id @db.Uuid
+  quotationId          String               @map("quotation_id") @db.Uuid
+  position             Int                  @db.SmallInt
+  source               String               @db.VarChar(10)
+  stoneCodeId          String?              @map("stone_code_id") @db.Uuid
+  stoneCodeSnapshot    String               @default("") @map("stone_code_snapshot") @db.VarChar(60)
+  stone                String               @default("") @db.VarChar(60)
+  shape                String               @default("") @db.VarChar(60)
+  size                 String               @default("") @db.VarChar(60)
+  color                String               @default("") @db.VarChar(60)
+  clarity              String               @default("") @db.VarChar(60)
+  cutting              String               @default("") @db.VarChar(60)
+  quality              String               @default("") @db.VarChar(60)
+  lot                  String               @default("") @db.VarChar(40)
+  location             String               @default("") @db.VarChar(40)
+  cerType              String               @default("") @map("cer_type") @db.VarChar(20)
+  cerNo                String               @default("") @map("cer_no") @db.VarChar(60)
+  pcs                  Int
+  weightCt             Decimal              @map("weight_ct") @db.Decimal(12, 3)
+  priceUnit            String               @map("price_unit") @db.VarChar(10)
+  unitPrice            Decimal              @map("unit_price") @db.Decimal(18, 2)
   /// Owner 2026-10-26: per-line discount (NONE | PERCENT | AMOUNT); `amount` is after it.
-  discountType      String               @default("NONE") @map("discount_type") @db.VarChar(10)
-  discountValue     Decimal              @default(0) @map("discount_value") @db.Decimal(18, 4)
-  discountAmount    Decimal              @default(0) @map("discount_amount") @db.Decimal(18, 2)
-  amount            Decimal              @db.Decimal(18, 2)
-  itemNote          String               @default("") @map("item_note") @db.VarChar(500)
-  quotation         Quotation            @relation(fields: [quotationId], references: [id], onDelete: Cascade)
-  stoneCode         StoneCode?           @relation(fields: [stoneCodeId], references: [id], onDelete: SetNull)
-  photos            QuotationLinePhoto[]
+  discountType         String               @default("NONE") @map("discount_type") @db.VarChar(10)
+  discountValue        Decimal              @default(0) @map("discount_value") @db.Decimal(18, 4)
+  discountAmount       Decimal              @default(0) @map("discount_amount") @db.Decimal(18, 2)
+  amount               Decimal              @db.Decimal(18, 2)
+  itemNote             String               @default("") @map("item_note") @db.VarChar(500)
+  /// SA-QT-15 (ADR-0038): a From Stock line names its Memo Stock item; it only copies the item's details (nothing held).
+  memoStockId          String?              @map("memo_stock_id") @db.Uuid
+  stockId              String?              @map("stock_id") @db.VarChar(10)
+  stockPendingPcs      Int?                 @map("stock_pending_pcs")
+  stockPendingWeightCt Decimal?             @map("stock_pending_weight_ct") @db.Decimal(12, 3)
+  quotation            Quotation            @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  stoneCode            StoneCode?           @relation(fields: [stoneCodeId], references: [id], onDelete: SetNull)
+  memoStock            MemoStock?           @relation(fields: [memoStockId], references: [id], onDelete: Restrict)
+  photos               QuotationLinePhoto[]
 
   @@unique([quotationId, position], map: "quotation_line_position_key")
+  @@unique([quotationId, memoStockId], map: "quotation_line_memo_stock_key")
   @@index([stoneCodeId], map: "quotation_line_stone_code_idx")
+  @@index([memoStockId], map: "quotation_line_memo_stock_idx")
   @@map("quotation_line")
   @@schema("partner")
 }
@@ -1026,6 +1034,7 @@ model MemoStock {
   returnLines        MemoReturnLine[]
   memoOutLines       MemoOutLine[]
   reserveLines       ReserveLine[]
+  quotationLines     QuotationLine[]
 
   /// Add Memo Stock dialog: a vendor's items with something still pending, newest receive first (SA-MR-11).
   @@index([vendorId, receivedDocDate(sort: Desc), stockId(sort: Desc)], where: raw("((pending_pcs > 0) OR (pending_weight_ct > (0)::numeric))"), map: "memo_stock_pending_idx")

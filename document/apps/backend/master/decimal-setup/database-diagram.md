@@ -19,7 +19,7 @@ No relationships: no table references it and it references none. Same single-row
 ## Prisma model (proposed)
 
 ```prisma
-/// Decimal Setup (decimal-setup SA rev 1, ADR-0038): one global row; display/entry places for weight and price.
+/// Decimal Setup (decimal-setup SA rev 1, ADR-0040): one global row; display/entry places for weight and price.
 model DecimalSetup {
   id           Int      @id @default(1) @db.SmallInt
   weightPlaces Int      @default(2) @map("weight_places") @db.SmallInt

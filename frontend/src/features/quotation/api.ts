@@ -7,17 +7,12 @@ import type { InferQueryLikeData } from "@trpc/react-query/shared";
 import { authTrpc } from "@/lib/auth-trpc";
 import { masterTrpc } from "@/lib/master-trpc";
 import { isCallerLicenseCode, readDomainError, retryTransient } from "@/lib/trpc-error";
-import { stockItems, type StockItem } from "./mock/stock";
 import { isFilledLine, type QuotationFormValues, type QuotationLine } from "./schema";
 
 export type QuotationDetail = InferQueryLikeData<typeof masterTrpc.quotation.get>;
 export type QuotationOptions = InferQueryLikeData<typeof masterTrpc.quotation.options>;
 export type QuotationListItem = InferQueryLikeData<typeof masterTrpc.quotation.list>["items"][number];
 export type QuotationStatus = QuotationDetail["status"];
-
-export const quotationKeys = {
-  stock: (filter: StockFilter) => ["quotation", "stock", filter] as const,
-};
 
 // ---- permissions (UX only; the server checks every call) ----
 
@@ -48,8 +43,15 @@ export type TradeDocumentFormValues = Omit<QuotationFormValues, "status" | "stat
 
 /** Form values → contract input; empty rows are dropped, totals are left to the server. */
 export function toQuotationInput(values: QuotationFormValues) {
+  const shared = toTradeDocumentInput(values);
+  const filled = values.lines.filter(isFilledLine);
   return {
-    ...toTradeDocumentInput(values),
+    ...shared,
+    // quotation rev 2 (SA-QT-16): a From Stock row names its Memo Stock item; the server copies the item fields.
+    lines: shared.lines.map((line, index) => {
+      const memoStockId = filled[index]?.memoStockId || null;
+      return { ...line, source: memoStockId ? ("STOCK" as const) : ("MANUAL" as const), memoStockId, ...(memoStockId ? { stoneCodeId: null, stoneCode: "" } : {}) };
+    }),
     customerId: values.customerId,
     shippingAddressId: values.shippingAddressId,
     invoiceAddressId: values.invoiceAddressId,
@@ -99,8 +101,22 @@ export function toTradeDocumentInput(values: TradeDocumentFormValues) {
 
 /** Saved quotation → form values (rows keep a client key for useFieldArray). */
 export function fromQuotation(detail: QuotationDetail): QuotationFormValues {
+  const shared = fromTradeDocument(detail, photoUrl);
   return {
-    ...fromTradeDocument(detail, photoUrl),
+    ...shared,
+    // quotation rev 2: From Stock rows keep their item, Stock ID and the pending they were picked with.
+    lines: shared.lines.map((line, index) => {
+      const saved = detail.lines[index];
+      if (!saved?.memoStockId) return line;
+      return {
+        ...line,
+        source: "STOCK" as const,
+        stockId: saved.stockId ?? "",
+        memoStockId: saved.memoStockId,
+        stockPendingPcs: saved.stockPendingPcs === null ? "" : String(saved.stockPendingPcs),
+        stockPendingWeightCt: saved.stockPendingWeightCt ?? "",
+      };
+    }),
     status: detail.status,
     statusReason: detail.statusReason ?? undefined,
     customerId: detail.customerId,
@@ -110,7 +126,11 @@ export function fromQuotation(detail: QuotationDetail): QuotationFormValues {
 }
 
 /** The contract fields every saved trade document returns (quotation and the memo documents share them). */
-export type TradeDocumentDetail = Pick<QuotationDetail, "id" | "docNo" | "version" | "docDate" | "dueDate" | "currency" | "exchangeRate" | "ref" | "lines" | "discount" | "tax" | "serviceCharges" | "labor" | "documentNote">;
+/** The stock fields of a quotation line (rev 2); the memo documents' lines don't all carry them. */
+type StockLineFields = "source" | "memoStockId" | "stockId" | "stockPendingPcs" | "stockPendingWeightCt";
+export type TradeDocumentDetail = Pick<QuotationDetail, "id" | "docNo" | "version" | "docDate" | "dueDate" | "currency" | "exchangeRate" | "ref" | "discount" | "tax" | "serviceCharges" | "labor" | "documentNote"> & {
+  lines: (Omit<QuotationDetail["lines"][number], StockLineFields> & Partial<Pick<QuotationDetail["lines"][number], StockLineFields>>)[];
+};
 
 /** Shared part of a saved document → form values; `url` builds photo links for the document's photo route. */
 export function fromTradeDocument(detail: TradeDocumentDetail, url: (id: string) => string): TradeDocumentFormValues {
@@ -241,9 +261,10 @@ export function mapSaveError(error: unknown): SaveOutcome {
     if (entry.path.startsWith("lines")) return [{ name: "lines" as const, message: `Check item row ${Number(entry.path.split(".")[1] ?? 0) + 1}` }];
     return [];
   });
+  const stockMessage = stockRowMessage(fieldErrors);
   switch (domainCode) {
     case "QUOTATION_REFERENCE_INVALID":
-      return { fieldErrors: onFields("Choose an active option"), message: "A selected customer, address or stone code is no longer available." };
+      return { fieldErrors: onFields("Choose an active option"), message: stockMessage ?? "A selected customer, address or stone code is no longer available." };
     case "QUOTATION_PHOTO_INVALID":
       return { fieldErrors: onFields("Check the photos"), message: "A photo couldn't be used. Remove it and add it again." };
     case "QUOTATION_CHANGED":
@@ -254,7 +275,7 @@ export function mapSaveError(error: unknown): SaveOutcome {
       return { fieldErrors: [], message: "This quotation no longer exists." };
     case "VALIDATION_ERROR": {
       const mapped = onFields("Check this field");
-      return { fieldErrors: mapped, message: "Some details couldn't be saved. Check the form and try again." };
+      return { fieldErrors: mapped, message: stockMessage ?? "Some details couldn't be saved. Check the form and try again." };
     }
     case "PERMISSION_DENIED":
       return { fieldErrors: [], message: "You don't have permission to do this. Nothing was saved.", recheckAccess: true };
@@ -263,6 +284,19 @@ export function mapSaveError(error: unknown): SaveOutcome {
       if (domainCode === "UNAUTHORIZED") return { fieldErrors: [], message: "Your session has ended. Sign in again." };
       return { fieldErrors: [], message: "Couldn't save. Try again." };
   }
+}
+
+/** A From Stock row the server refused (quotation rev 2 ui-spec "Errors on Save"), as "Row N: …". */
+function stockRowMessage(fieldErrors: { path: string; code: string }[]): string | undefined {
+  for (const entry of fieldErrors) {
+    const match = /^lines\.(\d+)\.(memoStockId|pcs|weightCt)$/.exec(entry.path);
+    if (!match) continue;
+    const row = `Row ${Number(match[1]) + 1}`;
+    if (entry.code === "exceeds_pending") return `${row}: More than pending`;
+    if (match[2] === "memoStockId" && entry.code === "invalid_reference") return `${row}: This stock item no longer exists. Remove the row.`;
+    if (match[2] === "memoStockId" && entry.code === "duplicate") return `${row}: This stock item is already on the quotation.`;
+  }
+  return undefined;
 }
 
 export function loadErrorMessage(error: unknown): string {
@@ -274,16 +308,3 @@ export function loadErrorMessage(error: unknown): string {
   return "Couldn't load this quotation. Try again.";
 }
 
-// ---- From Stock (disabled until the inventory service exists, SA-QT-13) ----
-
-export type StockFilter = { search: string; from: string; to: string };
-
-export async function searchAvailableStock(filter: StockFilter): Promise<StockItem[]> {
-  const q = filter.search.trim().toLowerCase();
-  return stockItems.filter((item) => {
-    if (q && ![item.stoneCode, item.stockId, item.lot, item.stone].some((v) => v.toLowerCase().includes(q))) return false;
-    if (filter.from && item.loadedAt < filter.from) return false;
-    if (filter.to && item.loadedAt > filter.to) return false;
-    return true;
-  });
-}

@@ -2,7 +2,7 @@
 
 ## Tracking
 
-- Ticket revision: 1
+- Ticket revision: 2 (2026-11-03: same root cause extended to memo-outstanding-customer; see addendum)
 - Status: pending-review
 - Owner: backend
 - Priority: awaiting user review
@@ -37,3 +37,11 @@
 - Approved ticket revision:
 - Actual user instruction / approval evidence:
 - Approval date:
+
+## Addendum, revision 2: same root cause in From Customer (2026-11-03)
+
+- Source: sec-auditor focused pre-handoff review of memo-outstanding-customer rev 1, uncommitted tree on `feat/03-11-26-memo-outstanding-quotation-from-stock` (HEAD 77be6bc).
+- `backend-api-master/src/trade-document/memo-outstanding.service.ts:336-356` (`customerSummary`) and `:369-391` (`customerList` docs CTE, run twice: page rows plus `count(*)`) join every From Stock `memo_out_line` of every APPROVED `memo_out` matching the filters and drop settled documents only in `HAVING ${HAS_OUT_LINE}` (`:347`, `:383`). `memo_out_line_open_idx` therefore cannot prune before the aggregate, and the From Vendor paths (`:213`, `:248`) are still unchanged.
+- `customerItems` (`:421-460`) already prunes with `EXISTS` and is bounded by 25 ids; `customerOptions` is bounded to 1,000 rows. Neither is affected.
+- Same category/verdict (hardening, not-applicable), same owner (backend), same proposed remediation: apply the `EXISTS` open-line predicate before grouping in both customer CTEs, and use `count(*) OVER ()` or a pruned count. Acceptance adds: the IT-MOC integration suite passes unchanged.
+- No new ticket was created for this; this record remains the single canonical item for both reports.

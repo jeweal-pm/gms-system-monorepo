@@ -1,6 +1,6 @@
 # Main flow: decimal-setup (UI revision 2 / SA revision 1, pending-review)
 
-Sequence detail: [sequence-diagram](../apps/backend/master/decimal-setup/sequence-diagram.md). Decision: [ADR-0038](../adr/0038-global-decimal-setup.md).
+Sequence detail: [sequence-diagram](../apps/backend/master/decimal-setup/sequence-diagram.md). Decision: [ADR-0040](../adr/0040-global-decimal-setup.md).
 
 ```mermaid
 flowchart TD

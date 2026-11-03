@@ -1,5 +1,5 @@
 /**
- * Website-wide money / carat-weight display (decimal-setup TODO rev 2, FE-DEC-102, ADR-0038).
+ * Website-wide money / carat-weight display (decimal-setup TODO rev 2, FE-DEC-102, ADR-0040).
  *
  * Exact: works on the decimal string with BigInt, so large amounts never pass through floating point.
  * Rounding is half-up on the magnitude (1.235 → 1.24, -1.235 → -1.24), like the quotation decimal helper.

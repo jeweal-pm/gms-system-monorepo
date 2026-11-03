@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** decimal-setup SA rev 1 / ADR-0038 (SA-DEC-02 as changed by the owner, Q-DEC-08): display/entry ranges. */
+/** decimal-setup SA rev 1 / ADR-0040 (SA-DEC-02 as changed by the owner, Q-DEC-08): display/entry ranges. */
 // Owner 2026-11-03 (Q-DEC-08 changed: "max decimal 4", display and typing only): both settings accept 0–4.
 // Storage scales (weight numeric(12,3), money numeric(18,2)), document validation and the 2-dp server totals do not change.
 export const WEIGHT_PLACES_MAX = 4;

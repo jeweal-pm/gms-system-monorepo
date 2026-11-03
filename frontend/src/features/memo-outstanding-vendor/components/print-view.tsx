@@ -4,7 +4,6 @@ import { Fragment, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import {
-  BUCKET_COLUMNS,
   BUCKET_LABEL,
   dueLabel,
   formatDate,
@@ -13,14 +12,15 @@ import {
   formatPcs,
   formatWeight,
   isShown,
+  shownBuckets,
   itemSpecParts,
-  PAGE_TITLE,
   unitCaption,
   type VendorItem,
   type VendorListRow,
   type ViewPrefs,
 } from "../model";
 import styles from "./print.module.css";
+import { useReportSpec } from "./report-context";
 
 type PrintViewProps = {
   entries: readonly { row: VendorListRow; items: readonly VendorItem[] }[];
@@ -51,13 +51,14 @@ export function OutstandingPrintView({ entries, prefs, filters, scope, printedAt
 /** The printed content (also rendered on its own by the unit tests). */
 export function PrintContent({ entries, prefs, filters, scope, printedAt }: PrintViewProps) {
   const nf = useNumberFormat();
-  const buckets = BUCKET_COLUMNS.filter((bucket) => isShown(prefs, bucket));
+  const spec = useReportSpec();
+  const buckets = shownBuckets(prefs, spec);
   const showPrice = isShown(prefs, "price");
   const view = { colorClarity: isShown(prefs, "colorClarity"), cerType: isShown(prefs, "cerType") };
   return (
     <div className={`${styles.printRoot} bg-white p-6 text-black`}>
       <header className="flex items-baseline justify-between border-b-2 border-black pb-2">
-        <h1 className="text-gms-title font-semibold">{`Memo Outstanding – ${PAGE_TITLE}`}</h1>
+        <h1 className="text-gms-title font-semibold">{`Memo Outstanding – ${spec.title}`}</h1>
         <p className="text-gms-label">{printedAt ? `Printed ${printedAt}` : ""}</p>
       </header>
       <p className="mt-2 text-gms-label">{[scope, ...(filters.length ? filters : ["No filters"])].join(" · ")}</p>
@@ -66,7 +67,7 @@ export function PrintContent({ entries, prefs, filters, scope, printedAt }: Prin
           <tr>
             <th className={cell}>Doc Number / Doc Date</th>
             <th className={cell}>Due Date / Overdue</th>
-            <th className={cell}>Vendor Name</th>
+            <th className={cell}>{`${spec.party} Name`}</th>
             {buckets.map((bucket) => <th key={bucket} className={num} colSpan={2}>{`${BUCKET_LABEL[bucket]} Pcs / Weight`}</th>)}
             {showPrice && <th className={num}>Price</th>}
           </tr>

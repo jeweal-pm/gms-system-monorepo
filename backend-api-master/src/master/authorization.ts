@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 
-export type MasterMenu = "customer" | "vendor" | "company-profile" | "stone-master" | "document-setup" | "decimal-setup" | "currency" | "quotation" | "memo-out" | "memo-out-return" | "memo-receive" | "memo-return" | "memo-outstanding-vendor" | "reserve";
+export type MasterMenu = "customer" | "vendor" | "company-profile" | "stone-master" | "document-setup" | "decimal-setup" | "currency" | "quotation" | "memo-out" | "memo-out-return" | "memo-receive" | "memo-return" | "memo-outstanding-vendor" | "memo-outstanding-customer" | "reserve";
 export type MasterAction = "VIEW" | "ADD" | "EDIT" | "DELETE" | "CANCEL" | "APPROVE" | "PRICE";
 
 /** Supplied only by the future JWT + current-authorization adapter, never from browser headers. */

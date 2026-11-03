@@ -15,7 +15,7 @@ Defaults apply if the owner approves revision 1 as written.
 ## Revision 2 questions (SA revision 1, 2026-11-03, pending-review)
 
 Owner request 2026-11-03: one global setting for the whole web app, no per-page table, real API. The recommended default
-applies if the owner approves SA revision 1 as written. Design: [ADR-0038](../../../adr/0038-global-decimal-setup.md),
+applies if the owner approves SA revision 1 as written. Design: [ADR-0040](../../../adr/0040-global-decimal-setup.md),
 [SA bundle](../../backend/master/decimal-setup/architecture.md). Q-DEC-01/02 (page list) are superseded by the global model;
 Q-DEC-03 range/defaults are replaced by Q-DEC-08/09; Q-DEC-05/06 are answered by Q-DEC-14 and FE-DEC-104/105.
 

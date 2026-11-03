@@ -2,7 +2,7 @@ import { HttpException } from "@nestjs/common";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 /**
- * IT-DEC-B02 (decimal-setup SA rev 1 / ADR-0038, owner 2026-11-03) against real PostgreSQL:
+ * IT-DEC-B02 (decimal-setup SA rev 1 / ADR-0040, owner 2026-11-03) against real PostgreSQL:
  * - migration 20261103090000_decimal_setup: the table, its four CHECKs and the 2/2 seed row;
  * - DecimalSetupService get/save through Prisma: optimistic version, stale save → DECIMAL_SETUP_CHANGED,
  *   parallel saves at one version → exactly one wins, missing row → defaults v0 → first save creates it.

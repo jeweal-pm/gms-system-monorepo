@@ -25,6 +25,9 @@ import type { MemoReturnService } from "../trade-document/memo-return.service";
 import type { MemoStockService } from "../trade-document/memo-stock.service";
 import type { MemoOutstandingService } from "../trade-document/memo-outstanding.service";
 import {
+  memoOutstandingCustomerFiltersSchema,
+  memoOutstandingCustomerItemsSchema,
+  memoOutstandingCustomerListSchema,
   memoOutstandingFiltersSchema,
   memoOutstandingItemsSchema,
   memoOutstandingListSchema,
@@ -246,7 +249,7 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
         .query(({ input }) => domainCall(() => documentSetup.get(input.transactionKey))),
       save: permitted("document-setup", "EDIT", true).input(saveDocumentSetupBodySchema).mutation(({ ctx, input }) => domainCall(() => documentSetup.save(ctx.userId, input))),
     }),
-    // decimal-setup SA rev 1 / ADR-0038 (owner 2026-11-03): one global setting. Every signed-in, licensed user reads it
+    // decimal-setup SA rev 1 / ADR-0040 (owner 2026-11-03): one global setting. Every signed-in, licensed user reads it
     // (every page formats numbers, Q-DEC-13); saving needs decimal-setup:EDIT + CSRF.
     decimalSetup: t.router({
       get: signedIn().query(() => domainCall(() => decimalSetup.get())),
@@ -351,7 +354,7 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
     }),
     // Memo Stock list (SA-MR-11): Memo Return "Add Memo Stock" (its vendor) and Memo Out "From Stock" (every vendor, SA-MO-15).
     memoStock: t.router({
-      list: permittedAny(["memo-return", "memo-receive", "memo-out", "reserve"], "VIEW").input(memoStockListSchema).query(({ input }) => domainCall(() => memoStock.list(input))),
+      list: permittedAny(["memo-return", "memo-receive", "memo-out", "reserve", "quotation"], "VIEW").input(memoStockListSchema).query(({ input }) => domainCall(() => memoStock.list(input))),
     }),
     // memo-return SA rev 2 (owner 2026-10-29): Memo Stock items back to their vendor; approval reduces pending (Q-MR-15).
     memoReturn: t.router({
@@ -378,6 +381,15 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
         .query(({ input }) => domainCall(() => memoOutstanding.vendorItems(input))),
       vendorOptions: permitted("memo-outstanding-vendor", "VIEW").use(withFieldErrors(memoOutstandingOptionsSchema)).input(memoOutstandingOptionsSchema)
         .query(() => domainCall(() => memoOutstanding.vendorOptions())),
+      // Memo Outstanding From Customer report (memo-outstanding-customer SA-MOC-01/09): read-only, VIEW on its own menu.
+      customerSummary: permitted("memo-outstanding-customer", "VIEW").use(withFieldErrors(memoOutstandingCustomerFiltersSchema)).input(memoOutstandingCustomerFiltersSchema)
+        .query(({ input }) => domainCall(() => memoOutstanding.customerSummary(input))),
+      customerList: permitted("memo-outstanding-customer", "VIEW").use(withFieldErrors(memoOutstandingCustomerListSchema)).input(memoOutstandingCustomerListSchema)
+        .query(({ input }) => domainCall(() => memoOutstanding.customerList(input))),
+      customerItems: permitted("memo-outstanding-customer", "VIEW").use(withFieldErrors(memoOutstandingCustomerItemsSchema)).input(memoOutstandingCustomerItemsSchema)
+        .query(({ input }) => domainCall(() => memoOutstanding.customerItems(input))),
+      customerOptions: permitted("memo-outstanding-customer", "VIEW").use(withFieldErrors(memoOutstandingOptionsSchema)).input(memoOutstandingOptionsSchema)
+        .query(() => domainCall(() => memoOutstanding.customerOptions())),
     }),
   });
 }

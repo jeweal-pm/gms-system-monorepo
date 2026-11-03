@@ -59,7 +59,11 @@ export function ItemEditorPanel({
   const fillWeight = (pcsText: string) => {
     const pendingPcs = dec(stockPending.stockPendingPcs);
     if (!stockQuantity || pendingPcs <= ZERO || pcsText === "") return;
-    set("weightCt", toFixed(div(mul(dec(stockPending.stockPendingWeightCt), dec(pcsText)), pendingPcs), nf.weightInputDecimals));
+    // All of it → exactly the pending weight; part of it → the typed weight decimals (Decimal Setup), never above the pending weight.
+    const full = dec(stockPending.stockPendingWeightCt);
+    const pcs = dec(pcsText);
+    const weight = div(mul(full, pcs), pendingPcs);
+    set("weightCt", pcs === pendingPcs ? toFixed(full, 3) : toFixed(weight > full ? full : weight, nf.weightInputDecimals));
   };
   const name = <K extends keyof typeof line>(key: K) => `lines.${index}.${key}` as const;
 

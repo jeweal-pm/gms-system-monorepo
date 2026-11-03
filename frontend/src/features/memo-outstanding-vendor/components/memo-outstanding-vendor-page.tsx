@@ -9,14 +9,12 @@ import { printDateFormatter } from "@/features/partner/components/partner-page-p
 import {
   isPermissionDenied,
   loadErrorMessage,
-  NO_ACCESS,
   useDocItems,
   useMemoOutstandingAccess,
   useRefreshAll,
-  useVendorList,
-  useVendorOptions,
-  useVendorSummary,
+  VENDOR_REPORT,
   type MemoOutstandingAccess,
+  type OutstandingReport,
 } from "../api";
 import {
   activeSort,
@@ -28,13 +26,13 @@ import {
   isDocOpen,
   listStateToSearch,
   openDocIds,
-  PAGE_TITLE,
   parseListState,
   printRows,
   toggleSort,
   visibleRows,
   withFilters,
   type ListState,
+  type ReportSpec,
   type SubtaskMode,
   type VendorItem,
   type VendorOption,
@@ -45,38 +43,58 @@ import { Filters, SelectionBar, Toolbar } from "./filter-bar";
 import { OutstandingTable, TableSkeleton } from "./outstanding-table";
 import { KpiCards, Pager } from "./parts";
 import { OutstandingPrintView } from "./print-view";
+import { ReportSpecContext } from "./report-context";
 
 const message = "p-10 text-gms-body text-gms-text-secondary";
 
-/** One store per browser tab; blocked storage falls back to memory (ui-spec Customize view). */
-const viewStore = createViewStore(() => (typeof window === "undefined" ? undefined : window.localStorage));
+/** One store per report and browser tab; blocked storage falls back to memory (ui-spec Customize view). */
+const viewStores = new Map<string, ReturnType<typeof createViewStore>>();
+function viewStoreOf(spec: ReportSpec) {
+  const key = `gms.${spec.key}.view.v1`;
+  let store = viewStores.get(key);
+  if (!store) {
+    store = createViewStore(() => (typeof window === "undefined" ? undefined : window.localStorage), key);
+    viewStores.set(key, store);
+  }
+  return store;
+}
 const serverView = () => DEFAULT_VIEW;
 
 /** `/memo/memo-outstanding/vendor`: needs memo-outstanding-vendor VIEW (the server checks every call). */
 export function MemoOutstandingVendorPage() {
-  const access = useMemoOutstandingAccess();
+  return <MemoOutstandingPage report={VENDOR_REPORT} />;
+}
+
+/** A memo outstanding report page (From Vendor / From Customer): needs its leaf's VIEW (the server checks every call). */
+export function MemoOutstandingPage({ report }: { report: OutstandingReport }) {
+  const access = useMemoOutstandingAccess(report.spec.menuKey);
   if (!access) return <p className={message}>Loading…</p>;
-  if (!access.view) return <p className={message}>{NO_ACCESS}</p>;
-  return <OutstandingReport access={access} />;
+  if (!access.view) return <p className={message}>{report.spec.noAccess}</p>;
+  return (
+    <ReportSpecContext.Provider value={report.spec}>
+      <OutstandingReport access={access} report={report} />
+    </ReportSpecContext.Provider>
+  );
 }
 
 /** Filter summary for the print header. */
-export function filterSummary(state: ListState, vendors: readonly VendorOption[] | undefined): string[] {
+export function filterSummary(state: ListState, vendors: readonly VendorOption[] | undefined, party = "Vendor"): string[] {
   const lines: string[] = [];
   if (state.q.trim()) lines.push(`Search: ${state.q.trim()}`);
-  if (state.vendorIds.length) lines.push(`Vendor: ${state.vendorIds.map((id) => vendors?.find((vendor) => vendor.id === id)?.name ?? id).join(", ")}`);
+  if (state.vendorIds.length) lines.push(`${party}: ${state.vendorIds.map((id) => vendors?.find((vendor) => vendor.id === id)?.name ?? id).join(", ")}`);
   if (state.from || state.to) lines.push(`Doc date: ${state.from ? formatDate(state.from) : "…"} – ${state.to ? formatDate(state.to) : "…"}`);
   return lines;
 }
 
-function OutstandingReport({ access }: { access: MemoOutstandingAccess }) {
+function OutstandingReport({ access, report }: { access: MemoOutstandingAccess; report: OutstandingReport }) {
+  const { spec } = report;
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const state = useMemo(() => parseListState(params), [params]);
-  const search = listStateToSearch(state);
+  const state = useMemo(() => parseListState(params, spec), [params, spec]);
+  const search = listStateToSearch(state, spec);
   const navigate = (next: ListState) => {
-    const query = listStateToSearch(next);
+    const query = listStateToSearch(next, spec);
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
   };
 
@@ -92,15 +110,16 @@ function OutstandingReport({ access }: { access: MemoOutstandingAccess }) {
     if (debounced !== current.state.q.trim()) current.navigate(withFilters(current.state, { q: debounced }));
   }, [debounced]);
 
+  const viewStore = viewStoreOf(spec);
   const prefs = useSyncExternalStore(viewStore.subscribe, viewStore.read, serverView);
   const setPrefs = (next: ViewPrefs) => viewStore.write(next);
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const customizeRef = useRef<HTMLButtonElement>(null);
 
-  const summary = useVendorSummary(state, true);
-  const list = useVendorList(state, true);
-  const options = useVendorOptions(true);
-  const refreshAll = useRefreshAll();
+  const summary = report.useSummary(state, true);
+  const list = report.useList(state, true);
+  const options = report.useOptions(true);
+  const refreshAll = useRefreshAll(spec);
   const [refreshing, setRefreshing] = useState(false);
   // Refresh also brings the dragged column widths back to the default 30% / 70% (owner note 2026-10-30).
   const [layoutKey, setLayoutKey] = useState(0);
@@ -119,7 +138,7 @@ function OutstandingReport({ access }: { access: MemoOutstandingAccess }) {
 
   const openIds = openDocIds(rows, prefs.subtasks, toggledIds);
   const neededIds = [...new Set([...openIds, ...selected.values()])];
-  const items = useDocItems(neededIds);
+  const items = useDocItems(neededIds, report);
   const itemsByDoc = useMemo(() => items.data ?? new Map<string, VendorItem[]>(), [items.data]);
 
   const [printedAt, setPrintedAt] = useState("");
@@ -164,7 +183,7 @@ function OutstandingReport({ access }: { access: MemoOutstandingAccess }) {
   };
 
   const denied = isPermissionDenied(list.error) || isPermissionDenied(summary.error);
-  if (denied) return <p className={message}>{NO_ACCESS}</p>;
+  if (denied) return <p className={message}>{spec.noAccess}</p>;
 
   const firstLoad = list.isPending;
   const loadFailed = (list.isError && !list.data) || summary.isError;
@@ -173,7 +192,7 @@ function OutstandingReport({ access }: { access: MemoOutstandingAccess }) {
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
-      <h1 className="text-gms-title font-medium text-gms-text-heading print:hidden">{PAGE_TITLE}</h1>
+      <h1 className="text-gms-title font-medium text-gms-text-heading print:hidden">{spec.title}</h1>
       <div className="print:hidden">
         <KpiCards summary={summary.data} loading={summary.isPending} />
       </div>
@@ -218,7 +237,7 @@ function OutstandingReport({ access }: { access: MemoOutstandingAccess }) {
         ) : firstLoad ? (
           <TableSkeleton />
         ) : total === 0 ? (
-          <EmptyState filtered={hasFilters(state)} onClear={resetFilters} />
+          <EmptyState filtered={hasFilters(state)} onClear={resetFilters} emptyText={spec.emptyText} />
         ) : (
           <>
             <OutstandingTable
@@ -251,7 +270,7 @@ function OutstandingReport({ access }: { access: MemoOutstandingAccess }) {
         <OutstandingPrintView
           entries={printRows(rows, itemsByDoc, selectedIds)}
           prefs={prefs}
-          filters={filterSummary(state, options.data?.vendors)}
+          filters={filterSummary(state, options.data?.vendors, spec.party)}
           scope={selected.size ? "Selected items" : "Current page"}
           printedAt={printedAt}
         />
@@ -261,10 +280,10 @@ function OutstandingReport({ access }: { access: MemoOutstandingAccess }) {
 }
 
 /** Empty states (ui-spec States). */
-export function EmptyState({ filtered, onClear }: { filtered: boolean; onClear: () => void }) {
+export function EmptyState({ filtered, onClear, emptyText = "No memo items outstanding from vendors." }: { filtered: boolean; onClear: () => void; emptyText?: string }) {
   return (
     <div className="rounded-gms-md border border-gms-border bg-gms-surface px-6 py-12 text-center">
-      <p className="text-gms-body text-gms-text-secondary">{filtered ? "No documents match these filters." : "No memo items outstanding from vendors."}</p>
+      <p className="text-gms-body text-gms-text-secondary">{filtered ? "No documents match these filters." : emptyText}</p>
       {filtered && (
         <Button className="mt-3" onClick={onClear}>Clear filters</Button>
       )}

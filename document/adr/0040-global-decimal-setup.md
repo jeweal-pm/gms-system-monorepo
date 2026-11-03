@@ -1,7 +1,8 @@
-﻿# ADR-0038: One global decimal setup for weight and price display and entry
+﻿# ADR-0040: One global decimal setup for weight and price display and entry
 
 - Status: Accepted 2026-11-03 (owner approved SA revision 1; Q-DEC-14 changed to copy Document Setup grants)
 - Date: 2026-11-03
+- Number: drafted as ADR-0038; renumbered to ADR-0040 on 2026-11-03 when merged with `change-to-nginx-with-new-skill-agent` (ADR-0038 = quotation From Stock, ADR-0039 = Memo Outstanding From Customer). The two 20261103090000 decimal-setup migrations keep "ADR-0038" in their header comment so their applied checksums stay valid.
 - Feature / source UI revision: `decimal-setup` / UI revision 2 (in preparation by the parent; [ui-spec](../apps/frontend/decimal-setup/ui-spec.md))
 - SA revision: 1 (first backend design for this feature)
 - Deciders: project owner; approval pending

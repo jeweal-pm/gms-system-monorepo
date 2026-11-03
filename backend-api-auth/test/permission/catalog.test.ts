@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { APPLICABLE_COUNT, CATALOG_LEAF_KEYS, catalogResponse, isGrantInCatalog, parsePermissionKey, PERMISSION_ACTIONS, PERMISSION_CATALOG } from "../../src/permission/catalog";
 
-/** UT-CAT: catalog v2 shape after decimal-setup SA rev 1 / ADR-0038 (owner 2026-11-03). */
+/** UT-CAT: catalog v2 shape after decimal-setup SA rev 1 / ADR-0040 (owner 2026-11-03). */
 describe("permission catalog", () => {
   it("UT-CAT-01 has 42 leaves and 360 applicable cells", () => {
     expect(CATALOG_LEAF_KEYS).toHaveLength(42);

@@ -3,7 +3,8 @@
 import { X } from "lucide-react";
 import { useEffect, useId, useRef, type RefObject } from "react";
 import { cx, focusRing } from "@/components/ui/button";
-import { hideAllColumns, LOCKED_COLUMNS, setColumnShown, showAllColumns, viewLists, type ViewColumn, type ViewPrefs } from "../model";
+import { hideAllColumns, lockedColumns, setColumnShown, showAllColumns, viewLists, type ViewColumn, type ViewPrefs } from "../model";
+import { useReportSpec } from "./report-context";
 
 type PanelProps = {
   open: boolean;
@@ -51,7 +52,8 @@ export function CustomizeViewPanel({ open, prefs, onChange, onClose, returnFocus
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
-  const { shown, hidden } = viewLists(prefs);
+  const spec = useReportSpec();
+  const { shown, hidden } = viewLists(prefs, spec);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -95,7 +97,7 @@ export function CustomizeViewPanel({ open, prefs, onChange, onClose, returnFocus
             <button type="button" className={link} disabled={shown.length === 0} onClick={() => onChange(hideAllColumns(prefs))}>Hide all</button>
           </div>
           <ul>
-            {LOCKED_COLUMNS.map((label, index) => <ColumnSwitch key={label} id={`${titleId}-locked-${index}`} label={label} checked locked />)}
+            {lockedColumns(spec).map((label, index) => <ColumnSwitch key={label} id={`${titleId}-locked-${index}`} label={label} checked locked />)}
             {shown.map((column) => <ColumnSwitch key={column.key} id={`${titleId}-${column.key}`} label={column.label} checked onToggle={() => toggle(column.key, false)} />)}
           </ul>
         </section>

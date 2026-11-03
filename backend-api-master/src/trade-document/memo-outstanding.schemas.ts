@@ -45,3 +45,36 @@ export const memoOutstandingItemsSchema = z.object({
 export type MemoOutstandingItemsInput = z.output<typeof memoOutstandingItemsSchema>;
 
 export const memoOutstandingOptionsSchema = z.object({}).strict().optional();
+
+/**
+ * memoOutstanding.customer* inputs (memo-outstanding-customer SA revision 1, ADR-0039): the vendor bounds with
+ * customerIds and memoOutIds, and a sort whitelist without Reserve (stones with a customer can't be reserved).
+ */
+export const MEMO_OUTSTANDING_CUSTOMER_SORT_KEYS = [
+  "docNo", "dueDate", "customerName", "memoPcs", "returnPcs", "soldPcs", "outstandingPcs", "openValue",
+] as const;
+export type MemoOutstandingCustomerSortKey = (typeof MEMO_OUTSTANDING_CUSTOMER_SORT_KEYS)[number];
+
+const customerFilterFields = {
+  q: filterFields.q,
+  customerIds: z.array(z.uuid()).max(MEMO_OUTSTANDING_VENDOR_IDS_MAX).optional(),
+  from: filterFields.from,
+  to: filterFields.to,
+};
+
+export const memoOutstandingCustomerFiltersSchema = z.object(customerFilterFields).strict().superRefine(dateRange);
+export type MemoOutstandingCustomerFilters = z.output<typeof memoOutstandingCustomerFiltersSchema>;
+
+export const memoOutstandingCustomerListSchema = z.object({
+  ...customerFilterFields,
+  page: z.number().int().min(1).max(MEMO_OUTSTANDING_PAGE_MAX).default(1),
+  pageSize: z.union([z.literal(10), z.literal(25), z.literal(50)]).default(10),
+  sort: z.enum(MEMO_OUTSTANDING_CUSTOMER_SORT_KEYS).optional(),
+  dir: z.enum(["asc", "desc"]).optional(),
+}).strict().superRefine(dateRange);
+export type MemoOutstandingCustomerListInput = z.output<typeof memoOutstandingCustomerListSchema>;
+
+export const memoOutstandingCustomerItemsSchema = z.object({
+  memoOutIds: z.array(z.uuid()).min(1).max(MEMO_OUTSTANDING_ITEM_DOCS_MAX),
+}).strict();
+export type MemoOutstandingCustomerItemsInput = z.output<typeof memoOutstandingCustomerItemsSchema>;
