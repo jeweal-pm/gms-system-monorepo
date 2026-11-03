@@ -88,7 +88,7 @@ Claimed paths: the allowed files of FE-DEC-101…105, plus `frontend/src/feature
 
 ### Security review 2026-11-03 (FE-DEC-106, same source revision)
 
-- Revision: commit `d88fbd2` (vs `4bdc9ff`) + the uncommitted working tree on `fix/03-11-26-decimal-setup` (incl. migration `20261103120000_decimal_setup_places_max_4`, `frontend/src/lib/number-format.ts`, `number-format-provider.tsx`). Same revision also covers the auth CSRF trusted-origins fix (`backend-api-auth/src/trpc/auth-trpc.csrf.ts`) and the Home-has-no-tab change (`frontend/src/features/home/tabs/*`).
+- Revision: commits `d88fbd2` + `2376517` (vs `4bdc9ff`) on `fix/03-11-26-decimal-setup` (incl. migration `20261103120000_decimal_setup_places_max_4`, `frontend/src/lib/number-format.ts`, `number-format-provider.tsx`). Same revision also covers the Home-has-no-tab change (`frontend/src/features/home/tabs/*`).
 - **sec-auditor: clear** — no findings, no ticket. **security-auditor: clear (PASS)** — no findings, no ticket.
-- Advisory (no ticket): `AUTH_EXTRA_TRUSTED_ORIGINS` / `MASTER_TRUSTED_ORIGINS` are only set by `docker-compose.gms.dev.yml`; confirm they stay unset (or HTTPS-only) in production. Already-open INV-20261102-006 (stored tab URL control characters) is unchanged by this revision.
+- Already-open INV-20261102-006 (stored tab URL control characters) is unchanged by this revision.
 - Still open: manual-tester run for Decimal Setup and one document page.
