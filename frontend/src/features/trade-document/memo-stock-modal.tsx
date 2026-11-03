@@ -4,8 +4,9 @@ import { ArrowRight, ChevronsUpDown, MessageSquare, Search, X } from "lucide-rea
 import { useEffect, useState } from "react";
 import { DateInput } from "@/components/ui/date-input";
 import { Badge, Button, cx, IconButton } from "@/features/quotation/components/ui";
-import { dec, toFixed } from "@/features/quotation/lib/decimal";
-import { formatMoneyText, formatWeight } from "@/features/quotation/lib/format";
+import { dec } from "@/features/quotation/lib/decimal";
+import { formatMoneyText, formatUnitPrice, formatWeight } from "@/features/quotation/lib/format";
+import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import { memoStockLoadError, useMemoStock, type MemoStockItem } from "./memo-stock-api";
 
 /**
@@ -29,6 +30,7 @@ export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText
   onConfirm: (items: MemoStockItem[]) => void;
 }) {
   const [search, setSearch] = useState("");
+  const nf = useNumberFormat();
   const [q, setQ] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -180,14 +182,14 @@ export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText
                         <div className="mt-1 text-xs text-[#6B7480]">{item.cerNo}</div>
                       </td>
                       <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">{item.pendingPcs}</td>
-                      <td className="px-3 py-4 text-right">{formatWeight(dec(item.pendingWeightCt))}</td>
+                      <td className="px-3 py-4 text-right">{formatWeight(dec(item.pendingWeightCt), nf.weightPlaces)}</td>
                       {showPrice && (
                         <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">
-                          {formatMoneyText(toFixed(dec(item.netUnitPrice), 2))} {item.currency}
+                          {formatUnitPrice(item.netUnitPrice, nf.pricePlaces)} {item.currency}
                           <div className="mt-1 text-xs text-[#6B7480]">{item.priceUnit === "PCS" ? "pcs" : "cts"}</div>
                         </td>
                       )}
-                      {showPrice && <td className="px-3 py-4 text-right">{formatMoneyText(item.amount)}</td>}
+                      {showPrice && <td className="px-3 py-4 text-right">{formatMoneyText(item.amount, nf.pricePlaces)}</td>}
                     </tr>
                   ))}
                   {stock.hasNextPage && (

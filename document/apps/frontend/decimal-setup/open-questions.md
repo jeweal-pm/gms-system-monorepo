@@ -32,3 +32,6 @@ Q-DEC-03 range/defaults are replaced by Q-DEC-08/09; Q-DEC-05/06 are answered by
 | Q-DEC-16 | What if the setting cannot be loaded? | **Pages use weight 2 / price 2 without an error banner;** only the Decimal Setup page shows the load error with Retry. |
 | Q-DEC-17 | The rev-1 demo stored values in the browser (`gms.decimal-setup.v1`). | **Delete that key on first load and do not import it** (per-page demo values). |
 | Q-DEC-18 | Which values count as "weight" and "price"? | **Weight:** every carat weight, including totals and pending/outstanding/returned weights, and labor qty when its basis is weight. **Price:** unit price, amounts, subtotal, discounts as amounts, tax amount, service charges, labor rate/amount, grand total, open value and report totals, including print views; the shown net unit price uses the price places (display only). |
+
+- **Q-DEC-08 changed by the owner 2026-11-03:** "ให้ max decimal ที่ 4", then chose "Choose 0–4, but show only": weight and price places both allow **0–4**. Display shows that many places (a 4th place is 0); typing and storage stay at weight 3 / price 2; server totals stay 2 dp. No column widening.
+

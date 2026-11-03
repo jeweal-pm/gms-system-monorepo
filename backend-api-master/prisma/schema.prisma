@@ -418,7 +418,8 @@ model DocumentSetup {
 }
 
 /// Decimal Setup (decimal-setup SA rev 1, ADR-0038): one global row; display/entry places for weight and price.
-/// CHECKs (id = 1, weight 0..3, price 0..2, version >= 1) live in migration 20261103090000_decimal_setup.
+/// CHECKs (id = 1, version >= 1) live in migration 20261103090000_decimal_setup; weight/price 0..4 (owner Q-DEC-08)
+/// in 20261103120000_decimal_setup_places_max_4.
 model DecimalSetup {
   id           Int      @id @default(1) @db.SmallInt
   weightPlaces Int      @default(2) @map("weight_places") @db.SmallInt

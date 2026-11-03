@@ -56,10 +56,10 @@ describe("setupLandingTiles", () => {
     ]);
   });
 
-  it("UT-DEC-05 links Decimal Setup to its page, gated by document-setup until it has its own leaf (Q-DEC-05)", () => {
+  it("UT-DEC-05 links Decimal Setup to its page, gated by its own decimal-setup leaf (FE-DEC-103, Q-DEC-14)", () => {
     const tile = setupLandingTiles.find((entry) => entry.id === "decimal-setup");
     expect(tile && "href" in tile ? tile.href : null).toBe("/setup/decimal-setup");
-    expect(tile?.permission).toEqual(["document-setup"]);
+    expect(tile?.permission).toEqual(["decimal-setup"]);
   });
 
   it("UT-NAV-F02 links Document Setup to its real page, gated by the document-setup leaf (UI rev 1)", () => {

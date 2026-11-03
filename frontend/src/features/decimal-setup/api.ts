@@ -1,57 +1,103 @@
+import type { inferRouterClient } from "@trpc/client";
+import type { MasterRouter } from "@gem-crm/backend-api-master/src/master/router";
+import { DEFAULT_DECIMAL_PLACES, normalizePlaces, type DecimalPlaces } from "@/lib/number-format";
+import { isCallerLicenseCode, readDomainError, retryTransient } from "@/lib/trpc-error";
+import type { DecimalDraft } from "./pages";
+
 /**
- * Decimal Setup data access — MOCK (decimal-setup UI rev 1, owner 2026-10-27: frontend only, no API or
- * database yet). Kept in memory and in this browser's localStorage so a refresh keeps it during demos.
- * When the API exists, only this file changes (the page uses getDecimalSetup / saveDecimalSetup).
+ * Decimal Setup data contract (SA rev 1 + owner Q-DEC-08 change, api-contract.md; FE-DEC-101):
+ * `decimalSetup.get` (any signed-in licensed user) and `decimalSetup.save` (`decimal-setup:EDIT` + CSRF,
+ * optimistic `expectedVersion`). The rev 1 browser mock and its localStorage value are gone.
  */
-import { DECIMAL_CHOICES, DECIMAL_PAGES, defaultDecimalSetup, type DecimalSetup } from "./pages";
+type DecimalSetupClient = inferRouterClient<MasterRouter>["decimalSetup"];
+export type DecimalSetupOutput = Awaited<ReturnType<DecimalSetupClient["get"]["query"]>>;
+export type DecimalSetup = DecimalSetupOutput["setup"];
+export type SaveDecimalSetupInput = Parameters<DecimalSetupClient["save"]["mutate"]>[0];
 
-const STORAGE_KEY = "gms.decimal-setup.v1";
-const DELAY_MS = 250;
-let memory: DecimalSetup | null = null;
+/** Rev 1 demo value (Q-DEC-17): deleted on load, never read or imported. */
+export const LEGACY_STORAGE_KEY = "gms.decimal-setup.v1";
 
-const delay = () => new Promise((resolve) => setTimeout(resolve, DELAY_MS));
-const isPlaces = (value: unknown): value is number => typeof value === "number" && (DECIMAL_CHOICES as readonly number[]).includes(value);
+/** Q-DEC-15: other users pick a change up on their next load, or on window focus after 10 minutes. */
+export const DECIMAL_SETUP_STALE_MS = 10 * 60_000;
 
-/** Accepts only a well-formed stored value; anything else falls back to the defaults. */
-export function parseStored(raw: string | null): DecimalSetup | null {
-  if (!raw) return null;
+/** One retry for a transient failure only (5xx / network); no retry for 4xx, session or license errors. */
+export function retryDecimalSetupRead(failureCount: number, error: unknown): boolean {
+  return failureCount < 1 && retryTransient(failureCount, error);
+}
+
+/** Deletes the rev 1 browser-only value; storage that is blocked (private mode) is ignored. */
+export function removeLegacyStorage(storage: Pick<Storage, "removeItem"> | undefined = globalThis.localStorage): void {
   try {
-    const value = JSON.parse(raw) as Partial<DecimalSetup>;
-    const base = defaultDecimalSetup();
-    if (!value.defaults || !isPlaces(value.defaults.weight) || !isPlaces(value.defaults.price) || typeof value.pages !== "object" || value.pages === null) return null;
-    for (const page of DECIMAL_PAGES) {
-      const places = (value.pages as Record<string, unknown>)[page.key] as { weight?: unknown; price?: unknown } | undefined;
-      if (!places || !isPlaces(places.price)) continue;
-      base.pages[page.key] = { weight: page.hasWeight && isPlaces(places.weight) ? places.weight : base.pages[page.key].weight, price: places.price };
-    }
-    base.defaults = { weight: value.defaults.weight, price: value.defaults.price };
-    return base;
+    storage?.removeItem(LEGACY_STORAGE_KEY);
   } catch {
-    return null;
+    // Storage blocked: nothing was stored there either.
   }
 }
 
-function readStorage(): DecimalSetup | null {
-  try {
-    return parseStored(window.localStorage.getItem(STORAGE_KEY));
-  } catch {
-    return null;
+/** The places every page uses: the loaded setting, or weight 2 / price 2 while loading or when it fails (Q-DEC-16). */
+export function placesFrom(output: DecimalSetupOutput | undefined): DecimalPlaces {
+  const setup = output?.setup;
+  if (!setup) return DEFAULT_DECIMAL_PLACES;
+  return {
+    weightPlaces: normalizePlaces(setup.weightPlaces, DEFAULT_DECIMAL_PLACES.weightPlaces),
+    pricePlaces: normalizePlaces(setup.pricePlaces, DEFAULT_DECIMAL_PLACES.pricePlaces),
+  };
+}
+
+export function draftFrom(setup: DecimalSetup): DecimalDraft {
+  return { weightPlaces: setup.weightPlaces, pricePlaces: setup.pricePlaces, expectedVersion: setup.version };
+}
+
+export function toSaveInput(draft: DecimalDraft): SaveDecimalSetupInput {
+  return { weightPlaces: draft.weightPlaces, pricePlaces: draft.pricePlaces, expectedVersion: draft.expectedVersion };
+}
+
+export type SaveOutcome = { message: string; conflict?: boolean; recheckAccess?: boolean };
+
+/** Save errors → the page message (error-handling.md; ui-spec rev 2 "Conflict"). */
+export function mapSaveError(error: unknown): SaveOutcome {
+  const { domainCode } = readDomainError(error);
+  switch (domainCode) {
+    case "DECIMAL_SETUP_CHANGED":
+      return { message: "Someone else changed the decimal setup. Reload to see the latest values.", conflict: true };
+    case "VALIDATION_ERROR":
+      return { message: "Choose 0 to 4 decimal places for weight and price." };
+    case "PERMISSION_DENIED":
+      return { message: "You no longer have permission to edit the decimal setup. Nothing was saved.", recheckAccess: true };
+    case "CSRF_INVALID":
+      return { message: "Couldn't save from this page. Reload the page and try again." };
+    default:
+      if (isCallerLicenseCode(domainCode)) return { message: "Your license doesn't allow this right now. Nothing was saved." };
+      if (domainCode === "UNAUTHORIZED" || domainCode === "UNAUTHENTICATED") return { message: "Your session has ended. Sign in again." };
+      return { message: "Couldn't save. Try again." };
   }
 }
 
-export async function getDecimalSetup(): Promise<DecimalSetup> {
-  await delay();
-  memory ??= readStorage() ?? defaultDecimalSetup();
-  return structuredClone(memory);
+export function loadErrorMessage(error: unknown): string {
+  const { domainCode } = readDomainError(error);
+  if (isCallerLicenseCode(domainCode)) return "Your license doesn't allow using this page right now.";
+  if (domainCode === "UNAUTHORIZED" || domainCode === "UNAUTHENTICATED") return "Your session has ended. Sign in again.";
+  return "Couldn't load the decimal setup.";
 }
 
-export async function saveDecimalSetup(setup: DecimalSetup): Promise<DecimalSetup> {
-  await delay();
-  memory = structuredClone(setup);
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(memory));
-  } catch {
-    // Storage blocked (private mode): the value still lives in memory for this session.
-  }
-  return structuredClone(memory);
+const updatedFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Bangkok",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+/**
+ * F2-05 "Last updated dd/mm/yyyy HH:mm" (Asia/Bangkok). Hidden (null) before the first save by a user: the
+ * missing-row defaults (version 0) and the migration seed (`updatedBy` null). The API returns the user id only,
+ * so no name is shown.
+ */
+export function lastUpdatedText(setup: Pick<DecimalSetup, "version" | "updatedAt" | "updatedBy">): string | null {
+  if (setup.version === 0 || setup.updatedBy === null) return null;
+  const at = new Date(setup.updatedAt);
+  if (Number.isNaN(at.getTime())) return null;
+  return `Last updated ${updatedFormatter.format(at).replace(",", "")}`;
 }

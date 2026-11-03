@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ToastProvider } from "@/components/ui/toast";
+import { DecimalSetupProvider } from "@/features/decimal-setup/number-format-provider";
 import { authClient } from "@/lib/auth-client";
 import { clearAccountCache } from "@/lib/session-cache";
 import { Breadcrumbs } from "./breadcrumbs";
@@ -164,25 +165,28 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
 
       {isNavigationOpen && <MobileNavigation pathname={pathname} contextNav={contextNav} onClose={closeNavigation} />}
 
-      <ToastProvider>
-        <TabsProvider key={session.user.id} userId={session.user.id}>
-          <div className="flex min-w-0 flex-1 flex-col">
-            <Topbar
-              tabs={<ShellTabBar />}
-              user={{ name: session.user.name, username: session.user.username ?? "" }}
-              onSignOut={handleSignOut}
-              menuButtonRef={menuButtonRef}
-              isNavigationOpen={isNavigationOpen}
-              onOpenNavigation={() => setIsNavigationOpen(true)}
-            />
-            <ShellBreadcrumbs />
-            {/* Each tab scrolls inside its own pane (TabPanels), so it keeps its scroll position. */}
-            <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-hidden outline-none">
-              <TabPanels>{children}</TabPanels>
-            </main>
-          </div>
-        </TabsProvider>
-      </ToastProvider>
+      {/* decimal-setup FE-DEC-102: one website-wide number format for every tab (signed-in shell only). */}
+      <DecimalSetupProvider>
+        <ToastProvider>
+          <TabsProvider key={session.user.id} userId={session.user.id}>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <Topbar
+                tabs={<ShellTabBar />}
+                user={{ name: session.user.name, username: session.user.username ?? "" }}
+                onSignOut={handleSignOut}
+                menuButtonRef={menuButtonRef}
+                isNavigationOpen={isNavigationOpen}
+                onOpenNavigation={() => setIsNavigationOpen(true)}
+              />
+              <ShellBreadcrumbs />
+              {/* Each tab scrolls inside its own pane (TabPanels), so it keeps its scroll position. */}
+              <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-hidden outline-none">
+                <TabPanels>{children}</TabPanels>
+              </main>
+            </div>
+          </TabsProvider>
+        </ToastProvider>
+      </DecimalSetupProvider>
     </div>
   );
 }

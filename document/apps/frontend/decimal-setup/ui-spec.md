@@ -113,7 +113,7 @@ API, database, permission catalog entry, and using the setting on Quotation/othe
 [ Topbar: Home › Setup › Decimal Setup                                                   ]
 [ Header: "Decimal Setup"   "Weight and price decimal places for the whole website"       ]
 [                                                        [Cancel] [Save] [Edit]           ]
-[ Card "Decimal Places"                                                                    ]
+[ Card "Default"                                                                           ]
 [   Weight (ct) decimals [ 2 ▾ ]   Example 1.23 ct                                         ]
 [   Price decimals       [ 2 ▾ ]   Example 12,345.68                                       ]
 [   Note: Applies to every page (Quotation, Reserve, Memo, Purchase, Inventory, Sale,      ]
@@ -122,14 +122,14 @@ API, database, permission catalog entry, and using the setting on Quotation/othe
 [   Last updated {dd/mm/yyyy HH:mm} by {name}                                              ]
 ```
 
-- One card, max width ~640 px, left aligned like Company Profile fields; below `sm` the two rows stack (label above the select).
+- One card titled **"Default"** (owner 2026-11-03: "ให้เอา Decimal Places by Page ออก แล้วมีแค่ Default พอ"), max width ~640 px, left aligned like Company Profile fields; below `sm` the two rows stack (label above the select).
 
 ### Input fields
 
 | ID | Field | Control | Values | Default | Rule |
 |---|---|---|---|---|---|
-| F2-01 | Weight (ct) decimals | select | 0–3 (Q-DEC-08) | from the server (seed 2, Q-DEC-09) | Used to show and type every carat weight in the website |
-| F2-02 | Price decimals | select | 0–2 (Q-DEC-08) | from the server (seed 2, Q-DEC-09) | Used to show and type every price and money amount (unit price, amount, discount amount, charges, labor, subtotal, tax, grand total) |
+| F2-01 | Weight (ct) decimals | select | 0–4 (Q-DEC-08 changed 2026-11-03; typing stays ≤ 3) | from the server (seed 2, Q-DEC-09) | Used to show and type every carat weight in the website |
+| F2-02 | Price decimals | select | 0–4 (Q-DEC-08 changed 2026-11-03; typing stays ≤ 2) | from the server (seed 2, Q-DEC-09) | Used to show and type every price and money amount (unit price, amount, discount amount, charges, labor, subtotal, tax, grand total) |
 | F2-03 | Example (weight) | read-only | `1.23456` → e.g. `1.23 ct` (2) / `1.235 ct` (3) | — | Live, half-up rounding (Q-DEC-04 unchanged) |
 | F2-04 | Example (price) | read-only | `12,345.6789` → e.g. `12,345.68` | — | Live, thousands separator |
 | F2-05 | Last updated | read-only text | date/time + user | — | From the server; hidden before the first save |

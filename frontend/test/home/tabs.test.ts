@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+﻿import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createElement, type FC, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -43,11 +43,11 @@ describe("tab list (app-shell-tabs UI rev 1)", () => {
     const state = openAll(["/", "/pre-sale/quotation", "/memo/memo-out/A"]);
     const again = openUrl(state, "/pre-sale/quotation/", "Quotation", "x");
     expect(again.outcome).toBe("switched");
-    expect(again.state.tabs).toHaveLength(3);
+    expect(again.state.tabs).toHaveLength(2);
     expect(activePath(again.state)).toBe("/pre-sale/quotation");
     const other = openUrl(state, "/memo/memo-out/B", "Memo Out", "y");
     expect(other.outcome).toBe("opened");
-    expect(titles(other.state)).toEqual(["/", "/pre-sale/quotation", "/memo/memo-out/A", "/memo/memo-out/B"]);
+    expect(titles(other.state)).toEqual(["/pre-sale/quotation", "/memo/memo-out/A", "/memo/memo-out/B"]);
     // the query (filters) is kept with the tab, not a tab of its own
     const filtered = openUrl(openAll(["/memo/memo-outstanding/vendor"]), "/memo/memo-outstanding/vendor?vendor=V1", "From Vendor", "z");
     expect(filtered.outcome).toBe("switched");
@@ -57,7 +57,18 @@ describe("tab list (app-shell-tabs UI rev 1)", () => {
   it("UT-TAB-01 a new tab opens right after the shown one", () => {
     const state = openAll(["/", "/setup", "/setup/vendor"]);
     const back = openUrl(state, "/setup", "Setup", "x").state;
-    expect(titles(openUrl(back, "/setup/customer", "Customer", "y").state)).toEqual(["/", "/setup", "/setup/customer", "/setup/vendor"]);
+    expect(titles(openUrl(back, "/setup/customer", "Customer", "y").state)).toEqual(["/setup", "/setup/customer", "/setup/vendor"]);
+  });
+
+  it("UT-TAB-06 Home opens no tab and leaves every tab inactive (owner 2026-11-03)", () => {
+    const state = openAll(["/setup", "/setup/vendor"]);
+    const home = openUrl(state, "/", "Home", "x");
+    expect(home.outcome).toBe("home");
+    expect(home.state.tabs).toBe(state.tabs);
+    expect(home.state.activeId).toBe("");
+    expect(openUrl(emptyTabs, "/?from=login", "Home", "y").state).toEqual(emptyTabs);
+    // a page opened from Home goes to the end
+    expect(titles(openUrl(home.state, "/setup/customer", "Customer", "z").state)).toEqual(["/setup", "/setup/vendor", "/setup/customer"]);
   });
 
   it("UT-TAB-01 the 16th page is refused and nothing closes by itself (T-04)", () => {
@@ -72,27 +83,23 @@ describe("tab list (app-shell-tabs UI rev 1)", () => {
     expect(openUrl(full, "/modules/m3", "M3", "y").outcome).toBe("switched");
   });
 
-  it("UT-TAB-01 closing the shown tab shows the right neighbour, else the left; the last close leaves Home (T-06)", () => {
+  it("UT-TAB-01 closing the shown tab shows the right neighbour, else the left; the last close shows Home (T-06)", () => {
     const state = openAll(["/a", "/b", "/c"]);
     const middle = openUrl(state, "/b", "B", "x").state;
-    const closedMiddle = closeTab(middle, middle.activeId, "home");
+    const closedMiddle = closeTab(middle, middle.activeId);
     expect(titles(closedMiddle)).toEqual(["/a", "/c"]);
     expect(activePath(closedMiddle)).toBe("/c");
-    const closedLast = closeTab(closedMiddle, closedMiddle.activeId, "home");
+    const closedLast = closeTab(closedMiddle, closedMiddle.activeId);
     expect(activePath(closedLast)).toBe("/a");
     // closing a hidden tab keeps the shown one
-    const hidden = closeTab(state, state.tabs[0].id, "home");
+    const hidden = closeTab(state, state.tabs[0].id);
     expect(activePath(hidden)).toBe("/c");
-    const lone = closeTab(closeTab(closedLast, closedLast.tabs[0].id, "home"), "nope", "home");
-    expect(lone.tabs).toEqual([{ id: "home", path: "/", url: "/", title: "Home" }]);
+    const lone = closeTab(closeTab(closedLast, closedLast.tabs[0].id), "nope");
+    expect(lone).toEqual({ tabs: [], activeId: "" });
   });
 
-  it("UT-TAB-01 Close all leaves Home only, keeping an open Home tab as it is (Q-TAB-06)", () => {
-    const withHome = openAll(["/", "/a", "/b"]);
-    const closed = closeAllTabs(withHome, "new");
-    expect(closed.tabs).toEqual([withHome.tabs[0]]);
-    expect(closed.activeId).toBe(withHome.tabs[0].id);
-    expect(closeAllTabs(openAll(["/a"]), "new").tabs).toEqual([{ id: "new", path: "/", url: "/", title: "Home" }]);
+  it("UT-TAB-01 Close all closes every tab and shows Home (Q-TAB-06, owner 2026-11-03)", () => {
+    expect(closeAllTabs()).toEqual({ tabs: [], activeId: "" });
   });
 
   it("UT-TAB-01 titles: page name, document number, New document (T-03)", () => {
@@ -122,8 +129,17 @@ describe("tab storage per user (T-07)", () => {
     const state = openAll(["/", "/setup/vendor", "/memo/memo-outstanding/vendor?vendor=V1"]);
     const shown = openUrl(state, "/setup/vendor", "Vendor", "x").state;
     const restored = parseStoredTabs(serializeTabs(shown), idGenerator("r"));
-    expect(restored?.tabs.map((tab) => tab.url)).toEqual(["/", "/setup/vendor", "/memo/memo-outstanding/vendor?vendor=V1"]);
+    expect(restored?.tabs.map((tab) => tab.url)).toEqual(["/setup/vendor", "/memo/memo-outstanding/vendor?vendor=V1"]);
     expect(restored?.tabs.find((tab) => tab.id === restored.activeId)?.path).toBe("/setup/vendor");
+  });
+
+  it("UT-TAB-06 a Home tab stored before 2026-11-03 is dropped, the shown tab is kept", () => {
+    const stored = JSON.stringify({ tabs: [{ url: "/", title: "Home" }, { url: "/a" }, { url: "/b" }], active: 2 });
+    const restored = parseStoredTabs(stored, idGenerator("r"));
+    expect(restored?.tabs.map((tab) => tab.path)).toEqual(["/a", "/b"]);
+    expect(restored?.tabs.find((tab) => tab.id === restored.activeId)?.path).toBe("/b");
+    expect(parseStoredTabs(JSON.stringify({ tabs: [{ url: "/" }], active: 0 }), idGenerator())).toBeNull();
+    expect(serializeTabs(emptyTabs)).toBe(JSON.stringify({ tabs: [], active: -1 }));
   });
 
   it("UT-TAB-02 each user has their own key", () => {
@@ -170,14 +186,14 @@ describe("tab bar (sources 03–07)", () => {
 
   it("UT-TAB-04 tabs, the active one, the unsaved dot, close buttons and the count box", () => {
     const html = renderToStaticMarkup(
-      createElement(TabBar, { tabs: [tab("1", "/", "Home"), tab("2", "/setup/vendor", "Vendor", true)], activeId: "2", onSelect: noop, onClose: noop, onCloseAll: noop }),
+      createElement(TabBar, { tabs: [tab("1", "/setup/customer", "Customer", true), tab("2", "/setup/vendor", "Vendor")], activeId: "2", onSelect: noop, onClose: noop, onCloseAll: noop }),
     );
     expect(html).toContain('role="tablist"');
     expect(html.match(/role="tab"/g)).toHaveLength(2);
     expect(html).toMatch(/aria-selected="true"[^>]*>Vendor</);
-    expect(html).toMatch(/aria-selected="false"[^>]*>Home</);
+    expect(html).toMatch(/aria-selected="false"[^>]*>Customer</);
     expect(html).toContain('aria-label="Close Vendor"');
-    expect(html).toContain('aria-label="Unsaved changes"');
+    expect(html.match(/aria-label="Unsaved changes"/g)).toHaveLength(1);
     expect(html).toContain('aria-label="2 open tabs"');
     expect(html).toContain('aria-haspopup="menu"');
     expect(html).not.toContain('disabled=""');
@@ -186,9 +202,14 @@ describe("tab bar (sources 03–07)", () => {
     expect(html).not.toContain("Scroll tabs left");
   });
 
-  it("UT-TAB-04 with Home alone the count box and Close all are disabled", () => {
-    const html = renderToStaticMarkup(createElement(TabBar, { tabs: [tab("1", "/", "Home")], activeId: "1", onSelect: noop, onClose: noop, onCloseAll: noop }));
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-label="1 open tabs"/);
+  it("UT-TAB-06 the shown tab has no unsaved dot, even with unsaved changes (owner 2026-11-03)", () => {
+    const html = renderToStaticMarkup(createElement(TabBar, { tabs: [tab("1", "/setup/vendor", "Vendor", true)], activeId: "1", onSelect: noop, onClose: noop, onCloseAll: noop }));
+    expect(html).not.toContain('aria-label="Unsaved changes"');
+  });
+
+  it("UT-TAB-04 with no tab open (Home shown) the count box and Close all are disabled", () => {
+    const html = renderToStaticMarkup(createElement(TabBar, { tabs: [], activeId: "", onSelect: noop, onClose: noop, onCloseAll: noop }));
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*aria-label="0 open tabs"/);
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>[\s\S]*Close all/);
   });
 });

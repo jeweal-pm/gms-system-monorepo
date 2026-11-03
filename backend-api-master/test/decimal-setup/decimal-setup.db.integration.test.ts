@@ -70,10 +70,13 @@ describe.runIf(canRun)("IT-DEC-B02 decimal setup on PostgreSQL", () => {
     // Reset to the seed state, then the database itself refuses out-of-range values.
     await prisma.$executeRawUnsafe(`UPDATE "partner"."decimal_setup" SET "weight_places" = 2, "price_places" = 2, "version" = 1, "updated_by" = NULL`);
     await expect(service.get()).resolves.toMatchObject({ setup: { weightPlaces: 2, pricePlaces: 2, version: 1, updatedBy: null } });
-    expect(await sqlState(`UPDATE "partner"."decimal_setup" SET "weight_places" = 4`)).toBe("23514");
-    expect(await sqlState(`UPDATE "partner"."decimal_setup" SET "price_places" = 3`)).toBe("23514");
+    expect(await sqlState(`UPDATE "partner"."decimal_setup" SET "weight_places" = 5`)).toBe("23514");
+    expect(await sqlState(`UPDATE "partner"."decimal_setup" SET "price_places" = 5`)).toBe("23514");
     expect(await sqlState(`UPDATE "partner"."decimal_setup" SET "version" = 0`)).toBe("23514");
     expect(await sqlState(`INSERT INTO "partner"."decimal_setup" ("id") VALUES (2)`)).toBe("23514");
+    // Owner Q-DEC-08: 4 places is allowed for both, then back to the seed state.
+    expect(await sqlState(`UPDATE "partner"."decimal_setup" SET "weight_places" = 4, "price_places" = 4`)).toBe("accepted");
+    await prisma.$executeRawUnsafe(`UPDATE "partner"."decimal_setup" SET "weight_places" = 2, "price_places" = 2`);
   });
 
   it("saves at the loaded version, refuses a stale one, and lets only one of two parallel saves win", async () => {

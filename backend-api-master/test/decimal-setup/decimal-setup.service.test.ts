@@ -74,12 +74,12 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("UT-DEC-B01 saveDecimalSetupBodySchema", () => {
-  it("accepts every integer in range and keeps the storage-scale maxima", () => {
-    expect(WEIGHT_PLACES_MAX).toBe(3);
-    expect(PRICE_PLACES_MAX).toBe(2);
+  it("accepts every integer 0..4 for both (owner Q-DEC-08) with 2/2 defaults", () => {
+    expect(WEIGHT_PLACES_MAX).toBe(4);
+    expect(PRICE_PLACES_MAX).toBe(4);
     expect(DECIMAL_SETUP_DEFAULTS).toEqual({ weightPlaces: 2, pricePlaces: 2 });
-    for (const weightPlaces of [0, 1, 2, 3]) {
-      for (const pricePlaces of [0, 1, 2]) {
+    for (const weightPlaces of [0, 1, 2, 3, 4]) {
+      for (const pricePlaces of [0, 1, 2, 3, 4]) {
         expect(saveDecimalSetupBodySchema.safeParse({ weightPlaces, pricePlaces, expectedVersion: 0 }).success).toBe(true);
       }
     }
@@ -88,7 +88,7 @@ describe("UT-DEC-B01 saveDecimalSetupBodySchema", () => {
   it("refuses out-of-range, non-integer, negative version, missing and unknown keys", () => {
     const valid = { weightPlaces: 2, pricePlaces: 2, expectedVersion: 1 };
     const bad = [
-      { ...valid, weightPlaces: 4 }, { ...valid, weightPlaces: -1 }, { ...valid, pricePlaces: 3 }, { ...valid, pricePlaces: 1.5 },
+      { ...valid, weightPlaces: 5 }, { ...valid, weightPlaces: -1 }, { ...valid, pricePlaces: 5 }, { ...valid, pricePlaces: -1 }, { ...valid, pricePlaces: 1.5 },
       { ...valid, weightPlaces: "2" }, { ...valid, expectedVersion: -1 }, { ...valid, expectedVersion: 1.2 },
       { weightPlaces: 2, pricePlaces: 2 }, { ...valid, page: "quotation" },
     ];

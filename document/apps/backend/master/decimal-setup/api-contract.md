@@ -6,8 +6,9 @@ Consumers: FE-DEC-101…105 in [decimal-setup.md](../../../../task/todo/decimal-
 ## Types (zod, `src/decimal-setup/decimal-setup.schemas.ts`)
 
 ```ts
-export const WEIGHT_PLACES_MAX = 3; // partner weight columns numeric(12,3)
-export const PRICE_PLACES_MAX = 2;  // partner money columns numeric(18,2)
+// Owner 2026-11-03 (Q-DEC-08 changed): 0..4 for both, display/typing only; storage numeric(12,3) / numeric(18,2) unchanged.
+export const WEIGHT_PLACES_MAX = 4;
+export const PRICE_PLACES_MAX = 4;
 export const DECIMAL_SETUP_DEFAULTS = { weightPlaces: 2, pricePlaces: 2 } as const;
 
 export const saveDecimalSetupBodySchema = z.object({
@@ -18,8 +19,8 @@ export const saveDecimalSetupBodySchema = z.object({
 }).strict();
 
 type DecimalSetup = {
-  weightPlaces: number;      // 0..3
-  pricePlaces: number;       // 0..2
+  weightPlaces: number;      // 0..4
+  pricePlaces: number;       // 0..4
   version: number;           // ≥ 1 (0 = row missing, defaults returned)
   updatedAt: string;         // ISO 8601
   updatedBy: string | null;  // user id; null = seeded by migration
@@ -46,6 +47,6 @@ type DecimalSetup = {
 { "setup": { "weightPlaces": 2, "pricePlaces": 2, "version": 1, "updatedAt": "2026-11-03T02:00:00.000Z", "updatedBy": null } }
 // save { "weightPlaces": 3, "pricePlaces": 2, "expectedVersion": 1 } →
 { "setup": { "weightPlaces": 3, "pricePlaces": 2, "version": 2, "updatedAt": "2026-11-03T03:10:00.000Z", "updatedBy": "usr_…" } }
-// save { "weightPlaces": 4, … } → 400 VALIDATION_ERROR
+// save { "weightPlaces": 5, … } or { "pricePlaces": 5, … } → 400 VALIDATION_ERROR
 // save { …, "expectedVersion": 1 } after another admin saved → 409 DECIMAL_SETUP_CHANGED
 ```

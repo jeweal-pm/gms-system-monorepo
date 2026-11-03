@@ -6,8 +6,8 @@ Owner: `backend-api-master`, PostgreSQL schema `partner`. Migration `20261103090
 erDiagram
   DECIMAL_SETUP {
     smallint id PK "always 1, CHECK id = 1"
-    smallint weight_places "NOT NULL DEFAULT 2, CHECK 0..3"
-    smallint price_places "NOT NULL DEFAULT 2, CHECK 0..2"
+    smallint weight_places "NOT NULL DEFAULT 2, CHECK 0..4"
+    smallint price_places "NOT NULL DEFAULT 2, CHECK 0..4"
     int version "NOT NULL DEFAULT 1, CHECK >= 1"
     varchar64 updated_by "NULL = seeded by migration"
     timestamp3 updated_at "NOT NULL DEFAULT now()"
@@ -51,6 +51,13 @@ CREATE TABLE "partner"."decimal_setup" (
   CONSTRAINT "decimal_setup_version_positive" CHECK ("version" >= 1)
 );
 INSERT INTO "partner"."decimal_setup" ("id") VALUES (1) ON CONFLICT ("id") DO NOTHING;
+
+-- Owner 2026-11-03 (Q-DEC-08 changed): follow-up migration 20261103120000_decimal_setup_places_max_4 (the one above was
+-- already committed and applied, so it is not edited):
+ALTER TABLE "partner"."decimal_setup" DROP CONSTRAINT IF EXISTS "decimal_setup_weight_places_range";
+ALTER TABLE "partner"."decimal_setup" DROP CONSTRAINT IF EXISTS "decimal_setup_price_places_range";
+ALTER TABLE "partner"."decimal_setup" ADD CONSTRAINT "decimal_setup_weight_places_range" CHECK ("weight_places" BETWEEN 0 AND 4);
+ALTER TABLE "partner"."decimal_setup" ADD CONSTRAINT "decimal_setup_price_places_range" CHECK ("price_places" BETWEEN 0 AND 4);
 ```
 
 - Indexes: primary key only.

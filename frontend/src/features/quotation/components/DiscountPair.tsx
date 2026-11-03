@@ -1,5 +1,6 @@
 "use client";
 
+import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import { amountText, percentText, type DiscountType } from "../lib/discount";
 import type { Dec } from "../lib/decimal";
 import { Field, NumberInput } from "./ui";
@@ -30,6 +31,8 @@ export function DiscountPair({
   percentError?: string;
   onChange: (type: DiscountType, value: string) => void;
 }) {
+  // decimal-setup FE-DEC-105: the amount is money (min(price places, 2)); the percent keeps its own 2 decimals.
+  const nf = useNumberFormat();
   const percent = (
     <NumberInput
       compact={compact}
@@ -44,6 +47,7 @@ export function DiscountPair({
   const amount = (
     <NumberInput
       compact={compact}
+      decimals={nf.priceInputDecimals}
       placeholder="0.00"
       suffix={currency || undefined}
       aria-label={`Discount Amt${currency ? ` (${currency})` : ""}`}

@@ -12,6 +12,8 @@ import {
   discardQuestion,
   emptyTabs,
   fallbackTitle,
+  HOME_PATH,
+  HOME_TITLE,
   openUrl,
   parseStoredTabs,
   retargetTab,
@@ -49,6 +51,8 @@ type TabControls = { report: (meta: TabMeta) => void; retarget: (url: string) =>
 const TabsContext = createContext<TabsApi | null>(null);
 const RegistryContext = createContext<RegistryApi | null>(null);
 const TabControlsContext = createContext<TabControls | null>(null);
+
+const HOME_BREADCRUMBS: Breadcrumb[] = [{ label: HOME_TITLE }];
 
 let tabCounter = 0;
 const newTabId = () => `tab-${++tabCounter}`;
@@ -98,14 +102,12 @@ export function TabsProvider({ userId, children }: Readonly<{ userId: string; ch
     setState(next);
   }, []);
 
-  /** T-04: a 16th page is refused; the address bar goes back to the shown tab. */
+  /** T-04: a 16th page is refused; the address bar goes back to the shown tab (or Home). */
   const refuse = useCallback(() => {
     toast.show("warning", TAB_LIMIT_MESSAGE);
     const back = activeTab(stateRef.current);
-    if (back) {
-      syncedPath.current = back.path;
-      router.replace(back.url, { scroll: false });
-    }
+    syncedPath.current = back?.path ?? HOME_PATH;
+    router.replace(back?.url ?? HOME_PATH, { scroll: false });
   }, [router, toast]);
 
   // A reload on a 16th page (15 stored tabs) is refused like any other.
@@ -123,8 +125,8 @@ export function TabsProvider({ userId, children }: Readonly<{ userId: string; ch
     else commit(result.state);
   }, [commit, pathname, refuse]);
 
+  // An empty list is stored too, so tabs closed with Close all don't come back after a reload.
   useEffect(() => {
-    if (state.tabs.length === 0) return;
     try {
       window.localStorage.setItem(tabsStorageKey(userId), serializeTabs(state));
     } catch {
@@ -141,10 +143,10 @@ export function TabsProvider({ userId, children }: Readonly<{ userId: string; ch
     return () => window.removeEventListener("beforeunload", handler);
   }, [anyDirty]);
 
+  /** No tab = Home (the last tab closed, or Close all). */
   const navigateTo = useCallback((tab: Tab | undefined) => {
-    if (!tab) return;
-    syncedPath.current = tab.path;
-    router.push(tab.url, { scroll: false });
+    syncedPath.current = tab?.path ?? HOME_PATH;
+    router.push(tab?.url ?? HOME_PATH, { scroll: false });
   }, [router]);
 
   /** Remember where the shown tab was left (its filters live in the query) before leaving it. */
@@ -184,17 +186,17 @@ export function TabsProvider({ userId, children }: Readonly<{ userId: string; ch
 
   const close = useCallback((id: string) => {
     if (discardQuestion(views, id)) setPendingClose({ kind: "one", id });
-    else apply(closeTab(stateRef.current, id, newTabId()));
+    else apply(closeTab(stateRef.current, id));
   }, [apply, views]);
 
   const closeAll = useCallback(() => {
     if (discardQuestion(views)) setPendingClose({ kind: "all" });
-    else apply(closeAllTabs(stateRef.current, newTabId()));
+    else apply(closeAllTabs());
   }, [apply, views]);
 
   const confirmClose = () => {
-    if (pendingClose?.kind === "one") apply(closeTab(stateRef.current, pendingClose.id, newTabId()));
-    else if (pendingClose?.kind === "all") apply(closeAllTabs(stateRef.current, newTabId()));
+    if (pendingClose?.kind === "one") apply(closeTab(stateRef.current, pendingClose.id));
+    else if (pendingClose?.kind === "all") apply(closeAllTabs());
     setPendingClose(null);
   };
 
@@ -246,7 +248,7 @@ export function TabsProvider({ userId, children }: Readonly<{ userId: string; ch
 
   const active = activeTab(state);
   const tabsApi = useMemo<TabsApi>(
-    () => ({ tabs: views, activeId: state.activeId, breadcrumbs: (active && entries.get(active.path)?.breadcrumbs) ?? [], select, close, closeAll }),
+    () => ({ tabs: views, activeId: state.activeId, breadcrumbs: active ? entries.get(active.path)?.breadcrumbs ?? [] : HOME_BREADCRUMBS, select, close, closeAll }),
     [active, close, closeAll, entries, select, state.activeId, views],
   );
   const openPaths = state.tabs.map((tab) => tab.path).join(" ");
@@ -323,16 +325,19 @@ function TabPane({ tabId, controls, children }: Readonly<{ tabId: string; contro
 
 /**
  * A route page's content inside the App Shell (ADR-0037 decision 1). The element is captured with its props
- * (a detail page's id included), so a hidden tab keeps showing its own record.
+ * (a detail page's id included), so a hidden tab keeps showing its own record. Home has no tab (owner
+ * 2026-11-03): it renders in place and is not kept alive.
  */
 export function TabPage({ breadcrumbs, children }: Readonly<{ breadcrumbs: Breadcrumb[]; children: ReactNode }>) {
   const registry = useContext(RegistryContext);
   const pathname = usePathname();
-  const title = breadcrumbs[breadcrumbs.length - 1]?.label ?? fallbackTitle(tabPath(pathname));
+  const path = tabPath(pathname ?? HOME_PATH);
+  const tabbed = registry !== null && path !== HOME_PATH;
+  const title = breadcrumbs[breadcrumbs.length - 1]?.label ?? fallbackTitle(path);
   useLayoutEffect(() => {
-    registry?.register(tabPath(pathname), { element: children, breadcrumbs, title });
+    if (tabbed) registry.register(path, { element: children, breadcrumbs, title });
   });
-  return registry ? null : <>{children}</>;
+  return tabbed ? null : <>{children}</>;
 }
 
 /** Q-TAB-03: marks the page's tab with unsaved changes (the dot, and a confirm before it closes). */

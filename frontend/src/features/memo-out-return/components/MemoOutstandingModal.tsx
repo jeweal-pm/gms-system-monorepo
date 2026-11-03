@@ -6,6 +6,7 @@ import { DateInput } from "@/components/ui/date-input";
 import { Badge, Button, cx, IconButton } from "@/features/quotation/components/ui";
 import { dec } from "@/features/quotation/lib/decimal";
 import { formatMoneyText, formatWeight } from "@/features/quotation/lib/format";
+import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import { memoOutstandingLoadError, useMemoOutstanding, type MemoOutstandingItem } from "../api";
 
 /**
@@ -24,6 +25,7 @@ export function MemoOutstandingModal({ customerId, currency, excludeReturnId, pi
   onConfirm: (items: MemoOutstandingItem[]) => void;
 }) {
   const [search, setSearch] = useState("");
+  const nf = useNumberFormat();
   const [q, setQ] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -175,12 +177,12 @@ export function MemoOutstandingModal({ customerId, currency, excludeReturnId, pi
                         <div className="mt-1 text-xs text-[#6B7480]">{item.cerNo}</div>
                       </td>
                       <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">{item.outstandingPcs}</td>
-                      <td className="px-3 py-4 text-right">{formatWeight(dec(item.outstandingWeightCt))}</td>
+                      <td className="px-3 py-4 text-right">{formatWeight(dec(item.outstandingWeightCt), nf.weightPlaces)}</td>
                       <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">
-                        {formatMoneyText(item.unitPrice)} {item.currency}
+                        {formatMoneyText(item.unitPrice, nf.pricePlaces)} {item.currency}
                         <div className="mt-1 text-xs text-[#6B7480]">{item.priceUnit === "PER_PCS" ? "pcs" : "cts"}</div>
                       </td>
-                      <td className="px-3 py-4 text-right">{formatMoneyText(item.amount)}</td>
+                      <td className="px-3 py-4 text-right">{formatMoneyText(item.amount, nf.pricePlaces)}</td>
                     </tr>
                   ))}
                   {outstanding.hasNextPage && (

@@ -8,6 +8,7 @@ import { quotationKeys, searchAvailableStock, type StockFilter } from "../../api
 import { lineAmount } from "../../lib/calculate";
 import { dec } from "../../lib/decimal";
 import { formatMoney, formatMoneyText, formatWeight } from "../../lib/format";
+import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import type { StockItem } from "../../mock/stock";
 import { Badge, Button, cx, IconButton } from "../ui";
 
@@ -23,6 +24,7 @@ export function FromStockModal({
   onConfirm: (items: StockItem[]) => void;
 }) {
   const [search, setSearch] = useState("");
+  const nf = useNumberFormat();
   const [filter, setFilter] = useState<StockFilter>({ search: "", from: "", to: "" });
   const [checked, setChecked] = useState<Set<string>>(new Set());
 
@@ -200,12 +202,12 @@ export function FromStockModal({
                           <div className="mt-1 text-xs text-[#6B7480]">{item.cerNo}</div>
                         </td>
                         <td className="px-3 py-4 text-right">{item.pcs}</td>
-                        <td className="px-3 py-4 text-right">{formatWeight(dec(item.weightCt))} cts</td>
+                        <td className="px-3 py-4 text-right">{formatWeight(dec(item.weightCt), nf.weightPlaces)} cts</td>
                         <td className="px-3 py-4 text-right">
-                          {formatMoneyText(item.unitPrice)} {currency}
+                          {formatMoneyText(item.unitPrice, nf.pricePlaces)} {currency}
                           <div className="mt-1 text-xs text-[#6B7480]">{item.priceUnit === "PER_CT" ? "per cts" : "per pcs"}</div>
                         </td>
-                        <td className="px-3 py-4 text-right">{formatMoney(lineAmount(item))}</td>
+                        <td className="px-3 py-4 text-right">{formatMoney(lineAmount(item), nf.pricePlaces)}</td>
                       </tr>
                     );
                   })}

@@ -1,8 +1,10 @@
 import { z } from "zod";
 
-/** decimal-setup SA rev 1 / ADR-0038 (SA-DEC-02): ranges follow storage scale, never wider. */
-export const WEIGHT_PLACES_MAX = 3; // partner weight columns numeric(12,3)
-export const PRICE_PLACES_MAX = 2; // partner money columns numeric(18,2)
+/** decimal-setup SA rev 1 / ADR-0038 (SA-DEC-02 as changed by the owner, Q-DEC-08): display/entry ranges. */
+// Owner 2026-11-03 (Q-DEC-08 changed: "max decimal 4", display and typing only): both settings accept 0–4.
+// Storage scales (weight numeric(12,3), money numeric(18,2)), document validation and the 2-dp server totals do not change.
+export const WEIGHT_PLACES_MAX = 4;
+export const PRICE_PLACES_MAX = 4;
 /** Seed row and missing-row answer (Q-DEC-09: weight starts at 2 places). */
 export const DECIMAL_SETUP_DEFAULTS = { weightPlaces: 2, pricePlaces: 2 } as const;
 

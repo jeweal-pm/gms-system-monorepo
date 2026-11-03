@@ -43,7 +43,7 @@ sequenceDiagram
   participant DB as partner.decimal_setup
   participant QC as React Query cache (this browser)
 
-  AD->>FE: Edit → choose weight 0–3, price 0–2 → Save
+  AD->>FE: Edit → choose weight 0–4, price 0–4 → Save
   FE->>M: save({weightPlaces, pricePlaces, expectedVersion}) + CSRF
   M->>A: decimal-setup:EDIT, CSRF verified
   alt not permitted / CSRF

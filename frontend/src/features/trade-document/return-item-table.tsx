@@ -8,6 +8,7 @@ import { Badge, Button, cx } from "@/features/quotation/components/ui";
 import { lineAmount } from "@/features/quotation/lib/calculate";
 import { add, dec, div, mul, toFixed, ZERO } from "@/features/quotation/lib/decimal";
 import { formatMoney, formatMoneyText, formatWeight } from "@/features/quotation/lib/format";
+import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import { sanitizeQuantity } from "@/features/quotation/lib/number";
 import { visibleRowsHeight } from "@/features/quotation/lib/table-scroll";
 import { isFilledLine, type QuotationLine } from "@/features/quotation/schema";
@@ -48,6 +49,7 @@ const DIVIDER = "border-l border-[#E3E6EA]";
 export function returnItemTable(options: ReturnTableOptions) {
   return function ReturnItemTable({ lines, currency, totals, selectedIndex, checkedKeys, readOnly, emptyRowText, onSelectRow, onToggleCheck, onToggleAll, onRowAction, onAddRow }: ReturnItemTableProps) {
     const scrollRef = useRef<HTMLDivElement>(null);
+    const nf = useNumberFormat();
     const returnLines = lines as ReturnLine[];
     const filledLines = returnLines.filter(isFilledLine);
     const outstandingPcs = add(ZERO, ...filledLines.map((line) => dec(line.outstandingPcs)));
@@ -164,22 +166,22 @@ export function returnItemTable(options: ReturnTableOptions) {
                       </td>
                     )}
                     <td className={cx("py-4", QTY, DIVIDER)}>{filled ? line.outstandingPcs || "0" : ""}</td>
-                    <td className={cx("py-4", QTY)}>{filled ? formatWeight(dec(line.outstandingWeightCt)) : ""}</td>
+                    <td className={cx("py-4", QTY)}>{filled ? formatWeight(dec(line.outstandingWeightCt), nf.weightPlaces) : ""}</td>
                     <td className={cx(editable ? "py-2" : "py-4", QTY, DIVIDER)} onClick={(e) => editable && e.stopPropagation()}>
                       {editable ? <ReturnInput index={index} field="pcs" label={`Return pcs, row ${index + 1}`} line={line} autoWeight={options.autoWeight} /> : filled ? line.pcs || "0" : ""}
                     </td>
                     <td className={cx(editable ? "py-2" : "py-4", QTY)} onClick={(e) => editable && e.stopPropagation()}>
-                      {editable ? <ReturnInput index={index} field="weightCt" label={`Return weight, row ${index + 1}`} line={line} autoWeight={false} /> : filled ? formatWeight(dec(line.weightCt)) : ""}
+                      {editable ? <ReturnInput index={index} field="weightCt" label={`Return weight, row ${index + 1}`} line={line} autoWeight={false} /> : filled ? formatWeight(dec(line.weightCt), nf.weightPlaces) : ""}
                     </td>
                     <td className={cx("px-3 py-4 text-right", DIVIDER)}>
                       {filled && (
                         <>
-                          {formatMoneyText(line.unitPrice)} {currency}
+                          {formatMoneyText(line.unitPrice, nf.pricePlaces)} {currency}
                           <div className="mt-1 text-xs text-[#6B7480]">{line.priceUnit === "PER_PCS" ? "per pcs" : "per cts"}</div>
                         </>
                       )}
                     </td>
-                    <td className="px-3 py-4 text-right">{filled ? formatMoney(lineAmount(line)) : ""}</td>
+                    <td className="px-3 py-4 text-right">{filled ? formatMoney(lineAmount(line), nf.pricePlaces) : ""}</td>
                   </tr>
                 );
               })}
@@ -189,12 +191,12 @@ export function returnItemTable(options: ReturnTableOptions) {
                 <td colSpan={lead + 1} className="px-3 py-3">Totals</td>
                 <td colSpan={left.length - 1} />
                 <td className={cx("py-3", QTY, DIVIDER)}>{toFixed(outstandingPcs, 0)}</td>
-                <td className={cx("py-3", QTY)}>{formatWeight(outstandingWeight)}</td>
+                <td className={cx("py-3", QTY)}>{formatWeight(outstandingWeight, nf.weightPlaces)}</td>
                 <td className={cx("py-3", QTY, DIVIDER)}>{toFixed(totals.totalPcs, 0)}</td>
-                <td className={cx("py-3", QTY)}>{formatWeight(totals.totalWeight)}</td>
+                <td className={cx("py-3", QTY)}>{formatWeight(totals.totalWeight, nf.weightPlaces)}</td>
                 <td className={DIVIDER} />
                 <td className="px-3 py-3 text-right">
-                  {formatMoney(totals.subtotal)} {currency}
+                  {formatMoney(totals.subtotal, nf.pricePlaces)} {currency}
                 </td>
               </tr>
             </tfoot>
@@ -210,8 +212,13 @@ export function returnItemTable(options: ReturnTableOptions) {
   };
 }
 
-/** Return cell limits (server): pcs a whole number ≤ 999,999; weight 5 whole digits + 3 decimals. */
-const RETURN_LIMITS = { pcs: { whole: 6, decimals: 0, placeholder: "0" }, weightCt: { whole: 5, decimals: 3, placeholder: "0.00" } } as const;
+/**
+ * Return cell limits (server): pcs a whole number ≤ 999,999; weight 5 whole digits + 3 decimals. The weight decimals
+ * follow Decimal Setup, capped at the stored 3 (decimal-setup FE-DEC-105).
+ */
+export function returnCellLimits(field: "pcs" | "weightCt", weightInputDecimals: number): { whole: number; decimals: number; placeholder: string } {
+  return field === "pcs" ? { whole: 6, decimals: 0, placeholder: "0" } : { whole: 5, decimals: Math.min(Math.max(weightInputDecimals, 0), 3), placeholder: "0.00" };
+}
 
 /**
  * Return Pcs / Weight of one row — the only editable cells (≤ Outstanding, checked by the form schema). Numbers only,
@@ -220,7 +227,8 @@ const RETURN_LIMITS = { pcs: { whole: 6, decimals: 0, placeholder: "0" }, weight
  */
 function ReturnInput({ index, field, label, line, autoWeight }: { index: number; field: "pcs" | "weightCt"; label: string; line: ReturnLine; autoWeight: boolean }) {
   const { register, setValue, trigger, clearErrors, getValues, formState } = useFormContext();
-  const limits = RETURN_LIMITS[field];
+  const nf = useNumberFormat();
+  const limits = returnCellLimits(field, nf.weightInputDecimals);
   const error = (formState.errors.lines as unknown as Record<string, FieldError | undefined>[] | undefined)?.[index]?.[field] as FieldError | undefined;
   const rowFields = [`lines.${index}.pcs`, `lines.${index}.weightCt`];
   const registered = register(`lines.${index}.${field}`, {
@@ -230,12 +238,12 @@ function ReturnInput({ index, field, label, line, autoWeight }: { index: number;
           if (outstanding <= ZERO) return;
           // An emptied pcs empties the weight too (back to its placeholder).
           if (event.target.value === "") return setValue(`lines.${index}.weightCt`, "", { shouldDirty: true });
-          // All of it → exactly the Outstanding weight; part of it → two decimals, as the design shows (7 of 10 pcs,
+          // All of it → exactly the Outstanding weight; part of it → the weight places (2 by default, as the design shows: 7 of 10 pcs,
           // 3.20 ct → 2.24), never above the Outstanding weight. The weight stays editable.
           const pcs = dec(event.target.value);
           const full = dec(line.outstandingWeightCt);
           const weight = div(mul(full, pcs), outstanding);
-          setValue(`lines.${index}.weightCt`, pcs === outstanding ? line.outstandingWeightCt : toFixed(weight > full ? full : weight, 2), { shouldDirty: true });
+          setValue(`lines.${index}.weightCt`, pcs === outstanding ? line.outstandingWeightCt : toFixed(weight > full ? full : weight, nf.weightInputDecimals), { shouldDirty: true });
         }
       : undefined,
   });

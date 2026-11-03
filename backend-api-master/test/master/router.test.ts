@@ -212,15 +212,19 @@ describe("staged master domain tRPC boundary", () => {
     expect(decimalSetup.save).not.toHaveBeenCalled();
     await router.createCaller(context(["decimal-setup:EDIT"])).decimalSetup.save(save);
     expect(decimalSetup.save).toHaveBeenCalledWith("user-1", save);
+    // Owner Q-DEC-08: 4 is the upper bound for both settings.
+    await router.createCaller(context(["decimal-setup:EDIT"])).decimalSetup.save({ weightPlaces: 4, pricePlaces: 4, expectedVersion: 2 });
+    expect(decimalSetup.save).toHaveBeenLastCalledWith("user-1", { weightPlaces: 4, pricePlaces: 4, expectedVersion: 2 });
+    decimalSetup.save.mockClear();
     // Validation runs after the grant check and carries field errors.
     const editor = router.createCaller(context(["decimal-setup:EDIT"]));
-    const invalid = await editor.decimalSetup.save({ ...save, weightPlaces: 4 }).then(() => null, (error: unknown) => error as { code: string; message: string; cause: HttpException });
+    const invalid = await editor.decimalSetup.save({ ...save, weightPlaces: 5 }).then(() => null, (error: unknown) => error as { code: string; message: string; cause: HttpException });
     expect(invalid).toMatchObject({ code: "BAD_REQUEST", message: "VALIDATION_ERROR" });
     expect(invalid?.cause.getResponse()).toMatchObject({ error: { code: "VALIDATION_ERROR", fieldErrors: [expect.objectContaining({ path: "weightPlaces" })] } });
-    await expect(editor.decimalSetup.save({ ...save, pricePlaces: 3 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(editor.decimalSetup.save({ ...save, pricePlaces: 5 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(editor.decimalSetup.save({ ...save, pricePlaces: 1.5 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(editor.decimalSetup.save({ ...save, page: "quotation" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(decimalSetup.save).toHaveBeenCalledOnce();
+    expect(decimalSetup.save).not.toHaveBeenCalled();
     // Domain errors keep their code.
     decimalSetup.save.mockRejectedValueOnce(new HttpException({ error: { code: "DECIMAL_SETUP_CHANGED" } }, 409));
     await expect(editor.decimalSetup.save(save)).rejects.toMatchObject({ code: "CONFLICT", message: "DECIMAL_SETUP_CHANGED" });

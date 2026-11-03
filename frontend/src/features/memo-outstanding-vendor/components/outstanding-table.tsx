@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Fragment, type CSSProperties } from "react";
 import { cx, focusRing } from "@/components/ui/button";
 import { SortIcon } from "@/components/ui/sort-icon";
+import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import {
   BUCKET_COLUMNS,
   BUCKET_LABEL,
@@ -83,12 +84,13 @@ function SortButton({ label, sortKey, sort, onSort, sub, align = "left" }: { lab
 const ariaSort = (sort: TableProps["sort"], key: SortKey) => (sort.key === key ? (sort.dir === "asc" ? "ascending" : "descending") : undefined);
 
 function BucketCells({ value, buckets }: { value: Pick<VendorListRow, Bucket>; buckets: readonly Bucket[] }) {
+  const nf = useNumberFormat();
   return (
     <>
       {buckets.map((bucket) => (
         <Fragment key={bucket}>
           <td className={cx(numCell, "border-l border-gms-border")}>{formatPcs(value[bucket].pcs)}</td>
-          <td className={numCell}>{formatWeight(value[bucket].weightCt)}</td>
+          <td className={numCell}>{formatWeight(value[bucket].weightCt, nf.weightPlaces)}</td>
         </Fragment>
       ))}
     </>
@@ -96,6 +98,7 @@ function BucketCells({ value, buckets }: { value: Pick<VendorListRow, Bucket>; b
 }
 
 function ItemRow({ item, prefs, buckets, showPrice, checked, onToggle, left }: { item: VendorItem; prefs: ViewPrefs; buckets: readonly Bucket[]; showPrice: boolean; checked: boolean; onToggle: () => void; left: readonly CSSProperties[] }) {
+  const nf = useNumberFormat();
   const spec = itemSpecParts(item, { colorClarity: isShown(prefs, "colorClarity"), cerType: isShown(prefs, "cerType") });
   const stockLot = [item.stockId, item.lot].filter(Boolean).join(" · ");
   return (
@@ -135,7 +138,7 @@ function ItemRow({ item, prefs, buckets, showPrice, checked, onToggle, left }: {
       <BucketCells value={item} buckets={buckets} />
       {showPrice && (
         <td className={cx(numCell, "border-l border-gms-border")}>
-          <span className="block font-medium">{`${formatUnitPrice(item.netUnitPrice)} ${item.currency}`}</span>
+          <span className="block font-medium">{`${formatUnitPrice(item.netUnitPrice, nf.pricePlaces)} ${item.currency}`}</span>
           <span className="block text-gms-label text-gms-text-secondary">{unitCaption(item.priceUnit)}</span>
         </td>
       )}
@@ -157,6 +160,7 @@ export function TableSkeleton() {
  * the shown Memo · Return · Sold · Reserve · Outstanding groups (Pcs, Weight) and PRICE / UNIT, as in D 01 / D 04.
  */
 export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggleOpen, itemsLoading, itemsError, onRetryItems, selected, onToggleItem }: TableProps) {
+  const nf = useNumberFormat();
   const buckets = BUCKET_COLUMNS.filter((bucket) => isShown(prefs, bucket));
   const showPrice = isShown(prefs, "price");
   const columns = tableColumns(buckets, showPrice);
@@ -246,7 +250,7 @@ export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggl
                   <BucketCells value={row} buckets={buckets} />
                   {showPrice && (
                     <td className={cx(numCell, "border-l border-gms-border")}>
-                      <span className="block font-semibold">{`${formatMoney(row.openValue)} ${row.currency}`}</span>
+                      <span className="block font-semibold">{`${formatMoney(row.openValue, nf.pricePlaces)} ${row.currency}`}</span>
                       <span className="block text-gms-label text-gms-text-secondary">open value (reserve + outstanding)</span>
                     </td>
                   )}

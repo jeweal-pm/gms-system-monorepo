@@ -25,7 +25,7 @@ in `memo-outstanding-vendor/model.ts`); weight inputs accept 3, price inputs 2. 
 1. **One row, one owner.** `backend-api-master` owns a single-row table `partner.decimal_setup` (id = 1, `weight_places`,
    `price_places`, `version`, `updated_by`, `updated_at`), seeded by migration with weight 2 / price 2
    ([database diagram](../apps/backend/master/decimal-setup/database-diagram.md)). No new service, container or package.
-2. **Ranges fit the storage.** Weight 0–3, price 0–2 (Q-DEC-08). No column widening.
+2. **Ranges.** Weight and price places 0–4 (Q-DEC-08 as changed by the owner 2026-11-03, "Choose 0–4, but show only"). Display only: typing and storage stay at weight 3 / price 2 places; no column widening (migration `20261103120000_decimal_setup_places_max_4`).
 3. **tRPC `decimalSetup.get` / `decimalSetup.save`** ([api-contract](../apps/backend/master/decimal-setup/api-contract.md)).
    `get` is readable by any signed-in, licensed user with current authorization (no menu grant), because every page needs it
    to format numbers. `save` needs a new catalog leaf `decimal-setup:EDIT` + CSRF and uses optimistic `expectedVersion`

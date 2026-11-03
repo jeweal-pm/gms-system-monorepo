@@ -5,8 +5,14 @@
  */
 import type { QueryClient } from "@tanstack/react-query";
 import type { InferQueryLikeData } from "@trpc/react-query/shared";
-import { dec, toFixed } from "@/features/quotation/lib/decimal";
 import type { masterTrpc } from "@/lib/master-trpc";
+import {
+  DEFAULT_PRICE_PLACES,
+  DEFAULT_WEIGHT_PLACES,
+  formatMoney as formatSharedMoney,
+  formatUnitPrice as formatSharedUnitPrice,
+  formatWeight as formatSharedWeight,
+} from "@/lib/number-format";
 
 export type VendorSummary = InferQueryLikeData<typeof masterTrpc.memoOutstanding.vendorSummary>;
 export type VendorListPage = InferQueryLikeData<typeof masterTrpc.memoOutstanding.vendorList>;
@@ -169,29 +175,20 @@ export function formatDecimal(value: string, minDp = 2): string {
   return `${sign}${groupDigits(int.replace(/^0+(?=\d)/, ""))}${decimals ? `.${decimals}` : ""}`;
 }
 
-/** Weight: stored 3 dp, shown 2 dp (rounded half up on the string's numeric value). */
-export function formatWeight(weightCt: string): string {
-  const n = Number(weightCt);
-  if (!Number.isFinite(n)) return weightCt;
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+/** Weight: stored 3 dp, shown with the Decimal Setup weight places (2 by default), half up and exact (FE-DEC-104). */
+export const formatWeight = (weightCt: string, weightPlaces: number = DEFAULT_WEIGHT_PLACES): string => formatSharedWeight(weightCt, weightPlaces);
 
 export const formatPcs = (pcs: number) => pcs.toLocaleString("en-US", { maximumFractionDigits: 0 });
 
-/** Money with exactly two decimals: "12000" → "12,000.00". */
-export function formatMoney(value: string): string {
-  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(value.trim());
-  if (!match) return value;
-  const n = Number(value);
-  if (Math.abs(n) < 1e15) return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return formatDecimal(value, 2);
-}
+/** Money with the Decimal Setup price places (2 by default): "12000" → "12,000.00"; exact for large amounts (FE-DEC-104). */
+export const formatMoney = (value: string, pricePlaces: number = DEFAULT_PRICE_PLACES): string => formatSharedMoney(value, pricePlaces);
 
 /**
- * PRICE / UNIT: the stored net unit price (4 dp) rounded half up to the 2 money decimals, so it reads as the price
- * keyed in (1234.4995 → "1,234.50", INV-20261102-004). The string is rounded exactly, without floating point.
+ * PRICE / UNIT: the stored net unit price (4 dp) rounded half up to the typed money scale (2, or fewer when the price
+ * places are lower), so it reads as the price keyed in (1234.4995 → "1,234.50", INV-20261102-004); then shown with
+ * the price places (FE-DEC-104). The string is rounded exactly, without floating point.
  */
-export const formatUnitPrice = (value: string): string => formatDecimal(toFixed(dec(value), 2), 2);
+export const formatUnitPrice = (value: string, pricePlaces: number = DEFAULT_PRICE_PLACES): string => formatSharedUnitPrice(value, pricePlaces);
 
 export const unitCaption = (priceUnit: "CTS" | "PCS") => (priceUnit === "CTS" ? "per cts" : "per pcs");
 

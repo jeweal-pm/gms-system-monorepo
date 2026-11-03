@@ -166,10 +166,18 @@ describe("master HTTP/tRPC adapter integration", () => {
     const editor = await startHttp(grants(["decimal-setup:VIEW", "decimal-setup:EDIT"]));
     const noCsrf = await fetch(`${editor.baseUrl}/decimalSetup.save`, { method: "POST", headers: { cookie: `gms_access=${editor.token}`, "content-type": "application/json" }, body });
     expect(noCsrf.status).toBe(403);
-    const invalid = await fetch(`${editor.baseUrl}/decimalSetup.save`, { method: "POST", headers: { cookie: `gms_access=${editor.token}`, ...csrf }, body: JSON.stringify({ weightPlaces: 4, pricePlaces: 0, expectedVersion: 1 }) });
+    const invalid = await fetch(`${editor.baseUrl}/decimalSetup.save`, { method: "POST", headers: { cookie: `gms_access=${editor.token}`, ...csrf }, body: JSON.stringify({ weightPlaces: 5, pricePlaces: 0, expectedVersion: 1 }) });
     expect(invalid.status).toBe(400);
     expect(await invalid.json()).toMatchObject({ error: { data: { domainCode: "VALIDATION_ERROR", fieldErrors: [expect.objectContaining({ path: "weightPlaces" })] } } });
+    const invalidPrice = await fetch(`${editor.baseUrl}/decimalSetup.save`, { method: "POST", headers: { cookie: `gms_access=${editor.token}`, ...csrf }, body: JSON.stringify({ weightPlaces: 4, pricePlaces: 5, expectedVersion: 1 }) });
+    expect(invalidPrice.status).toBe(400);
+    expect(await invalidPrice.json()).toMatchObject({ error: { data: { domainCode: "VALIDATION_ERROR", fieldErrors: [expect.objectContaining({ path: "pricePlaces" })] } } });
     expect(editor.decimalSetup.save).not.toHaveBeenCalled();
+    // Owner Q-DEC-08: 4 is the upper bound for both.
+    const boundary = await fetch(`${editor.baseUrl}/decimalSetup.save`, { method: "POST", headers: { cookie: `gms_access=${editor.token}`, ...csrf }, body: JSON.stringify({ weightPlaces: 4, pricePlaces: 4, expectedVersion: 1 }) });
+    expect(boundary.status).toBe(200);
+    expect(await boundary.json()).toMatchObject({ result: { data: { setup: { weightPlaces: 4, pricePlaces: 4 } } } });
+    editor.decimalSetup.save.mockClear();
     const saved = await fetch(`${editor.baseUrl}/decimalSetup.save`, { method: "POST", headers: { cookie: `gms_access=${editor.token}`, ...csrf }, body });
     const savedBody = await saved.text();
     expect(saved.status, savedBody).toBe(200);
