@@ -36,7 +36,8 @@ describe("quotation inputs", () => {
     expect(paths({ ...quotationBody, lines: Array.from({ length: 201 }, () => line) })).toEqual(["lines"]);
     expect(paths({ ...quotationBody, lines: [{ ...line, weightCt: "1.1234" }] })).toEqual(["lines.0.weightCt"]);
     expect(paths({ ...quotationBody, lines: [{ ...line, unitPrice: "-1" }] })).toEqual(["lines.0.unitPrice"]);
-    expect(paths({ ...quotationBody, lines: [{ ...line, source: "STOCK" }] })).toEqual(["lines.0.source"]);
+    // SA rev 2 (SA-QT-16): STOCK is allowed, but only with its Memo Stock item.
+    expect(paths({ ...quotationBody, lines: [{ ...line, source: "STOCK" }] })).toEqual(["lines.0.memoStockId"]);
     expect(paths({ ...quotationBody, lines: [{ ...line, photoIds: [ID, ID] }] })).toEqual(["lines.0.photoIds"]);
     expect(paths({ ...quotationBody, lines: [{ ...line, photoIds: [ID, ID, ID, ID, ID, ID].map((id, i) => id.replace(/1$/, String(i))) }] })).toEqual(["lines.0.photoIds"]);
     expect(paths({ ...quotationBody, lines: [{ ...line, photoIds: [ID, ID, ID, ID, ID].map((id, i) => id.replace(/1$/, String(i))) }] })).toEqual([]);
@@ -55,5 +56,29 @@ describe("quotation inputs", () => {
     expect(quotationListSchema.safeParse({ limit: 51 }).success).toBe(false);
     expect(reasonedIdSchema.safeParse({ id: ID, expectedVersion: 1, reason: "  " }).success).toBe(false);
     expect(reasonedIdSchema.safeParse({ id: ID, expectedVersion: 1, reason: "Price changed" }).success).toBe(true);
+  });
+});
+
+describe("UT-QT-B25a quotation From Stock lines (SA rev 2, SA-QT-16/17)", () => {
+  const ITEM = "22222222-2222-4222-8222-222222222222";
+  const stock = { ...line, source: "STOCK", stoneCodeId: null, stoneCode: "", memoStockId: ITEM, unitPrice: "1500" };
+  const codes = (lines: unknown[]) => {
+    const result = createQuotationSchema.safeParse({ ...quotationBody, lines });
+    return result.success ? [] : result.error.issues.map((issue) => `${issue.path.join(".")}:${(issue as { params?: { code?: string } }).params?.code ?? issue.code}`);
+  };
+
+  it("accepts typed lines without memoStockId (null by default) and stock lines naming their item", () => {
+    expect(createQuotationSchema.parse(quotationBody).lines[0].memoStockId ?? null).toBeNull();
+    expect(codes([line, stock])).toEqual([]);
+  });
+
+  it("STOCK needs its item once, no stone code, a quantity and a Sale Price; MANUAL can't name an item", () => {
+    expect(codes([{ ...stock, memoStockId: null }])).toEqual(["lines.0.memoStockId:required"]);
+    expect(codes([stock, stock])).toEqual(["lines.1.memoStockId:duplicate"]);
+    expect(codes([{ ...stock, stoneCodeId: ITEM }])).toEqual(["lines.0.stoneCodeId:invalid"]);
+    expect(codes([{ ...stock, pcs: 0, weightCt: "0" }])).toEqual(["lines.0.pcs:required"]);
+    expect(codes([{ ...stock, unitPrice: "0" }])).toEqual(["lines.0.unitPrice:required"]);
+    expect(codes([{ ...line, memoStockId: ITEM }])).toEqual(["lines.0.memoStockId:invalid"]);
+    expect(codes([{ ...stock, source: "OTHER" }])).toEqual(["lines.0.source:invalid_value"]);
   });
 });

@@ -75,3 +75,32 @@ sequenceDiagram
   M-->>FE: 201 {photoId}
   FE->>FE: line.photoIds += photoId (saved with the quotation)
 ```
+
+## SA revision 2 (2026-11-03): From Stock, then Save (approved)
+
+```mermaid
+sequenceDiagram
+  actor U as User
+  participant FE as Frontend (/pre-sale/quotation)
+  participant M as api-master
+  participant DB as PostgreSQL schema partner
+
+  U->>FE: From Stock
+  FE->>M: memoStock.list {q, from, to, cursor} (quotation:VIEW)
+  M->>DB: memo_stock with pending > 0 (memo_stock_pending_all_idx, ≤ 51 rows)
+  M-->>FE: items (no prices)
+  U->>FE: check items, OK
+  FE->>FE: stock rows: Stock ID, copied fields read-only, Pcs/Weight = pending, Sale Price empty
+  U->>FE: lower qty, type Sale Price, Save
+  FE->>M: quotation.create / update (lines with source STOCK + memoStockId)
+  M->>DB: BEGIN; existing quotation checks, numbering (create)
+  M->>DB: SELECT memo_stock WHERE id IN (…) (no lock)
+  alt unknown item / duplicate / new or raised row > current pending
+    M-->>FE: QUOTATION_REFERENCE_INVALID / VALIDATION_ERROR (lines.N.*)
+  else ok
+    M->>M: copy item fields, Stock ID, pending snapshot (unchanged rows keep theirs)
+    M->>DB: INSERT/replace quotation lines (memo_stock untouched)
+    M->>DB: COMMIT
+    M-->>FE: {id, docNo, version}
+  end
+```

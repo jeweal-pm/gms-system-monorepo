@@ -143,3 +143,18 @@ describe("drawer and navigation", () => {
     expect(SETUP_MENU_KEYS).toContain("document-setup");
   });
 });
+
+describe("UT-DS-09 Example cell tolerates a row read before its fields are filled", () => {
+  it("shows a dash for a row without Start No instead of failing", async () => {
+    const { useForm } = await import("react-hook-form");
+    const { NumberingCard } = await import("@/features/document-setup/components/numbering-card");
+    const partial = values({ rows: [{ key: "a", effectiveDate: "2026-01-01", prefix: "QT", separator: "-", used: false } as unknown as DocumentSetupFormValues["rows"][number]] });
+    function Harness() {
+      const form = useForm<DocumentSetupFormValues>({ defaultValues: partial });
+      return createElement(NumberingCard, { form, readOnly: true });
+    }
+    const html = renderToStaticMarkup(createElement(Harness));
+    expect(html).toContain("Example number, row 1");
+    expect(html).toContain("—");
+  });
+});

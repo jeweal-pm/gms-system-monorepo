@@ -40,7 +40,7 @@ const memoOutReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), option
 const memoReceive = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
 const memoStock = { list: vi.fn() };
 const memoReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
-const memoOutstanding = { vendorSummary: vi.fn(), vendorList: vi.fn(), vendorItems: vi.fn(), vendorOptions: vi.fn() };
+const memoOutstanding = { vendorSummary: vi.fn(), vendorList: vi.fn(), vendorItems: vi.fn(), vendorOptions: vi.fn(), customerSummary: vi.fn(), customerList: vi.fn(), customerItems: vi.fn(), customerOptions: vi.fn() };
 const reserve = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
 const router = createMasterRouter({
   customer: customer as unknown as CustomerService,
@@ -360,6 +360,9 @@ describe("staged master domain tRPC boundary", () => {
     await router.createCaller(context(["memo-return:VIEW"])).memoStock.list({ vendorId: ID });
     await router.createCaller(context(["memo-receive:VIEW"])).memoStock.list({ vendorId: ID, q: "ruby", from: "2026-01-01", to: "2026-10-29", limit: 10 });
     expect(memoStock.list).toHaveBeenCalledTimes(2);
+    // GP-MT-QT2 (quotation SA rev 2, SA-QT-19): Quotation From Stock reads Memo Stock with quotation:VIEW.
+    await router.createCaller(context(["quotation:VIEW"])).memoStock.list({ vendorId: ID, q: "ruby", from: "2026-01-01", to: "2026-10-29", limit: 10 });
+    expect(memoStock.list).toHaveBeenCalledTimes(3);
     expect(memoStock.list).toHaveBeenLastCalledWith(expect.objectContaining({ vendorId: ID, q: "ruby", limit: 10 }));
     await expect(router.createCaller(context(["memo-out-return:VIEW"])).memoStock.list({ vendorId: ID })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(router.createCaller(context(["memo-return:ADD"])).memoStock.list({ vendorId: ID })).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -369,7 +372,7 @@ describe("staged master domain tRPC boundary", () => {
     await expect(viewer.memoStock.list({ vendorId: ID, from: "2026-10-29", to: "2026-01-01" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(viewer.memoStock.list({ vendorId: ID, from: "2025-01-01", to: "2026-10-29" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(viewer.memoStock.list({ vendorId: "not-a-uuid" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(memoStock.list).toHaveBeenCalledTimes(2);
+    expect(memoStock.list).toHaveBeenCalledTimes(3);
 
     await router.createCaller(context(["memo-receive:VIEW"])).currency.options();
     expect(currency.options).toHaveBeenCalledTimes(1);
@@ -491,6 +494,42 @@ describe("staged master domain tRPC boundary", () => {
 
     memoOutstanding.vendorList.mockRejectedValueOnce(new Error("db down"));
     await expect(viewer.memoOutstanding.vendorList({ pageSize: 10 })).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE", message: "DEPENDENCY_UNAVAILABLE" });
+  });
+
+  it("GP-MT-MOC memoOutstanding.customer*: memo-outstanding-customer VIEW on every procedure; customer bounds and sort whitelist", async () => {
+    const viewer = router.createCaller(context(["memo-outstanding-customer:VIEW"]));
+    await viewer.memoOutstanding.customerSummary({ q: " 12 ", customerIds: [ID], from: "2026-01-01", to: "2026-11-03" });
+    expect(memoOutstanding.customerSummary).toHaveBeenCalledWith({ q: "12", customerIds: [ID], from: "2026-01-01", to: "2026-11-03" });
+    await viewer.memoOutstanding.customerList({ pageSize: 25, sort: "customerName", dir: "desc" });
+    expect(memoOutstanding.customerList).toHaveBeenCalledWith({ page: 1, pageSize: 25, sort: "customerName", dir: "desc" });
+    await viewer.memoOutstanding.customerItems({ memoOutIds: [ID] });
+    expect(memoOutstanding.customerItems).toHaveBeenCalledWith({ memoOutIds: [ID] });
+    await viewer.memoOutstanding.customerOptions({});
+    expect(memoOutstanding.customerOptions).toHaveBeenCalledTimes(1);
+
+    // Grant: exactly memo-outstanding-customer:VIEW; the vendor report or memo-out grants are not enough.
+    for (const grants of [["memo-outstanding-vendor:VIEW", "memo-out:VIEW", "customer:VIEW"], ["memo-outstanding-customer:PRINT"], []]) {
+      const caller = router.createCaller(context(grants));
+      await expect(caller.memoOutstanding.customerSummary({})).rejects.toMatchObject({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+      await expect(caller.memoOutstanding.customerList({ pageSize: 10 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller.memoOutstanding.customerItems({ memoOutIds: [ID] })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller.memoOutstanding.customerOptions({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    }
+    // The vendor grant reads only the vendor report.
+    await expect(router.createCaller(context(["memo-outstanding-customer:VIEW"])).memoOutstanding.vendorSummary({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    // Bounds: no Reserve / vendor sort, 26 ids, 51 customers, a reversed range, vendor-only fields.
+    const ids = (count: number) => Array.from({ length: count }, (_, n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`);
+    await expect(viewer.memoOutstanding.customerList({ pageSize: 10, sort: "reservePcs" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(viewer.memoOutstanding.customerList({ pageSize: 10, sort: "vendorName" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(viewer.memoOutstanding.customerItems({ memoOutIds: ids(26) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(viewer.memoOutstanding.customerItems({ memoOutIds: [] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(viewer.memoOutstanding.customerSummary({ customerIds: ids(51) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(viewer.memoOutstanding.customerSummary({ from: "2026-11-03", to: "2026-11-02" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(viewer.memoOutstanding.customerSummary({ vendorIds: [ID] } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(viewer.memoOutstanding.customerItems({ memoReceiveIds: [ID] } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(memoOutstanding.customerList).toHaveBeenCalledTimes(1);
+    expect(memoOutstanding.customerItems).toHaveBeenCalledTimes(1);
   });
 
   it("GP-MT-MO2 memo out rev 2: From Stock lines, status filter, approve needs APPROVE + CSRF, From Stock list with memo-out VIEW and no vendor", async () => {

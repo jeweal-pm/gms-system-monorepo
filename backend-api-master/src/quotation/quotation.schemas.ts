@@ -64,7 +64,13 @@ export const tradeDocumentFields = {
   labor: z.object({ work: text(120), basis: z.enum(["PCS", "WEIGHT"]), qty: decimal(15, 3), rate: decimal(16, 2) }).strict().nullable(),
 };
 
-const quotationFields = { ...tradeDocumentFields, customerId: uuid, shippingAddressId: uuid, invoiceAddressId: uuid };
+/**
+ * quotation SA revision 2 (SA-QT-16/17, ADR-0038): a quotation line may come From Stock. A STOCK line names its Memo
+ * Stock item (once per quotation), has no stone code, pcs or weight > 0 and a Sale Price > 0 (Q-QTS-04/06/08). The
+ * server copies the item fields and checks pending on save; nothing is held.
+ */
+const quotationLineSchema = lineInputSchema.extend({ source: z.enum(["MANUAL", "STOCK"]), memoStockId: uuid.nullish() });
+const quotationFields = { ...tradeDocumentFields, lines: z.array(quotationLineSchema).min(1).max(LINES_MAX), customerId: uuid, shippingAddressId: uuid, invoiceAddressId: uuid };
 
 type TradeDocumentValues = z.output<z.ZodObject<typeof tradeDocumentFields>>;
 
@@ -82,8 +88,27 @@ export function tradeDocumentRules(value: TradeDocumentValues, ctx: z.Refinement
   if (new Set(types).size !== types.length) issue(["serviceCharges"], "duplicate");
 }
 
-export const createQuotationSchema = z.object(quotationFields).strict().superRefine(tradeDocumentRules);
-export const updateQuotationSchema = z.object({ ...quotationFields, id: uuid, expectedVersion: z.number().int().min(1) }).strict().superRefine(tradeDocumentRules);
+type QuotationValues = Omit<TradeDocumentValues, "lines"> & { lines: z.output<typeof quotationLineSchema>[] };
+function quotationRules(value: QuotationValues, ctx: z.RefinementCtx) {
+  tradeDocumentRules(value as unknown as TradeDocumentValues, ctx);
+  const issue = (path: (string | number)[], code: string) => ctx.addIssue({ code: "custom", path, params: { code }, message: code });
+  const seen = new Set<string>();
+  value.lines.forEach((line, index) => {
+    if (line.source === "MANUAL") {
+      if (line.memoStockId) issue(["lines", index, "memoStockId"], "invalid");
+      return;
+    }
+    if (!line.memoStockId) return issue(["lines", index, "memoStockId"], "required");
+    if (seen.has(line.memoStockId)) issue(["lines", index, "memoStockId"], "duplicate");
+    seen.add(line.memoStockId);
+    if (line.stoneCodeId) issue(["lines", index, "stoneCodeId"], "invalid");
+    if (line.pcs <= 0 && Number(line.weightCt) <= 0) issue(["lines", index, "pcs"], "required");
+    if (Number(line.unitPrice) <= 0) issue(["lines", index, "unitPrice"], "required");
+  });
+}
+
+export const createQuotationSchema = z.object(quotationFields).strict().superRefine(quotationRules);
+export const updateQuotationSchema = z.object({ ...quotationFields, id: uuid, expectedVersion: z.number().int().min(1) }).strict().superRefine(quotationRules);
 export const versionedIdSchema = z.object({ id: uuid, expectedVersion: z.number().int().min(1) }).strict();
 export const reasonedIdSchema = z.object({ id: uuid, expectedVersion: z.number().int().min(1), reason: z.string().trim().min(1).max(500) }).strict();
 export const nextNumberSchema = z.object({ docDate: isoDate }).strict();
