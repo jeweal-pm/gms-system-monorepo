@@ -10,6 +10,8 @@ import { saveCompanyProfileBodySchema } from "../company-profile/company-profile
 import type { StoneMasterService } from "../stone-master/stone-master.service";
 import type { DocumentSetupService } from "../document-setup/document-setup.service";
 import { saveDocumentSetupBodySchema, transactionKeySchema } from "../document-setup/document-setup.schemas";
+import type { DecimalSetupService } from "../decimal-setup/decimal-setup.service";
+import { saveDecimalSetupBodySchema } from "../decimal-setup/decimal-setup.schemas";
 import { bodySchemasFor, optionsQuerySchema } from "../stone-master/stone-master.schemas";
 import type { StoneKind } from "../stone-master/stone-master.kinds";
 import type { CurrencyService } from "../currency/currency.service";
@@ -61,7 +63,7 @@ import {
 } from "../quotation/quotation.schemas";
 import { LIST_LIMIT_MAX } from "../common/partner-schemas";
 import { validationException, zodFieldErrors } from "../common/errors";
-import { requireAnyMasterGrant, requireMasterGrant, type MasterAction, type MasterContext, type MasterMenu } from "./authorization";
+import { requireAnyMasterGrant, requireMasterGrant, requireMasterSession, type MasterAction, type MasterContext, type MasterMenu } from "./authorization";
 
 // Staged router: do not mount until the auth-owned JWT/view/license context adapter is verified.
 const t = initTRPC.context<MasterContext>().create({
@@ -128,6 +130,17 @@ function permitted(menu: MasterMenu, action: MasterAction, mutation = false) {
   });
 }
 
+/**
+ * Signed in, current authorization and an eligible license; no menu grant and no CSRF (queries only).
+ * decimal-setup SA rev 1: used only by `decimalSetup.get`; another use needs SA review.
+ */
+function signedIn() {
+  return t.procedure.use(({ ctx, next }) => {
+    const { userId } = requireMasterSession(ctx);
+    return next({ ctx: { ...ctx, userId } });
+  });
+}
+
 /** Read allowed with `action` on any of `menus` (currency SA-CUR-07: Quotation reads currency options). */
 function permittedAny(menus: readonly MasterMenu[], action: MasterAction) {
   return t.procedure.use(({ ctx, next }) => {
@@ -157,6 +170,7 @@ export type MasterServices = Pick<{
   companyProfile: CompanyProfileService;
   stoneMaster: StoneMasterService;
   documentSetup: DocumentSetupService;
+  decimalSetup: DecimalSetupService;
   currency: CurrencyService;
   quotation: QuotationService;
   memoOut: MemoOutService;
@@ -166,7 +180,7 @@ export type MasterServices = Pick<{
   memoReturn: MemoReturnService;
   memoOutstanding: MemoOutstandingService;
   reserve: ReserveService;
-}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "currency" | "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoStock" | "memoReturn" | "memoOutstanding" | "reserve">;
+}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "decimalSetup" | "currency" | "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoStock" | "memoReturn" | "memoOutstanding" | "reserve">;
 
 function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
   const schemas = bodySchemasFor(kind);
@@ -183,7 +197,7 @@ function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
 }
 
 /** Direct service calls preserve IDs, transaction behavior and existing partner/stone schemas. */
-export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, currency, quotation, memoOut, memoOutReturn, memoReceive, memoStock, memoReturn, memoOutstanding, reserve }: MasterServices) {
+export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, decimalSetup, currency, quotation, memoOut, memoOutReturn, memoReceive, memoStock, memoReturn, memoOutstanding, reserve }: MasterServices) {
   return t.router({
     customer: t.router({
       list: permitted("customer", "VIEW").input(listInput).query(({ input }) => domainCall(() => customer.list(toListQuery(input)))),
@@ -234,6 +248,13 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       get: permitted("document-setup", "VIEW").input(z.object({ transactionKey: transactionKeySchema }).strict())
         .query(({ input }) => domainCall(() => documentSetup.get(input.transactionKey))),
       save: permitted("document-setup", "EDIT", true).input(saveDocumentSetupBodySchema).mutation(({ ctx, input }) => domainCall(() => documentSetup.save(ctx.userId, input))),
+    }),
+    // decimal-setup SA rev 1 / ADR-0040 (owner 2026-11-03): one global setting. Every signed-in, licensed user reads it
+    // (every page formats numbers, Q-DEC-13); saving needs decimal-setup:EDIT + CSRF.
+    decimalSetup: t.router({
+      get: signedIn().query(() => domainCall(() => decimalSetup.get())),
+      save: permitted("decimal-setup", "EDIT", true).use(withFieldErrors(saveDecimalSetupBodySchema)).input(saveDecimalSetupBodySchema)
+        .mutation(({ ctx, input }) => domainCall(() => decimalSetup.save(ctx.userId, input))),
     }),
     // currency SA rev 1 (owner 2026-10-26): currency master; rates are against the Company Profile currency.
     currency: t.router({

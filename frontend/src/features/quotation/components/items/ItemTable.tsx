@@ -5,6 +5,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { lineAmount, lineDiscount, type QuotationTotals } from "../../lib/calculate";
 import { dec, toFixed, ZERO } from "../../lib/decimal";
 import { formatMoney, formatMoneyText, formatWeight } from "../../lib/format";
+import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import { visibleRowsHeight } from "../../lib/table-scroll";
 import { useDocumentKind } from "../../document-kind";
 import { isFilledLine, type QuotationLine } from "../../schema";
@@ -58,6 +59,7 @@ export function ItemTable({
   rowErrors?: readonly (string | undefined)[];
 }) {
   const kind = useDocumentKind();
+  const nf = useNumberFormat();
   const COLUMNS = itemColumns(kind.stoneCode, kind.location);
   const allChecked = lines.length > 0 && lines.every((l) => checkedKeys.has(l.key));
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -197,10 +199,10 @@ export function ItemTable({
               <td className="px-3 py-3">Totals</td>
               <td colSpan={kind.location ? 4 : 3} />
               <td className="px-3 py-3 text-right">{toFixed(totals.totalPcs, 0)}</td>
-              <td className="px-3 py-3 text-right">{formatWeight(totals.totalWeight)}</td>
+              <td className="px-3 py-3 text-right">{formatWeight(totals.totalWeight, nf.weightPlaces)}</td>
               <td />
               <td className="border-l border-[#E3E6EA] px-3 py-3 text-right">
-                {formatMoney(totals.subtotal)} {currency}
+                {formatMoney(totals.subtotal, nf.pricePlaces)} {currency}
               </td>
               <td />
             </tr>
@@ -229,6 +231,7 @@ function fitVisibleRows(box: HTMLDivElement) {
 }
 
 function FilledCells({ line, currency, stoneCode, location }: { line: QuotationLine; currency: string; stoneCode: boolean; location: boolean }) {
+  const nf = useNumberFormat();
   return (
     <>
       <td className="px-3 py-4">
@@ -271,19 +274,19 @@ function FilledCells({ line, currency, stoneCode, location }: { line: QuotationL
         <div className="mt-1 text-xs text-[#6B7480]">{line.cerNo}</div>
       </td>
       <td className="px-3 py-4 text-right">{line.pcs || "0"}</td>
-      <td className="px-3 py-4 text-right">{formatWeight(dec(line.weightCt))} cts</td>
+      <td className="px-3 py-4 text-right">{formatWeight(dec(line.weightCt), nf.weightPlaces)} cts</td>
       <td className="px-3 py-4 text-right">
         <div>
-          {formatMoneyText(line.unitPrice)} {currency}
+          {formatMoneyText(line.unitPrice, nf.pricePlaces)} {currency}
         </div>
         <div className="mt-1 text-xs text-[#6B7480]">{line.priceUnit === "PER_CT" ? "per cts" : "per pcs"}</div>
       </td>
       {/* Owner 2026-10-27: amounts carry the currency code; a line discount shows under the amount. */}
       <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">
         <div>
-          {formatMoney(lineAmount(line))} {currency}
+          {formatMoney(lineAmount(line), nf.pricePlaces)} {currency}
         </div>
-        {lineDiscount(line) > ZERO && <div className="mt-1 text-xs text-[#E5484D]">Disc −{formatMoney(lineDiscount(line))}</div>}
+        {lineDiscount(line) > ZERO && <div className="mt-1 text-xs text-[#E5484D]">Disc −{formatMoney(lineDiscount(line), nf.pricePlaces)}</div>}
       </td>
     </>
   );

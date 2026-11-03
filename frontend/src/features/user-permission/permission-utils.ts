@@ -113,3 +113,12 @@ export function filterCatalog(nodes: readonly CatalogNode[], query: string, sect
 export function groupIds(nodes: readonly CatalogNode[]): string[] {
   return nodes.flatMap((node) => [...(node.kind === "group" ? [node.id] : []), ...groupIds(node.children)]);
 }
+
+/** "Show subtasks" menu (owner design 2026-11-03): Collapsed is the default view. */
+export type SubtaskView = "collapsed" | "expanded";
+export const DEFAULT_SUBTASK_VIEW: SubtaskView = "collapsed";
+
+/** Collapsed groups for a view; `flipped` holds the groups whose chevron was clicked against that view. */
+export function collapsedGroupIds(view: SubtaskView, groups: readonly string[], flipped: ReadonlySet<string>): Set<string> {
+  return new Set(groups.filter((id) => (view === "collapsed") !== flipped.has(id)));
+}

@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import {
   BUCKET_LABEL,
   dueLabel,
@@ -49,6 +50,7 @@ export function OutstandingPrintView({ entries, prefs, filters, scope, printedAt
 
 /** The printed content (also rendered on its own by the unit tests). */
 export function PrintContent({ entries, prefs, filters, scope, printedAt }: PrintViewProps) {
+  const nf = useNumberFormat();
   const spec = useReportSpec();
   const buckets = shownBuckets(prefs, spec);
   const showPrice = isShown(prefs, "price");
@@ -80,10 +82,10 @@ export function PrintContent({ entries, prefs, filters, scope, printedAt }: Prin
                 {buckets.map((bucket) => (
                   <Fragment key={bucket}>
                     <td className={num}>{formatPcs(row[bucket].pcs)}</td>
-                    <td className={num}>{formatWeight(row[bucket].weightCt)}</td>
+                    <td className={num}>{formatWeight(row[bucket].weightCt, nf.weightPlaces)}</td>
                   </Fragment>
                 ))}
-                {showPrice && <td className={num}>{`${formatMoney(row.openValue)} ${row.currency} (open value)`}</td>}
+                {showPrice && <td className={num}>{`${formatMoney(row.openValue, nf.pricePlaces)} ${row.currency} (open value)`}</td>}
               </tr>
               {items.map((item) => {
                 const spec = itemSpecParts(item, view);
@@ -100,10 +102,10 @@ export function PrintContent({ entries, prefs, filters, scope, printedAt }: Prin
                     {buckets.map((bucket) => (
                       <Fragment key={bucket}>
                         <td className={num}>{formatPcs(item[bucket].pcs)}</td>
-                        <td className={num}>{formatWeight(item[bucket].weightCt)}</td>
+                        <td className={num}>{formatWeight(item[bucket].weightCt, nf.weightPlaces)}</td>
                       </Fragment>
                     ))}
-                    {showPrice && <td className={num}>{`${formatUnitPrice(item.netUnitPrice)} ${item.currency} ${unitCaption(item.priceUnit)}`}</td>}
+                    {showPrice && <td className={num}>{`${formatUnitPrice(item.netUnitPrice, nf.pricePlaces)} ${item.currency} ${unitCaption(item.priceUnit)}`}</td>}
                   </tr>
                 );
               })}

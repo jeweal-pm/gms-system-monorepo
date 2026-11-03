@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, type KeyboardEvent, type RefObject } from "react";
 import { cx, focusRing } from "@/components/ui/button";
+import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import { dueLabel, formatMoney, pageNumbers, PAGE_SIZES, showingText, totalPages, type PageSize, type VendorSummary } from "../model";
 
 /** Keeps Tab inside `container` (popover / panel focus trap, ui-spec Accessibility). */
@@ -63,6 +64,7 @@ const unit = "text-gms-label text-gms-text-secondary";
 
 /** Four KPI cards following the current filters (ui-spec Layout); skeletons while loading. */
 export function KpiCards({ summary, loading }: { summary: VendorSummary | undefined; loading: boolean }) {
+  const nf = useNumberFormat();
   if (loading || !summary) {
     return (
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-busy="true" aria-label="Loading totals">
@@ -75,7 +77,7 @@ export function KpiCards({ summary, loading }: { summary: VendorSummary | undefi
       <Kpi label="Documents"><span className={cx(big, "text-gms-text-heading")}>{summary.documents}</span><span className={unit}>doc.</span></Kpi>
       <Kpi label="Overdue"><span className={cx(big, "text-gms-danger")}>{summary.overdue}</span><span className={unit}>doc.</span></Kpi>
       <Kpi label="Due in 7 days"><span className={cx(big, "text-gms-warning-text")}>{summary.dueIn7Days}</span><span className={unit}>doc.</span></Kpi>
-      <Kpi label={`Grand total (${summary.companyCurrency})`}><span className={cx(big, "text-gms-text-heading")}>{formatMoney(summary.grandTotal)}</span></Kpi>
+      <Kpi label={`Grand total (${summary.companyCurrency})`}><span className={cx(big, "text-gms-text-heading")}>{formatMoney(summary.grandTotal, nf.pricePlaces)}</span></Kpi>
     </div>
   );
 }

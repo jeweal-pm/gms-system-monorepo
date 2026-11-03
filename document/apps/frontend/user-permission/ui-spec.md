@@ -204,7 +204,7 @@ Binding sources (inspected with the image reader 2026-10-15; 3840×2160 device p
 | Print / Excel | Print prints the open saved user in view mode (browser print; drawer, header and toggle hidden; proposal Q-UP2-02). Excel is `aria-disabled` with the tooltip "Excel export isn't available yet" (export is a separate ADR) | ADR-0020 §4 |
 | Duplicate | Copies Name, Phone, Location and permissions into a new draft; Username and Password are cleared; Active on | ADR-0020 §4 |
 | Personal Information | Photo tile, **Username\*** (placeholder "Used to sign in"; 3–64 of `a-z 0-9 . _ - @ +` after trim + lowercase, shown as typed; editable only on create, read-only afterwards), **Password** (no asterisk as in R2-2; required on create, optional on edit — blank keeps the current password; placeholder "Must be at least 4 characters"), **Name\***, **Phone No.** (optional, no asterisk), **Location\***, **Active** switch (now editable; sent on create/update) | R2-2, ADR-0020 §1, §4 |
-| Permissions card | Title, "Search menu..." field, "All Permissions" filter, blue "Expand All" / "Collapse All" links, right-aligned "**x** of {applicableCount} permissions on" (v2: 347; the design's "176 of 176" is sample data) | R2-2, ADR-0020 §3 |
+| Permissions card | Title, "Search menu..." field, "All Permissions" filter, right-aligned "Show subtasks" icon button + "**x** of {applicableCount} permissions on" (v2: 347; the design's "176 of 176" is sample data). The blue "Expand All" / "Collapse All" links were replaced on 2026-11-03 — see [Show subtasks](#show-subtasks-owner-design-2026-11-03) | R2-2, rev3-01/02, ADR-0020 §3 |
 | Matrix | Columns MENU + VIEW, ADD, EDIT, DELETE, CANCEL, APPROVE, PRICE, PRINT, EXCEL (all upper case). Rows: Select All; top-level leaf Dashboard; section headings in teal (label shown as delivered: SETUP… upper case, "Memo" title case); leaf rows bold on `surface-muted`; group rows bold with chevron and "N sub-menus"; sub-menu rows indented, regular weight, secondary text on white. Non-applicable cells show "—" (screen-reader text "not applicable"). Section, group and Select All cells are UI aggregates (checked / indeterminate / unchecked) over the visible leaves and are never sent as grants | R2-1, R2-2, ADR-0020 §3 |
 | Super Admin | Every cell checked and locked (disabled boxes with grey checks, PRINT/EXCEL included — owner decision: the unchecked PRINT/EXCEL in R2-3 is a design slip); banner with lock icon "Super Admin always has every permission and can't be turned off. Personal information can still be edited." Edit allows Name, Phone No., Location; Username, Password ("Change it on the Profile page", ADR-0011) and Active stay locked; Delete faded | R2-3, ADR-0020 §3, §4 |
 | Self | The signed-in account cannot be deactivated or deleted | ADR-0020 §4 |
@@ -215,9 +215,18 @@ Binding sources (inspected with the image reader 2026-10-15; 3840×2160 device p
 
 ### Search and filter (proposal, not specified by the design)
 
-- "Search menu..." matches labels case-insensitively. A matching section or group keeps its whole subtree; a matching leaf keeps its ancestors. Matching groups are shown expanded while searching; Expand All / Collapse All are disabled while searching.
+- "Search menu..." matches labels case-insensitively. A matching section or group keeps its whole subtree; a matching leaf keeps its ancestors. Matching groups are shown expanded while searching; the Show subtasks menu is disabled while searching.
 - "All Permissions" filter options: **All Permissions**, **Turned on** (menus with at least one permission on), **Turned off** (menus with none on). See Q-UP2-01.
 - The counter always counts the whole catalog, not the filtered rows.
+
+### Show subtasks (owner design 2026-11-03)
+
+Source: [rev3-01](source/rev3-01-show-subtasks-page.png), [rev3-02](source/rev3-02-show-subtasks-menu.png).
+
+- Replaces the "Expand All" / "Collapse All" links. A 32 px icon button (owner-supplied 16 px icon, `surface-sunken` tile) sits left of the "x of N permissions on" counter; accessible name "Show subtasks: {current view}".
+- It opens a menu headed "Show subtasks" (secondary text) with **Collapsed** "(default)" and **Expanded**; the current view has a check mark. Choosing a view collapses or expands every group; chevrons still open/close a single group afterwards.
+- The page opens with groups **collapsed** (the default named by the design). The choice is page state only (not saved per user).
+- Keyboard follows the "All Permissions" filter: Enter/Space/ArrowDown open; ArrowUp/Down, Home/End move; Enter/Space choose; Escape/Tab close. Disabled while searching or before the catalog loads.
 
 ### Components reused / added
 

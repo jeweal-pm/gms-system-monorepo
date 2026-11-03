@@ -11,6 +11,7 @@ import { DiscountPair } from "../DiscountPair";
 import { useDocumentKind } from "../../document-kind";
 import { useLineOptions, useRefreshLineOptions } from "../../options-context";
 import { isFilledLine, MAX_LINE_PHOTOS, type QuotationFormValues } from "../../schema";
+import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import { LinePhotosField } from "./LinePhotosField";
 import { AutocompleteInput, Button, Field, FormSelect, IconButton, NumberInput, ReadonlyBox, TextInput } from "../ui";
 
@@ -46,6 +47,8 @@ export function ItemEditorPanel({
   const lineStone = useLineOptions()?.stone;
   const stone = kind.stone ?? lineStone;
   const refreshOptions = useRefreshLineOptions();
+  // decimal-setup FE-DEC-105: typing is capped at min(places, storage scale); display places come from the setting.
+  const nf = useNumberFormat();
   if (!line) return null;
 
   const fromStock = line.source === "STOCK";
@@ -56,11 +59,11 @@ export function ItemEditorPanel({
   const fillWeight = (pcsText: string) => {
     const pendingPcs = dec(stockPending.stockPendingPcs);
     if (!stockQuantity || pendingPcs <= ZERO || pcsText === "") return;
-    // All of it → exactly the pending weight; part of it → two decimals, never above the pending weight.
+    // All of it → exactly the pending weight; part of it → the typed weight decimals (Decimal Setup), never above the pending weight.
     const full = dec(stockPending.stockPendingWeightCt);
     const pcs = dec(pcsText);
     const weight = div(mul(full, pcs), pendingPcs);
-    set("weightCt", pcs === pendingPcs ? toFixed(full, 3) : toFixed(weight > full ? full : weight, 2));
+    set("weightCt", pcs === pendingPcs ? toFixed(full, 3) : toFixed(weight > full ? full : weight, nf.weightInputDecimals));
   };
   const name = <K extends keyof typeof line>(key: K) => `lines.${index}.${key}` as const;
 
@@ -218,18 +221,18 @@ export function ItemEditorPanel({
             />
           </Field>
           <Field label="Weight (ct)" error={stockQuantity ? lineErrors?.weightCt?.message : undefined}>
-            <NumberInput compact decimals={3} placeholder="0.00" readOnly={readOnly || (fromStock && !stockQuantity)} {...register(name("weightCt"))} />
+            <NumberInput compact decimals={nf.weightInputDecimals} placeholder="0.00" readOnly={readOnly || (fromStock && !stockQuantity)} {...register(name("weightCt"))} />
           </Field>
           {stockQuantity && (
             <p className="col-span-full -mt-2 text-xs text-[#6B7480]">
-              Pending {stockPending.stockPendingPcs || "0"} pcs / {stockPending.stockPendingWeightCt || "0"} ct
+              Pending {stockPending.stockPendingPcs || "0"} pcs / {nf.weight(stockPending.stockPendingWeightCt || "0")} ct
             </p>
           )}
           <Field label="Price Unit">
             <FormSelect<QuotationFormValues> compact disabled={readOnly || stockQuantity} name={name("priceUnit")} options={PRICE_UNITS} />
           </Field>
           <Field label="Sale Price" error={stockQuantity ? lineErrors?.unitPrice?.message : undefined}>
-            <NumberInput compact placeholder="0.00" suffix={currency || undefined} {...register(name("unitPrice"))} />
+            <NumberInput compact decimals={nf.priceInputDecimals} placeholder="0.00" suffix={currency || undefined} {...register(name("unitPrice"))} />
           </Field>
           {/* Owner 2026-10-27: typing either one fills the other; the Amount shows in the table, not here. */}
           <DiscountPair

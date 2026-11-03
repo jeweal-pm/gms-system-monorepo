@@ -3,10 +3,21 @@
 import { Lock, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { PermissionCatalog } from "../api";
-import { ALL_SECTIONS, countEnabled, filterCatalog, groupIds, sectionOptions, type PermissionValues } from "../permission-utils";
-import { Button, cx, focusRing } from "@/components/ui/button";
+import {
+  ALL_SECTIONS,
+  DEFAULT_SUBTASK_VIEW,
+  collapsedGroupIds,
+  countEnabled,
+  filterCatalog,
+  groupIds,
+  sectionOptions,
+  type PermissionValues,
+  type SubtaskView,
+} from "../permission-utils";
+import { Button } from "@/components/ui/button";
 import { PermissionMatrix } from "./permission-matrix";
 import { SectionFilter } from "./section-filter";
+import { SubtaskViewMenu } from "./subtask-view-menu";
 
 type PermissionsCardProps = {
   catalog: PermissionCatalog | undefined;
@@ -24,26 +35,33 @@ type PermissionsCardProps = {
 
 const LOCK_BANNER_ID = "permissions-super-admin-lock";
 
-const linkClass = cx("rounded-gms-sm text-gms-body text-[var(--gms-blue)] hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline", focusRing);
-
 /**
  * Permissions card, UI revision 2 (rev2-02/03): search menu, "All Permissions"
- * filter, Expand All / Collapse All, live counter "{on} of {applicableCount}
- * permissions on" over the whole catalog (v2: 347), and the Super Admin banner.
+ * filter, live counter "{on} of {applicableCount} permissions on" over the whole
+ * catalog (v2: 347), and the Super Admin banner. The "Show subtasks" menu next to
+ * the counter (owner design 2026-11-03) replaced Expand All / Collapse All.
  */
 export function PermissionsCard({ catalog, catalogStatus, errorMessage, onRetry, values, onChange, superAdminLocked = false, grantable }: PermissionsCardProps) {
   const [query, setQuery] = useState("");
   const [section, setSection] = useState<string>(ALL_SECTIONS);
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  const [subtaskView, setSubtaskView] = useState<SubtaskView>(DEFAULT_SUBTASK_VIEW);
+  // Groups whose chevron was clicked against the chosen view; choosing a view clears them.
+  const [flipped, setFlipped] = useState<ReadonlySet<string>>(() => new Set());
 
   const enabled = useMemo(() => (catalog ? countEnabled(catalog.nodes, values) : null), [catalog, values]);
   const visible = useMemo(() => (catalog ? filterCatalog(catalog.nodes, query, section) : []), [catalog, query, section]);
   const sections = useMemo(() => (catalog ? sectionOptions(catalog.nodes) : sectionOptions([])), [catalog]);
   const allGroups = useMemo(() => (catalog ? groupIds(catalog.nodes) : []), [catalog]);
+  const collapsed = useMemo(() => collapsedGroupIds(subtaskView, allGroups, flipped), [subtaskView, allGroups, flipped]);
   const searching = query.trim() !== "";
 
+  function chooseSubtaskView(view: SubtaskView) {
+    setSubtaskView(view);
+    setFlipped(new Set());
+  }
+
   function toggleGroup(id: string) {
-    setCollapsed((current) => {
+    setFlipped((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -73,20 +91,15 @@ export function PermissionsCard({ catalog, catalogStatus, errorMessage, onRetry,
           />
         </label>
         <SectionFilter options={sections} value={section} onChange={setSection} disabled={!ready} />
-        <div className="flex items-center gap-3">
-          <button type="button" className={linkClass} disabled={!ready || searching} onClick={() => setCollapsed(new Set())}>
-            Expand All
-          </button>
-          <button type="button" className={linkClass} disabled={!ready || searching} onClick={() => setCollapsed(new Set(allGroups))}>
-            Collapse All
-          </button>
+        <div className="ml-auto flex items-center gap-3">
+          <SubtaskViewMenu value={subtaskView} onChange={chooseSubtaskView} disabled={!ready || searching} />
+          {catalog && enabled !== null && (
+            <p className="text-gms-label text-gms-text-secondary" aria-live="polite">
+              <strong className="font-semibold text-gms-text">{enabled}</strong>
+              {` of ${catalog.applicableCount} permissions on`}
+            </p>
+          )}
         </div>
-        {catalog && enabled !== null && (
-          <p className="ml-auto text-gms-label text-gms-text-secondary" aria-live="polite">
-            <strong className="font-semibold text-gms-text">{enabled}</strong>
-            {` of ${catalog.applicableCount} permissions on`}
-          </p>
-        )}
       </header>
 
       {!superAdminLocked && onChange && (

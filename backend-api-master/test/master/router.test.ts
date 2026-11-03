@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MasterContext } from "../../src/master/authorization";
 import { createMasterRouter } from "../../src/master/router";
 import type { DocumentSetupService } from "../../src/document-setup/document-setup.service";
+import type { DecimalSetupService } from "../../src/decimal-setup/decimal-setup.service";
 import type { CustomerService } from "../../src/customer/customer.service";
 import type { VendorService } from "../../src/vendor/vendor.service";
 import type { CompanyProfileService } from "../../src/company-profile/company-profile.service";
@@ -30,6 +31,7 @@ const vendor = {
 const companyProfile = { get: vi.fn(), options: vi.fn(), save: vi.fn(), removeLogo: vi.fn() };
 const stoneMaster = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
 const documentSetup = { list: vi.fn(), get: vi.fn(), save: vi.fn() };
+const decimalSetup = { get: vi.fn(), save: vi.fn() };
 const currency = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
 const quotation = {
   list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(),
@@ -48,6 +50,7 @@ const router = createMasterRouter({
   companyProfile: companyProfile as unknown as CompanyProfileService,
   stoneMaster: stoneMaster as unknown as StoneMasterService,
   documentSetup: documentSetup as unknown as DocumentSetupService,
+  decimalSetup: decimalSetup as unknown as DecimalSetupService,
   currency: currency as unknown as CurrencyService,
   quotation: quotation as unknown as QuotationService,
   memoOut: memoOut as unknown as MemoOutService,
@@ -67,7 +70,7 @@ function context(grants: string[], overrides: Partial<MasterContext> = {}): Mast
 }
 
 beforeEach(() => {
-  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(currency), ...Object.values(quotation), ...Object.values(memoOut), ...Object.values(memoOutReturn), ...Object.values(memoReceive), ...Object.values(memoStock), ...Object.values(memoReturn), ...Object.values(memoOutstanding), ...Object.values(reserve)]) fn.mockReset().mockResolvedValue({ ok: true });
+  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(decimalSetup), ...Object.values(currency), ...Object.values(quotation), ...Object.values(memoOut), ...Object.values(memoOutReturn), ...Object.values(memoReceive), ...Object.values(memoStock), ...Object.values(memoReturn), ...Object.values(memoOutstanding), ...Object.values(reserve)]) fn.mockReset().mockResolvedValue({ ok: true });
 });
 
 describe("staged master domain tRPC boundary", () => {
@@ -192,6 +195,41 @@ describe("staged master domain tRPC boundary", () => {
     await expect(router.createCaller(context(["document-setup:VIEW"])).documentSetup.save(save)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(router.createCaller(context(["document-setup:EDIT"], { csrfVerified: false })).documentSetup.save(save)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(caller.documentSetup.get({ transactionKey: "stone-master" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
+  it("GP-MT-DEC / UT-DEC-B07 decimal setup: any live licensed session reads, decimal-setup:EDIT + CSRF saves, strict input", async () => {
+    const save = { weightPlaces: 3, pricePlaces: 0, expectedVersion: 1 };
+    // get: no grant at all is enough; no CSRF on a query.
+    await router.createCaller(context([], { csrfVerified: false })).decimalSetup.get();
+    expect(decimalSetup.get).toHaveBeenCalledOnce();
+    await expect(router.createCaller(context([], { principal: null })).decimalSetup.get()).rejects.toMatchObject({ code: "UNAUTHORIZED", message: "UNAUTHENTICATED" });
+    await expect(router.createCaller(context([], { authorization: "UNAVAILABLE" })).decimalSetup.get()).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE", message: "AUTHORIZATION_UNAVAILABLE" });
+    await expect(router.createCaller(context([], { license: "DENIED" })).decimalSetup.get()).rejects.toMatchObject({ code: "FORBIDDEN", message: "LICENSE_REQUIRED" });
+    expect(decimalSetup.get).toHaveBeenCalledOnce();
+    // save: exact EDIT grant (document-setup grants do not count), CSRF, verified actor.
+    await expect(router.createCaller(context(["decimal-setup:VIEW", "document-setup:EDIT"])).decimalSetup.save(save)).rejects.toMatchObject({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+    await expect(router.createCaller(context(["decimal-setup:EDIT"], { csrfVerified: false })).decimalSetup.save(save)).rejects.toMatchObject({ code: "FORBIDDEN", message: "CSRF_INVALID" });
+    expect(decimalSetup.save).not.toHaveBeenCalled();
+    await router.createCaller(context(["decimal-setup:EDIT"])).decimalSetup.save(save);
+    expect(decimalSetup.save).toHaveBeenCalledWith("user-1", save);
+    // Owner Q-DEC-08: 4 is the upper bound for both settings.
+    await router.createCaller(context(["decimal-setup:EDIT"])).decimalSetup.save({ weightPlaces: 4, pricePlaces: 4, expectedVersion: 2 });
+    expect(decimalSetup.save).toHaveBeenLastCalledWith("user-1", { weightPlaces: 4, pricePlaces: 4, expectedVersion: 2 });
+    decimalSetup.save.mockClear();
+    // Validation runs after the grant check and carries field errors.
+    const editor = router.createCaller(context(["decimal-setup:EDIT"]));
+    const invalid = await editor.decimalSetup.save({ ...save, weightPlaces: 5 }).then(() => null, (error: unknown) => error as { code: string; message: string; cause: HttpException });
+    expect(invalid).toMatchObject({ code: "BAD_REQUEST", message: "VALIDATION_ERROR" });
+    expect(invalid?.cause.getResponse()).toMatchObject({ error: { code: "VALIDATION_ERROR", fieldErrors: [expect.objectContaining({ path: "weightPlaces" })] } });
+    await expect(editor.decimalSetup.save({ ...save, pricePlaces: 5 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(editor.decimalSetup.save({ ...save, pricePlaces: 1.5 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(editor.decimalSetup.save({ ...save, page: "quotation" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(decimalSetup.save).not.toHaveBeenCalled();
+    // Domain errors keep their code.
+    decimalSetup.save.mockRejectedValueOnce(new HttpException({ error: { code: "DECIMAL_SETUP_CHANGED" } }, 409));
+    await expect(editor.decimalSetup.save(save)).rejects.toMatchObject({ code: "CONFLICT", message: "DECIMAL_SETUP_CHANGED" });
+    decimalSetup.get.mockRejectedValueOnce(new HttpException({ error: { code: "PARTNER_UNAVAILABLE" } }, 503));
+    await expect(editor.decimalSetup.get()).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE", message: "PARTNER_UNAVAILABLE" });
   });
 
   it("GP-MT-CUR currency: exact grants, CSRF on writes, no code on update, options also for quotation:VIEW", async () => {

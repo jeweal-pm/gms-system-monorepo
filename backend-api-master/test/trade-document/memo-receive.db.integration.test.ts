@@ -104,7 +104,7 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     setupService = new DocumentSetupService();
     const unused = {} as never;
     router = createMasterRouter({
-      customer: unused, vendor: unused, companyProfile: unused, stoneMaster: unused, documentSetup: unused, currency: unused, quotation: unused,
+      customer: unused, vendor: unused, companyProfile: unused, stoneMaster: unused, documentSetup: unused, decimalSetup: unused, currency: unused, quotation: unused,
       memoOut: unused, memoOutReturn: unused, memoReceive: receive, memoStock: stock, memoReturn: unused, memoOutstanding: unused, reserve: unused,
     });
 

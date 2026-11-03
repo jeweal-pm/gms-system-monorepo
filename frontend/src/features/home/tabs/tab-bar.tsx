@@ -21,16 +21,17 @@ export type TabBarProps = {
  * tabs, and Close all. Below `md` only the count box and its list are shown.
  */
 export function TabBar({ tabs, activeId, onSelect, onClose, onCloseAll }: Readonly<TabBarProps>) {
-  const onlyHome = tabs.length <= 1 && (tabs[0]?.path ?? "/") === "/";
+  // Home has no tab (owner 2026-11-03), so an empty strip means only Home is open.
+  const none = tabs.length === 0;
   return (
     <div className="flex h-full min-w-0 flex-1 items-stretch">
       <TabStrip tabs={tabs} activeId={activeId} onSelect={onSelect} onClose={onClose} />
       <div className="flex shrink-0 items-center gap-3 pl-2 md:pl-3">
-        <TabCountMenu tabs={tabs} activeId={activeId} disabled={tabs.length <= 1} onSelect={onSelect} onClose={onClose} onCloseAll={onCloseAll} closeAllDisabled={onlyHome} />
+        <TabCountMenu tabs={tabs} activeId={activeId} disabled={none} onSelect={onSelect} onClose={onClose} onCloseAll={onCloseAll} closeAllDisabled={none} />
         <button
           type="button"
           onClick={onCloseAll}
-          disabled={onlyHome}
+          disabled={none}
           className={`hidden h-8 items-center gap-2 rounded-gms-md px-2 text-gms-body whitespace-nowrap text-gms-text-muted transition-colors hover:bg-gms-surface-sunken hover:text-gms-text disabled:bg-transparent disabled:text-gms-text-placeholder sm:flex ${focusRing}`}
         >
           <CircleX aria-hidden size={18} strokeWidth={1.5} />
@@ -113,7 +114,8 @@ function TabStrip({ tabs, activeId, onSelect, onClose }: Readonly<Pick<TabBarPro
               >
                 {tab.title}
               </button>
-              {tab.dirty && <span aria-label="Unsaved changes" role="img" className="size-1.5 shrink-0 rounded-full bg-gms-primary" />}
+              {/* Owner 2026-11-03: no dot on the shown tab; it marks unsaved changes in the other tabs. */}
+              {tab.dirty && !active && <span aria-label="Unsaved changes" role="img" className="size-1.5 shrink-0 rounded-full bg-gms-primary" />}
               <CloseButton title={tab.title} onClick={() => onClose(tab.id)} />
             </div>
           );
@@ -225,7 +227,7 @@ function TabCountMenu({
                 >
                   {tab.title}
                 </button>
-                {tab.dirty && <span aria-label="Unsaved changes" role="img" className="size-1.5 shrink-0 rounded-full bg-gms-primary" />}
+                {tab.dirty && tab.id !== activeId && <span aria-label="Unsaved changes" role="img" className="size-1.5 shrink-0 rounded-full bg-gms-primary" />}
                 <CloseButton title={tab.title} onClick={() => onClose(tab.id)} />
               </li>
             ))}

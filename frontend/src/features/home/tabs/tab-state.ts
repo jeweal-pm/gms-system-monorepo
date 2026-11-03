@@ -11,8 +11,9 @@ export const TAB_LIMIT_MESSAGE = `Close a tab to open another (${MAX_TABS} tabs 
 
 /** `path` identifies the tab (T-01); `url` is where it was last left, with its query (filters). */
 export type Tab = { id: string; path: string; url: string; title: string };
+/** `activeId` is "" while Home is shown: Home never has a tab (owner 2026-11-03). */
 export type TabsState = { tabs: Tab[]; activeId: string };
-export type OpenOutcome = "opened" | "switched" | "limit";
+export type OpenOutcome = "opened" | "switched" | "home" | "limit";
 
 export const emptyTabs: TabsState = { tabs: [], activeId: "" };
 
@@ -28,10 +29,12 @@ export function activeTab(state: TabsState): Tab | undefined {
 
 /**
  * T-01 / T-04: a page that has a tab switches to it (and keeps where it was left only when the URL has no
- * query of its own); a new page opens a tab after the active one, unless 15 are open.
+ * query of its own); a new page opens a tab after the active one, unless 15 are open. Home opens no tab and
+ * leaves every tab inactive (owner 2026-11-03).
  */
 export function openUrl(state: TabsState, url: string, title: string, newId: string): { state: TabsState; outcome: OpenOutcome } {
   const path = tabPath(url);
+  if (path === HOME_PATH) return { state: state.activeId === "" ? state : { ...state, activeId: "" }, outcome: "home" };
   const existing = state.tabs.find((tab) => tab.path === path);
   if (existing) {
     const tabs = state.tabs.map((tab) => (tab.id === existing.id ? { ...tab, url } : tab));
@@ -44,24 +47,18 @@ export function openUrl(state: TabsState, url: string, title: string, newId: str
   return { state: { tabs, activeId: newId }, outcome: "opened" };
 }
 
-/** T-06: closing the active tab shows its right neighbour, else its left one; the last tab leaves Home. */
-export function closeTab(state: TabsState, id: string, homeId: string): TabsState {
+/** T-06: closing the active tab shows its right neighbour, else its left one; closing the last tab shows Home. */
+export function closeTab(state: TabsState, id: string): TabsState {
   const at = state.tabs.findIndex((tab) => tab.id === id);
   if (at < 0) return state;
   const tabs = state.tabs.filter((tab) => tab.id !== id);
-  if (tabs.length === 0) return homeOnly(homeId);
   if (state.activeId !== id) return { tabs, activeId: state.activeId };
-  return { tabs, activeId: (tabs[at] ?? tabs[at - 1]).id };
+  return { tabs, activeId: (tabs[at] ?? tabs[at - 1])?.id ?? "" };
 }
 
-/** Close all leaves Home as the only tab (Q-TAB-06); an open Home tab is kept as it is. */
-export function closeAllTabs(state: TabsState, homeId: string): TabsState {
-  const home = state.tabs.find((tab) => tab.path === HOME_PATH);
-  return home ? { tabs: [home], activeId: home.id } : homeOnly(homeId);
-}
-
-function homeOnly(homeId: string): TabsState {
-  return { tabs: [{ id: homeId, path: HOME_PATH, url: HOME_PATH, title: HOME_TITLE }], activeId: homeId };
+/** Close all closes every tab and shows Home (Q-TAB-06; Home has no tab since 2026-11-03). */
+export function closeAllTabs(): TabsState {
+  return emptyTabs;
 }
 
 /**
@@ -139,20 +136,23 @@ export function parseStoredTabs(raw: string | null, newId: () => string): TabsSt
   }
   if (typeof data !== "object" || data === null || !Array.isArray((data as { tabs?: unknown }).tabs)) return null;
   const tabs: Tab[] = [];
-  for (const entry of (data as { tabs: unknown[] }).tabs) {
+  const active = (data as { active?: unknown }).active;
+  let activeId = "";
+  for (const [index, entry] of (data as { tabs: unknown[] }).tabs.entries()) {
     if (tabs.length >= MAX_TABS) break;
     if (typeof entry !== "object" || entry === null) continue;
     const { url, title } = entry as { url?: unknown; title?: unknown };
     if (!isAppUrl(url)) continue;
     const path = tabPath(url);
-    if (tabs.some((tab) => tab.path === path)) continue;
+    // A Home tab stored before 2026-11-03 is dropped: Home has no tab now.
+    if (path === HOME_PATH || tabs.some((tab) => tab.path === path)) continue;
     const name = typeof title === "string" && title.trim() ? title.slice(0, MAX_TITLE_LENGTH) : fallbackTitle(path);
-    tabs.push({ id: newId(), path, url, title: name });
+    const tab = { id: newId(), path, url, title: name };
+    if (index === active) activeId = tab.id;
+    tabs.push(tab);
   }
   if (tabs.length === 0) return null;
-  const active = (data as { active?: unknown }).active;
-  const index = typeof active === "number" && Number.isInteger(active) && active >= 0 && active < tabs.length ? active : 0;
-  return { tabs, activeId: tabs[index].id };
+  return { tabs, activeId: activeId || tabs[0].id };
 }
 
 /**

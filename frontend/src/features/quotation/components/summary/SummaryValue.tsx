@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import type { QuotationTotals } from "../../lib/calculate";
 import { formatMoney } from "../../lib/format";
+import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import { SERVICE_CHARGE_TYPES } from "../../lib/options";
 import type { QuotationFormValues } from "../../schema";
 import { DiscountPair } from "../DiscountPair";
@@ -14,10 +15,11 @@ const numberInput = "h-10";
 
 export function SummaryValue({ totals, currency }: { totals: QuotationTotals; currency: string }) {
   const { register, control, setValue } = useFormContext<QuotationFormValues>();
+  const nf = useNumberFormat();
   /** A money value followed by the document currency (owner 2026-10-27). */
   const money = (value: Parameters<typeof formatMoney>[0]) => (
     <>
-      {formatMoney(value)} {currency && <span className="text-xs text-[#6B7480]">{currency}</span>}
+      {formatMoney(value, nf.pricePlaces)} {currency && <span className="text-xs text-[#6B7480]">{currency}</span>}
     </>
   );
   const discount = useWatch({ control, name: "discount" });
@@ -97,7 +99,7 @@ export function SummaryValue({ totals, currency }: { totals: QuotationTotals; cu
       {/* Other charge */}
       <div className="border-b border-[#E3E6EA] py-4">
         <h3 className="mb-3 font-medium">Other Charge</h3>
-        <ServiceCharges totalLabel={`${formatMoney(totals.serviceChargeTotal)}${currency ? ` ${currency}` : ""}`} currency={currency} />
+        <ServiceCharges totalLabel={`${formatMoney(totals.serviceChargeTotal, nf.pricePlaces)}${currency ? ` ${currency}` : ""}`} currency={currency} />
         <Checkbox label="Labor" className="mt-3" {...register("labor.enabled")} />
         {labor.enabled && (
           <div className="mt-3 ml-8 space-y-3 rounded-xl bg-[#F6F7F8] p-4 text-sm">
@@ -118,13 +120,13 @@ export function SummaryValue({ totals, currency }: { totals: QuotationTotals; cu
                       <NumberInput
                         key={`qty-${basis}`}
                         compact
-                        decimals={basis === "PCS" ? 0 : 3}
+                        decimals={basis === "PCS" ? 0 : nf.weightInputDecimals}
                         placeholder={basis === "PCS" ? "0" : "0.00"}
                         className={numberInput}
                         {...register("labor.qty")}
                       />
                       <span className="shrink-0 text-[#6B7480]">{basis === "PCS" ? "pcs ×" : "cts ×"}</span>
-                      <NumberInput compact placeholder="0.00" suffix={currency || undefined} className={numberInput} {...register("labor.rate")} />
+                      <NumberInput compact decimals={nf.priceInputDecimals} placeholder="0.00" suffix={currency || undefined} className={numberInput} {...register("labor.rate")} />
                     </>
                   ) : (
                     <>
@@ -152,7 +154,7 @@ export function SummaryValue({ totals, currency }: { totals: QuotationTotals; cu
       <div className="mt-8 flex items-center justify-between rounded-xl bg-[#1F2530] px-6 py-6 text-white">
         <span className="text-lg font-medium">Grand Total</span>
         <span className="text-3xl font-semibold tabular-nums">
-          {formatMoney(totals.grandTotal)} {currency && <span className="text-base font-medium text-white/70">{currency}</span>}
+          {formatMoney(totals.grandTotal, nf.pricePlaces)} {currency && <span className="text-base font-medium text-white/70">{currency}</span>}
         </span>
       </div>
     </div>
@@ -162,6 +164,7 @@ export function SummaryValue({ totals, currency }: { totals: QuotationTotals; cu
 function ServiceCharges({ totalLabel, currency }: { totalLabel: string; currency: string }) {
   // ไม่ใช้ useFieldArray เพราะ component นี้ถูก render 2 ที่ (ใต้ตาราง + right rail)
   const { control, register, setValue } = useFormContext<QuotationFormValues>();
+  const nf = useNumberFormat();
   const fields = useWatch({ control, name: "serviceCharges" });
   const [open, setOpen] = useState(false);
   const selectedIds = fields.map((f) => f.chargeId);
@@ -220,7 +223,7 @@ function ServiceCharges({ totalLabel, currency }: { totalLabel: string; currency
                 {SERVICE_CHARGE_TYPES.find((c) => c.value === f.chargeId)?.label ?? f.chargeId}
               </span>
               <div className="w-36">
-                <NumberInput compact placeholder="0.00" suffix={currency || undefined} className={numberInput} {...register(`serviceCharges.${i}.amount`)} />
+                <NumberInput compact decimals={nf.priceInputDecimals} placeholder="0.00" suffix={currency || undefined} className={numberInput} {...register(`serviceCharges.${i}.amount`)} />
               </div>
               <button type="button" aria-label="Remove charge" onClick={() => remove(i)} className="text-[#6B7480]">
                 <CircleX className="size-5" />
