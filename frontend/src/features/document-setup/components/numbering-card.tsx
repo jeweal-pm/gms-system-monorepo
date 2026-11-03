@@ -192,7 +192,8 @@ export function NumberingCard({ form, readOnly }: { form: UseFormReturn<Document
                   </td>
                   <td className={td}>
                     <span className="flex h-10 items-center truncate font-medium tabular-nums" aria-label={`Example number, row ${position + 1}`}>
-                      {row.startNo.trim() === "" ? "—" : formatDocumentNumber(row.prefix ?? "", row.separator ?? "", row.startNo)}
+                      {/* A row being added or reset can be read before its fields are filled; it shows "—" instead of failing. */}
+                      {String(row.startNo ?? "").trim() === "" ? "—" : formatDocumentNumber(row.prefix ?? "", row.separator ?? "", row.startNo)}
                     </span>
                   </td>
                   {!readOnly && (
