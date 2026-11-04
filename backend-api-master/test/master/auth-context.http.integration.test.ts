@@ -74,6 +74,7 @@ async function startHttp(authReader = vi.fn(async () => ({
     memoStock: {} as unknown as MemoStockService,
     memoOutstanding: {} as unknown as MemoOutstandingService,
     reserve: {} as unknown as ReserveService,
+    purchaseOrder: {} as never,
   });
   const handler = createHTTPHandler({ router, createContext: ({ req }) => adapter.create(req) });
   const server = createServer(handler);

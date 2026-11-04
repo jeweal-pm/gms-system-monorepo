@@ -30,8 +30,8 @@ export async function numberingInEffect(client: Client, transactionKey: Document
   return row ? { id: row.id, prefix: row.prefix, separator: row.separator, startNo: row.start_no } : null;
 }
 
-/** Document types that take numbers from Document Setup (quotation ADR-0032; memo out, memo out return ADR-0033; memo receive ADR-0034; memo return memo-return SA rev 2; reserve ADR-0036). */
-export type NumberedDocument = "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoReturn" | "reserve";
+/** Document types that take numbers from Document Setup (quotation ADR-0032; memo out, memo out return ADR-0033; memo receive ADR-0034; memo return memo-return SA rev 2; reserve ADR-0036; purchase order ADR-0041). */
+export type NumberedDocument = "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoReturn" | "reserve" | "purchaseOrder";
 
 const PLAIN_LOCK_KEY: Readonly<Record<NumberedDocument, string>> = {
   quotation: "partner.quotation.plain_running_no",
@@ -40,6 +40,7 @@ const PLAIN_LOCK_KEY: Readonly<Record<NumberedDocument, string>> = {
   memoReceive: "partner.memo_receive.plain_running_no",
   memoReturn: "partner.memo_return.plain_running_no",
   reserve: "partner.reserve.plain_running_no",
+  purchaseOrder: "partner.purchase_order.plain_running_no",
 };
 
 type RunningNoDelegate = {
@@ -76,11 +77,11 @@ export async function nextPlainRunningNo(client: Client, document: NumberedDocum
 export const nextQuotationRunningNo = (client: Client, row: NumberingRow) => nextRunningNo(client, "quotation", row);
 export const nextPlainQuotationRunningNo = (client: Client, lock: boolean) => nextPlainRunningNo(client, "quotation", lock);
 
-/** Numbering row ids that issued a number on any document type (Document Setup `used`, SA-QT-05, SA-MO-04, SA-MR-08). */
+/** Numbering row ids that issued a number on any document type (Document Setup `used`, SA-QT-05, SA-MO-04, SA-MR-08, SA-PO-08). */
 export async function usedNumberingIds(client: Client, ids: readonly string[]): Promise<Set<string>> {
   if (ids.length === 0) return new Set();
   const where = { numberingId: { in: [...ids] } };
-  const kinds: NumberedDocument[] = ["quotation", "memoOut", "memoOutReturn", "memoReceive", "memoReturn", "reserve"];
+  const kinds: NumberedDocument[] = ["quotation", "memoOut", "memoOutReturn", "memoReceive", "memoReturn", "reserve", "purchaseOrder"];
   const used = await Promise.all(kinds.map((kind) => documentTable(client, kind).groupBy({ by: ["numberingId"], where })));
   return new Set(used.flat().flatMap((entry) => (entry.numberingId ? [entry.numberingId] : [])));
 }

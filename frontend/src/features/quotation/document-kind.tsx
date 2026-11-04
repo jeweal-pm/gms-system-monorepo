@@ -13,14 +13,17 @@ export type StoneChoices = QuotationOptions["stone"];
  * Summary Value (ADR-0033 D5). The default is exactly the Quotation page; Memo Receive provides its own.
  */
 export type DocumentKind = {
-  /** Stock ID: filled by From Stock only, or a running number assigned on save. */
-  stockId: "from-stock" | "auto";
+  /**
+   * Stock ID: filled by From Stock only, a running number assigned on save, or none at all (Purchase Order rev 1: Stock
+   * IDs come later, at Purchase).
+   */
+  stockId: "from-stock" | "auto" | "none";
   /** Stone Code field and column; without it the Stock ID leads the row (Memo Receive, owner 2026-10-28). */
   stoneCode: boolean;
   /** Location column and row-panel field; Memo Receive has none (rev 3: its Memo Stock is always `Memo`). */
   location: boolean;
-  /** Location choices; null = filled by From Stock only (read-only). */
-  locations: Option[] | null;
+  /** Location choices; null = filled by From Stock only (read-only); "text" = typed freely (Purchase Order, Q-PO-06). */
+  locations: Option[] | null | "text";
   emptyRowText: string;
   itemNote: { section: string; max: number; placeholder?: string };
   documentNote: { max: number; hint: string };

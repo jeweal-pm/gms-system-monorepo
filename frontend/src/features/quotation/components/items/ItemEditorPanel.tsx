@@ -156,17 +156,19 @@ export function ItemEditorPanel({
               </Field>
               {!line.stockId && <p className="mt-1 pl-3 text-xs text-[#6B7480]">Assigned when you save</p>}
             </div>
-          ) : (
+          ) : kind.stockId === "from-stock" ? (
             <Field label="Stock ID">
               <ReadonlyBox compact value={line.stockId} placeholder="From stock only" />
             </Field>
-          )}
+          ) : null}
           <Field label="Lot">
             <TextInput compact readOnly={locked} placeholder="e.g. L-2609-001" maxLength={30} {...register(name("lot"))} />
           </Field>
           {kind.location && (
             <Field label="Location">
-              {kind.locations ? (
+              {kind.locations === "text" ? (
+                <TextInput compact readOnly={locked} placeholder="e.g. Safe A" maxLength={40} {...register(name("locationId"))} />
+              ) : kind.locations ? (
                 <FormSelect<QuotationFormValues> compact disabled={locked} name={name("locationId")} options={withCurrent(kind.locations, line.locationId)} />
               ) : (
                 <ReadonlyBox compact value={line.locationId} placeholder="From stock only" />
