@@ -13,8 +13,8 @@ import { Badge, Button, cx } from "../ui";
 
 type Column = { title: string; sub?: string; align?: "right"; className?: string };
 
-export const itemColumns = (stoneCode: boolean, location = true): Column[] => [
-  stoneCode ? { title: "Stone Code", sub: "Stock ID · Lot", className: "w-[200px]" } : { title: "Stock ID", sub: "Lot", className: "w-[200px]" },
+export const itemColumns = (stoneCode: boolean, location = true, stockId = true): Column[] => [
+  stoneCode ? { title: "Stone Code", sub: stockId ? "Stock ID · Lot" : "Lot", className: "w-[200px]" } : { title: "Stock ID", sub: "Lot", className: "w-[200px]" },
   ...(location ? [{ title: "Location", className: "w-[96px]" }] : []),
   { title: "Stone", sub: "Shape · Size", className: "w-[150px]" },
   { title: "Color · Clarity", sub: "Cutting · Quality", className: "w-[150px]" },
@@ -60,7 +60,7 @@ export function ItemTable({
 }) {
   const kind = useDocumentKind();
   const nf = useNumberFormat();
-  const COLUMNS = itemColumns(kind.stoneCode, kind.location);
+  const COLUMNS = itemColumns(kind.stoneCode, kind.location, kind.stockId !== "none");
   const allChecked = lines.length > 0 && lines.every((l) => checkedKeys.has(l.key));
   const scrollRef = useRef<HTMLDivElement>(null);
 
