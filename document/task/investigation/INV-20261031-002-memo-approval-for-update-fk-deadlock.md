@@ -2,7 +2,7 @@
 
 ## Tracking
 
-- Ticket revision: 1
+- Ticket revision: 2 (2026-11-04: Purchase approve added as a further instance of the same lock pattern; root cause, verdict and remediation unchanged)
 - Status: pending-review
 - Owner: backend
 - Priority: awaiting user review
@@ -20,6 +20,7 @@
   - `backend-api-master/src/trade-document/memo-stock.service.ts:59-62` (new `releaseToMemoStock`) and `:31-34` (existing `takeFromMemoStock`) — `memo_stock` rows locked with `FOR UPDATE`.
   - `backend-api-master/prisma/migrations/20261101090000_memo_out_return_customer/migration.sql:52` — new FK `memo_out_return_line.memo_out_line_id -> memo_out_line.id`; `20261031090000_memo_out_from_stock/migration.sql:37` — FK `memo_out_line.memo_stock_id -> memo_stock.id`.
   - `backend-api-master/src/trade-document/document-engine.ts:413` — lines saved with one `createMany` in client line order.
+  - Revision 2 addition (sec-auditor, focused pre-handoff review of purchase BE-PU-002…004, 2026-11-04; source HEAD `279d4ad` + uncommitted working tree; `backend-api-master/src/purchase/purchase-stock.ts` blob fd1fa0cb; `backend-api-master/prisma/migrations/20261104150000_purchase/migration.sql` blob 949187d1): `purchase-stock.ts:179-186` (`takeForPurchase`, run by `purchase.approve`) locks `memo_stock` rows `ORDER BY id FOR UPDATE` and `purchase_order_line` rows `FOR UPDATE OF l`, while `purchase.create` / `update` insert `purchase_line` rows in user line order with FKs `purchase_line.memo_stock_id -> memo_stock.id` and `purchase_line.purchase_order_line_id -> purchase_order_line.id` (`migration.sql:194,197`), each taking `FOR KEY SHARE`. A purchase save naming items M2 then M1 against another purchase's approve (or a Memo Out / Memo Out Return / Memo Return approve, which lock `memo_stock` the same way) locking M1 then M2 forms the same 40P01 cycle. Integrity is preserved: `takeForPurchase` re-guards every key under lock before its single bulk UPDATE, and `memo_stock_balance` / `memo_stock_purchased_check` remain backstops; the 40P01 surfaces as `DEPENDENCY_UNAVAILABLE` (503) and a retry succeeds. The same `FOR NO KEY UPDATE` change applies to both purchase lock queries.
 - Attacker prerequisites and reachable entry point: no attacker needed; two authorized users acting concurrently (`memoOutReturn.create/update` with memo-out-return ADD/EDIT and `memoOutReturn.approve` with APPROVE; likewise `memoOut.create/update` against `memoOut.approve`/`memoOutReturn.approve`).
 - Concrete trust boundary and source-to-sink trace: each inserted child row's FK check takes `FOR KEY SHARE` on the referenced parent row, row by row in insertion (user line) order. `FOR UPDATE` conflicts with `FOR KEY SHARE`, while `FOR NO KEY UPDATE` does not. Example: Tx A saves a pending return whose lines reference Memo Out lines L2 then L1 (KEY SHARE L2, then waits for L1); Tx B approves another return that locks L1 then L2 in id order (holds L1 FOR UPDATE, waits for L2). This is a lock cycle, and PostgreSQL aborts one transaction with 40P01 after `deadlock_timeout`. The same pattern applies to `memo_stock`: a Memo Out save inserting From Stock lines (KEY SHARE on memo_stock in line order) against Memo Out / Memo Out Return / Memo Return approval (FOR UPDATE in id order). Even without a cycle, approvals needlessly block concurrent saves that only reference those rows, for up to the 4 s `WRITE_TX` timeout.
 - Observed impact and independent verification evidence: static analysis only. Integrity is preserved: approval re-checks outstanding and reserved quantities under lock, and `memo_out_line_returned_check` and the memo stock balance CHECKs remain as backstops. The impact is an occasional failed save or approval (500/transient error, retry succeeds) and short head-of-line blocking on the 2 vCPU host. No over-return or cross-customer effect was found.
@@ -29,7 +30,7 @@
 
 ## Proposed work
 
-- Allowed code scope and assigned implementation role: backend; `backend-api-master/src/trade-document/memo-out-return.service.ts`, `memo-stock.service.ts`, related tests.
+- Allowed code scope and assigned implementation role: backend; `backend-api-master/src/trade-document/memo-out-return.service.ts`, `memo-stock.service.ts`, `backend-api-master/src/purchase/purchase-stock.ts` (revision 2), related tests.
 - Suggested remediation: the locks only update non-key columns, so use `FOR NO KEY UPDATE` instead of `FOR UPDATE` in the approve and memo-stock lock queries. The same row serialization between approvals remains, and the FK KEY SHARE conflict goes away. Optionally map 40P01/40001 to the existing retryable conflict error instead of a 500.
 - SA design / contract / flow / dependency change needed: none (lock mode only; SA-MOR-17 semantics unchanged).
 - Acceptance criteria: concurrent return save + return approve over overlapping Memo Out lines in opposite order completes without 40P01; existing over-return/short-reserve tests still pass.

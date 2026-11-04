@@ -1,8 +1,9 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { DISCARD_CHANGES_CONFIRM, deleteDocumentConfirm, useConfirm } from "@/features/quotation/components/use-confirm";
 import { CircleCheck, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { useTabDirty, useTabDocument, useTabReplace } from "@/features/home/tabs/tab-host";
 import { FormProvider, useFieldArray, useForm, useWatch, type DefaultValues, type FieldValues, type Path, type Resolver } from "react-hook-form";
 import type { z } from "zod";
@@ -40,6 +41,14 @@ export type DocumentApi<Input, Options extends LineOptions = LineOptions> = {
 
 export type SaveOutcome = { fieldErrors: { name: string; message: string }[]; message: string };
 
+/** An item picker dialog: picked rows go to `onAdd`. */
+export type PickerRender<V> = (props: { values: V; onClose: () => void; onAdd: (lines: QuotationLine[]) => void }) => ReactNode;
+
+export type SecondaryPicker<V> = { label: string; hint: string } & (
+  | { disabledReason: string; render?: undefined; addedToast?: undefined }
+  | { disabledReason?: undefined; render: PickerRender<V>; addedToast: (count: number) => string }
+);
+
 type Saved = { id?: string; docNo?: string; version?: number; status?: string };
 
 export type DocumentFormConfig<V extends FieldValues & Saved, Input, Options extends LineOptions = LineOptions> = {
@@ -70,9 +79,15 @@ export type DocumentFormConfig<V extends FieldValues & Saved, Input, Options ext
   picker?: {
     /** Why it can't open yet (e.g. no vendor chosen), or null. */
     blockedReason: (values: V) => string | null;
-    render: (props: { values: V; onClose: () => void; onAdd: (lines: QuotationLine[]) => void }) => ReactNode;
+    render: PickerRender<V>;
     addedToast: (count: number) => string;
   };
+  /**
+   * A second dark item button after the first (purchase FE-PU-001: Purchase Order). It either stays disabled with
+   * `disabledReason` (given as its tooltip and `aria-describedby` text), or opens its own picker (`render`), whose rows
+   * are added like the first picker's. Without it the form shows one item button, as before.
+   */
+  secondaryPicker?: SecondaryPicker<V>;
   /** A saved document in view mode shows this instead of the disabled header fields (memo return design, view). */
   viewHeader?: (args: { values: V; options: Options | undefined }) => ReactNode;
   /**
@@ -118,6 +133,51 @@ export const APPROVAL_STATUS_LABELS: StatusLabels = {
   APPROVED: { label: "Approved", tone: "bg-[#E7F7EE] text-[#15803D]" },
 };
 
+type ToolButton = { label: string; onClick: () => void };
+
+/**
+ * The item tools beside the "Item" title: the first picker button, an optional second one (FE-PU-001) and the scan
+ * placeholder. A second button with `disabledReason` can't take focus while disabled, so its reason is also given as
+ * `aria-describedby` text besides the tooltip.
+ */
+export function ItemToolButtons({ primary, secondary, readOnly }: {
+  primary: ToolButton & { title: string; disabled: boolean };
+  secondary?: ToolButton & { hint: string; disabledReason?: string };
+  readOnly: boolean;
+}) {
+  const reasonId = useId();
+  return (
+    <>
+      <span title={primary.title}>
+        <Button variant="dark" size="sm" disabled={primary.disabled} onClick={primary.onClick}>
+          {primary.label}
+        </Button>
+      </span>
+      {secondary &&
+        (secondary.disabledReason ? (
+          <span title={secondary.disabledReason}>
+            <Button variant="dark" size="sm" disabled aria-describedby={reasonId}>
+              {secondary.label}
+            </Button>
+            <span id={reasonId} className="sr-only">
+              {secondary.disabledReason}
+            </span>
+          </span>
+        ) : (
+          <span title={secondary.hint}>
+            <Button variant="dark" size="sm" disabled={readOnly} onClick={secondary.onClick}>
+              {secondary.label}
+            </Button>
+          </span>
+        ))}
+      {/* TODO: scan barcode เพื่อเพิ่มรายการ */}
+      <IconButton label="Scan to add" disabled={readOnly} className="bg-[#F6F7F8]">
+        <ScanIcon />
+      </IconButton>
+    </>
+  );
+}
+
 /** Photos aren't available on the memo documents yet (ADR-0033 rev 1). */
 const NO_PHOTOS = { upload: null, url: (id: string) => id };
 
@@ -142,7 +202,9 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   const [railPanel, setRailPanel] = useState<RailPanel>(null);
   const [checkedKeys, setCheckedKeys] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [secondaryOpen, setSecondaryOpen] = useState(false);
   const [approving, setApproving] = useState(false);
 
   const form = useForm<V>({ resolver: zodResolver(config.schema as never) as unknown as Resolver<V>, defaultValues: (initial ?? config.empty()) as DefaultValues<V> });
@@ -210,8 +272,8 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
     },
   );
 
-  const onCancel = () => {
-    if (formState.isDirty && !window.confirm("Discard unsaved changes?")) return;
+  const onCancel = async () => {
+    if (formState.isDirty && !(await confirm(DISCARD_CHANGES_CONFIRM))) return;
     reset(saved ?? config.empty());
     setMode(saved ? "view" : "edit");
     setEditorOpen(false);
@@ -219,7 +281,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   };
 
   const onDelete = async () => {
-    if (!saved?.id || !saved.version || !window.confirm(`Delete ${saved.docNo}?`)) return;
+    if (!saved?.id || !saved.version || !(await confirm(deleteDocumentConfirm(saved.docNo)))) return;
     try {
       await api.remove({ id: saved.id, expectedVersion: saved.version });
       await api.invalidate();
@@ -257,14 +319,16 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   };
 
   /** Picked rows go into the empty rows first, then after the last row. */
-  const addPicked = (picked: QuotationLine[]) => {
+  const addPicked = (picked: QuotationLine[], addedToast = config.picker?.addedToast) => {
     const queue = [...picked];
     const current = getValues("lines" as Path<V>) as QuotationLine[];
     const merged = current.map((line) => (!isFilledLine(line) && queue.length > 0 ? queue.shift()! : line));
     lineArray.replace([...merged, ...queue] as never);
     setPickerOpen(false);
-    if (config.picker) setToast(config.picker.addedToast(picked.length));
+    setSecondaryOpen(false);
+    if (addedToast) setToast(addedToast(picked.length));
   };
+  const { secondaryPicker } = config;
 
   const openRow = (index: number) => {
     setSelectedIndex(index);
@@ -347,7 +411,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
                 canEdit={Boolean(saved) && canEdit && !locked}
                 canDelete={Boolean(saved) && canDelete && !locked}
                 actions={{
-                  onCancel,
+                  onCancel: () => void onCancel(),
                   onSave: () => void onSave(),
                   onEdit: () => setMode("edit"),
                   onDelete: () => void onDelete(),
@@ -371,17 +435,23 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
                     <span className="text-xs text-[#6B7480]">{lines.length} rows</span>
                     {/* A view-mode header (memo return design) hides the item tools too. */}
                     {!(readOnly && config.viewHeader) && (
-                      <>
-                        <span title={config.picker ? (blockedReason ?? config.pickHint) : config.pickHint}>
-                          <Button variant="dark" size="sm" disabled={!config.picker || readOnly} onClick={openPicker}>
-                            {config.pickLabel}
-                          </Button>
-                        </span>
-                        {/* TODO: scan barcode เพื่อเพิ่มรายการ */}
-                        <IconButton label="Scan to add" disabled={readOnly} className="bg-[#F6F7F8]">
-                          <ScanIcon />
-                        </IconButton>
-                      </>
+                      <ItemToolButtons
+                        readOnly={readOnly}
+                        primary={{
+                          label: config.pickLabel,
+                          title: config.picker ? (blockedReason ?? config.pickHint) : config.pickHint,
+                          disabled: !config.picker || readOnly,
+                          onClick: openPicker,
+                        }}
+                        secondary={
+                          secondaryPicker && {
+                            label: secondaryPicker.label,
+                            hint: secondaryPicker.hint,
+                            disabledReason: secondaryPicker.disabledReason,
+                            onClick: () => setSecondaryOpen(true),
+                          }
+                        }
+                      />
                     )}
                     {checkedKeys.size > 0 && !readOnly && (
                       <Button size="sm" variant="danger-outline" onClick={removeChecked}>
@@ -454,6 +524,12 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
             )}
           </div>
           {pickerOpen && config.picker?.render({ values: values as unknown as V, onClose: () => setPickerOpen(false), onAdd: addPicked })}
+          {secondaryOpen &&
+            secondaryPicker?.render?.({
+              values: values as unknown as V,
+              onClose: () => setSecondaryOpen(false),
+              onAdd: (picked) => addPicked(picked, secondaryPicker.addedToast),
+            })}
           {approval && (
             <ConfirmDialog
               open={approving}
@@ -467,6 +543,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
               onConfirm={() => void onApprove()}
             />
           )}
+          {confirmDialog}
           {toast && <Toast message={toast} onClose={() => setToast(null)} />}
         </FormProvider>
       </LinePhotoContext.Provider>

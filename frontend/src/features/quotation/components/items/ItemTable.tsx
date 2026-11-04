@@ -1,19 +1,19 @@
 "use client";
 
 import { ChevronsUpDown, CircleMinus, Ellipsis, MessageSquare, Plus } from "lucide-react";
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { lineAmount, lineDiscount, type QuotationTotals } from "../../lib/calculate";
 import { dec, toFixed, ZERO } from "../../lib/decimal";
 import { formatMoney, formatMoneyText, formatWeight } from "../../lib/format";
 import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import { visibleRowsHeight } from "../../lib/table-scroll";
-import { useDocumentKind } from "../../document-kind";
+import { DEFAULT_PRICE_TITLE, useDocumentKind } from "../../document-kind";
 import { isFilledLine, type QuotationLine } from "../../schema";
 import { Badge, Button, cx } from "../ui";
 
 type Column = { title: string; sub?: string; align?: "right"; className?: string };
 
-export const itemColumns = (stoneCode: boolean, location = true, stockId = true): Column[] => [
+export const itemColumns = (stoneCode: boolean, location = true, stockId = true, priceTitle = DEFAULT_PRICE_TITLE): Column[] => [
   stoneCode ? { title: "Stone Code", sub: stockId ? "Stock ID · Lot" : "Lot", className: "w-[200px]" } : { title: "Stock ID", sub: "Lot", className: "w-[200px]" },
   ...(location ? [{ title: "Location", className: "w-[96px]" }] : []),
   { title: "Stone", sub: "Shape · Size", className: "w-[150px]" },
@@ -21,7 +21,7 @@ export const itemColumns = (stoneCode: boolean, location = true, stockId = true)
   { title: "Cer Type", sub: "Cer No.", className: "w-[140px]" },
   { title: "Pcs", align: "right", className: "w-[64px]" },
   { title: "Weight (ct)", align: "right", className: "w-[100px]" },
-  { title: "Sale Price", sub: "Unit", align: "right", className: "w-[130px]" },
+  { title: priceTitle, sub: "Unit", align: "right", className: "w-[130px]" },
   { title: "Amount", align: "right", className: "w-[120px] border-l border-[#E3E6EA]" },
 ];
 
@@ -60,7 +60,7 @@ export function ItemTable({
 }) {
   const kind = useDocumentKind();
   const nf = useNumberFormat();
-  const COLUMNS = itemColumns(kind.stoneCode, kind.location, kind.stockId !== "none");
+  const COLUMNS = itemColumns(kind.stoneCode, kind.location, kind.stockId !== "none", kind.priceTitle);
   const allChecked = lines.length > 0 && lines.every((l) => checkedKeys.has(l.key));
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -125,20 +125,20 @@ export function ItemTable({
               <th className="w-14 px-3 font-medium">More</th>
             </tr>
           </thead>
-          <tbody>
             {lines.map((line, index) => {
               const filled = isFilledLine(line);
               const selected = index === selectedIndex;
               const rowError = rowErrors?.[index];
+              // A row and its error line share one <tbody> so hover/selection colours both of them together.
+              const errorTone = selected ? "bg-[#F9D7D7]" : "bg-[#FDECEC] group-hover/line:bg-[#FBE0E0]";
               return (
-                <Fragment key={line.key}>
+                <tbody key={line.key} className="group/line">
                 <tr
                   onClick={() => onSelectRow(index)}
                   aria-invalid={rowError ? true : undefined}
                   className={cx(
                     "cursor-pointer align-top",
-                    rowError ? "bg-[#FDECEC]" : "border-b border-[#EEF0F2]",
-                    selected ? "bg-[#E6F1F1]" : "hover:bg-[#FAFBFB]",
+                    rowError ? errorTone : cx("border-b border-[#EEF0F2]", selected ? "bg-[#E6F1F1]" : "hover:bg-[#FAFBFB]"),
                   )}
                 >
                   <td className="px-3 py-4" onClick={(e) => e.stopPropagation()}>
@@ -183,16 +183,15 @@ export function ItemTable({
                   </td>
                 </tr>
                 {rowError && (
-                  <tr className="border-b border-[#EEF0F2] bg-[#FDECEC]">
+                  <tr onClick={() => onSelectRow(index)} className={cx("cursor-pointer border-b border-[#EEF0F2]", errorTone)}>
                     <td colSpan={COLUMNS.length + 4} className="px-3 pb-2 text-xs text-[#E5484D]" role="alert">
                       {`Row ${index + 1}: ${rowError}`}
                     </td>
                   </tr>
                 )}
-                </Fragment>
+                </tbody>
               );
             })}
-          </tbody>
           <tfoot className="sticky bottom-0 z-10">
             <tr className="bg-[#F6F7F8] font-medium">
               <td colSpan={3} />
@@ -223,7 +222,7 @@ function fitVisibleRows(box: HTMLDivElement) {
   if (!table) return;
   const height = visibleRowsHeight(
     table.tHead?.offsetHeight ?? 0,
-    Array.from(table.tBodies[0]?.rows ?? [], (row) => row.offsetHeight),
+    Array.from(table.tBodies).flatMap((body) => Array.from(body.rows, (row) => row.offsetHeight)),
     table.tFoot?.offsetHeight ?? 0,
     box.offsetHeight - box.clientHeight,
   );

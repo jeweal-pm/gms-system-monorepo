@@ -51,6 +51,11 @@ async function startHttp(authReader = vi.fn(async () => ({
   };
   const companyProfile = { get: vi.fn(async () => ({ profile: null })), options: vi.fn(), save: vi.fn(), removeLogo: vi.fn() };
   const stoneMaster = { list: vi.fn(async () => ({ items: [], nextCursor: null, total: 0 })), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
+  const purchase = {
+    list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), purchaseOrderLines: vi.fn(),
+    memoStock: vi.fn(async () => ({ items: [], nextCursor: null, counts: { all: 0, sold: 0, inStock: 0 } })),
+    approve: vi.fn(async (_actorId: string, id: string, expectedVersion: number) => ({ id, version: expectedVersion + 1, status: "APPROVED", lineCount: 1 })),
+  };
   const setup = { weightPlaces: 2, pricePlaces: 2, version: 1, updatedAt: "2026-11-03T02:00:00.000Z", updatedBy: null };
   const decimalSetup = {
     get: vi.fn(async () => ({ setup })),
@@ -75,6 +80,7 @@ async function startHttp(authReader = vi.fn(async () => ({
     memoOutstanding: {} as unknown as MemoOutstandingService,
     reserve: {} as unknown as ReserveService,
     purchaseOrder: {} as never,
+    purchase: purchase as never,
   });
   const handler = createHTTPHandler({ router, createContext: ({ req }) => adapter.create(req) });
   const server = createServer(handler);
@@ -86,7 +92,7 @@ async function startHttp(authReader = vi.fn(async () => ({
     .setIssuer(issuer).setAudience("gms-domain-api").setSubject("user-1")
     .setIssuedAt(1_800_000_000).setNotBefore(1_800_000_000).setExpirationTime(1_800_000_900).sign(privateKey);
   const baseUrl = `http://127.0.0.1:${address.port}`;
-  return { baseUrl, url: `${baseUrl}/customer.list?input=${encodeURIComponent(JSON.stringify({ limit: 25 }))}`, token, customer, vendor, companyProfile, stoneMaster, decimalSetup, authReader, checkLicense, fetcher };
+  return { baseUrl, url: `${baseUrl}/customer.list?input=${encodeURIComponent(JSON.stringify({ limit: 25 }))}`, token, customer, vendor, companyProfile, stoneMaster, decimalSetup, purchase, authReader, checkLicense, fetcher };
 }
 
 afterEach(async () => {
@@ -184,6 +190,50 @@ describe("master HTTP/tRPC adapter integration", () => {
     expect(saved.status, savedBody).toBe(200);
     expect(JSON.parse(savedBody) as unknown).toMatchObject({ result: { data: { setup: { weightPlaces: 3, pricePlaces: 0, version: 2, updatedBy: "user-1" } } } });
     expect(editor.decimalSetup.save).toHaveBeenCalledWith("user-1", { weightPlaces: 3, pricePlaces: 0, expectedVersion: 1 });
+  });
+
+  it("IT-PU-B07 purchase: a query and the approve mutation pass JWT, live authorization, license, grant and CSRF over HTTP", async () => {
+    const grants = (permissions: string[]) => vi.fn(async () => ({
+      session_id: "sid-1", user_id: "user-1", session_expires_at: new Date("2027-02-01T00:00:00Z"),
+      account_active: true, account_role: "user", permissions, location_keys: [],
+    }));
+    const csrf = { origin, "x-gms-csrf": "1", "sec-fetch-site": "same-origin", "content-type": "application/json" };
+    const ID = "0b9f3c4e-1d2a-4b3c-8d4e-5f6a7b8c9d0e";
+    const pickerUrl = (baseUrl: string, input: unknown) => `${baseUrl}/purchase.memoStock?input=${encodeURIComponent(JSON.stringify(input))}`;
+    const approveBody = JSON.stringify({ id: ID, expectedVersion: 3 });
+
+    const viewer = await startHttp(grants(["purchase:VIEW"]));
+    const picked = await fetch(pickerUrl(viewer.baseUrl, { vendorId: ID, currency: "THB" }), { headers: { cookie: `gms_access=${viewer.token}` } });
+    expect(picked.status).toBe(200);
+    expect(await picked.json()).toMatchObject({ result: { data: { items: [], counts: { all: 0, sold: 0, inStock: 0 } } } });
+    expect(viewer.purchase.memoStock).toHaveBeenCalledWith(expect.objectContaining({ vendorId: ID, currency: "THB", status: "ALL", limit: 50 }));
+    // Validation after the grant, with contract field errors.
+    const bad = await fetch(pickerUrl(viewer.baseUrl, { vendorId: ID, currency: "THB", from: "2026-01-01", to: "2027-01-05" }), { headers: { cookie: `gms_access=${viewer.token}` } });
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toMatchObject({ error: { data: { domainCode: "VALIDATION_ERROR", fieldErrors: [{ path: "to", code: "range_too_long" }] } } });
+    // VIEW alone cannot approve.
+    const denied = await fetch(`${viewer.baseUrl}/purchase.approve`, { method: "POST", headers: { cookie: `gms_access=${viewer.token}`, ...csrf }, body: approveBody });
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({ error: { data: { domainCode: "PERMISSION_DENIED" } } });
+    // memoStock.list is not opened to purchase:VIEW (SA-PU-12).
+    const memoStockList = await fetch(`${viewer.baseUrl}/memoStock.list?input=${encodeURIComponent(JSON.stringify({ vendorId: ID }))}`, { headers: { cookie: `gms_access=${viewer.token}` } });
+    expect(memoStockList.status).toBe(403);
+
+    const approver = await startHttp(grants(["purchase:APPROVE"]));
+    const noCsrf = await fetch(`${approver.baseUrl}/purchase.approve`, { method: "POST", headers: { cookie: `gms_access=${approver.token}`, "content-type": "application/json" }, body: approveBody });
+    expect(noCsrf.status).toBe(403);
+    const approved = await fetch(`${approver.baseUrl}/purchase.approve`, { method: "POST", headers: { cookie: `gms_access=${approver.token}`, ...csrf }, body: approveBody });
+    const approvedBody = await approved.text();
+    expect(approved.status, approvedBody).toBe(200);
+    expect(JSON.parse(approvedBody) as unknown).toMatchObject({ result: { data: { id: ID, version: 4, status: "APPROVED", lineCount: 1 } } });
+    expect(approver.purchase.approve).toHaveBeenCalledWith("user-1", ID, 3);
+    expect(approver.authReader).toHaveBeenCalledWith("user-1", "sid-1");
+    expect(approver.checkLicense).toHaveBeenCalledWith("user-1", "sid-1");
+
+    const unlicensed = await startHttp(grants(["purchase:VIEW"]), "DENIED");
+    const licence = await fetch(pickerUrl(unlicensed.baseUrl, { vendorId: ID, currency: "THB" }), { headers: { cookie: `gms_access=${unlicensed.token}` } });
+    expect(licence.status).toBe(403);
+    expect(unlicensed.purchase.memoStock).not.toHaveBeenCalled();
   });
 
   it("IT-MAUTH-03 rejects bad mutation CSRF before JWKS, auth view, license, or customer/vendor services", async () => {

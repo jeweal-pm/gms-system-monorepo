@@ -8,7 +8,7 @@ import { dec, div, mul, toFixed, ZERO } from "../../lib/decimal";
 import { CER_TYPES, toOptions, type Option } from "../../lib/options";
 import { ATTRIBUTE_KEYS, rebuildStoneCode } from "../../lib/stone-code";
 import { DiscountPair } from "../DiscountPair";
-import { useDocumentKind } from "../../document-kind";
+import { DEFAULT_PRICE_TITLE, useDocumentKind } from "../../document-kind";
 import { useLineOptions, useRefreshLineOptions } from "../../options-context";
 import { isFilledLine, MAX_LINE_PHOTOS, type QuotationFormValues } from "../../schema";
 import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
@@ -233,7 +233,7 @@ export function ItemEditorPanel({
           <Field label="Price Unit">
             <FormSelect<QuotationFormValues> compact disabled={readOnly || stockQuantity} name={name("priceUnit")} options={PRICE_UNITS} />
           </Field>
-          <Field label="Sale Price" error={stockQuantity ? lineErrors?.unitPrice?.message : undefined}>
+          <Field label={kind.priceTitle ?? DEFAULT_PRICE_TITLE} error={stockQuantity ? lineErrors?.unitPrice?.message : undefined}>
             <NumberInput compact decimals={nf.priceInputDecimals} placeholder="0.00" suffix={currency || undefined} {...register(name("unitPrice"))} />
           </Field>
           {/* Owner 2026-10-27: typing either one fills the other; the Amount shows in the table, not here. */}
@@ -243,7 +243,7 @@ export function ItemEditorPanel({
             value={line.discountValue}
             base={lineGross(line)}
             currency={currency}
-            disabled={readOnly}
+            disabled={readOnly || (fromStock && Boolean(kind.lockStockDiscount))}
             percentError={lineErrors?.discountValue?.message}
             onChange={(type, value) => {
               set("discountType", type);
