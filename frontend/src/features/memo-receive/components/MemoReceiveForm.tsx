@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { DISCARD_CHANGES_CONFIRM, deleteDocumentConfirm, useConfirm } from "@/features/quotation/components/use-confirm";
 import { CircleCheck, FileSearch, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -78,6 +79,7 @@ export function MemoReceiveForm({ initial, access }: { initial?: MemoReceiveForm
   const [railPanel, setRailPanel] = useState<RailPanel>(null);
   const [checkedKeys, setCheckedKeys] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [approving, setApproving] = useState(false);
 
   const form = useForm<MemoReceiveFormValues>({ resolver: zodResolver(memoReceiveSchema), defaultValues: initial ?? emptyMemoReceive() });
@@ -162,8 +164,8 @@ export function MemoReceiveForm({ initial, access }: { initial?: MemoReceiveForm
     () => setToast("Please complete the required fields"),
   );
 
-  const onCancel = () => {
-    if (formState.isDirty && !window.confirm("Discard unsaved changes?")) return;
+  const onCancel = async () => {
+    if (formState.isDirty && !(await confirm(DISCARD_CHANGES_CONFIRM))) return;
     reset(saved ?? emptyMemoReceive());
     setMode(saved ? "view" : "edit");
     setEditorOpen(false);
@@ -171,7 +173,7 @@ export function MemoReceiveForm({ initial, access }: { initial?: MemoReceiveForm
   };
 
   const onDelete = async () => {
-    if (!saved?.id || !saved.version || !window.confirm(`Delete ${saved.docNo}?`)) return;
+    if (!saved?.id || !saved.version || !(await confirm(deleteDocumentConfirm(saved.docNo)))) return;
     try {
       await writes.remove({ id: saved.id, expectedVersion: saved.version });
       await writes.invalidate();
@@ -201,7 +203,7 @@ export function MemoReceiveForm({ initial, access }: { initial?: MemoReceiveForm
   };
 
   const onRefresh = async () => {
-    if (!readOnly && formState.isDirty && !window.confirm("Discard unsaved changes?")) return;
+    if (!readOnly && formState.isDirty && !(await confirm(DISCARD_CHANGES_CONFIRM))) return;
     await reloadSaved();
     setToast("Refreshed");
   };
@@ -294,7 +296,7 @@ export function MemoReceiveForm({ initial, access }: { initial?: MemoReceiveForm
                   )
                 }
                 actions={{
-                  onCancel,
+                  onCancel: () => void onCancel(),
                   onSave: () => void onSave(),
                   onEdit: () => setMode("edit"),
                   onDelete: () => void onDelete(),
@@ -396,6 +398,7 @@ export function MemoReceiveForm({ initial, access }: { initial?: MemoReceiveForm
             onCancel={() => setApproving(false)}
             onConfirm={() => void onApprove()}
           />
+          {confirmDialog}
           {toast && <Toast message={toast} onClose={() => setToast(null)} />}
         </FormProvider>
       </LinePhotoContext.Provider>

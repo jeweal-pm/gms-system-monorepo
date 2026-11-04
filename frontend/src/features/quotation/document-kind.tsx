@@ -38,10 +38,23 @@ export type DocumentKind = {
    * the picker instead of the row panel, so nothing can be keyed in by hand.
    */
   pickOnly?: boolean;
+  /**
+   * Title of the price column and the row-panel price field (purchase Q-PU-14: "Price", a buying cost). Default
+   * "Sale Price", which every customer and memo document keeps.
+   */
+  priceTitle?: string;
+  /**
+   * From Stock rows take no line discount: the row panel's discount pair is locked on them (purchase FE-PU-010, SA D8).
+   * Default false, so every other document keeps its editable discount.
+   */
+  lockStockDiscount?: boolean;
   /** Stone choices when they don't come from `quotation.options`. */
   stone?: StoneChoices;
   uploadPhoto: (file: File) => Promise<PhotoRef>;
 };
+
+/** The price title of a kind without its own (`DocumentKind.priceTitle`). */
+export const DEFAULT_PRICE_TITLE = "Sale Price";
 
 export const QUOTATION_KIND: DocumentKind = {
   stockId: "from-stock",

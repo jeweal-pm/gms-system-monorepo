@@ -18,6 +18,7 @@ import type { MemoStockService } from "../../src/trade-document/memo-stock.servi
 import type { MemoOutstandingService } from "../../src/trade-document/memo-outstanding.service";
 import type { ReserveService } from "../../src/trade-document/reserve.service";
 import type { PurchaseOrderService } from "../../src/purchase-order/purchase-order.service";
+import type { PurchaseService } from "../../src/purchase/purchase.service";
 import { customerBody, withVersion } from "../partner-shared/fixtures";
 
 vi.mock("../../src/database/prisma-client", async () => (await import("../partner-shared/prisma-fake")).prismaModule);
@@ -46,6 +47,10 @@ const memoReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: 
 const memoOutstanding = { vendorSummary: vi.fn(), vendorList: vi.fn(), vendorItems: vi.fn(), vendorOptions: vi.fn(), customerSummary: vi.fn(), customerList: vi.fn(), customerItems: vi.fn(), customerOptions: vi.fn() };
 const reserve = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
 const purchaseOrder = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
+const purchase = {
+  list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), memoStock: vi.fn(), purchaseOrderLines: vi.fn(),
+  create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn(),
+};
 const router = createMasterRouter({
   customer: customer as unknown as CustomerService,
   vendor: vendor as unknown as VendorService,
@@ -63,6 +68,7 @@ const router = createMasterRouter({
   memoOutstanding: memoOutstanding as unknown as MemoOutstandingService,
   reserve: reserve as unknown as ReserveService,
   purchaseOrder: purchaseOrder as unknown as PurchaseOrderService,
+  purchase: purchase as unknown as PurchaseService,
 });
 
 function context(grants: string[], overrides: Partial<MasterContext> = {}): MasterContext {
@@ -73,7 +79,7 @@ function context(grants: string[], overrides: Partial<MasterContext> = {}): Mast
 }
 
 beforeEach(() => {
-  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(decimalSetup), ...Object.values(currency), ...Object.values(quotation), ...Object.values(memoOut), ...Object.values(memoOutReturn), ...Object.values(memoReceive), ...Object.values(memoStock), ...Object.values(memoReturn), ...Object.values(memoOutstanding), ...Object.values(reserve), ...Object.values(purchaseOrder)]) fn.mockReset().mockResolvedValue({ ok: true });
+  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(decimalSetup), ...Object.values(currency), ...Object.values(quotation), ...Object.values(memoOut), ...Object.values(memoOutReturn), ...Object.values(memoReceive), ...Object.values(memoStock), ...Object.values(memoReturn), ...Object.values(memoOutstanding), ...Object.values(reserve), ...Object.values(purchaseOrder), ...Object.values(purchase)]) fn.mockReset().mockResolvedValue({ ok: true });
 });
 
 describe("staged master domain tRPC boundary", () => {
@@ -721,5 +727,87 @@ describe("staged master domain tRPC boundary", () => {
 
     await router.createCaller(context(["purchase-order:VIEW"])).currency.options();
     expect(currency.options).toHaveBeenCalledTimes(1);
+  });
+
+  it("GP-MT-PU purchase: exact grant per procedure, CSRF on writes and approve, validation after the grant with field errors, currency options with purchase VIEW, memoStock.list not opened", async () => {
+    const ID2 = "0b9f3c4e-1d2a-4b3c-8d4e-5f6a7b8c9d0f";
+    const ID3 = "0b9f3c4e-1d2a-4b3c-8d4e-5f6a7b8c9d10";
+    const base = { stoneCodeId: null, stoneCode: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "",
+      lot: "", location: "", cerType: "", cerNo: "", pcs: 1, weightCt: "1", priceUnit: "PER_CT" as const, unitPrice: "100", discount: { type: "NONE" as const, value: "0" }, itemNote: "", photoIds: [] as string[] };
+    const manual = { ...base, source: "MANUAL" as const };
+    const stock = { ...base, source: "STOCK" as const, memoStockId: ID2, memoGroup: "IN_STOCK" as const };
+    const fromPo = { ...base, source: "PURCHASE_ORDER" as const, purchaseOrderLineId: ID3 };
+    const body = { docDate: "2026-11-04", dueDate: "2026-12-04", currency: "THB", exchangeRate: null, ref: "", documentNote: "", lines: [manual, stock, fromPo],
+      discount: { type: "NONE" as const, value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null, vendorId: ID, addressId: ID2 };
+    const versioned = { id: ID, expectedVersion: 1 };
+    const picker = { vendorId: ID, currency: "THB" };
+    const all = ["VIEW", "ADD", "EDIT", "DELETE", "APPROVE"].map((action) => `purchase:${action}`);
+    const caller = router.createCaller(context(all));
+
+    await caller.purchase.list({ q: "PU", status: "APPROVED", partyId: ID });
+    await caller.purchase.get({ id: ID });
+    await caller.purchase.nextNumber({ docDate: "2026-11-04" });
+    await caller.purchase.options({ vendorId: ID });
+    await caller.purchase.memoStock({ ...picker, status: "SOLD" });
+    await caller.purchase.purchaseOrderLines(picker);
+    await caller.purchase.create(body);
+    await caller.purchase.update({ ...body, lines: [{ ...manual, id: ID3 }, stock], ...versioned });
+    await caller.purchase.delete(versioned);
+    await caller.purchase.approve(versioned);
+    expect(purchase.list).toHaveBeenCalledWith(expect.objectContaining({ status: "APPROVED", partyId: ID, limit: 50 }));
+    expect(purchase.get).toHaveBeenCalledWith(ID);
+    expect(purchase.options).toHaveBeenCalledWith(ID);
+    expect(purchase.memoStock).toHaveBeenCalledWith(expect.objectContaining({ vendorId: ID, currency: "THB", status: "SOLD", limit: 50 }));
+    expect(purchase.purchaseOrderLines).toHaveBeenCalledWith(expect.objectContaining({ status: "ALL", limit: 50 }));
+    expect(purchase.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ vendorId: ID, lines: [expect.objectContaining({ source: "MANUAL" }), expect.objectContaining({ memoStockId: ID2, memoGroup: "IN_STOCK" }), expect.objectContaining({ purchaseOrderLineId: ID3 })] }));
+    expect(purchase.update).toHaveBeenCalledWith("user-1", ID, 1, expect.objectContaining({ lines: [expect.objectContaining({ id: ID3 }), expect.anything()] }));
+    expect(purchase.delete).toHaveBeenCalledWith("user-1", ID, 1);
+    expect(purchase.approve).toHaveBeenCalledWith("user-1", ID, 1);
+
+    // Exact grant per procedure; grants on other menus (purchase-order, memo-receive) are refused.
+    const only = (action: string) => router.createCaller(context([`purchase:${action}`]));
+    await expect(only("VIEW").purchase.create(body)).rejects.toMatchObject({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+    await expect(only("ADD").purchase.update({ ...body, ...versioned })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(only("EDIT").purchase.delete(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(only("EDIT").purchase.approve(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(only("ADD").purchase.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(only("ADD").purchase.memoStock(picker)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["purchase-order:VIEW", "memo-receive:VIEW"])).purchase.purchaseOrderLines(picker)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["purchase-order:APPROVE"])).purchase.approve(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    // CSRF on every mutation, checked before the service.
+    const noCsrf = router.createCaller(context(all, { csrfVerified: false }));
+    await expect(noCsrf.purchase.create(body)).rejects.toMatchObject({ code: "FORBIDDEN", message: "CSRF_INVALID" });
+    await expect(noCsrf.purchase.update({ ...body, ...versioned })).rejects.toMatchObject({ message: "CSRF_INVALID" });
+    await expect(noCsrf.purchase.delete(versioned)).rejects.toMatchObject({ message: "CSRF_INVALID" });
+    await expect(noCsrf.purchase.approve(versioned)).rejects.toMatchObject({ message: "CSRF_INVALID" });
+    // Validation runs after the grant: a user without the grant learns nothing about the input shape.
+    await expect(only("VIEW").purchase.create({ ...body, lines: [] })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(purchase.create).toHaveBeenCalledTimes(1);
+    expect(purchase.approve).toHaveBeenCalledTimes(1);
+
+    // UT-PU-B01 (router part): contract field errors.
+    const fieldErrors = async (promise: Promise<unknown>) => {
+      try { await promise; } catch (error) { return (error as { cause?: { getResponse(): { error: { fieldErrors: unknown } } } }).cause?.getResponse().error.fieldErrors; }
+      throw new Error("expected a refusal");
+    };
+    expect(await fieldErrors(caller.purchase.create({ ...body, lines: [{ ...stock, discount: { type: "PERCENT", value: "5" } }] }))).toEqual([{ path: "lines.0.discount", code: "not_allowed" }]);
+    expect(await fieldErrors(caller.purchase.create({ ...body, lines: [{ ...manual, memoStockId: ID2 }] }))).toEqual([{ path: "lines.0.memoStockId", code: "not_allowed" }]);
+    expect(await fieldErrors(caller.purchase.create({ ...body, lines: [stock, { ...stock }] }))).toEqual([{ path: "lines.1.memoStockId", code: "duplicate" }]);
+    expect(await fieldErrors(caller.purchase.create({ ...body, lines: [{ ...manual, id: ID3 }] } as never))).toEqual([{ path: "lines.0", code: "unrecognized_keys" }]);
+    expect(await fieldErrors(caller.purchase.memoStock({ ...picker, status: "RESERVED" } as never))).toEqual([{ path: "status", code: "invalid_value" }]);
+    expect(await fieldErrors(caller.purchase.list({ from: "2026-02-01", to: "2026-01-01" }))).toEqual([{ path: "to", code: "before_from" }]);
+    expect(purchase.create).toHaveBeenCalledTimes(1);
+
+    // Domain codes kept.
+    purchase.approve.mockRejectedValueOnce(new HttpException({ error: { code: "PURCHASE_PENDING_SHORT", message: "x", fieldErrors: [{ path: "lines.0.pcs", code: "exceeds_available" }] } }, 409));
+    await expect(caller.purchase.approve(versioned)).rejects.toMatchObject({ code: "CONFLICT", message: "PURCHASE_PENDING_SHORT" });
+    purchase.create.mockRejectedValueOnce(new HttpException({ error: { code: "PURCHASE_REFERENCE_INVALID", message: "x" } }, 422));
+    await expect(caller.purchase.create(body)).rejects.toMatchObject({ code: "UNPROCESSABLE_CONTENT", message: "PURCHASE_REFERENCE_INVALID" });
+
+    // currency.options with purchase:VIEW; memoStock.list still refuses purchase:VIEW (SA-PU-12).
+    await router.createCaller(context(["purchase:VIEW"])).currency.options();
+    expect(currency.options).toHaveBeenCalledTimes(1);
+    await expect(router.createCaller(context(["purchase:VIEW"])).memoStock.list({ vendorId: ID })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(memoStock.list).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "../../src/generated/prisma/client";
-import { formatStockId, netUnitPrice, stockIdYear } from "../../src/trade-document/memo-receive.service";
+import { HttpException } from "@nestjs/common";
+import type { Tx } from "../../src/common/persistence";
+import { formatStockId, issueStockIds, netUnitPrice, stockIdYear } from "../../src/trade-document/memo-receive.service";
+import { purchaseStockIdExhausted } from "../../src/purchase/purchase.errors";
 import { encodeStockCursor, pendingAmount, totalPerItem } from "../../src/trade-document/memo-stock.service";
 import { createMemoReceiveSchema, memoStockListSchema, updateMemoReceiveSchema } from "../../src/trade-document/memo-schemas";
 
@@ -78,6 +81,30 @@ describe("Stock ID (SA-MR-04)", () => {
     expect(formatStockId(26, 1)).toBe("260001");
     expect(formatStockId(27, 9999)).toBe("279999");
     expect(formatStockId(5, 42)).toBe("050042");
+  });
+});
+
+describe("issueStockIds (SA-MR-04, purchase SA-PU-10)", () => {
+  const counter = (lastNo: number | null) => ({ $queryRaw: vi.fn(async () => (lastNo === null ? [] : [{ last_no: lastNo }])) }) as unknown as Tx & { $queryRaw: ReturnType<typeof vi.fn> };
+  const code = async (promise: Promise<unknown>) => {
+    try { await promise; } catch (error) { return error instanceof HttpException ? (error.getResponse() as { error: { code: string } }).error.code : String(error); }
+    return "issued";
+  };
+  const now = new Date("2026-11-04T03:00:00Z");
+
+  it("UT-PU-B05 issues consecutive ids from the shared counter; none needed → no query", async () => {
+    const tx = counter(12);
+    expect(await issueStockIds(tx, 3, now)).toEqual(["260010", "260011", "260012"]);
+    expect(tx.$queryRaw).toHaveBeenCalledOnce();
+    const idle = counter(1);
+    expect(await issueStockIds(idle, 0, now, purchaseStockIdExhausted)).toEqual([]);
+    expect(idle.$queryRaw).not.toHaveBeenCalled();
+  });
+
+  it("UT-PU-B05 an exhausted year throws the caller's error: Memo Receive keeps its default, Purchase passes its own", async () => {
+    expect(await code(issueStockIds(counter(null), 2, now))).toBe("MEMO_RECEIVE_STOCK_ID_EXHAUSTED");
+    expect(await code(issueStockIds(counter(null), 2, now, purchaseStockIdExhausted))).toBe("PURCHASE_STOCK_ID_EXHAUSTED");
+    expect(await code(issueStockIds(counter(10_000), 1, now, purchaseStockIdExhausted))).toBe("PURCHASE_STOCK_ID_EXHAUSTED");
   });
 });
 

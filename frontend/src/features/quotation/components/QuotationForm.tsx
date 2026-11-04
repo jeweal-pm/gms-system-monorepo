@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { DISCARD_CHANGES_CONFIRM, deleteDocumentConfirm, useConfirm } from "./use-confirm";
 import { Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTabDirty, useTabDocument, useTabReplace } from "@/features/home/tabs/tab-host";
@@ -47,6 +48,7 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
   const [fromStockOpen, setFromStockOpen] = useState(false);
   const [checkedKeys, setCheckedKeys] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<string | null>(null);
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   const form = useForm<QuotationFormValues>({
     resolver: zodResolver(quotationSchema),
@@ -128,8 +130,8 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
 
 
 
-  const onCancel = () => {
-    if (formState.isDirty && !window.confirm("Discard unsaved changes?")) return;
+  const onCancel = async () => {
+    if (formState.isDirty && !(await confirm(DISCARD_CHANGES_CONFIRM))) return;
     reset(saved ?? emptyQuotation());
     setMode(saved ? "view" : "edit");
     setEditorOpen(false);
@@ -137,7 +139,7 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
   };
 
   const onDelete = async () => {
-    if (!saved?.id || !saved.version || !window.confirm(`Delete ${saved.docNo}?`)) return;
+    if (!saved?.id || !saved.version || !(await confirm(deleteDocumentConfirm(saved.docNo)))) return;
     try {
       await mutations.remove.mutateAsync({ id: saved.id, expectedVersion: saved.version });
       await mutations.invalidate();
@@ -244,7 +246,7 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
             canEdit={Boolean(saved) && access.edit && isEditableStatus(status)}
             canDelete={Boolean(saved) && access.delete && isEditableStatus(status)}
             actions={{
-              onCancel,
+              onCancel: () => void onCancel(),
               onSave: () => void onSave(),
               onEdit: () => setMode("edit"),
               onDelete: () => void onDelete(),
@@ -359,6 +361,7 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
           onConfirm={fillFromStock}
         />
       )}
+      {confirmDialog}
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </FormProvider>
     </QuotationOptionsContext.Provider>
