@@ -8,6 +8,25 @@ import { dec } from "@/features/quotation/lib/decimal";
 import { formatMoneyText, formatUnitPrice, formatWeight } from "@/features/quotation/lib/format";
 import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import { memoStockLoadError, useMemoStock, type MemoStockItem } from "./memo-stock-api";
+import { stockRef, stockRefLabel, type StockRefSource } from "./stock-ref";
+
+/**
+ * Ref. column (owner 2026-11-04/05, after Location): the transaction the item came from — the Memo Receive no. today,
+ * a Load no. once the Load page exists — in bold with its Doc Date under it.
+ */
+export function RefCell({ item }: { item: StockRefSource }) {
+  const ref = stockRef(item);
+  if (!ref) return <td className="px-3 py-4">—</td>;
+  return (
+    <td className="px-3 py-4">
+      <div className="font-medium">
+        {ref.docNo}
+        {ref.type === "LOAD" && <span className="ml-1.5 text-[11px] font-normal text-[#6B7480]">Load</span>}
+      </div>
+      <div className="mt-1 text-xs text-[#6B7480]">{ref.dateText}</div>
+    </td>
+  );
+}
 
 /**
  * Memo Stock picker (shared):
@@ -50,7 +69,7 @@ export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText
   const stock = useMemoStock({ vendorId, currency, q, from, to });
   const items = (stock.data?.pages ?? []).flatMap((page) => page.items).filter((item) => !pickedIds.has(item.id));
   const allChecked = items.length > 0 && items.every((item) => checked.has(item.id));
-  const columns = showPrice ? 11 : 9;
+  const columns = showPrice ? 12 : 10;
   const toggle = (id: string) =>
     setChecked((prev) => {
       const next = new Set(prev);
@@ -113,8 +132,9 @@ export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText
                       />
                     </th>
                     <th rowSpan={2} className="w-8 font-normal text-[#6B7480]">#</th>
-                    <Th title="Stock ID" sub="Lot" />
+                    <Th title="Stone Code" sub="Stock ID · Lot" />
                     <Th title="Location" />
+                    <Th title="Ref." sub="Doc Date" />
                     <Th title="Stone" sub="Shape · Size" />
                     <Th title="Color · Clarity" sub="Cutting · Quality" />
                     <Th title="Cer Type" sub="Cer No." />
@@ -148,7 +168,7 @@ export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText
                       <td className="px-4 py-4">
                         <input
                           type="checkbox"
-                          aria-label={`Select ${item.stockId} from ${item.memoReceive.docNo}`}
+                          aria-label={`Select ${item.stockId} from ${stockRefLabel(item)}`}
                           className="size-5 accent-[#0E5E63]"
                           checked={checked.has(item.id)}
                           onChange={() => toggle(item.id)}
@@ -157,10 +177,12 @@ export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText
                       </td>
                       <td className="py-4 text-[#6B7480]">{index + 1}</td>
                       <td className="px-3 py-4">
-                        <div className="font-medium">{item.stockId}</div>
+                        {/* Owner 2026-11-05: Stone Code first (bold), then Stock ID with the lot badge. */}
+                        <div className="font-medium">{item.stoneCode || "—"}</div>
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6B7480]">
-                          {item.lot && <span>{item.lot}</span>}
-                          <span>from {item.memoReceive.docNo}{vendorId === undefined ? ` · ${item.vendor.code}` : ""}</span>
+                          <span>{item.stockId}</span>
+                          {item.lot && <Badge variant="lot">{item.lot}</Badge>}
+                          {vendorId === undefined && <span>{item.vendor.code}</span>}
                         </div>
                         {item.itemNote && (
                           <div className="mt-1 flex items-center gap-1.5 text-xs text-[#6B7480]">
@@ -169,6 +191,7 @@ export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText
                         )}
                       </td>
                       <td className="px-3 py-4">{item.location}</td>
+                      <RefCell item={item} />
                       <td className="px-3 py-4">
                         <div className="font-medium">{item.stone}</div>
                         <div className="mt-1 text-xs text-[#6B7480]">{[item.shape, item.size].filter(Boolean).join(" · ")}</div>

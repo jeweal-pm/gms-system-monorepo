@@ -18,10 +18,11 @@ import { gatewayError } from "../partner/helpers";
 const ID = "11111111-1111-4111-8111-111111111111";
 const STOCK = "22222222-2222-4222-8222-222222222222";
 const stockItem: MemoStockItem = {
-  id: STOCK, stockId: "260003", lot: "L-2607-007", location: "Memo", itemNote: "", stone: "Tourmaline", shape: "Oval", size: "7.2×5.4 mm", color: "Red", clarity: "VVS",
+  id: STOCK, stockId: "260003", stoneCode: "", lot: "L-2607-007", location: "Memo", itemNote: "", stone: "Tourmaline", shape: "Oval", size: "7.2×5.4 mm", color: "Red", clarity: "VVS",
   cutting: "Excellent", quality: "AAA", cerType: "GIA", cerNo: "GRS2024-081233", receivedPcs: 2, receivedWeightCt: "1.360", pendingPcs: 2, pendingWeightCt: "1.360",
   priceUnit: "CTS", unitPrice: "12500.00", netUnitPrice: "12500.0000", currency: "THB", amount: "17000.00", vendor: { id: ID, code: "V001", name: "Aom" },
   memoReceive: { id: ID, docNo: "1", docDate: "2026-10-29", dueDate: "2026-11-29" },
+  ref: { type: "MEMO_RECEIVE" as const, id: ID, docNo: "1", docDate: "2026-10-29" },
 };
 const noop = () => undefined;
 const config = customerStockConfig({

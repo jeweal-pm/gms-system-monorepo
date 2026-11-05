@@ -281,8 +281,8 @@ describe("IT-PU-03 Add Memo Stock wired (FE-PU-004)", () => {
     expect(html).toContain('aria-label="Sold, 0"');
     expect(html).toContain("Still in stock on memo · buy now or return later");
     expect(html).not.toContain("Sold to customers");
-    expect(html).toContain(">260003</div>");
-    expect(html).not.toContain(">260002</div>");
+    expect(html).toContain(">260003 · L-2607-007</div>");
+    expect(html).not.toContain(">260002 · L-2607-007</div>");
     expect(html).toContain("Load more");
     expect(calls).toEqual([]);
   });
@@ -313,8 +313,10 @@ describe("IT-PU-04 Add Purchase Order wired (FE-PU-009)", () => {
     });
     const html = render(queryClient, createElement(PurchaseOrderPicker, { vendorId: ID, currency: "THB", excluded: new Set<string>(), onCancel: () => undefined, onConfirm: () => undefined }));
     expect(html).toContain(">Add Purchase Order</h2>");
-    expect(html).toContain("PO2611001 · 01/11/26 · Due 30/11/26");
-    expect(html).toContain("Partly purchased");
+    expect(html).toContain(">PO2611001</div>");
+    expect(html).toContain(">01/11/2026</div>");
+    expect(html).not.toContain('role="tablist"');
+    expect(html).not.toContain("Partly purchased");
     expect(html).not.toContain("Load more");
     const empty = seeded(ALL);
     empty.setQueryData(getQueryKey(masterTrpc.purchase.purchaseOrderLines, input, "infinite"), { pages: [{ items: [], nextCursor: null, counts: { all: 0, open: 0, partlyPurchased: 0 } }], pageParams: [null] });
@@ -331,17 +333,20 @@ describe("IT-PU-04 Add Purchase Order wired (FE-PU-009)", () => {
   });
 });
 
-describe("TC-PU-07 regression: the shared Memo Stock picker is unchanged (Memo Return / Memo Out)", () => {
-  it("MemoStockModal keeps its two-row Pending header, 'from {Memo No.}' and no tabs or groups", () => {
+describe("TC-PU-07 regression: the shared Memo Stock picker keeps its layout (Memo Return / Memo Out), plus the rev 3 Ref. column", () => {
+  it("MemoStockModal keeps its two-row Pending header and no tabs or groups; Ref. shows the memo no. over its Doc Date", () => {
     const queryClient = seeded(["memo-return:VIEW"]);
     const filter = { vendorId: ID, currency: "THB", q: "", from: "", to: "" };
     queryClient.setQueryData(getQueryKey(masterTrpc.memoStock.list, memoStockInput(filter)!, "infinite"), {
-      pages: [{ items: [{ id: STOCK, stockId: "260003", lot: "L-1", location: "Memo", itemNote: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", cerType: "", cerNo: "", receivedPcs: 2, receivedWeightCt: "1.000", pendingPcs: 2, pendingWeightCt: "1.000", priceUnit: "CTS", unitPrice: "10.00", netUnitPrice: "10.0000", currency: "THB", amount: "10.00", vendor: { id: ID, code: "V001", name: "Aom" }, memoReceive: { id: ID, docNo: "MR-1001", docDate: "2026-10-29", dueDate: "2026-11-29" } }], nextCursor: null }],
+      pages: [{ items: [{ id: STOCK, stockId: "260003", lot: "L-1", location: "Memo", itemNote: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", cerType: "", cerNo: "", receivedPcs: 2, receivedWeightCt: "1.000", pendingPcs: 2, pendingWeightCt: "1.000", priceUnit: "CTS", unitPrice: "10.00", netUnitPrice: "10.0000", currency: "THB", amount: "10.00", vendor: { id: ID, code: "V001", name: "Aom" }, memoReceive: { id: ID, docNo: "MR-1001", docDate: "2026-10-29", dueDate: "2026-11-29" }, ref: { type: "MEMO_RECEIVE", id: ID, docNo: "MR-1001", docDate: "2026-10-29" } }], nextCursor: null }],
       pageParams: [null],
     });
     const html = render(queryClient, createElement(MemoStockModal, { title: "Add Memo Stock", vendorId: ID, currency: "THB", showPrice: true, emptyText: "none", pickedIds: new Set<string>(), onCancel: () => undefined, onConfirm: () => undefined }));
     expect(html).toContain(">Pending</th>");
-    expect(html).toContain("from MR-1001");
+    expect(html).toContain(">Ref.</span>");
+    expect(html).toContain('<div class="font-medium">MR-1001</div><div class="mt-1 text-xs text-[#6B7480]">29/10/2026</div>');
+    expect(html).not.toContain("<span>from MR-1001");
+    expect(html).toContain('aria-label="Select 260003 from MR-1001"');
     expect(html).toContain('placeholder="Search Stock ID, Lot, Stone, Cer No."');
     expect(html).not.toContain('role="tablist"');
     expect(html).not.toContain("Still in stock on memo");

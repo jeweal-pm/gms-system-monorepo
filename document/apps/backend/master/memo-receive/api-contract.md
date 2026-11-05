@@ -26,8 +26,11 @@ type MemoStockRow = {
   currency: string; amount: string;                      // lineAmount × pending basis ÷ received basis
   vendor: { id: string; code: string; name: string };
   memoReceive: { id: string; docNo: string; docDate: string; dueDate: string };
+  ref: StockSourceRef;                                   // source transaction (From Stock Ref.); see note below
 };
 ```
+
+**Stock source Ref. (additive, owner 2026-11-04, [changelog](../../../../changelog/2026-11-05-stock-source-ref.md)).** Every item of `memoStock.list` and `purchase.memoStock` also carries `ref: StockSourceRef` = `{ type: "MEMO_RECEIVE" | "LOAD"; id; docNo; docDate }` (`docDate` YYYY-MM-DD, as `memoReceive.docDate`): the source transaction shown as the From Stock **Ref.** Today it is always `{ type: "MEMO_RECEIVE", id: memoReceive.id, docNo: memoReceive.docNo, docDate: memoReceive.docDate }`; `LOAD` is reserved for the future Load document (no Load page or table yet). `memoReceive` is unchanged. Exported once as `STOCK_SOURCE_TYPES` / `StockSourceRef` / `memoReceiveSourceRef` in `backend-api-master/src/trade-document/memo-stock.service.ts`. No migration, permission, search or ordering change.
 
 | Procedure | Permission | Input | Output |
 |---|---|---|---|

@@ -87,3 +87,16 @@ Customer reports go under `document/testing/user-check/` after the manual-tester
 | TC-PU-12 | FE-PU-009 / R2-PO | An approved PO for V in USD with one partly purchased line (*after SA*) | Click Purchase Order, open the PO group, check the line, then OK | Groups per PO; Status "Partly purchased" with the ordered quantity; Pcs/Weight show the outstanding quantity; the row added has Stock ID "Auto" and "from {PO No.}"; toast "Added 1 item from Purchase Order" | as TC-PU-09 | not run |
 | TC-PU-13 | R2-01a / R2-02 | New document, no vendor | Read the empty rows; click Purchase Order | Empty-row text names both buttons; the toast "Choose a vendor first" appears (before R2-D-05: the button is disabled with its reason) | keyboard: the reason is announced | not run |
 | TC-PU-07 (extended) | regression | — | Open Memo Return › Add Memo Stock and Memo Out › From Stock | Unchanged from before revision 2 | — | not run |
+
+### Revision 3 (owner 2026-11-04): picker Ref. / Memo ID / PO No.
+
+| Case ID | Target | Test | Result (2026-11-05) |
+|---|---|---|---|
+| UT-SR-01 | `stockRef` / `stockRefLabel` (`frontend/src/features/trade-document/stock-ref.ts`): `ref` first, `memoReceive` fallback, LOAD type, no source | `frontend/test/trade-document/stock-ref.test.ts` | pass |
+| UT-SR-02 | `RefCell` (`memo-stock-modal.tsx`): bold no. over Doc Date; Load hint; dash | same file | pass |
+| TC-PU-07 (rev 3) | `MemoStockModal` keeps the Pending header and no tabs/groups; Ref. column shows "MR-1001 / 29/10/2026"; no "from MR-1001" sub-line | `frontend/test/purchase/purchase-page.integration.test.ts` | pass |
+| UT-PU-08 (rev 3) | Add Memo Stock: header "Memo ID" / "Stock ID · Lot"; memo no. on top, "{Stock ID} · {Lot}" under it | `frontend/test/purchase/purchase-picker.test.ts`, IT-PU-03 | pass |
+| UT-PU-09 (rev 3) | Add Purchase Order: flat list, no tablist / group rows / Status; columns PO No., Stone Code, …; PO no. over Doc Date; "Auto" + lot badge | `frontend/test/purchase/purchase-picker.test.ts`, IT-PU-04 | pass |
+
+Full frontend run 2026-11-05: `vitest run` 74 files / 705 tests passed, `tsc --noEmit` 0 errors, `eslint .` 0 errors (2 old warnings). Manual browser check of the three dialogs: not run.
+

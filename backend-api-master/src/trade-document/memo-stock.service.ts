@@ -10,6 +10,20 @@ import type { MemoStockListInput } from "./memo-schemas";
 const Decimal = Prisma.Decimal;
 type Dec = Prisma.Decimal;
 
+/**
+ * Source documents a stock item can come from (owner 2026-11-04 "From Stock" Ref.). `LOAD` is reserved for the future
+ * Load document (no Load page/table exists yet); today every Memo Stock item comes from a Memo Receive.
+ */
+export const STOCK_SOURCE_TYPES = ["MEMO_RECEIVE", "LOAD"] as const;
+export type StockSourceType = (typeof STOCK_SOURCE_TYPES)[number];
+/** The transaction a stock item came from, shown as the picker's Ref. (`docDate` is YYYY-MM-DD, like `memoReceive.docDate`). */
+export type StockSourceRef = { type: StockSourceType; id: string; docNo: string; docDate: string };
+
+/** Ref. of a Memo Stock item: its Memo Receive. */
+export function memoReceiveSourceRef(row: { memo_receive_id: string; received_doc_no: string; received_doc_date: Date }): StockSourceRef {
+  return { type: "MEMO_RECEIVE", id: row.memo_receive_id, docNo: row.received_doc_no, docDate: fromDbDate(row.received_doc_date) };
+}
+
 /** One approved line taking quantity off a Memo Stock item; `index` is its line position for error paths. */
 export type MemoStockTake = { memoStockId: string; pcs: number; weightCt: Dec; index: number };
 
@@ -138,6 +152,8 @@ type StockRow = {
   received_doc_no: string;
   received_doc_date: Date;
   due_date: Date;
+  /** The source Memo Receive line's Stone Code snapshot (owner 2026-11-05, From Stock "Stone Code" column). */
+  stone_code: string | null;
 };
 
 const dec = (value: Dec | string) => new Decimal(value.toString());
@@ -195,7 +211,8 @@ export class MemoStockService {
         SELECT id::text AS id, stock_id, lot, location, item_note, stone, shape, size, color, clarity, cutting, quality, cer_type, cer_no,
           received_pcs, received_weight_ct, pending_pcs, pending_weight_ct, price_unit, unit_price, net_unit_price, line_amount, currency_code,
           vendor_id::text AS vendor_id, vendor_code_snapshot, vendor_name_snapshot, memo_receive_id::text AS memo_receive_id,
-          received_doc_no, received_doc_date, due_date
+          received_doc_no, received_doc_date, due_date,
+          (SELECT l.stone_code_snapshot FROM "partner"."memo_receive_line" l WHERE l.id = memo_stock.memo_receive_line_id) AS stone_code
         FROM "partner"."memo_stock"
         WHERE ${Prisma.join(filters, " AND ")}
         ORDER BY received_doc_date DESC, stock_id DESC
@@ -216,6 +233,7 @@ function toStockRow(row: StockRow) {
   return {
     id: row.id,
     stockId: row.stock_id,
+    stoneCode: row.stone_code ?? "",
     lot: row.lot,
     location: row.location as "Memo",
     itemNote: row.item_note,
@@ -239,5 +257,6 @@ function toStockRow(row: StockRow) {
     amount: pendingAmount(row).toFixed(2),
     vendor: { id: row.vendor_id, code: row.vendor_code_snapshot, name: row.vendor_name_snapshot },
     memoReceive: { id: row.memo_receive_id, docNo: row.received_doc_no, docDate: fromDbDate(row.received_doc_date), dueDate: fromDbDate(row.due_date) },
+    ref: memoReceiveSourceRef(row),
   };
 }

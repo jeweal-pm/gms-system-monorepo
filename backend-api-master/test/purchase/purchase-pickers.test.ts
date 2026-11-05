@@ -12,6 +12,7 @@ import {
   toMemoStockRow,
   toPurchaseOrderLineRow,
 } from "../../src/purchase/purchase-pickers";
+import { STOCK_SOURCE_TYPES, memoReceiveSourceRef } from "../../src/trade-document/memo-stock.service";
 
 /**
  * UT-PU-B04 (purchase SA-PU-12/13): picker cursors (encode / strict decode, invalid → VALIDATION_ERROR), the row
@@ -89,10 +90,18 @@ describe("picker cursors (UT-PU-B04)", () => {
 });
 
 describe("picker rows (UT-PU-B04)", () => {
+  it("stock source types: MEMO_RECEIVE today, LOAD reserved for the future Load document", () => {
+    expect(STOCK_SOURCE_TYPES).toEqual(["MEMO_RECEIVE", "LOAD"]);
+    expect(memoReceiveSourceRef({ memo_receive_id: "00000000-0000-4000-8000-0000000000e1", received_doc_no: "MR-3", received_doc_date: new Date("2026-10-30T00:00:00.000Z") }))
+      .toEqual({ type: "MEMO_RECEIVE", id: "00000000-0000-4000-8000-0000000000e1", docNo: "MR-3", docDate: "2026-10-30" });
+  });
+
   it("memo stock row: one row per status, amount by the available basis, sale and locationType always null (D6)", () => {
     expect(toMemoStockRow(memoRow())).toEqual({
       key: "00000000-0000-4000-8000-000000000005:IN_STOCK", memoStockId: "00000000-0000-4000-8000-000000000005", status: "IN_STOCK", stockId: "260042", lot: "L9", itemNote: "n",
       memoReceive: { id: "00000000-0000-4000-8000-0000000000e1", docNo: "MR-3", docDate: "2026-10-30", dueDate: "2026-11-30" },
+      // Owner 2026-11-04 From Stock Ref.: the source transaction; today always the Memo Receive (LOAD is reserved).
+      ref: { type: "MEMO_RECEIVE", id: "00000000-0000-4000-8000-0000000000e1", docNo: "MR-3", docDate: "2026-10-30" },
       location: "Memo", locationType: null, stone: "Sapphire", shape: "Oval", size: "6x4", color: "Blue", clarity: "VS", cutting: "Ex", quality: "AA", cerType: "GIA", cerNo: "C-1",
       availablePcs: 1, availableWeightCt: "0.500", priceUnit: "CTS", unitPrice: "1000.00", netUnitPrice: "950.0000", amount: "475.00", sale: null,
     });

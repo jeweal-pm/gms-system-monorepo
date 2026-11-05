@@ -399,6 +399,8 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
       ["PART", "SOLD"], ["OLD", "SOLD"], ["PART", "IN_STOCK"], ["500", "IN_STOCK"], ["50%_\\", "IN_STOCK"],
     ]);
     expect(all.counts).toEqual({ all: 5, sold: 2, inStock: 3 });
+    // From Stock Ref. (owner 2026-11-04): every row names its source Memo Receive.
+    expect(all.items.map((row) => row.ref)).toEqual(all.items.map((row) => ({ type: "MEMO_RECEIVE", id: row.memoReceive.id, docNo: row.memoReceive.docNo, docDate: row.memoReceive.docDate })));
     expect(all.items[0]).toMatchObject({ key: `${d.id}:SOLD`, availablePcs: 2, availableWeightCt: "1.000", amount: "1000.00", sale: null, locationType: null, location: "Memo", priceUnit: "CTS" });
     expect(all.items[2]).toMatchObject({ key: `${d.id}:IN_STOCK`, availablePcs: 3, availableWeightCt: "1.500", amount: "1500.00" });
 

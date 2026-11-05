@@ -6,9 +6,10 @@ import type { ReactNode } from "react";
 import { useNumberFormat, type NumberFormat } from "@/features/decimal-setup/number-format-provider";
 import { Badge, cx } from "@/features/quotation/components/ui";
 import { dec } from "@/features/quotation/lib/decimal";
-import { formatMoneyText, formatUnitPrice, formatWeight } from "@/features/quotation/lib/format";
+import { formatDate, formatMoneyText, formatUnitPrice, formatWeight } from "@/features/quotation/lib/format";
 import { documentLoadError } from "@/features/trade-document/document-api";
 import { memoStockLoadError } from "@/features/trade-document/memo-stock-api";
+import { stockRefLabel } from "@/features/trade-document/stock-ref";
 import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
 import type { PurchaseMemoStockRow, PurchaseOrderLineRow } from "../form";
@@ -65,7 +66,7 @@ export function usePurchaseMemoStock(vendorId: string, currency: string, filter:
 
 export function usePurchaseOrderLines(vendorId: string, currency: string, filter: PickerFilter<PurchaseOrderTab>) {
   const query = masterTrpc.purchase.purchaseOrderLines.useInfiniteQuery(vendorId && currency ? pickerInput(vendorId, currency, filter) : skipToken, pageOptions);
-  return { data: pickerData<PurchaseOrderLineRow>(query), counts: lastCounts(query) };
+  return { data: pickerData<PurchaseOrderLineRow>(query) };
 }
 
 // ---- shared cells ----
@@ -131,13 +132,13 @@ export function StatusBadge({ tone, children }: { tone: "sold" | "inStock" | "op
   return <span className={cx("inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium", tones[tone])}>{children}</span>;
 }
 
-const columns = (first: PickerColumn, status: PickerColumn): PickerColumn[] => [
-  first,
+const columns = (lead: PickerColumn[], status: PickerColumn | null): PickerColumn[] => [
+  ...lead,
   { title: "Location" },
   { title: "Stone", sub: "Shape · Size" },
   { title: "Color · Clarity", sub: "Cutting · Quality" },
   { title: "Cer Type", sub: "Cer No." },
-  status,
+  ...(status ? [status] : []),
   { title: "Pcs", sub: "Weight", right: true },
   { title: "Price", sub: "Unit", right: true, divider: true },
   { title: "Amount", right: true },
@@ -145,7 +146,8 @@ const columns = (first: PickerColumn, status: PickerColumn): PickerColumn[] => [
 
 // ---- Add Memo Stock (R2-MS) ----
 
-export const MEMO_STOCK_COLUMNS = columns({ title: "Stock ID", sub: "Lot · Memo No.", className: "w-[240px]" }, { title: "Status", sub: "Sale Invoice · Customer" });
+/** Rev 3 (owner 2026-11-04): the first column leads with the Memo ID; the Stock ID and lot sit under it. */
+export const MEMO_STOCK_COLUMNS = columns([{ title: "Memo ID", sub: "Stock ID · Lot", className: "w-[240px]" }], { title: "Status", sub: "Sale Invoice · Customer" });
 export const SOLD_GROUP_LABEL = "Sold to customers · must be purchased";
 export const IN_STOCK_GROUP_LABEL = "Still in stock on memo · buy now or return later";
 type MemoCounts = { all: number; sold: number; inStock: number };
@@ -187,8 +189,8 @@ export function MemoStockCells({ row, currency }: { row: PurchaseMemoStockRow; c
   return (
     <>
       <td className="px-3 py-4">
-        <div className="font-medium">{row.stockId}</div>
-        <div className={sub}>{[row.lot, row.memoReceive.docNo].filter(Boolean).join(" · ")}</div>
+        <div className="font-medium">{stockRefLabel(row) || "—"}</div>
+        <div className={sub}>{[row.stockId, row.lot].filter(Boolean).join(" · ")}</div>
         <Note text={row.itemNote} />
       </td>
       <StoneCells row={row} />
@@ -229,7 +231,7 @@ export function memoStockPickerProps({ currency, counts, excluded, onCancel, onC
     columns: MEMO_STOCK_COLUMNS,
     groups: (rows) => memoStockGroups(rows, counts),
     rowKey: (row) => row.key,
-    rowLabel: (row) => `Select ${row.stockId} from ${row.memoReceive.docNo}`,
+    rowLabel: (row) => `Select ${row.stockId} from ${stockRefLabel(row)}`,
     rowMarked: (row) => row.status === "SOLD",
     cells: (row) => <MemoStockCells row={row} currency={currency} />,
     emptyText: memoStockEmptyText(currency),
@@ -246,30 +248,23 @@ export function MemoStockPicker({ vendorId, ...scope }: PickerScope<PurchaseMemo
   return <PurchasePicker {...memoStockPickerProps({ ...scope, counts })} filters={filters} data={data} />;
 }
 
-// ---- Add Purchase Order (R2-PO) ----
+// ---- Add Purchase Order (R2-PO, rev 3) ----
 
-export const PURCHASE_ORDER_COLUMNS = columns({ title: "PO Line", sub: "Lot", className: "w-[200px]" }, { title: "Status", sub: "Ordered" });
-type PurchaseOrderCounts = { all: number; open: number; partlyPurchased: number };
+/**
+ * Rev 3 (owner 2026-11-04): the dialog looks like the normal From Stock picker: a flat list (no tabs, no PO groups,
+ * no Status column), the PO No. with its Doc Date first, then Stone Code with Stock ID · Lot.
+ */
+export const PURCHASE_ORDER_COLUMNS = columns(
+  [
+    { title: "PO No.", sub: "Doc Date", className: "w-[150px]" },
+    { title: "Stone Code", sub: "Stock ID · Lot", className: "w-[220px]" },
+  ],
+  null,
+);
 
-export function purchaseOrderTabs(counts: PurchaseOrderCounts | undefined): PickerTab<PurchaseOrderTab>[] {
-  return [
-    { id: "ALL", label: "All", count: counts?.all },
-    { id: "OPEN", label: "Open", count: counts?.open },
-    { id: "PARTLY_PURCHASED", label: "Partly purchased", count: counts?.partlyPurchased },
-  ];
-}
-
-/** One group per PO, in the server's order (newest PO first, lines by position): "{PO No.} · {date} · Due {date}". */
+/** One flat list in the server's order (newest PO first, lines by position). */
 export function purchaseOrderGroups(rows: readonly PurchaseOrderLineRow[]): PickerGroup<PurchaseOrderLineRow>[] {
-  const groups = new Map<string, PickerGroup<PurchaseOrderLineRow>>();
-  for (const row of rows) {
-    const po = row.purchaseOrder;
-    const group = groups.get(po.id) ?? { id: po.id, label: `${po.docNo} · ${shortDate(po.docDate)} · Due ${shortDate(po.dueDate)}`, tone: "neutral" as const, count: 0, rows: [] };
-    group.rows.push(row);
-    group.count = group.rows.length;
-    groups.set(po.id, group);
-  }
-  return [...groups.values()];
+  return [{ id: "ALL", label: "", tone: "neutral", count: rows.length, rows: [...rows] }];
 }
 
 export function purchaseOrderEmptyText(currency: string) {
@@ -278,31 +273,35 @@ export function purchaseOrderEmptyText(currency: string) {
 
 export const purchaseOrderLinesLoadError = (error: unknown) => documentLoadError(error, "PURCHASE", "purchase order lines", "purchase order lines");
 
-/** One PO line's cells after the checkbox and # (R2-PO). */
+/** One PO line's cells after the checkbox and # (rev 3). PO lines have no Stock ID yet: "Auto" (R2-05). */
 export function PurchaseOrderLineCells({ row, currency }: { row: PurchaseOrderLineRow; currency: string }) {
   const nf = useNumberFormat();
   return (
     <>
       <td className="px-3 py-4">
-        <div className="font-medium">Line {row.position}</div>
-        {row.lot && <div className={sub}>{row.lot}</div>}
+        <div className="font-medium">{row.purchaseOrder.docNo}</div>
+        <div className={sub}>{formatDate(row.purchaseOrder.docDate)}</div>
+      </td>
+      <td className="px-3 py-4">
+        <div className="font-medium">{row.stoneCode || "—"}</div>
+        <div className={cx(sub, "flex flex-wrap items-center gap-2")}>
+          <span>Auto</span>
+          {row.lot && <Badge variant="lot">{row.lot}</Badge>}
+        </div>
         <Note text={row.itemNote} />
       </td>
       <StoneCells row={row} />
-      <td className="px-3 py-4">
-        {row.status === "OPEN" ? <StatusBadge tone="open">Open</StatusBadge> : <StatusBadge tone="partly">Partly purchased</StatusBadge>}
-        <div className={sub}>{`Ordered ${row.orderedPcs} pcs · ${formatWeight(dec(row.orderedWeightCt), nf.weightPlaces)} cts`}</div>
-      </td>
       <QuantityPriceCells pcs={row.availablePcs} weightCt={row.availableWeightCt} price={row.netUnitPrice} perCt={row.priceUnit === "PER_CT"} amount={row.amount} currency={currency} nf={nf} />
     </>
   );
 }
 
-/** The Add Purchase Order settings on the shell (R2-PO). */
-export function purchaseOrderPickerProps({ currency, counts, excluded, onCancel, onConfirm }: PickerScope<PurchaseOrderLineRow> & { counts: PurchaseOrderCounts | undefined }): PurchasePickerProps<PurchaseOrderLineRow, PurchaseOrderTab> {
+/** The Add Purchase Order settings on the shell (rev 3: flat, no tabs; the query keeps status ALL). */
+export function purchaseOrderPickerProps({ currency, excluded, onCancel, onConfirm }: PickerScope<PurchaseOrderLineRow>): PurchasePickerProps<PurchaseOrderLineRow, PurchaseOrderTab> {
   return {
     title: "Add Purchase Order",
-    tabs: purchaseOrderTabs(counts),
+    tabs: [],
+    flat: true,
     searchPlaceholder: "Search PO No., lot, stone, cer no.",
     searchLabel: "Search purchase order lines",
     dateLabels: { from: "Ordered from", to: "Ordered to" },
@@ -321,6 +320,6 @@ export function purchaseOrderPickerProps({ currency, counts, excluded, onCancel,
 
 export function PurchaseOrderPicker({ vendorId, ...scope }: PickerScope<PurchaseOrderLineRow> & { vendorId: string }) {
   const filters = usePickerFilters<PurchaseOrderTab>("ALL");
-  const { data, counts } = usePurchaseOrderLines(vendorId, scope.currency, filters.filter);
-  return <PurchasePicker {...purchaseOrderPickerProps({ ...scope, counts })} filters={filters} data={data} />;
+  const { data } = usePurchaseOrderLines(vendorId, scope.currency, filters.filter);
+  return <PurchasePicker {...purchaseOrderPickerProps(scope)} filters={filters} data={data} />;
 }
