@@ -308,6 +308,8 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     });
     // From Stock Ref. (owner 2026-11-04): the source transaction = the Memo Receive, docDate in the memoReceive format.
     expect(byLot.get("JAN-1")?.ref).toEqual({ type: "MEMO_RECEIVE", id: jan.id, docNo: jan.docNo, docDate: "2026-01-10" });
+    // Owner 2026-11-05: each item carries its Memo Receive line's Stone Code snapshot ("" for these MANUAL lines).
+    expect(all.every((item) => item.stoneCode === "")).toBe(true);
     expect(all.map((item) => item.ref)).toEqual(all.map((row) => ({ type: "MEMO_RECEIVE", id: row.memoReceive.id, docNo: row.memoReceive.docNo, docDate: row.memoReceive.docDate })));
     expect(byLot.get("JAN-2")).toMatchObject({ unitPrice: "1000.00", netUnitPrice: "900.0000", amount: "1350.00" });
     // PCS: line amount 299.00 for 3 pcs; 1 pending → 99.67.

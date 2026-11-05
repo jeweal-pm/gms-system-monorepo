@@ -34,7 +34,7 @@ const noop = () => undefined;
 
 /** A Memo Stock item whose memo receive line had 10% off 20,000 per ct: PRICE = 18,000 (Q-MR-13). */
 const stockItem: MemoStockItem = {
-  id: SOURCE, stockId: "260001", lot: "L-2608-003", location: "Memo", itemNote: "Unheated",
+  id: SOURCE, stockId: "260001", stoneCode: "", lot: "L-2608-003", location: "Memo", itemNote: "Unheated",
   stone: "Ruby", shape: "Oval", size: "7.2×5.4 mm", color: "Red", clarity: "VVS", cutting: "Excellent", quality: "AAA", cerType: "GIA", cerNo: "GRS2024-081233",
   receivedPcs: 10, receivedWeightCt: "3.200", pendingPcs: 10, pendingWeightCt: "3.200", priceUnit: "CTS", unitPrice: "20000.00", netUnitPrice: "18000.0000",
   currency: "THB", amount: "57600.00", vendor: { id: ID, code: "V001", name: "BC Stone Shop" },
