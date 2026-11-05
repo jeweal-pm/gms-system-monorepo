@@ -93,3 +93,16 @@ sequenceDiagram
 - A number race (P2002 on running no) → `PURCHASE_CHANGED`. The user saves again (the engine rule).
 - Two pending purchases may name the same quantity. The approvals serialize on the `memo_stock` / `purchase_order_line` row locks, and the second one gets `PURCHASE_PENDING_SHORT`.
 - The other `memo_stock` writers (approvals of Memo Return, Memo Out, Reserve and Memo Out Return) lock only `memo_stock`, in id order. Purchase approve locks the purchase row, then `memo_stock`, then `purchase_order_line`. No writer takes these in reverse order, so there is no deadlock.
+
+## SA revision 2 (proposed 2026-11-05): approve a merged line
+
+```mermaid
+sequenceDiagram
+  participant API as api-master (purchase.approve)
+  participant DB as PostgreSQL partner
+  API->>DB: guarded UPDATE purchase → APPROVED
+  API->>DB: SELECT memo_stock … FOR UPDATE (id order)
+  Note over API: per MERGED line: soldOpen = sold − purchased,<br/>stockTake = q − soldOpen;<br/>q < soldOpen or stockTake > pending → PURCHASE_PENDING_SHORT (rollback)
+  API->>DB: UPDATE memo_stock SET pending −= stockTake, sold += stockTake, purchased += q
+  API->>DB: UPDATE purchase_line SET sold_part_pcs / sold_part_weight_ct = soldOpen
+```

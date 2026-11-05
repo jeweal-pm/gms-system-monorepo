@@ -64,3 +64,25 @@ Use [bounded remediation](../../workflow/remediation.md) for defects: one root-c
 
 - Owner 2026-11-04 Q-PU-16: "ขายแล้วใน memo คือ การ transaction หน้า sale แต่ว่าตอนนี้ยังไม่ได้ทำหน้า sale" — matches SA D6; the Sold group/tab stays at 0 until the Sale feature exists. Owner 2026-11-04 "เริ่ม backend": BE-PU-002…005 dispatched with SA rev 1.
 - Security review 2026-11-04 (BE-PU-002…004, HEAD `279d4ad` + working tree; purchase-stock.ts fd1fa0cb, purchase.service.ts 38f84e37, migration 949187d1): sec-auditor **advisory**, security-auditor **advisory**; no new ticket. Purchase added (rev 2) to existing pending-review tickets INV-20261031-002 (FOR UPDATE vs FK key-share deadlock → `FOR NO KEY UPDATE` in `purchase-stock.ts`) and INV-20261029-002 (shared yearly Stock ID counter, 9,999 cap, now also used by Purchase). Advisory, no ticket: an impossible-but-pattern-valid PO picker cursor date gives 503 instead of 400. Fixes wait for owner approval.
+
+## Revision 3: merge Sold + In stock (pending review)
+
+- revision: 3 (UI rev 3 + SA rev 2)
+- status: **pending-review** 2026-11-05 (owner answers Q-PU-24…27, 29, 31, 33, 35 recorded 2026-11-05; Q-PU-26 = back to the picker; Q-PU-28/30/32/34 keep their defaults until approval)
+- request: owner 2026-11-05, quoted in [ui-spec › Revision 3](../../apps/frontend/purchase/ui-spec.md#revision-3-merge-the-sold-and-in-stock-parts-of-one-item-pending-review) ("…ยังไม่ต้องปรับนะแก้เอกสาร ถามคำถาม เปิด adr มาก่อน": documents, questions and ADR only; no code yet)
+- branch: `feat/05-11-26-purchase-merge-outstanding` (from `change-to-nginx-with-new-skill-agent`, `c401880`)
+- source: [source/08-merge-sold-and-in-stock.png](../../apps/frontend/purchase/source/08-merge-sold-and-in-stock.png)
+- review-bundle: [ui-spec › Revision 3](../../apps/frontend/purchase/ui-spec.md#revision-3-merge-the-sold-and-in-stock-parts-of-one-item-pending-review), [open questions Q-PU-24…35](../../apps/frontend/purchase/open-questions.md#revision-3-merge-q-pu-2435), [SA revision 2](../../apps/backend/master/purchase/decisions.md#sa-revision-2-proposed-2026-11-05-merged-memo-stock-lines) (with [api-contract](../../apps/backend/master/purchase/api-contract.md), [database-diagram](../../apps/backend/master/purchase/database-diagram.md), [sequence-diagram](../../apps/backend/master/purchase/sequence-diagram.md) rev 2 notes), [main flow](../../diagram/purchase-flow.md), [ADR-0043](../../adr/0043-purchase-merged-memo-stock-line.md) (Proposed)
+- dependencies: none new
+- infra: none
+- approved-revision: none
+- approved-by: none
+- approved-at: none
+- approval-evidence: none
+
+| Done | ID | Owner | Task | Allowed files | Depends on | Verification |
+|---|---|---|---|---|---|---|
+| [ ] | BE-PU-006 | backend | Migration `20261105090000_purchase_merged_line` (SA-PU-25) + Prisma; schema `memoGroup` MERGED; save rules SA-PU-21/22/24 in `prepare`; approve sold-first SA-PU-23 in `purchase-stock.ts`; `get` min/limit and sold-part output SA-PU-26 | `backend-api-master/prisma/**`, `src/purchase/**`, tests | approval | unit + disposable-DB tests for save bounds, sold-first approve, short refusal, SOLD exact quantity, CHECKs; existing purchase / memo tests |
+| [ ] | FE-PU-011 | frontend | `findMergePairs`, the "Merge items?" question after OK (R3-01), merged row build and limits (R3-02), mapping MERGED ↔ contract | `frontend/src/features/purchase/**`, tests | BE-PU-006 | UT-PU-12…14, UT-PU-16 |
+| [ ] | FE-PU-012 | frontend | Sold rows: Price (+ Item Note) only, Pcs/Weight fixed (R3-03); merged-row tag and row panel note | `frontend/src/features/purchase/**` (shared `ItemEditorPanel` lock flag only if needed), tests | FE-PU-011 | UT-PU-15, TC-PU-15 |
+| [ ] | FE-PU-013 | frontend + parent | Tests, typecheck, lint; TC-PU-14/15; sec-auditor + security-auditor on the final code | — | all | all suites pass |
