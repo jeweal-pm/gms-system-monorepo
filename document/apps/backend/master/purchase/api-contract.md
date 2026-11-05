@@ -151,3 +151,16 @@ Note for frontend: the conflict code is `PURCHASE_CHANGED`, not `*_STALE` as the
 - `purchaseOrder.get` now shows non-zero `purchasedPcs` / `purchasedWeightCt` (already in its contract).
 - Memo Outstanding › Vendor: no contract change. Its Sold figures now include purchases (SA-PU-05).
 - Document Setup `used` counts purchases.
+
+## SA revision 2 (proposed 2026-11-05): merged lines
+
+```ts
+type MemoGroup = "IN_STOCK" | "SOLD" | "MERGED";                     // SA-PU-21
+// PurchaseLineInput: unchanged except memoGroup may be "MERGED" (source "STOCK").
+type PurchaseLine = /* rev 1 fields */ & {
+  minPcs: number | null; minWeightCt: string | null;                 // pending doc: MERGED = soldOpen, SOLD = soldOpen (= limit)
+  soldPartPcs: number | null; soldPartWeightCt: string | null;       // approved MERGED lines: the Sold part taken first
+};
+```
+
+New field-error codes on Save: `below_sold` (MERGED under the Sold part), `not_mergeable` (the item has no Sold or no In-stock part), `must_equal_sold` (SOLD line not equal to the Sold part); `duplicate` also covers an item sent both as MERGED and as SOLD / IN_STOCK. Approve keeps `PURCHASE_PENDING_SHORT` for a MERGED line that no longer fits (SA-PU-23). `purchase.memoStock` is unchanged.

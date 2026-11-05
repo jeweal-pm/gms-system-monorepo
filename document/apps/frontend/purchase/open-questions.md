@@ -41,3 +41,22 @@ The recommended defaults are part of the approved revision 2. The owner can stil
 | Q-PU-21 | **"with us since memo"** under In stock | Static text, as drawn (DV-13) | "In stock since {memo receive date}" | R2-MS col 8 |
 | Q-PU-22 | **Badge text contrast** (Sold `#DF1016` on `#FAE6E4` = 4.14:1; In stock `#22C55E` on `#C1EFD2` = 1.80:1) | Keep the fills and darken the text to `#C2141A` and `#166534` (≥ 5:1, WCAG AA) (DV-09) | Use the design colours as drawn. | R2-MS badges |
 | Q-PU-23 | **The new picker look on other pages** (Memo Return "Add Memo Stock", Memo Out "From Stock") | **No.** Purchase gets its own picker shell. `MemoStockModal` and those pages stay unchanged (TC-PU-07). Aligning them is a later design-system task. | Restyle every Memo Stock picker now (larger regression scope across 2+ pages). | FE-PU-008, TC-PU-07 |
+
+## Revision 3: merge (Q-PU-24…35)
+
+Owner request 2026-11-05: see [ui-spec › Revision 3](ui-spec.md#revision-3-merge-the-sold-and-in-stock-parts-of-one-item-pending-review). Each row gives a recommended default. Approving revision 3 "with the defaults" accepts them; or answer an ID.
+
+| ID | Question | Recommended default | Alternatives | Affects |
+|---|---|---|---|---|
+| Q-PU-24 | **What counts as "the same Stock ID, same details"?** | **Owner 2026-11-05:** "หมายถึงแถว Sold กับแถว In stock ของ item เดียวกันใน Memo Stock". The Sold row and the In-stock row of one Memo Stock item (same Stock ID). Their details are the same by construction. | Also merge different Stock IDs whose stone details match (needs a matching rule and mixes memo items). | R3-01, SA-PU-21 |
+| Q-PU-25 | **Several pairs picked at once** | **Owner 2026-11-05:** "ใช่ รวมกันกับของๆ item เดียวกันใน Memo Stock นะ". One question for all pairs: Merge / Don't merge applies to every pair listed. | A checkbox per pair in the question. | R3-01 |
+| Q-PU-26 | **Closing the question with ✕ / Escape** | **Owner 2026-11-05:** "เท่ากับกลับไปเลือกใหม่". Nothing is added; the question closes and Add Memo Stock stays open with the same rows ticked, so the user can change the choice. | (was the default) Same as Don't merge. | R3-01 |
+| Q-PU-27 | **One part already on the form, the other picked later** | **Owner 2026-11-05:** "ถามถ้าเป็น item เดียวกันอยู่ในฟอร์มอยู่เเล้ว". Ask the same question; Merge turns the existing row into the merged row. | Never merge with rows already on the form. | R3-01 |
+| Q-PU-28 | **Splitting a merged row** | Not in place: remove the row and pick again with Don't merge. | An "Unmerge" row action. | R3-02 |
+| Q-PU-29 | **Quantity of a Sold row (not merged)** | **Owner 2026-11-05:** "ใช่ต้องซื้อทั้งหมด". Fixed at the Sold part (sold − purchased): a stone sold to a customer is bought whole. Only Price changes. | Allow buying part of it (Pcs/Weight editable up to the Sold part). | R3-03, SA-PU-24 |
+| Q-PU-30 | **Item Note on Sold rows** | Stays editable with Price (a note doesn't move stock). | Price only; note locked too. | R3-03 |
+| Q-PU-31 | **Minimum of a merged row** | **Owner 2026-11-05:** "ใช่". Pcs ≥ the Sold pcs **and** Weight ≥ the Sold weight, each checked on its own. | Pcs only. | R3-02, SA-PU-22 |
+| Q-PU-32 | **Price of a merged row** | One price for the whole row, starting at the memo net unit price. | Separate prices for the Sold and the In-stock part. | R3-02 |
+| Q-PU-33 | **Quantities change between Save and Approve** | **Owner 2026-11-05:** refuse and show what is left on the row; the user edits the row down, saves again and approves again (the recommended default). Approve recomputes under the lock: the Sold part first (current sold − purchased), the rest from pending. If the row is below the current Sold part or above Sold + pending, Approve is refused with `PURCHASE_PENDING_SHORT` on that row and nothing moves. | Approve takes what is available and lowers the row. | R3-04, SA-PU-23 |
+| Q-PU-34 | **A merged row after approval** | The "Sold + In stock" tag stays, and the row panel shows the parts actually bought ("Sold 1 pc / 0.76 cts · In stock 1 pc / 0.76 cts"). | No tag after approval. | R3-02, SA-PU-25 |
+| Q-PU-35 | **Purchase Outstanding** (asked 2026-11-05 with this work) | **Owner 2026-11-05:** "ใช่". A separate feature revision after this one, with its own spec, SA and approval. | Bundle it into revision 3. | scope |
