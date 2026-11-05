@@ -87,8 +87,11 @@ export const memoNextNumberSchema = z.object({ docDate: z.iso.date() }).strict()
 const receiveLineSchema = memoLineSchema.omit({ stoneCodeId: true, location: true }).extend({ id: uuid.optional(), photoIds: lineInputSchema.shape.photoIds });
 const memoReceiveFields = { ...memoFields, lines: z.array(receiveLineSchema).min(1).max(LINES_MAX), vendorId: uuid, addressId: uuid };
 type ReceiveValues = z.output<z.ZodObject<typeof memoReceiveFields>>;
-function receiveRules(value: ReceiveValues, ctx: z.RefinementCtx) {
-  tradeDocumentRules(value as unknown as Parameters<typeof tradeDocumentRules>[0], ctx);
+/**
+ * SA-MR-09 discount bounds (also Purchase Order SA-PO-07): a line amount discount ≤ the line gross and a document
+ * amount discount ≤ the subtotal, so totals are never negative.
+ */
+export function discountBoundRules(value: Pick<ReceiveValues, "lines" | "discount">, ctx: z.RefinementCtx) {
   const issue = (path: (string | number)[], code: string) => ctx.addIssue({ code: "custom", path, params: { code }, message: code });
   value.lines.forEach((line, index) => {
     if (line.discount.type === "AMOUNT" && new Prisma.Decimal(line.discount.value).greaterThan(lineGross(line))) issue(["lines", index, "discount", "value"], "exceeds_gross");
@@ -97,6 +100,11 @@ function receiveRules(value: ReceiveValues, ctx: z.RefinementCtx) {
     const subtotal = value.lines.reduce((total, line) => total.plus(lineAmount(line)), new Prisma.Decimal(0));
     if (new Prisma.Decimal(value.discount.value).greaterThan(subtotal)) issue(["discount", "value"], "exceeds_subtotal");
   }
+}
+function receiveRules(value: ReceiveValues, ctx: z.RefinementCtx) {
+  tradeDocumentRules(value as unknown as Parameters<typeof tradeDocumentRules>[0], ctx);
+  discountBoundRules(value, ctx);
+  const issue = (path: (string | number)[], code: string) => ctx.addIssue({ code: "custom", path, params: { code }, message: code });
   const ids = value.lines.flatMap((line) => (line.id ? [line.id] : []));
   if (new Set(ids).size !== ids.length) {
     const seen = new Set<string>();

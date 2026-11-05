@@ -8,7 +8,7 @@ import { dec, div, mul, toFixed, ZERO } from "../../lib/decimal";
 import { CER_TYPES, toOptions, type Option } from "../../lib/options";
 import { ATTRIBUTE_KEYS, rebuildStoneCode } from "../../lib/stone-code";
 import { DiscountPair } from "../DiscountPair";
-import { useDocumentKind } from "../../document-kind";
+import { DEFAULT_PRICE_TITLE, useDocumentKind } from "../../document-kind";
 import { useLineOptions, useRefreshLineOptions } from "../../options-context";
 import { isFilledLine, MAX_LINE_PHOTOS, type QuotationFormValues } from "../../schema";
 import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
@@ -156,17 +156,19 @@ export function ItemEditorPanel({
               </Field>
               {!line.stockId && <p className="mt-1 pl-3 text-xs text-[#6B7480]">Assigned when you save</p>}
             </div>
-          ) : (
+          ) : kind.stockId === "from-stock" ? (
             <Field label="Stock ID">
               <ReadonlyBox compact value={line.stockId} placeholder="From stock only" />
             </Field>
-          )}
+          ) : null}
           <Field label="Lot">
             <TextInput compact readOnly={locked} placeholder="e.g. L-2609-001" maxLength={30} {...register(name("lot"))} />
           </Field>
           {kind.location && (
             <Field label="Location">
-              {kind.locations ? (
+              {kind.locations === "text" ? (
+                <TextInput compact readOnly={locked} placeholder="e.g. Safe A" maxLength={40} {...register(name("locationId"))} />
+              ) : kind.locations ? (
                 <FormSelect<QuotationFormValues> compact disabled={locked} name={name("locationId")} options={withCurrent(kind.locations, line.locationId)} />
               ) : (
                 <ReadonlyBox compact value={line.locationId} placeholder="From stock only" />
@@ -231,7 +233,7 @@ export function ItemEditorPanel({
           <Field label="Price Unit">
             <FormSelect<QuotationFormValues> compact disabled={readOnly || stockQuantity} name={name("priceUnit")} options={PRICE_UNITS} />
           </Field>
-          <Field label="Sale Price" error={stockQuantity ? lineErrors?.unitPrice?.message : undefined}>
+          <Field label={kind.priceTitle ?? DEFAULT_PRICE_TITLE} error={stockQuantity ? lineErrors?.unitPrice?.message : undefined}>
             <NumberInput compact decimals={nf.priceInputDecimals} placeholder="0.00" suffix={currency || undefined} {...register(name("unitPrice"))} />
           </Field>
           {/* Owner 2026-10-27: typing either one fills the other; the Amount shows in the table, not here. */}
@@ -241,7 +243,7 @@ export function ItemEditorPanel({
             value={line.discountValue}
             base={lineGross(line)}
             currency={currency}
-            disabled={readOnly}
+            disabled={readOnly || (fromStock && Boolean(kind.lockStockDiscount))}
             percentError={lineErrors?.discountValue?.message}
             onChange={(type, value) => {
               set("discountType", type);

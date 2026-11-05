@@ -56,8 +56,9 @@ export function formatStockId(year: number, runningNo: number): string {
  * Takes `count` numbers from the counter of the save year under its row lock (INSERT … ON CONFLICT DO UPDATE in the
  * caller's transaction, after the Document Setup lock — always the same order, so no deadlock). The guarded UPDATE
  * returns no row when the year would pass 9,999 → `MEMO_RECEIVE_STOCK_ID_EXHAUSTED`; the transaction then rolls back.
+ * Another document that issues ids from the same counter (Purchase, SA-PU-10) passes its own `exhausted` error.
  */
-export async function issueStockIds(tx: Tx, count: number, now: Date): Promise<string[]> {
+export async function issueStockIds(tx: Tx, count: number, now: Date, exhausted: () => Error = stockIdExhausted): Promise<string[]> {
   if (count === 0) return [];
   const year = stockIdYear(now);
   const rows = await tx.$queryRaw<{ last_no: number }[]>(Prisma.sql`
@@ -67,7 +68,7 @@ export async function issueStockIds(tx: Tx, count: number, now: Date): Promise<s
     WHERE c."last_no" + EXCLUDED."last_no" <= ${STOCK_NO_MAX}
     RETURNING "last_no"`);
   const last = rows[0]?.last_no;
-  if (last === undefined || last > STOCK_NO_MAX) throw stockIdExhausted();
+  if (last === undefined || last > STOCK_NO_MAX) throw exhausted();
   return Array.from({ length: count }, (_, index) => formatStockId(year, last - count + 1 + index));
 }
 

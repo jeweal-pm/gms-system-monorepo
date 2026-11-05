@@ -19,6 +19,7 @@ import type { VendorService } from "../../src/vendor/vendor.service";
 import type { CompanyProfileService } from "../../src/company-profile/company-profile.service";
 import type { StoneMasterService } from "../../src/stone-master/stone-master.service";
 import type { CurrencyService } from "../../src/currency/currency.service";
+import type { PurchaseService } from "../../src/purchase/purchase.service";
 import type { MasterAuthzDatabase } from "../../src/master/authz-database";
 import type { MasterLicenseClient } from "../../src/master/license-client";
 import { customerBody } from "../partner-shared/fixtures";
@@ -60,13 +61,14 @@ describe("IT-MAUTH-07 mounted Express tRPC adapter", () => {
     const stoneMaster = { list: vi.fn(async () => ({ items: [], nextCursor: null, total: 0 })), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as unknown as StoneMasterService;
     const authz = { read: vi.fn(async () => ({
       session_id: "sid-1", user_id: "user-1", session_expires_at: new Date(Date.now() + 60_000), account_active: true,
-      account_role: "user", permissions: ["customer:ADD", "company-profile:VIEW", "stone-master:VIEW"], location_keys: [],
+      account_role: "user", permissions: ["customer:ADD", "company-profile:VIEW", "stone-master:VIEW", "purchase:VIEW"], location_keys: [],
     })) } as unknown as MasterAuthzDatabase;
     const license = { check: vi.fn(async () => "ELIGIBLE" as const) } as unknown as MasterLicenseClient;
     const documentSetup = { list: vi.fn(), get: vi.fn(), save: vi.fn() } as unknown as DocumentSetupService;
     const currency = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as unknown as CurrencyService;
     const decimalSetup = { get: vi.fn(async () => ({ setup: { weightPlaces: 2, pricePlaces: 2, version: 1, updatedAt: "2026-11-03T02:00:00.000Z", updatedBy: null } })), save: vi.fn() } as unknown as DecimalSetupService;
-    const handler = new MasterTrpcHandler(customer, vendor, companyProfile, stoneMaster, authz, license, documentSetup, currency, {} as unknown as QuotationService, {} as unknown as MemoOutService, {} as unknown as MemoOutReturnService, {} as unknown as MemoReceiveService, {} as unknown as MemoStockService, {} as unknown as MemoReturnService, {} as unknown as MemoOutstandingService, {} as unknown as ReserveService, decimalSetup);
+    const purchase = { purchaseOrderLines: vi.fn(async () => ({ items: [], nextCursor: null, counts: { all: 0, open: 0, partlyPurchased: 0 } })) } as unknown as PurchaseService;
+    const handler = new MasterTrpcHandler(customer, vendor, companyProfile, stoneMaster, authz, license, documentSetup, currency, {} as unknown as QuotationService, {} as unknown as MemoOutService, {} as unknown as MemoOutReturnService, {} as unknown as MemoReceiveService, {} as unknown as MemoStockService, {} as unknown as MemoReturnService, {} as unknown as MemoOutstandingService, {} as unknown as ReserveService, decimalSetup, {} as never, purchase);
     const app = express();
     app.use(express.json({ limit: "256kb" }));
     app.use("/api/master/trpc", handler.handle.bind(handler));
@@ -112,5 +114,13 @@ describe("IT-MAUTH-07 mounted Express tRPC adapter", () => {
     expect(decimalResponse.status).toBe(200);
     expect(await decimalResponse.json()).toMatchObject({ result: { data: { setup: { weightPlaces: 2, pricePlaces: 2, version: 1 } } } });
     expect(decimalSetup.get).toHaveBeenCalledOnce();
+
+    // IT-PU-B07: the handler passes PurchaseService (its new last constructor parameter) to the router.
+    const purchaseResponse = await fetch(`http://127.0.0.1:${address.port}/api/master/trpc/purchase.purchaseOrderLines?input=${encodeURIComponent(JSON.stringify({ vendorId: "0b9f3c4e-1d2a-4b3c-8d4e-5f6a7b8c9d0e", currency: "THB", status: "OPEN" }))}`, {
+      headers: { cookie: `gms_access=${token}` },
+    });
+    expect(purchaseResponse.status).toBe(200);
+    expect(await purchaseResponse.json()).toMatchObject({ result: { data: { items: [], counts: { all: 0, open: 0, partlyPurchased: 0 } } } });
+    expect(purchase.purchaseOrderLines).toHaveBeenCalledWith(expect.objectContaining({ status: "OPEN", limit: 50 }));
   });
 });

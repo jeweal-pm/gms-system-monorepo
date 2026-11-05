@@ -10,9 +10,22 @@ import { useLinePhotoTarget } from "../../options-context";
 import { MAX_LINE_PHOTOS, type PhotoRef, type QuotationFormValues } from "../../schema";
 import { cx } from "../ui";
 
+/** Marks a drag that moves a photo inside the row (not files from the computer). */
+export const PHOTO_DRAG_TYPE = "application/x-gms-line-photo";
+
+/** Moves a photo to slot `to`; slot 0 is the main photo (crown). Unknown ids leave the list unchanged. */
+export function movePhoto(photos: readonly PhotoRef[], id: string, to: number): PhotoRef[] {
+  const from = photos.findIndex((photo) => photo.id === id);
+  if (from < 0) return [...photos];
+  const next = photos.filter((photo) => photo.id !== id);
+  next.splice(Math.min(Math.max(to, 0), next.length), 0, photos[from]);
+  return next;
+}
+
 /**
  * Row panel photos (owner 2026-10-26, Figma row panel): add up to 5 photos by button or drag and drop,
- * set the main photo (the first one, crown) and remove photos. Uploads go straight to the quotation
+ * set the main photo (the first one, crown) and remove photos. Owner 2026-11-04: photos can also be dragged
+ * between tiles; dropping one on the first tile makes it the main photo. Uploads go straight to the quotation
  * photo route (SA-QT-10) and are kept permanently; removing only unlinks a photo from the row.
  */
 export function LinePhotosField({ index, readOnly }: { index: number; readOnly: boolean }) {
@@ -22,7 +35,8 @@ export function LinePhotosField({ index, readOnly }: { index: number; readOnly: 
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [dragging, setDragging] = useState(false);
+  // The slot under the pointer while files or a photo are dragged over it.
+  const [overSlot, setOverSlot] = useState<number | null>(null);
   // The document kind's photo route (Quotation, Memo Receive rev 4), or none yet on memo out / memo out return.
   const upload = useLinePhotoTarget().upload ? uploadPhoto : null;
   const canAdd = Boolean(upload) && !readOnly && !uploading && photos.length < MAX_LINE_PHOTOS;
@@ -48,12 +62,6 @@ export function LinePhotosField({ index, readOnly }: { index: number; readOnly: 
     if (added.length > 0) setPhotos([...photos, ...added]);
   };
 
-  const onDrop = (event: DragEvent) => {
-    event.preventDefault();
-    setDragging(false);
-    if (canAdd) void addFiles([...event.dataTransfer.files]);
-  };
-
   const setMain = (id: string) => {
     const target = photos.find((photo) => photo.id === id);
     if (target) setPhotos([target, ...photos.filter((photo) => photo.id !== id)]);
@@ -62,14 +70,29 @@ export function LinePhotosField({ index, readOnly }: { index: number; readOnly: 
   const remove = (id: string) => setPhotos(photos.filter((photo) => photo.id !== id));
   const openPicker = () => inputRef.current?.click();
 
-  const dropProps = {
+  // A photo dropped on a slot moves there; files dropped on any slot are uploaded (when there is room).
+  // The default is always prevented so a dropped file never opens in the browser.
+  const dropProps = (slot: number) => ({
     onDragOver: (event: DragEvent) => {
       event.preventDefault();
-      if (canAdd) setDragging(true);
+      const moving = event.dataTransfer.types.includes(PHOTO_DRAG_TYPE);
+      const allowed = moving ? !readOnly : canAdd;
+      event.dataTransfer.dropEffect = allowed ? (moving ? "move" : "copy") : "none";
+      setOverSlot(allowed ? slot : null);
     },
-    onDragLeave: () => setDragging(false),
-    onDrop,
-  };
+    onDragLeave: () => setOverSlot((current) => (current === slot ? null : current)),
+    onDrop: (event: DragEvent) => {
+      event.preventDefault();
+      setOverSlot(null);
+      const id = event.dataTransfer.getData(PHOTO_DRAG_TYPE);
+      if (id) {
+        const next = movePhoto(photos, id, slot);
+        if (!readOnly && next.some((photo, i) => photo.id !== photos[i]?.id)) setPhotos(next);
+        return;
+      }
+      if (canAdd) void addFiles([...event.dataTransfer.files]);
+    },
+  });
 
   const tile = "relative flex aspect-square items-center justify-center overflow-hidden rounded-xl border bg-[#F8F8F8]";
   const [main, ...rest] = photos;
@@ -79,11 +102,11 @@ export function LinePhotosField({ index, readOnly }: { index: number; readOnly: 
     <div>
       <div className="grid grid-cols-[2fr_1fr_1fr] gap-2">
         {/* Large first tile: the main photo, or the drop zone while there are no photos. */}
-        <div className="row-span-2" {...dropProps}>
+        <div className="row-span-2" {...dropProps(0)}>
           {main ? (
-            <PhotoTile photo={main} isMain readOnly={readOnly} onSetMain={setMain} onRemove={remove} className={cx(tile, "h-full border-[#E3E6EA]")} />
+            <PhotoTile photo={main} isMain readOnly={readOnly} over={overSlot === 0} onSetMain={setMain} onRemove={remove} onDragEnd={() => setOverSlot(null)} className={cx(tile, "h-full border-[#E3E6EA]")} />
           ) : (
-            <div className={cx(tile, "h-full flex-col gap-3 border-dashed px-3 text-center", dragging ? "border-[#0E5E63] bg-[#E6F1F1]" : "border-[#D5DADF]")}>
+            <div className={cx(tile, "h-full flex-col gap-3 border-dashed px-3 text-center", overSlot === 0 ? "border-[#0E5E63] bg-[#E6F1F1]" : "border-[#D5DADF]")}>
               <button type="button" disabled={!canAdd} onClick={openPicker} className="rounded-lg bg-[#EEF0F2] px-4 py-2 text-sm font-medium text-[#1C252E] disabled:cursor-not-allowed disabled:opacity-60">
                 {uploading ? "Uploading…" : "Add files"}
               </button>
@@ -91,8 +114,10 @@ export function LinePhotosField({ index, readOnly }: { index: number; readOnly: 
             </div>
           )}
         </div>
-        {rest.map((photo) => (
-          <PhotoTile key={photo.id} photo={photo} readOnly={readOnly} onSetMain={setMain} onRemove={remove} className={cx(tile, "border-[#E3E6EA]")} />
+        {rest.map((photo, i) => (
+          <div key={photo.id} {...dropProps(i + 1)}>
+            <PhotoTile photo={photo} readOnly={readOnly} over={overSlot === i + 1} onSetMain={setMain} onRemove={remove} onDragEnd={() => setOverSlot(null)} className={cx(tile, "border-[#E3E6EA]")} />
+          </div>
         ))}
         {Array.from({ length: emptySlots }, (_, i) => (
           <button
@@ -101,8 +126,12 @@ export function LinePhotosField({ index, readOnly }: { index: number; readOnly: 
             aria-label="Add photo"
             disabled={!canAdd}
             onClick={openPicker}
-            {...dropProps}
-            className={cx(tile, "border-[#EEF0F2] text-[#6B7480] hover:border-[#A9B1B9] disabled:cursor-not-allowed disabled:hover:border-[#EEF0F2]")}
+            {...dropProps(photos.length + i)}
+            className={cx(
+              tile,
+              "border-[#EEF0F2] text-[#6B7480] hover:border-[#A9B1B9] disabled:cursor-not-allowed disabled:hover:border-[#EEF0F2]",
+              overSlot === photos.length + i && "border-[#0E5E63] bg-[#E6F1F1]",
+            )}
           >
             <Plus className="size-5" />
           </button>
@@ -130,21 +159,35 @@ function PhotoTile({
   photo,
   isMain = false,
   readOnly,
+  over,
   onSetMain,
   onRemove,
+  onDragEnd,
   className,
 }: {
   photo: PhotoRef;
   isMain?: boolean;
   readOnly: boolean;
+  /** A photo or files are dragged over this tile. */
+  over: boolean;
   onSetMain: (id: string) => void;
   onRemove: (id: string) => void;
+  onDragEnd: () => void;
   className: string;
 }) {
   return (
-    <div className={cx(className, "group")}>
+    <div
+      draggable={!readOnly}
+      onDragStart={(event) => {
+        event.dataTransfer.setData(PHOTO_DRAG_TYPE, photo.id);
+        event.dataTransfer.effectAllowed = "move";
+      }}
+      onDragEnd={onDragEnd}
+      title={readOnly ? undefined : "Drag to reorder. The first photo is the main photo."}
+      className={cx(className, "group h-full", !readOnly && "cursor-grab active:cursor-grabbing", over && "border-[#0E5E63] ring-2 ring-[#0E5E63]/40")}
+    >
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={photo.url} alt={photo.name} className="size-full object-contain" />
+      <img src={photo.url} alt={photo.name} draggable={false} className="size-full object-contain" />
       <button
         type="button"
         aria-label={isMain ? "Main photo" : "Set as main photo"}

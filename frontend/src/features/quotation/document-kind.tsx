@@ -13,14 +13,17 @@ export type StoneChoices = QuotationOptions["stone"];
  * Summary Value (ADR-0033 D5). The default is exactly the Quotation page; Memo Receive provides its own.
  */
 export type DocumentKind = {
-  /** Stock ID: filled by From Stock only, or a running number assigned on save. */
-  stockId: "from-stock" | "auto";
+  /**
+   * Stock ID: filled by From Stock only, a running number assigned on save, or none at all (Purchase Order rev 1: Stock
+   * IDs come later, at Purchase).
+   */
+  stockId: "from-stock" | "auto" | "none";
   /** Stone Code field and column; without it the Stock ID leads the row (Memo Receive, owner 2026-10-28). */
   stoneCode: boolean;
   /** Location column and row-panel field; Memo Receive has none (rev 3: its Memo Stock is always `Memo`). */
   location: boolean;
-  /** Location choices; null = filled by From Stock only (read-only). */
-  locations: Option[] | null;
+  /** Location choices; null = filled by From Stock only (read-only); "text" = typed freely (Purchase Order, Q-PO-06). */
+  locations: Option[] | null | "text";
   emptyRowText: string;
   itemNote: { section: string; max: number; placeholder?: string };
   documentNote: { max: number; hint: string };
@@ -35,10 +38,23 @@ export type DocumentKind = {
    * the picker instead of the row panel, so nothing can be keyed in by hand.
    */
   pickOnly?: boolean;
+  /**
+   * Title of the price column and the row-panel price field (purchase Q-PU-14: "Price", a buying cost). Default
+   * "Sale Price", which every customer and memo document keeps.
+   */
+  priceTitle?: string;
+  /**
+   * From Stock rows take no line discount: the row panel's discount pair is locked on them (purchase FE-PU-010, SA D8).
+   * Default false, so every other document keeps its editable discount.
+   */
+  lockStockDiscount?: boolean;
   /** Stone choices when they don't come from `quotation.options`. */
   stone?: StoneChoices;
   uploadPhoto: (file: File) => Promise<PhotoRef>;
 };
+
+/** The price title of a kind without its own (`DocumentKind.priceTitle`). */
+export const DEFAULT_PRICE_TITLE = "Sale Price";
 
 export const QUOTATION_KIND: DocumentKind = {
   stockId: "from-stock",

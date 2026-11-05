@@ -24,6 +24,19 @@ import type { MemoReceiveService } from "../trade-document/memo-receive.service"
 import type { MemoReturnService } from "../trade-document/memo-return.service";
 import type { MemoStockService } from "../trade-document/memo-stock.service";
 import type { MemoOutstandingService } from "../trade-document/memo-outstanding.service";
+import type { PurchaseOrderService } from "../purchase-order/purchase-order.service";
+import { createPurchaseOrderSchema, purchaseOrderListSchema, updatePurchaseOrderSchema } from "../purchase-order/purchase-order.schemas";
+import type { PurchaseService } from "../purchase/purchase.service";
+import {
+  createPurchaseSchema,
+  purchaseListSchema,
+  purchaseMemoStockSchema,
+  purchaseNextNumberSchema,
+  purchaseOptionsSchema,
+  purchaseOrderLinesSchema,
+  purchaseVersionedIdSchema,
+  updatePurchaseSchema,
+} from "../purchase/purchase.schemas";
 import {
   memoOutstandingCustomerFiltersSchema,
   memoOutstandingCustomerItemsSchema,
@@ -180,7 +193,9 @@ export type MasterServices = Pick<{
   memoReturn: MemoReturnService;
   memoOutstanding: MemoOutstandingService;
   reserve: ReserveService;
-}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "decimalSetup" | "currency" | "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoStock" | "memoReturn" | "memoOutstanding" | "reserve">;
+  purchaseOrder: PurchaseOrderService;
+  purchase: PurchaseService;
+}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "decimalSetup" | "currency" | "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoStock" | "memoReturn" | "memoOutstanding" | "reserve" | "purchaseOrder" | "purchase">;
 
 function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
   const schemas = bodySchemasFor(kind);
@@ -197,7 +212,7 @@ function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
 }
 
 /** Direct service calls preserve IDs, transaction behavior and existing partner/stone schemas. */
-export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, decimalSetup, currency, quotation, memoOut, memoOutReturn, memoReceive, memoStock, memoReturn, memoOutstanding, reserve }: MasterServices) {
+export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, decimalSetup, currency, quotation, memoOut, memoOutReturn, memoReceive, memoStock, memoReturn, memoOutstanding, reserve, purchaseOrder, purchase }: MasterServices) {
   return t.router({
     customer: t.router({
       list: permitted("customer", "VIEW").input(listInput).query(({ input }) => domainCall(() => customer.list(toListQuery(input)))),
@@ -260,8 +275,8 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
     currency: t.router({
       list: permitted("currency", "VIEW").input(listInput).query(({ input }) => domainCall(() => currency.list({ q: input.q, cursor: input.cursor, limit: input.limit }))),
       get: permitted("currency", "VIEW").input(idInput).query(({ input }) => domainCall(() => currency.get(input.id))),
-      // Read by the document pages for currency choices and rates (currency SA-CUR-07, memo out ADR-0033, memo receive ADR-0034, memo return).
-      options: permittedAny(["currency", "quotation", "memo-out", "memo-out-return", "memo-receive", "memo-return", "reserve"], "VIEW").query(() => domainCall(() => currency.options())),
+      // Read by the document pages for currency choices and rates (currency SA-CUR-07, memo out ADR-0033, memo receive ADR-0034, memo return, purchase SA-PU-15).
+      options: permittedAny(["currency", "quotation", "memo-out", "memo-out-return", "memo-receive", "memo-return", "reserve", "purchase-order", "purchase"], "VIEW").query(() => domainCall(() => currency.options())),
       create: permitted("currency", "ADD", true).input(createCurrencyBodySchema).mutation(({ ctx, input }) => domainCall(() => currency.create(ctx.userId, input))),
       update: permitted("currency", "EDIT", true).input(updateCurrencyBodySchema.extend({ id: z.uuid() })).mutation(({ ctx, input }) => {
         const { id, ...body } = input;
@@ -370,6 +385,42 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       }),
       delete: permitted("memo-return", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoReturn.delete(ctx.userId, input.id, input.expectedVersion))),
       approve: permitted("memo-return", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoReturn.approve(ctx.userId, input.id, input.expectedVersion))),
+    }),
+    // purchase-order SA rev 1 / ADR-0041 (owner 2026-11-04): keyed-in vendor document; Approve on the page sends its
+    // lines to Purchase (no stock written). The creator may approve; the server checks APPROVE on every call.
+    purchaseOrder: t.router({
+      list: permitted("purchase-order", "VIEW").input(purchaseOrderListSchema).query(({ input }) => domainCall(() => purchaseOrder.list(input))),
+      get: permitted("purchase-order", "VIEW").input(idInput).query(({ input }) => domainCall(() => purchaseOrder.get(input.id))),
+      nextNumber: permitted("purchase-order", "VIEW").input(memoNextNumberSchema).query(({ input }) => domainCall(() => purchaseOrder.nextNumber(input.docDate))),
+      options: permitted("purchase-order", "VIEW").input(z.object({ vendorId: z.uuid().optional() }).strict())
+        .query(({ input }) => domainCall(() => purchaseOrder.options(input.vendorId))),
+      create: permitted("purchase-order", "ADD", true).input(createPurchaseOrderSchema).mutation(({ ctx, input }) => domainCall(() => purchaseOrder.create(ctx.userId, input))),
+      update: permitted("purchase-order", "EDIT", true).input(updatePurchaseOrderSchema).mutation(({ ctx, input }) => {
+        const { id, expectedVersion, ...body } = input;
+        return domainCall(() => purchaseOrder.update(ctx.userId, id, expectedVersion, body));
+      }),
+      delete: permitted("purchase-order", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchaseOrder.delete(ctx.userId, input.id, input.expectedVersion))),
+      approve: permitted("purchase-order", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchaseOrder.approve(ctx.userId, input.id, input.expectedVersion))),
+    }),
+    // purchase SA rev 1 / ADR-0042 (owner 2026-11-04): Memo Stock / PO / manual lines; Save checks, Approve cuts the stock
+    // (SA default D2). Grants per authorization.md; input is validated after the grant with contract field errors.
+    purchase: t.router({
+      list: permitted("purchase", "VIEW").use(withFieldErrors(purchaseListSchema)).input(purchaseListSchema).query(({ input }) => domainCall(() => purchase.list(input))),
+      get: permitted("purchase", "VIEW").input(idInput).query(({ input }) => domainCall(() => purchase.get(input.id))),
+      nextNumber: permitted("purchase", "VIEW").input(purchaseNextNumberSchema).query(({ input }) => domainCall(() => purchase.nextNumber(input.docDate))),
+      options: permitted("purchase", "VIEW").input(purchaseOptionsSchema).query(({ input }) => domainCall(() => purchase.options(input.vendorId))),
+      // SA-PU-12/13 pickers (D9: purchase:VIEW alone; memoStock.list is not opened to purchase).
+      memoStock: permitted("purchase", "VIEW").use(withFieldErrors(purchaseMemoStockSchema)).input(purchaseMemoStockSchema).query(({ input }) => domainCall(() => purchase.memoStock(input))),
+      purchaseOrderLines: permitted("purchase", "VIEW").use(withFieldErrors(purchaseOrderLinesSchema)).input(purchaseOrderLinesSchema)
+        .query(({ input }) => domainCall(() => purchase.purchaseOrderLines(input))),
+      create: permitted("purchase", "ADD", true).use(withFieldErrors(createPurchaseSchema)).input(createPurchaseSchema).mutation(({ ctx, input }) => domainCall(() => purchase.create(ctx.userId, input))),
+      update: permitted("purchase", "EDIT", true).use(withFieldErrors(updatePurchaseSchema)).input(updatePurchaseSchema).mutation(({ ctx, input }) => {
+        const { id, expectedVersion, ...body } = input;
+        return domainCall(() => purchase.update(ctx.userId, id, expectedVersion, body));
+      }),
+      delete: permitted("purchase", "DELETE", true).input(purchaseVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchase.delete(ctx.userId, input.id, input.expectedVersion))),
+      // SA-PU-09: the stock cut; the creator may approve; APPROVE + CSRF on every call.
+      approve: permitted("purchase", "APPROVE", true).input(purchaseVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchase.approve(ctx.userId, input.id, input.expectedVersion))),
     }),
     // Memo Outstanding From Vendor report (memo-outstanding-vendor SA-MOV-01/10): read-only, VIEW on its own menu.
     memoOutstanding: t.router({

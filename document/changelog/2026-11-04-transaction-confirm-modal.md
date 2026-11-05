@@ -1,0 +1,7 @@
+# 2026-11-04 Transaction confirm modal and error-row hover
+
+- Owner request 2026-11-04 (screenshots of "localhost:8080 says Delete 3?" and the Quotation item table): transaction pages confirm with the app modal, not the browser's `window.confirm`; error rows looked broken on hover/selection.
+- Confirm: new `frontend/src/features/quotation/components/use-confirm.tsx` (`useConfirm()` → `await confirm(request)` over the existing `ConfirmDialog`). Quotation, trade documents (Memo Out, Memo Out Return, Memo Return, Reserve via `document-form.tsx`) and Memo Receive use it for Delete ("Delete {docNo}?", Keep document / Delete) and Discard unsaved changes (Cancel, Memo Receive Refresh; Keep editing / Discard). No `window.confirm` remains in `frontend/src`.
+- Error rows (`ItemTable.tsx`): each row and its "Row n: …" line share one `<tbody>`, so hover darkens both (#FDECEC → #FBE0E0) and a selected error row stays red (#F9D7D7) instead of turning teal; clicking the error line selects the row. Rows without errors are unchanged.
+- Verification: `test/quotation/confirm-and-row-errors.test.ts` (5 new); frontend `vitest run` 66 files / 621 tests passed, `tsc` 0, ESLint 0 errors (2 old warnings in login-form). Served chunk checked after a frontend container restart.
+- Security review 2026-11-04 (same working tree on `f542171`): sec-auditor clear, security-auditor clear; no ticket. Advisory only: `useConfirm` could later move to `components/ui`; the clickable error line has no keyboard handler, like the data row.

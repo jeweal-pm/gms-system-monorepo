@@ -13,6 +13,9 @@ import { CurrencyService } from "./currency/currency.service";
 import { PrismaLifecycleService } from "./database/prisma-lifecycle.service";
 import { QuotationPhotoPublicController } from "./quotation/quotation-photo.public.controller";
 import { MemoReceivePhotoPublicController } from "./trade-document/memo-receive-photo.public.controller";
+import { PurchaseOrderPhotoPublicController } from "./purchase-order/purchase-order-photo.public.controller";
+import { PurchaseOrderService } from "./purchase-order/purchase-order.service";
+import { PurchaseService } from "./purchase/purchase.service";
 import { QuotationService } from "./quotation/quotation.service";
 import { MemoOutService } from "./trade-document/memo-out.service";
 import { ReserveService } from "./trade-document/reserve.service";
@@ -49,7 +52,7 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
       },
     }),
   ],
-  controllers: [HealthController, CustomerController, VendorController, CompanyProfileController, CompanyLogoPublicController, StoneMasterController, QuotationPhotoPublicController, MemoReceivePhotoPublicController],
+  controllers: [HealthController, CustomerController, VendorController, CompanyProfileController, CompanyLogoPublicController, StoneMasterController, QuotationPhotoPublicController, MemoReceivePhotoPublicController, PurchaseOrderPhotoPublicController],
   providers: [
     PrismaLifecycleService,
     CustomerService,
@@ -63,6 +66,8 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
     MemoOutService,
     MemoOutReturnService,
     MemoReceiveService,
+    PurchaseOrderService,
+    PurchaseService,
     MemoReturnService,
     MemoStockService,
     MemoOutstandingService,

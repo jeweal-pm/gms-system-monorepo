@@ -85,29 +85,31 @@ model CustomerAddress {
 
 // vendor SA revision 1 / ADR-0019: invoice addresses only (no `type` column), no relation to customer.
 model Vendor {
-  id           String          @id @default(uuid()) @db.Uuid
-  name         String          @db.VarChar(200)
-  nameKey      String          @map("name_key") @db.VarChar(200)
+  id             String          @id @default(uuid()) @db.Uuid
+  name           String          @db.VarChar(200)
+  nameKey        String          @map("name_key") @db.VarChar(200)
   /// ADR-0021: required; rows without a code were backfilled with the running number (V001 …).
-  code         String          @db.VarChar(120)
-  codeKey      String          @unique(map: "vendor_code_key_key") @map("code_key") @db.VarChar(120)
-  currencyCode String          @map("currency_code") @db.Char(3)
-  active       Boolean         @default(true)
-  firstName    String          @map("first_name") @db.VarChar(100)
-  middleName   String?         @map("middle_name") @db.VarChar(100)
-  lastName     String?         @map("last_name") @db.VarChar(100)
-  phoneE164    String?         @map("phone_e164") @db.VarChar(16)
-  phoneCountry String?         @map("phone_country") @db.Char(2)
-  email        String          @db.VarChar(254)
-  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamp(3)
+  code           String          @db.VarChar(120)
+  codeKey        String          @unique(map: "vendor_code_key_key") @map("code_key") @db.VarChar(120)
+  currencyCode   String          @map("currency_code") @db.Char(3)
+  active         Boolean         @default(true)
+  firstName      String          @map("first_name") @db.VarChar(100)
+  middleName     String?         @map("middle_name") @db.VarChar(100)
+  lastName       String?         @map("last_name") @db.VarChar(100)
+  phoneE164      String?         @map("phone_e164") @db.VarChar(16)
+  phoneCountry   String?         @map("phone_country") @db.Char(2)
+  email          String          @db.VarChar(254)
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamp(3)
   /// Optimistic version; written explicitly by the service (customer D-05), not @updatedAt.
-  updatedAt    DateTime        @default(now()) @map("updated_at") @db.Timestamp(3)
-  createdBy    String          @map("created_by") @db.VarChar(64)
-  updatedBy    String          @map("updated_by") @db.VarChar(64)
-  addresses    VendorAddress[]
-  memoReceives MemoReceive[]
-  memoStocks   MemoStock[]
-  memoReturns  MemoReturn[]
+  updatedAt      DateTime        @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy      String          @map("created_by") @db.VarChar(64)
+  updatedBy      String          @map("updated_by") @db.VarChar(64)
+  addresses      VendorAddress[]
+  memoReceives   MemoReceive[]
+  purchaseOrders PurchaseOrder[]
+  memoStocks     MemoStock[]
+  memoReturns    MemoReturn[]
+  purchases      Purchase[]
 
   @@index([nameKey, id], map: "vendor_name_key_id_idx")
   @@index([active, nameKey, id], map: "vendor_active_name_key_id_idx")
@@ -117,20 +119,22 @@ model Vendor {
 
 /// Invoice addresses only (ADR-0019 §3); no `type` column.
 model VendorAddress {
-  id           String        @id @default(uuid()) @db.Uuid
-  vendorId     String        @map("vendor_id") @db.Uuid
-  position     Int           @db.SmallInt
-  name         String        @db.VarChar(200)
-  taxId        String?       @map("tax_id") @db.VarChar(32)
-  address      String        @db.VarChar(500)
-  countryCode  String        @map("country_code") @db.Char(2)
-  state        String        @db.VarChar(100)
-  city         String        @db.VarChar(100)
-  postcode     String        @db.VarChar(20)
-  isDefault    Boolean       @default(false) @map("is_default")
-  vendor       Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  memoReceives MemoReceive[]
-  memoReturns  MemoReturn[]
+  id             String          @id @default(uuid()) @db.Uuid
+  vendorId       String          @map("vendor_id") @db.Uuid
+  position       Int             @db.SmallInt
+  name           String          @db.VarChar(200)
+  taxId          String?         @map("tax_id") @db.VarChar(32)
+  address        String          @db.VarChar(500)
+  countryCode    String          @map("country_code") @db.Char(2)
+  state          String          @db.VarChar(100)
+  city           String          @db.VarChar(100)
+  postcode       String          @db.VarChar(20)
+  isDefault      Boolean         @default(false) @map("is_default")
+  vendor         Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  memoReceives   MemoReceive[]
+  purchaseOrders PurchaseOrder[]
+  memoReturns    MemoReturn[]
+  purchases      Purchase[]
 
   @@unique([vendorId, position], map: "vendor_address_position_key")
   /// Zero or one default per vendor (D-V03); a partial UNIQUE index allows zero rows.
@@ -177,25 +181,26 @@ model CompanyProfile {
 
 /// User-upload metadata tombstones are independent of CompanyProfile and cannot cascade away.
 model StoredFile {
-  id                    String                 @id @db.Uuid
-  kind                  String                 @db.VarChar(32)
-  bucket                String                 @db.VarChar(16)
-  objectKey             String                 @map("object_key") @db.VarChar(512)
-  filename              String                 @db.VarChar(255)
-  contentType           String                 @map("content_type") @db.VarChar(255)
-  sizeBytes             BigInt                 @map("size_bytes")
-  sha256                String                 @db.Char(64)
-  status                String                 @db.VarChar(16)
-  sourceType            String                 @map("source_type") @db.VarChar(64)
-  sourceId              String                 @map("source_id") @db.VarChar(128)
-  createdBy             String?                @map("created_by") @db.VarChar(64)
-  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  readyAt               DateTime?              @map("ready_at") @db.Timestamptz(6)
-  expiresAt             DateTime?              @map("expires_at") @db.Timestamptz(6)
-  deletedAt             DateTime?              @map("deleted_at") @db.Timestamptz(6)
-  purgeAfter            DateTime?              @map("purge_after") @db.Timestamptz(6)
-  quotationLinePhotos   QuotationLinePhoto[]
-  memoReceiveLinePhotos MemoReceiveLinePhoto[]
+  id                      String                   @id @db.Uuid
+  kind                    String                   @db.VarChar(32)
+  bucket                  String                   @db.VarChar(16)
+  objectKey               String                   @map("object_key") @db.VarChar(512)
+  filename                String                   @db.VarChar(255)
+  contentType             String                   @map("content_type") @db.VarChar(255)
+  sizeBytes               BigInt                   @map("size_bytes")
+  sha256                  String                   @db.Char(64)
+  status                  String                   @db.VarChar(16)
+  sourceType              String                   @map("source_type") @db.VarChar(64)
+  sourceId                String                   @map("source_id") @db.VarChar(128)
+  createdBy               String?                  @map("created_by") @db.VarChar(64)
+  createdAt               DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  readyAt                 DateTime?                @map("ready_at") @db.Timestamptz(6)
+  expiresAt               DateTime?                @map("expires_at") @db.Timestamptz(6)
+  deletedAt               DateTime?                @map("deleted_at") @db.Timestamptz(6)
+  purgeAfter              DateTime?                @map("purge_after") @db.Timestamptz(6)
+  quotationLinePhotos     QuotationLinePhoto[]
+  memoReceiveLinePhotos   MemoReceiveLinePhoto[]
+  purchaseOrderLinePhotos PurchaseOrderLinePhoto[]
 
   @@unique([bucket, objectKey], map: "stored_files_bucket_object_key_key")
   @@index([sourceType, sourceId], map: "stored_files_source_idx")
@@ -384,6 +389,8 @@ model StoneCode {
   memoOutLines       MemoOutLine[]
   reserveLines       ReserveLine[]
   memoOutReturnLines MemoOutReturnLine[]
+  purchaseOrderLines PurchaseOrderLine[]
+  purchaseLines      PurchaseLine[]
 
   @@index([stoneNameId], map: "stone_code_stone_name_id_idx")
   @@index([sizeId], map: "stone_code_size_id_idx")
@@ -450,7 +457,9 @@ model DocumentNumbering {
   reserves       Reserve[]
   memoOutReturns MemoOutReturn[]
   memoReceives   MemoReceive[]
+  purchaseOrders PurchaseOrder[]
   memoReturns    MemoReturn[]
+  purchases      Purchase[]
 
   @@unique([transactionKey, effectiveDate])
   @@map("document_numbering")
@@ -1019,6 +1028,10 @@ model MemoStock {
   soldWeightCt       Decimal          @default(0) @map("sold_weight_ct") @db.Decimal(12, 3)
   reservedPcs        Int              @default(0) @map("reserved_pcs")
   reservedWeightCt   Decimal          @default(0) @map("reserved_weight_ct") @db.Decimal(12, 3)
+  /// purchase SA-PU-05 (D1): how much of `sold` the vendor has been paid for by approved purchases; 0 <= purchased <= sold
+  /// (CHECK memo_stock_purchased_check). "Sold to customers, must be purchased" = sold - purchased.
+  purchasedPcs       Int              @default(0) @map("purchased_pcs")
+  purchasedWeightCt  Decimal          @default(0) @map("purchased_weight_ct") @db.Decimal(12, 3)
   priceUnit          String           @map("price_unit") @db.VarChar(10)
   unitPrice          Decimal          @map("unit_price") @db.Decimal(18, 2)
   lineAmount         Decimal          @map("line_amount") @db.Decimal(18, 2)
@@ -1035,6 +1048,7 @@ model MemoStock {
   memoOutLines       MemoOutLine[]
   reserveLines       ReserveLine[]
   quotationLines     QuotationLine[]
+  purchaseLines      PurchaseLine[]
 
   /// Add Memo Stock dialog: a vendor's items with something still pending, newest receive first (SA-MR-11).
   @@index([vendorId, receivedDocDate(sort: Desc), stockId(sort: Desc)], where: raw("((pending_pcs > 0) OR (pending_weight_ct > (0)::numeric))"), map: "memo_stock_pending_idx")
@@ -1043,6 +1057,8 @@ model MemoStock {
   @@index([memoReceiveId], map: "memo_stock_memo_receive_idx")
   /// Outstanding report: items with Reserve or Outstanding above 0 (SA-MOV-04).
   @@index([memoReceiveId], where: raw("((pending_pcs > 0) OR (pending_weight_ct > (0)::numeric) OR (reserved_pcs > 0) OR (reserved_weight_ct > (0)::numeric))"), map: "memo_stock_open_idx")
+  /// Purchase "Add Memo Stock" SOLD group (purchase SA-PU-12): sold to customers, not yet purchased.
+  @@index([vendorId, receivedDocDate(sort: Desc), stockId(sort: Desc)], where: raw("((sold_pcs > purchased_pcs) OR (sold_weight_ct > purchased_weight_ct))"), map: "memo_stock_sold_open_idx")
   @@map("memo_stock")
   @@schema("partner")
 }
@@ -1287,5 +1303,257 @@ model ReserveCharge {
 
   @@id([reserveId, chargeType])
   @@map("reserve_charge")
+  @@schema("partner")
+}
+
+/// Purchase Order (purchase-order SA revision 1 / ADR-0041, owner 2026-11-04): a vendor document like memo_receive,
+/// PENDING_APPROVAL → APPROVED. Approval writes no stock; the lines then wait to be purchased (SA-PO-04/05).
+model PurchaseOrder {
+  id                 String                @id @db.Uuid
+  /// null = plain running number 1, 2, 3 … (no Document Setup row in effect).
+  numberingId        String?               @map("numbering_id") @db.Uuid
+  runningNo          Int                   @map("running_no")
+  docNo              String                @unique(map: "purchase_order_doc_no_key") @map("doc_no") @db.VarChar(40)
+  status             String                @db.VarChar(20)
+  docDate            DateTime              @map("doc_date") @db.Date
+  dueDate            DateTime              @map("due_date") @db.Date
+  vendorId           String                @map("vendor_id") @db.Uuid
+  vendorCodeSnapshot String                @map("vendor_code_snapshot") @db.VarChar(120)
+  vendorNameSnapshot String                @map("vendor_name_snapshot") @db.VarChar(200)
+  addressId          String?               @map("address_id") @db.Uuid
+  addressSnapshot    String                @map("address_snapshot") @db.VarChar(1000)
+  currencyCode       String                @map("currency_code") @db.Char(3)
+  exchangeRate       Decimal?              @map("exchange_rate") @db.Decimal(18, 6)
+  ref                String                @default("") @db.VarChar(100)
+  documentNote       String                @default("") @map("document_note") @db.VarChar(500)
+  discountType       String                @map("discount_type") @db.VarChar(10)
+  discountValue      Decimal               @map("discount_value") @db.Decimal(18, 4)
+  taxEnabled         Boolean               @map("tax_enabled")
+  taxRate            Decimal               @map("tax_rate") @db.Decimal(9, 4)
+  taxIncluded        Boolean               @map("tax_included")
+  laborWork          String?               @map("labor_work") @db.VarChar(120)
+  laborBasis         String?               @map("labor_basis") @db.VarChar(10)
+  laborQty           Decimal?              @map("labor_qty") @db.Decimal(18, 3)
+  laborRate          Decimal?              @map("labor_rate") @db.Decimal(18, 2)
+  subtotal           Decimal               @db.Decimal(18, 2)
+  discountAmount     Decimal               @map("discount_amount") @db.Decimal(18, 2)
+  priceBeforeTax     Decimal               @map("price_before_tax") @db.Decimal(18, 2)
+  taxAmount          Decimal               @map("tax_amount") @db.Decimal(18, 2)
+  chargesAmount      Decimal               @map("charges_amount") @db.Decimal(18, 2)
+  laborAmount        Decimal               @map("labor_amount") @db.Decimal(18, 2)
+  grandTotal         Decimal               @map("grand_total") @db.Decimal(18, 2)
+  approvedAt         DateTime?             @map("approved_at") @db.Timestamp(3)
+  approvedBy         String?               @map("approved_by") @db.VarChar(64)
+  version            Int                   @default(1)
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamp(3)
+  createdBy          String                @map("created_by") @db.VarChar(64)
+  updatedAt          DateTime              @default(now()) @map("updated_at") @db.Timestamp(3)
+  updatedBy          String                @map("updated_by") @db.VarChar(64)
+  numbering          DocumentNumbering?    @relation(fields: [numberingId], references: [id], onDelete: Restrict)
+  vendor             Vendor                @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  address            VendorAddress?        @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  lines              PurchaseOrderLine[]
+  charges            PurchaseOrderCharge[]
+
+  @@unique([numberingId, runningNo], map: "purchase_order_numbering_running_no_key")
+  @@unique([runningNo], where: { numberingId: null }, map: "purchase_order_plain_running_no_key")
+  @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "purchase_order_list_idx")
+  @@index([vendorId, docDate(sort: Desc)], map: "purchase_order_vendor_idx")
+  @@index([status, docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "purchase_order_status_idx")
+  @@index([addressId], map: "purchase_order_address_idx")
+  @@map("purchase_order")
+  @@schema("partner")
+}
+
+/// A Purchase Order line: a keyed-in quotation line (MANUAL only, with stone code and free-text location, SA-PO-06)
+/// plus the quantity already purchased; the Purchase service (later) is the only writer of `purchased_*` (SA-PO-05).
+model PurchaseOrderLine {
+  id                String                   @id @db.Uuid
+  purchaseOrderId   String                   @map("purchase_order_id") @db.Uuid
+  position          Int                      @db.SmallInt
+  source            String                   @db.VarChar(10)
+  stoneCodeId       String?                  @map("stone_code_id") @db.Uuid
+  stoneCodeSnapshot String                   @default("") @map("stone_code_snapshot") @db.VarChar(60)
+  stone             String                   @default("") @db.VarChar(60)
+  shape             String                   @default("") @db.VarChar(60)
+  size              String                   @default("") @db.VarChar(60)
+  color             String                   @default("") @db.VarChar(60)
+  clarity           String                   @default("") @db.VarChar(60)
+  cutting           String                   @default("") @db.VarChar(60)
+  quality           String                   @default("") @db.VarChar(60)
+  lot               String                   @default("") @db.VarChar(40)
+  location          String                   @default("") @db.VarChar(40)
+  cerType           String                   @default("") @map("cer_type") @db.VarChar(20)
+  cerNo             String                   @default("") @map("cer_no") @db.VarChar(60)
+  pcs               Int
+  weightCt          Decimal                  @map("weight_ct") @db.Decimal(12, 3)
+  priceUnit         String                   @map("price_unit") @db.VarChar(10)
+  unitPrice         Decimal                  @map("unit_price") @db.Decimal(18, 2)
+  discountType      String                   @default("NONE") @map("discount_type") @db.VarChar(10)
+  discountValue     Decimal                  @default(0) @map("discount_value") @db.Decimal(18, 4)
+  discountAmount    Decimal                  @default(0) @map("discount_amount") @db.Decimal(18, 2)
+  amount            Decimal                  @db.Decimal(18, 2)
+  itemNote          String                   @default("") @map("item_note") @db.VarChar(500)
+  purchasedPcs      Int                      @default(0) @map("purchased_pcs")
+  purchasedWeightCt Decimal                  @default(0) @map("purchased_weight_ct") @db.Decimal(12, 3)
+  document          PurchaseOrder            @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  stoneCode         StoneCode?               @relation(fields: [stoneCodeId], references: [id], onDelete: SetNull)
+  photos            PurchaseOrderLinePhoto[]
+  purchaseLines     PurchaseLine[]
+
+  @@unique([purchaseOrderId, position], map: "purchase_order_line_position_key")
+  @@index([stoneCodeId], map: "purchase_order_line_stone_code_idx")
+  /// Purchase "Add Purchase Order" picker (purchase SA-PU-13): lines with something still to purchase.
+  @@index([purchaseOrderId], where: raw("((purchased_pcs < pcs) OR (purchased_weight_ct < weight_ct))"), map: "purchase_order_line_open_idx")
+  @@map("purchase_order_line")
+  @@schema("partner")
+}
+
+model PurchaseOrderCharge {
+  purchaseOrderId String        @map("purchase_order_id") @db.Uuid
+  chargeType      String        @map("charge_type") @db.VarChar(20)
+  amount          Decimal       @db.Decimal(18, 2)
+  document        PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@id([purchaseOrderId, chargeType])
+  @@map("purchase_order_charge")
+  @@schema("partner")
+}
+
+/// Up to 5 photos per Purchase Order line in order (SA-PO-11, the memo receive rule); bytes are kept (ADR-0030).
+model PurchaseOrderLinePhoto {
+  lineId   String            @map("line_id") @db.Uuid
+  position Int               @db.SmallInt
+  fileId   String            @map("file_id") @db.Uuid
+  line     PurchaseOrderLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  file     StoredFile        @relation(fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@id([lineId, position])
+  @@index([fileId], map: "purchase_order_line_photo_file_idx")
+  @@map("purchase_order_line_photo")
+  @@schema("partner")
+}
+
+// ---- Purchase (purchase SA revision 1 / ADR-0042, owner 2026-11-04) ----
+// Shaped like Purchase Order. Lines come from Memo Stock (STOCK), an approved PO line (PURCHASE_ORDER) or are keyed in
+// (MANUAL). Save checks availability; Approve cuts memo_stock pending/sold/purchased and purchase_order_line.purchased_*
+// (SA default D2). CHECKs are in the migration SQL.
+
+model Purchase {
+  id                 String             @id @db.Uuid
+  /// null = plain running number 1, 2, 3 … (no Document Setup row in effect).
+  numberingId        String?            @map("numbering_id") @db.Uuid
+  runningNo          Int                @map("running_no")
+  docNo              String             @unique(map: "purchase_doc_no_key") @map("doc_no") @db.VarChar(40)
+  status             String             @db.VarChar(20)
+  docDate            DateTime           @map("doc_date") @db.Date
+  /// Payment due (Q-PU-10), >= doc_date.
+  dueDate            DateTime           @map("due_date") @db.Date
+  vendorId           String             @map("vendor_id") @db.Uuid
+  vendorCodeSnapshot String             @map("vendor_code_snapshot") @db.VarChar(120)
+  vendorNameSnapshot String             @map("vendor_name_snapshot") @db.VarChar(200)
+  addressId          String?            @map("address_id") @db.Uuid
+  addressSnapshot    String             @map("address_snapshot") @db.VarChar(1000)
+  currencyCode       String             @map("currency_code") @db.Char(3)
+  exchangeRate       Decimal?           @map("exchange_rate") @db.Decimal(18, 6)
+  ref                String             @default("") @db.VarChar(100)
+  documentNote       String             @default("") @map("document_note") @db.VarChar(500)
+  discountType       String             @map("discount_type") @db.VarChar(10)
+  discountValue      Decimal            @map("discount_value") @db.Decimal(18, 4)
+  taxEnabled         Boolean            @map("tax_enabled")
+  taxRate            Decimal            @map("tax_rate") @db.Decimal(9, 4)
+  taxIncluded        Boolean            @map("tax_included")
+  laborWork          String?            @map("labor_work") @db.VarChar(120)
+  laborBasis         String?            @map("labor_basis") @db.VarChar(10)
+  laborQty           Decimal?           @map("labor_qty") @db.Decimal(18, 3)
+  laborRate          Decimal?           @map("labor_rate") @db.Decimal(18, 2)
+  subtotal           Decimal            @db.Decimal(18, 2)
+  discountAmount     Decimal            @map("discount_amount") @db.Decimal(18, 2)
+  priceBeforeTax     Decimal            @map("price_before_tax") @db.Decimal(18, 2)
+  taxAmount          Decimal            @map("tax_amount") @db.Decimal(18, 2)
+  chargesAmount      Decimal            @map("charges_amount") @db.Decimal(18, 2)
+  laborAmount        Decimal            @map("labor_amount") @db.Decimal(18, 2)
+  grandTotal         Decimal            @map("grand_total") @db.Decimal(18, 2)
+  approvedAt         DateTime?          @map("approved_at") @db.Timestamp(3)
+  approvedBy         String?            @map("approved_by") @db.VarChar(64)
+  version            Int                @default(1)
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamp(3)
+  createdBy          String             @map("created_by") @db.VarChar(64)
+  updatedAt          DateTime           @default(now()) @map("updated_at") @db.Timestamp(3)
+  updatedBy          String             @map("updated_by") @db.VarChar(64)
+  numbering          DocumentNumbering? @relation(fields: [numberingId], references: [id], onDelete: Restrict)
+  vendor             Vendor             @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  address            VendorAddress?     @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  lines              PurchaseLine[]
+  charges            PurchaseCharge[]
+
+  @@unique([numberingId, runningNo], map: "purchase_numbering_running_no_key")
+  @@unique([runningNo], where: { numberingId: null }, map: "purchase_plain_running_no_key")
+  @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "purchase_list_idx")
+  @@index([vendorId, docDate(sort: Desc)], map: "purchase_vendor_idx")
+  @@index([status, docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "purchase_status_idx")
+  @@index([addressId], map: "purchase_address_idx")
+  @@map("purchase")
+  @@schema("partner")
+}
+
+/// A Purchase line (SA-PU-03/10): STOCK = a Memo Stock item in group IN_STOCK or SOLD (its Stock ID); PURCHASE_ORDER =
+/// an approved PO line (Stock ID issued at save); MANUAL = keyed in (Stock ID issued at save). Source fields are copied
+/// from the database on save; only pcs, weight, price and the item note come from the user on picked lines.
+model PurchaseLine {
+  id                  String             @id @db.Uuid
+  purchaseId          String             @map("purchase_id") @db.Uuid
+  position            Int                @db.SmallInt
+  source              String             @db.VarChar(16)
+  memoStockId         String?            @map("memo_stock_id") @db.Uuid
+  memoGroup           String?            @map("memo_group") @db.VarChar(10)
+  purchaseOrderLineId String?            @map("purchase_order_line_id") @db.Uuid
+  stockId             String             @map("stock_id") @db.VarChar(10)
+  stoneCodeId         String?            @map("stone_code_id") @db.Uuid
+  stoneCodeSnapshot   String             @default("") @map("stone_code_snapshot") @db.VarChar(60)
+  stone               String             @default("") @db.VarChar(60)
+  shape               String             @default("") @db.VarChar(60)
+  size                String             @default("") @db.VarChar(60)
+  color               String             @default("") @db.VarChar(60)
+  clarity             String             @default("") @db.VarChar(60)
+  cutting             String             @default("") @db.VarChar(60)
+  quality             String             @default("") @db.VarChar(60)
+  lot                 String             @default("") @db.VarChar(40)
+  location            String             @default("") @db.VarChar(40)
+  cerType             String             @default("") @map("cer_type") @db.VarChar(20)
+  cerNo               String             @default("") @map("cer_no") @db.VarChar(60)
+  pcs                 Int
+  weightCt            Decimal            @map("weight_ct") @db.Decimal(12, 3)
+  priceUnit           String             @map("price_unit") @db.VarChar(10)
+  unitPrice           Decimal            @map("unit_price") @db.Decimal(18, 2)
+  discountType        String             @default("NONE") @map("discount_type") @db.VarChar(10)
+  discountValue       Decimal            @default(0) @map("discount_value") @db.Decimal(18, 4)
+  discountAmount      Decimal            @default(0) @map("discount_amount") @db.Decimal(18, 2)
+  amount              Decimal            @db.Decimal(18, 2)
+  itemNote            String             @default("") @map("item_note") @db.VarChar(500)
+  document            Purchase           @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  stoneCode           StoneCode?         @relation(fields: [stoneCodeId], references: [id], onDelete: SetNull)
+  memoStock           MemoStock?         @relation(fields: [memoStockId], references: [id], onDelete: Restrict)
+  purchaseOrderLine   PurchaseOrderLine? @relation(fields: [purchaseOrderLineId], references: [id], onDelete: Restrict)
+
+  @@unique([purchaseId, position], map: "purchase_line_position_key")
+  @@unique([purchaseId, memoStockId, memoGroup], map: "purchase_line_memo_stock_key")
+  @@unique([purchaseId, purchaseOrderLineId], map: "purchase_line_po_line_key")
+  @@unique([stockId], where: raw("((source)::text <> 'STOCK'::text)"), map: "purchase_line_issued_stock_id_key")
+  @@index([memoStockId], map: "purchase_line_memo_stock_idx")
+  @@index([purchaseOrderLineId], map: "purchase_line_po_line_idx")
+  @@index([stoneCodeId], map: "purchase_line_stone_code_idx")
+  @@map("purchase_line")
+  @@schema("partner")
+}
+
+model PurchaseCharge {
+  purchaseId String   @map("purchase_id") @db.Uuid
+  chargeType String   @map("charge_type") @db.VarChar(20)
+  amount     Decimal  @db.Decimal(18, 2)
+  document   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@id([purchaseId, chargeType])
+  @@map("purchase_charge")
   @@schema("partner")
 }
