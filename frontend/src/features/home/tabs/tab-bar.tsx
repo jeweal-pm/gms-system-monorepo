@@ -99,7 +99,7 @@ function TabStrip({ tabs, activeId, onSelect, onClose }: Readonly<Pick<TabBarPro
               data-tab-id={tab.id}
               role="presentation"
               className={`group flex max-w-[220px] shrink-0 items-center gap-2 rounded-t-gms-md border-r border-gms-border-header px-3 transition-colors last:border-r-0 ${
-                active ? "bg-[#E2F0EF] text-gms-text" : "bg-transparent text-gms-text-muted hover:bg-gms-surface-sunken"
+                active ? "bg-[#FFFFFF] text-gms-text" : "bg-transparent text-gms-text-muted hover:bg-gms-surface-sunken"
               }`}
             >
               <button
@@ -110,9 +110,9 @@ function TabStrip({ tabs, activeId, onSelect, onClose }: Readonly<Pick<TabBarPro
                 title={tab.title}
                 onClick={() => onSelect(tab.id)}
                 onKeyDown={(event) => handleKeyDown(event, index)}
-                className={`min-w-0 truncate rounded-gms-sm py-1 text-gms-body ${active ? "font-semibold" : ""} ${focusRing}`}
+                className={`min-w-0 truncate rounded-gms-sm py-1 text-gms-body ${active ? "font-bold" : ""} ${focusRing}`}
               >
-                {tab.title}
+               {tab.title}
               </button>
               {/* Owner 2026-11-03: no dot on the shown tab; it marks unsaved changes in the other tabs. */}
               {tab.dirty && !active && <span aria-label="Unsaved changes" role="img" className="size-1.5 shrink-0 rounded-full bg-gms-primary" />}
@@ -214,7 +214,7 @@ function TabCountMenu({
         >
           <ul className="max-h-[60vh] overflow-y-auto">
             {tabs.map((tab) => (
-              <li key={tab.id} className={`flex items-center gap-2 px-2 ${tab.id === activeId ? "bg-[#E2F0EF]" : "hover:bg-gms-surface-sunken"}`}>
+              <li key={tab.id} className={`flex items-center gap-2 px-2 ${tab.id === activeId ? "bg-[#FFFFFF]" : "hover:bg-gms-surface-sunken"}`}>
                 <button
                   type="button"
                   role="menuitem"
