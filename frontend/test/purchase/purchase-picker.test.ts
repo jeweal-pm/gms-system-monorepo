@@ -30,7 +30,7 @@ import {
   purchaseOrderEmptyText,
   purchaseOrderGroups,
   purchaseOrderPickerProps,
-  purchaseOrderTabs,
+  PURCHASE_ORDER_COLUMNS,
   SOLD_GROUP_LABEL,
 } from "@/features/purchase/components/purchase-pickers";
 import { gatewayError } from "../partner/helpers";
@@ -127,7 +127,8 @@ describe("UT-PU-07 picker shell view (R2-MS layout and states)", () => {
     expect(html.match(/<thead/g)).toHaveLength(1);
     expect(html.match(/<tr class="h-\[52px\]">/g)).toHaveLength(1);
     expect(html.match(/<th /g)).toHaveLength(MEMO_STOCK_COLUMNS.length + 2);
-    expect(MEMO_STOCK_COLUMNS.map((column) => column.title)).toEqual(["Stock ID", "Location", "Stone", "Color · Clarity", "Cer Type", "Status", "Pcs", "Price", "Amount"]);
+    expect(MEMO_STOCK_COLUMNS.map((column) => column.title)).toEqual(["Memo ID", "Location", "Stone", "Color · Clarity", "Cer Type", "Status", "Pcs", "Price", "Amount"]);
+    expect(MEMO_STOCK_COLUMNS[0]!.sub).toBe("Stock ID · Lot");
     const soldHeader = button(html, SOLD_GROUP_LABEL);
     expect(soldHeader).toContain('aria-expanded="true"');
     const controls = /aria-controls="([^"]+)"/.exec(soldHeader)![1];
@@ -195,10 +196,12 @@ describe("UT-PU-08 Memo Stock view model", () => {
     expect(html).toContain('aria-label="Sold, 0"');
   });
 
-  it("cells: Stock ID with Lot · Memo No. and the note, Location, badges with AA text colours, Pcs over cts, price per unit, amount", () => {
+  it("cells (rev 3): Memo ID on top with Stock ID · Lot and the note under it, Location, badges with AA text colours, Pcs over cts, price per unit, amount", () => {
     const html = view(memoProps(), state("ALL", data([...sold, ...inStock])));
-    expect(html).toContain(">STK-000232</div>");
-    expect(html).toContain("L-2607-007 · MR-1001");
+    expect(html.match(/<div class="font-medium">MR-1001<\/div>/g)).toHaveLength(5);
+    expect(html).toContain(">STK-000232 · L-2607-007</div>");
+    expect(html).not.toContain(">STK-000232</div>");
+    expect(html.indexOf(">MR-1001</div>")).toBeLessThan(html.indexOf("STK-000231 · L-2607-007"));
     expect(html.match(/lucide-message-square/g)).toHaveLength(4);
     expect(html).toContain(">Memo</td>");
     expect(html).not.toMatch(/Pair|Parcel|Single/);
@@ -227,33 +230,38 @@ describe("UT-PU-08 Memo Stock view model", () => {
   });
 });
 
-describe("UT-PU-09 Add Purchase Order view (R2-PO)", () => {
+describe("UT-PU-09 Add Purchase Order view (rev 3: like the From Stock picker)", () => {
   const second = poRow({ purchaseOrderLineId: id(9), status: "OPEN", position: 1, purchaseOrder: { id: id(8), docNo: "PO2611002", docDate: "2026-11-02", dueDate: "2026-12-02", ref: "" }, purchasedPcs: 0, purchasedWeightCt: "0.000", itemNote: "" });
-  const rows: PurchaseOrderLineRow[] = [second, poRow(), poRow({ purchaseOrderLineId: id(10), position: 3 })];
-  const props = purchaseOrderPickerProps({ currency: "THB", counts: { all: 3, open: 1, partlyPurchased: 2 }, excluded: new Set(), onCancel: () => undefined, onConfirm: () => undefined });
+  const rows: PurchaseOrderLineRow[] = [second, poRow(), poRow({ purchaseOrderLineId: id(10), position: 3, stoneCode: "", lot: "" })];
+  const props = purchaseOrderPickerProps({ currency: "THB", excluded: new Set(), onCancel: () => undefined, onConfirm: () => undefined });
 
-  it("one grey group per PO in server order, tabs All / Open / Partly purchased with counts", () => {
-    expect(purchaseOrderGroups(rows).map((group) => [group.label, group.tone, group.count])).toEqual([
-      ["PO2611002 · 02/11/26 · Due 02/12/26", "neutral", 1],
-      ["PO2611001 · 01/11/26 · Due 30/11/26", "neutral", 2],
+  it("one flat list in server order: no tabs, no PO group rows, no Status column, PO No. then Stone Code", () => {
+    expect(purchaseOrderGroups(rows).map((group) => [group.id, group.count, group.rows.length])).toEqual([["ALL", 3, 3]]);
+    expect(PURCHASE_ORDER_COLUMNS.map((column) => [column.title, column.sub ?? ""])).toEqual([
+      ["PO No.", "Doc Date"], ["Stone Code", "Stock ID · Lot"], ["Location", ""], ["Stone", "Shape · Size"], ["Color · Clarity", "Cutting · Quality"],
+      ["Cer Type", "Cer No."], ["Pcs", "Weight"], ["Price", "Unit"], ["Amount", ""],
     ]);
-    expect(purchaseOrderTabs({ all: 3, open: 1, partlyPurchased: 2 }).map((tab) => `${tab.label} ${tab.count}`)).toEqual(["All 3", "Open 1", "Partly purchased 2"]);
     const html = view(props, state("ALL", data(rows)));
     expect(html).toContain(">Add Purchase Order</h2>");
     expect(html).toContain('placeholder="Search PO No., lot, stone, cer no."');
-    expect(html).toContain('aria-label="Partly purchased, 2"');
+    expect(html).not.toContain('role="tablist"');
+    expect(html).not.toContain("aria-controls");
+    expect(html).not.toContain("Due 02/12/26");
+    expect(html).not.toContain("Partly purchased");
     expect(html).not.toContain("bg-[#FAE6E4]");
+    expect(html.match(/<th /g)).toHaveLength(PURCHASE_ORDER_COLUMNS.length + 2);
     expect(numbers(html)).toEqual([1, 2, 3]);
   });
 
-  it("cells: PO line, status with the ordered quantity, open quantity and the net price", () => {
+  it("cells: bold PO No. over its Doc Date, Stone Code over Auto + lot badge and the note, open quantity and the net price", () => {
     const html = view(props, state("ALL", data(rows)));
-    expect(html).toContain(">Line 2</div>");
-    expect(html).toContain(">L-PO-1</div>");
+    expect(html).toContain('<div class="font-medium">PO2611002</div><div class="mt-1 text-xs text-[#656B71]">02/11/2026</div>');
+    expect(html.match(/>PO2611001<\/div>/g)).toHaveLength(2);
+    expect(html).toContain(">RU-OV-1</div>");
+    expect(html.match(/<span>Auto<\/span>/g)).toHaveLength(3);
+    expect(html).toContain('bg-[#FDF1DC] font-mono text-[#B4540A]">L-PO-1</span>');
+    expect(html).toContain('<div class="font-medium">—</div>');
     expect(html).toContain(">Safe A</td>");
-    expect(html).toContain('bg-[#EEF0F2] text-[#1C252E]">Open<');
-    expect(html.match(/bg-\[#FDF1DC\] text-\[#B4540A\]">Partly purchased</g)).toHaveLength(2);
-    expect(html).toContain("Ordered 10 pcs · 5.00 cts");
     expect(html).toContain(">6</div>");
     expect(html).toContain(">3.00 cts</div>");
     expect(html).toContain(">950.00</div>");
@@ -263,7 +271,7 @@ describe("UT-PU-09 Add Purchase Order view (R2-PO)", () => {
   });
 
   it("empty and filtered texts", () => {
-    expect(purchaseOrderEmptyText("THB")("OPEN", false)).toBe("No open purchase order lines from this vendor in THB.");
+    expect(purchaseOrderEmptyText("THB")("ALL", false)).toBe("No open purchase order lines from this vendor in THB.");
     expect(view(props, state("ALL", data<PurchaseOrderLineRow>([])))).toContain("No open purchase order lines from this vendor in THB.");
     expect(purchaseOrderEmptyText("THB")("ALL", true)).toBe("Nothing matches your search.");
   });

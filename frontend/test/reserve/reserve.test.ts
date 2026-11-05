@@ -22,6 +22,7 @@ const stockItem: MemoStockItem = {
   cutting: "Excellent", quality: "AAA", cerType: "GIA", cerNo: "GRS2024-081233", receivedPcs: 2, receivedWeightCt: "1.360", pendingPcs: 2, pendingWeightCt: "1.360",
   priceUnit: "CTS", unitPrice: "12500.00", netUnitPrice: "12500.0000", currency: "THB", amount: "17000.00", vendor: { id: ID, code: "V001", name: "Aom" },
   memoReceive: { id: ID, docNo: "1", docDate: "2026-10-29", dueDate: "2026-11-29" },
+  ref: { type: "MEMO_RECEIVE" as const, id: ID, docNo: "1", docDate: "2026-10-29" },
 };
 const noop = () => undefined;
 const config = customerStockConfig({

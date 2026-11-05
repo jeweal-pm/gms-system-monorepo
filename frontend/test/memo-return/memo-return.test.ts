@@ -39,6 +39,7 @@ const stockItem: MemoStockItem = {
   receivedPcs: 10, receivedWeightCt: "3.200", pendingPcs: 10, pendingWeightCt: "3.200", priceUnit: "CTS", unitPrice: "20000.00", netUnitPrice: "18000.0000",
   currency: "THB", amount: "57600.00", vendor: { id: ID, code: "V001", name: "BC Stone Shop" },
   memoReceive: { id: ID, docNo: "MR-1", docDate: "2026-10-01", dueDate: "2026-11-01" },
+  ref: { type: "MEMO_RECEIVE" as const, id: ID, docNo: "MR-1", docDate: "2026-10-01" },
 };
 const blank = () => emptyMemoReturn().lines[0];
 const picked = (patch: Partial<MemoReturnLine> = {}): MemoReturnLine => ({ ...memoStockToLine(stockItem), pcs: "7", weightCt: "2.24", ...patch });

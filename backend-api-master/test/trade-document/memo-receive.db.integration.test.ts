@@ -306,6 +306,9 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
       unitPrice: "1000.00", netUnitPrice: "1000.0000", amount: "1500.00", currency: "THB",
       vendor: { id: vendorB.id, name: "MR IT Vendor B" }, memoReceive: { id: jan.id, docNo: jan.docNo, docDate: "2026-01-10", dueDate: "2026-12-31" },
     });
+    // From Stock Ref. (owner 2026-11-04): the source transaction = the Memo Receive, docDate in the memoReceive format.
+    expect(byLot.get("JAN-1")?.ref).toEqual({ type: "MEMO_RECEIVE", id: jan.id, docNo: jan.docNo, docDate: "2026-01-10" });
+    expect(all.map((item) => item.ref)).toEqual(all.map((row) => ({ type: "MEMO_RECEIVE", id: row.memoReceive.id, docNo: row.memoReceive.docNo, docDate: row.memoReceive.docDate })));
     expect(byLot.get("JAN-2")).toMatchObject({ unitPrice: "1000.00", netUnitPrice: "900.0000", amount: "1350.00" });
     // PCS: line amount 299.00 for 3 pcs; 1 pending → 99.67.
     expect(byLot.get("FEB-1")).toMatchObject({ priceUnit: "PCS", netUnitPrice: "99.6667", pendingPcs: 1, amount: "99.67" });

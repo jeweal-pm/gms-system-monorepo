@@ -91,6 +91,7 @@ type PurchaseMemoStockRow = {
   memoStockId: string; status: MemoGroup;        // SOLD rows first, then IN_STOCK; send it back as memoGroup
   stockId: string; lot: string; itemNote: string;
   memoReceive: { id: string; docNo: string; docDate: string; dueDate: string }; // "Memo No." and "with us since memo" = docDate
+  ref: { type: "MEMO_RECEIVE" | "LOAD"; id: string; docNo: string; docDate: string }; // From Stock Ref. (additive 2026-11-05); today = memoReceive, LOAD reserved
   location: string;                              // "Memo"
   locationType: null;                            // Pair / Parcel / Single: no field exists (D6)
   stone: string; shape: string; size: string; color: string; clarity: string; cutting: string; quality: string;
@@ -107,6 +108,7 @@ type PurchaseMemoStockOutput = { items: PurchaseMemoStockRow[]; nextCursor: stri
 - `counts` use the same vendor, currency, q and date filters, ignore `status` and `cursor`, and come from one `count(*) FILTER (…)` query.
 - Only the vendor's items in this currency. Reserved quantity is never listed (D5). A pending purchase holds nothing, so the frontend leaves out rows that are already on the form (by `key`). A row's maximum is its `available*`.
 - **What is empty in revision 1 (D6):** the SOLD group (the Sold tab count is 0), `sale`, `locationType`, and search hits on an invoice no. Everything else has data: Stock ID, Lot · Memo No., note, Location "Memo", Stone (shape · size), Color · Clarity (cutting · quality), Cer Type (cer no), Status (from `status`), Pcs/Weight, Price/Unit and Amount.
+- **Ref. (additive, owner 2026-11-04):** `ref` is the source transaction of the stock item, the same `StockSourceRef` as `memoStock.list` ([memo-receive contract](../memo-receive/api-contract.md)). Today always `{type: "MEMO_RECEIVE", id, docNo, docDate}` of the Memo Receive; `LOAD` is reserved for the future Load document (no Load page/table yet). Search is unchanged (it already matches the memo no.). See [changelog](../../../../changelog/2026-11-05-stock-source-ref.md).
 
 ## Purchase Order picker
 

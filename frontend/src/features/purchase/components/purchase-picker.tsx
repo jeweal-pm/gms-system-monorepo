@@ -11,7 +11,8 @@ import { Button, cx, IconButton } from "@/features/quotation/components/ui";
  * one-row header, collapsible groups with a running #, select all over the expanded groups, checked rows kept across
  * filters, Load more, per-tab loading / error / empty texts, the footer with "N selected" and OK, Escape, backdrop,
  * focus trap and focus return. The thin pickers give it the data hook, groups, columns and cells.
- * `MemoStockModal` (Memo Return, Memo Out) is a separate component and is not changed (Q-PU-23).
+ * `MemoStockModal` (Memo Return, Memo Out) is a separate component (Q-PU-23). Rev 3 (owner 2026-11-04): a picker may
+ * pass no tabs (no tab bar) and `flat` (no group header rows); Add Purchase Order uses both.
  */
 
 export type PickerFilter<S extends string> = { status: S; q: string; from: string; to: string };
@@ -32,8 +33,10 @@ export type PickerData<R> = {
 /** The thin picker's fixed settings and row rendering. */
 export type PurchasePickerProps<R, S extends string> = {
   title: string;
-  /** The tabs with the server's counts for the current search and dates. */
+  /** The tabs with the server's counts for the current search and dates; none → no tab bar (Add Purchase Order, rev 3). */
   tabs: PickerTab<S>[];
+  /** Flat list: the groups' header rows are not shown (Add Purchase Order looks like the From Stock picker, rev 3). */
+  flat?: boolean;
   searchPlaceholder: string;
   searchLabel: string;
   dateLabels: { from: string; to: string };
@@ -205,28 +208,30 @@ export function PurchasePickerView<R, S extends string>({ props, state, on }: { 
 
         <div className="flex min-h-0 flex-1 flex-col px-6 pt-6 pb-6 lg:px-14">
           <div className="mb-5 flex flex-wrap items-center gap-5">
-            <div role="tablist" aria-label={`${props.title} filter`} className="inline-flex h-10 items-center rounded-lg bg-[#F9F9F9] p-0.5 text-[13px]">
-              {tabs.map((tab, index) => {
-                const selected = tab.id === state.tab;
-                const count = tab.count === undefined ? "" : String(tab.count);
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={selected}
-                    aria-label={count ? `${tab.label}, ${count}` : tab.label}
-                    tabIndex={selected ? 0 : -1}
-                    onClick={() => on.onTab(tab.id)}
-                    onKeyDown={(event) => onTabKey(event, index)}
-                    className={cx("flex h-9 items-center gap-1.5 rounded-md px-3", selected ? "border border-[#EDEDED] bg-white text-[#1C252E]" : "text-[#637381]")}
-                  >
-                    {tab.label}
-                    {count && <span className="text-[#637381]">{count}</span>}
-                  </button>
-                );
-              })}
-            </div>
+            {tabs.length > 0 && (
+              <div role="tablist" aria-label={`${props.title} filter`} className="inline-flex h-10 items-center rounded-lg bg-[#F9F9F9] p-0.5 text-[13px]">
+                {tabs.map((tab, index) => {
+                  const selected = tab.id === state.tab;
+                  const count = tab.count === undefined ? "" : String(tab.count);
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      aria-label={count ? `${tab.label}, ${count}` : tab.label}
+                      tabIndex={selected ? 0 : -1}
+                      onClick={() => on.onTab(tab.id)}
+                      onKeyDown={(event) => onTabKey(event, index)}
+                      className={cx("flex h-9 items-center gap-1.5 rounded-md px-3", selected ? "border border-[#EDEDED] bg-white text-[#1C252E]" : "text-[#637381]")}
+                    >
+                      {tab.label}
+                      {count && <span className="text-[#637381]">{count}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <label className="ml-auto flex h-9 w-full max-w-[352px] items-center gap-2 rounded-lg border border-[#EDEDED] bg-white px-3 text-sm">
               <Search className="size-4 shrink-0 text-[#1C252E]" />
               <input
@@ -266,23 +271,25 @@ export function PurchasePickerView<R, S extends string>({ props, state, on }: { 
                   const open = !state.collapsed.has(group.id);
                   const rowsId = `${groupId}-${group.id}`;
                   return [
-                    <tbody key={`${group.id}-head`}>
-                      <tr className={cx("h-10 border-b border-[#EDEDED]", group.tone === "sold" ? "bg-[#FAE6E4]" : "bg-[#F9F9F9]")}>
-                        <td colSpan={span} className="p-0">
-                          <button
-                            type="button"
-                            aria-expanded={open}
-                            aria-controls={rowsId}
-                            onClick={() => on.onToggleGroup(group.id)}
-                            className="flex h-10 w-full items-center gap-2 px-3 text-left text-[15px] font-medium text-[#1C252E]"
-                          >
-                            {open ? <ChevronDown className="size-4" aria-hidden /> : <ChevronRight className="size-4" aria-hidden />}
-                            <span>{group.label}</span>
-                            <span className="font-normal text-[#637381]">{group.count}</span>
-                          </button>
-                        </td>
-                      </tr>
-                    </tbody>,
+                    props.flat ? null : (
+                      <tbody key={`${group.id}-head`}>
+                        <tr className={cx("h-10 border-b border-[#EDEDED]", group.tone === "sold" ? "bg-[#FAE6E4]" : "bg-[#F9F9F9]")}>
+                          <td colSpan={span} className="p-0">
+                            <button
+                              type="button"
+                              aria-expanded={open}
+                              aria-controls={rowsId}
+                              onClick={() => on.onToggleGroup(group.id)}
+                              className="flex h-10 w-full items-center gap-2 px-3 text-left text-[15px] font-medium text-[#1C252E]"
+                            >
+                              {open ? <ChevronDown className="size-4" aria-hidden /> : <ChevronRight className="size-4" aria-hidden />}
+                              <span>{group.label}</span>
+                              <span className="font-normal text-[#637381]">{group.count}</span>
+                            </button>
+                          </td>
+                        </tr>
+                      </tbody>
+                    ),
                     <tbody key={`${group.id}-rows`} id={rowsId} hidden={!open}>
                       {open &&
                         group.rows.map((row, index) => {
