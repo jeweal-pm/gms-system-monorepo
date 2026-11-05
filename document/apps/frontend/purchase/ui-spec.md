@@ -420,3 +420,18 @@ Capacity (4 GB / 2 vCPU):
 - sorting
 - a location master and piece types, unless Q-PU-19 says otherwise
 - creating a Sale Invoice. If R2-D-01 needs one, SA proposes it separately.
+
+## Revision 3: picker Ref. / Memo ID / PO No. columns (owner 2026-11-04)
+
+Approval evidence: direct owner instructions 2026-11-04 (with screenshots 21–23 of the current Add Memo Stock, the current Add Purchase Order and the reference Add From Stock design). They select and authorize this scope:
+
+1. "ปุ่ม fromstock ใน Header ให้เพิ่ม Ref. เข้ามาโดยจะอ้างอิง transaction no ถ้ามาจาก memo ก็เขียน memo no ของเอกสารนั้นถ้ามาจาก load ก็เขียนว่ามาจากใบ Load ไหน (แต่ว่าตอนนี้ยังไม่มีหน้า load ให้ทำรองรับเพื่อในอนาคต)"
+2. "ปุ่ม Memo Stock ให้ Header จาก Stock ID เป็น Memo ID และให้ Memo ID ขึ้นมาแทน Stock ID ก็คือสลับตำแหน่ง Memo ID กับ Stock ID"
+3. "Modal Add Purchase Order ยังทำผิด PO Line เปลี่ยนเป็น PO no. และให้มัน UI เหมือน from stock ปกติเลย แต่แค่เปลี่ยนเป็น PO no จาก Stock ID"
+
+| ID | Picker | Change |
+|---|---|---|
+| R3-01 | Shared **Add From Stock / Add Memo Stock** (`MemoStockModal`: Quotation From Stock, Reserve, Memo Out, Memo Out Return, Memo Return) | New first data column **Ref.** (sub "Doc Date"): the bold transaction no. with its Doc Date (dd/MM/yyyy) under it. Source: the item's `ref` (`MEMO_RECEIVE` or `LOAD`, additive API field); the item's `memoReceive` is the fallback. A `LOAD` ref renders the same way with a small "Load" hint (no Load page yet; future-proof). The "from {Memo No.}" sub-line under Stock ID is removed; the vendor code stays there when every vendor is listed. |
+| R3-02 | Purchase **Add Memo Stock** (R2-MS) | First column header **Memo ID** (sub "Stock ID · Lot"). The cell swaps: the memo doc no. is the bold top line, "{Stock ID} · {Lot}" under it, then the note line. Tabs, Sold / In stock groups and the Status column are unchanged. |
+| R3-03 | Purchase **Add Purchase Order** (R2-PO) | Looks like the normal From Stock picker (screenshot 23): a flat list in server order, **no tabs, no PO group rows, no Status column**. Columns: **PO No.** (sub "Doc Date": bold PO no., PO Doc Date under it), **Stone Code** (sub "Stock ID · Lot": the PO line's stone code, then "Auto" (no Stock ID yet, R2-05) and the lot badge, then the note), Location, Stone, Color · Clarity, Cer Type, Pcs (Weight) = open quantity, Price (Unit), Amount. Search, Start → Due, Load more, selection and OK are unchanged; the query keeps `status: "ALL"`. This supersedes the R2-PO Tabs, Groups, Col 3 and Col 8 rows. |
+

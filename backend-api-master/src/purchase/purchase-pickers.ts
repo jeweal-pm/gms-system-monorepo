@@ -5,7 +5,7 @@ import { prisma } from "../database/prisma-client";
 import { fromDbDate, toDbDate } from "../document-setup/document-setup.service";
 import { Prisma } from "../generated/prisma/client";
 import { netUnitPrice } from "../trade-document/memo-receive.service";
-import { pendingAmount } from "../trade-document/memo-stock.service";
+import { memoReceiveSourceRef, pendingAmount } from "../trade-document/memo-stock.service";
 import { purchaseErrors } from "./purchase.errors";
 import type { MemoGroup, PurchaseMemoStockInput, PurchaseOrderLinesInput } from "./purchase.schemas";
 
@@ -141,6 +141,7 @@ export function toMemoStockRow(row: MemoStockRow) {
     lot: row.lot,
     itemNote: row.item_note,
     memoReceive: { id: row.memo_receive_id, docNo: row.received_doc_no, docDate: fromDbDate(row.received_doc_date), dueDate: fromDbDate(row.due_date) },
+    ref: memoReceiveSourceRef(row),
     location: row.location,
     // D6 / R2-D-04: no piece-type field exists.
     locationType: null,

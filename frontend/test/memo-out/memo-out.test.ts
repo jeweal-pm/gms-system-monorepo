@@ -36,6 +36,7 @@ const stockItem: MemoStockItem = {
   cutting: "Excellent", quality: "AA", cerType: "GIA", cerNo: "G-1", receivedPcs: 10, receivedWeightCt: "10.000", pendingPcs: 5, pendingWeightCt: "5.000",
   priceUnit: "CTS", unitPrice: "100.00", netUnitPrice: "100.0000", currency: "THB", amount: "500.00", vendor: { id: ID, code: "V001", name: "Aom" },
   memoReceive: { id: ID, docNo: "3", docDate: "2026-10-29", dueDate: "2026-10-30" },
+  ref: { type: "MEMO_RECEIVE" as const, id: ID, docNo: "3", docDate: "2026-10-29" },
 };
 const values = (patch: Partial<MemoOutFormValues> = {}): MemoOutFormValues => ({ ...emptyMemoOut(), dueDate: "2026-11-30", currency: "THB", customerId: ID, shippingAddressId: ID, invoiceAddressId: ID, ...patch });
 const header = (props: Record<string, unknown> = {}) =>

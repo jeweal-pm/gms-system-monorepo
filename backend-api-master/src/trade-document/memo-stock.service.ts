@@ -10,6 +10,20 @@ import type { MemoStockListInput } from "./memo-schemas";
 const Decimal = Prisma.Decimal;
 type Dec = Prisma.Decimal;
 
+/**
+ * Source documents a stock item can come from (owner 2026-11-04 "From Stock" Ref.). `LOAD` is reserved for the future
+ * Load document (no Load page/table exists yet); today every Memo Stock item comes from a Memo Receive.
+ */
+export const STOCK_SOURCE_TYPES = ["MEMO_RECEIVE", "LOAD"] as const;
+export type StockSourceType = (typeof STOCK_SOURCE_TYPES)[number];
+/** The transaction a stock item came from, shown as the picker's Ref. (`docDate` is YYYY-MM-DD, like `memoReceive.docDate`). */
+export type StockSourceRef = { type: StockSourceType; id: string; docNo: string; docDate: string };
+
+/** Ref. of a Memo Stock item: its Memo Receive. */
+export function memoReceiveSourceRef(row: { memo_receive_id: string; received_doc_no: string; received_doc_date: Date }): StockSourceRef {
+  return { type: "MEMO_RECEIVE", id: row.memo_receive_id, docNo: row.received_doc_no, docDate: fromDbDate(row.received_doc_date) };
+}
+
 /** One approved line taking quantity off a Memo Stock item; `index` is its line position for error paths. */
 export type MemoStockTake = { memoStockId: string; pcs: number; weightCt: Dec; index: number };
 
@@ -239,5 +253,6 @@ function toStockRow(row: StockRow) {
     amount: pendingAmount(row).toFixed(2),
     vendor: { id: row.vendor_id, code: row.vendor_code_snapshot, name: row.vendor_name_snapshot },
     memoReceive: { id: row.memo_receive_id, docNo: row.received_doc_no, docDate: fromDbDate(row.received_doc_date), dueDate: fromDbDate(row.due_date) },
+    ref: memoReceiveSourceRef(row),
   };
 }
