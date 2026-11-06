@@ -59,6 +59,8 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   "memo-outstanding-from-customer": "/memo/memo-outstanding/customer",
   // purchase-order UI rev 1 (ADR-0041): Purchase Order › Purchase Order (PO).
   "purchase-order": "/purchase/purchase-order",
+  // purchase-outstanding UI rev 1 (ADR-0044): Purchase Order › Purchase Outstanding.
+  "purchase-outstanding": "/purchase-order/purchase-outstanding",
   // purchase UI rev 1 (FE-PU-006, owner 2026-11-04): Purchase Order › Purchase (PU), linked before the API exists.
   purchase: "/purchase-order/purchase",
 };
@@ -232,7 +234,7 @@ export const sidebarSections: NavSection[] = [
       // purchase-order UI rev 1: real page; stays active on /purchase/purchase-order/[id].
       { ...link("purchase-order", "Purchase Order (PO)", PurchaseOrderIcon, REAL_PAGE_HREFS["purchase-order"]), activePrefix: REAL_PAGE_HREFS["purchase-order"] },
       { ...link("purchase", "Purchase (PU)", PurchaseIcon, REAL_PAGE_HREFS.purchase), activePrefix: REAL_PAGE_HREFS.purchase },
-      link("purchase-outstanding", "Purchase Outstanding", PurchaseOutstandingIcon),
+      link("purchase-outstanding", "Purchase Outstanding", PurchaseOutstandingIcon, REAL_PAGE_HREFS["purchase-outstanding"]),
     ],
   },
   {

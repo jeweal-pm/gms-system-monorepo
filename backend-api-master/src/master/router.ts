@@ -45,6 +45,7 @@ import {
   memoOutstandingItemsSchema,
   memoOutstandingListSchema,
   memoOutstandingOptionsSchema,
+  purchaseOutstandingListSchema,
 } from "../trade-document/memo-outstanding.schemas";
 import {
   createMemoOutReturnSchema,
@@ -423,6 +424,17 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       approve: permitted("purchase", "APPROVE", true).input(purchaseVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchase.approve(ctx.userId, input.id, input.expectedVersion))),
     }),
     // Memo Outstanding From Vendor report (memo-outstanding-vendor SA-MOV-01/10): read-only, VIEW on its own menu.
+    // Purchase Outstanding (purchase-outstanding SA-POS-05, ADR-0044): read-only, VIEW on its own menu.
+    purchaseOutstanding: t.router({
+      summary: permitted("purchase-outstanding", "VIEW").use(withFieldErrors(memoOutstandingFiltersSchema)).input(memoOutstandingFiltersSchema)
+        .query(({ input }) => domainCall(() => memoOutstanding.purchaseSummary(input))),
+      list: permitted("purchase-outstanding", "VIEW").use(withFieldErrors(purchaseOutstandingListSchema)).input(purchaseOutstandingListSchema)
+        .query(({ input }) => domainCall(() => memoOutstanding.purchaseList(input))),
+      items: permitted("purchase-outstanding", "VIEW").use(withFieldErrors(memoOutstandingItemsSchema)).input(memoOutstandingItemsSchema)
+        .query(({ input }) => domainCall(() => memoOutstanding.purchaseItems(input))),
+      options: permitted("purchase-outstanding", "VIEW").use(withFieldErrors(memoOutstandingOptionsSchema)).input(memoOutstandingOptionsSchema)
+        .query(() => domainCall(() => memoOutstanding.purchaseOptions())),
+    }),
     memoOutstanding: t.router({
       vendorSummary: permitted("memo-outstanding-vendor", "VIEW").use(withFieldErrors(memoOutstandingFiltersSchema)).input(memoOutstandingFiltersSchema)
         .query(({ input }) => domainCall(() => memoOutstanding.vendorSummary(input))),

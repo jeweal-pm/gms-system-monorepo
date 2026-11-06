@@ -78,3 +78,21 @@ export const memoOutstandingCustomerItemsSchema = z.object({
   memoOutIds: z.array(z.uuid()).min(1).max(MEMO_OUTSTANDING_ITEM_DOCS_MAX),
 }).strict();
 export type MemoOutstandingCustomerItemsInput = z.output<typeof memoOutstandingCustomerItemsSchema>;
+
+/**
+ * purchaseOutstanding.* inputs (purchase-outstanding SA revision 1, ADR-0044): the From Vendor filters, items and
+ * options, with a sort whitelist over Memo, Return, Purchase, Sale and Balance.
+ */
+export const PURCHASE_OUTSTANDING_SORT_KEYS = [
+  "docNo", "dueDate", "vendorName", "memoPcs", "returnPcs", "purchasePcs", "salePcs", "balancePcs", "openValue",
+] as const;
+export type PurchaseOutstandingSortKey = (typeof PURCHASE_OUTSTANDING_SORT_KEYS)[number];
+
+export const purchaseOutstandingListSchema = z.object({
+  ...filterFields,
+  page: z.number().int().min(1).max(MEMO_OUTSTANDING_PAGE_MAX).default(1),
+  pageSize: z.union([z.literal(10), z.literal(25), z.literal(50)]).default(10),
+  sort: z.enum(PURCHASE_OUTSTANDING_SORT_KEYS).optional(),
+  dir: z.enum(["asc", "desc"]).optional(),
+}).strict().superRefine(dateRange);
+export type PurchaseOutstandingListInput = z.output<typeof purchaseOutstandingListSchema>;

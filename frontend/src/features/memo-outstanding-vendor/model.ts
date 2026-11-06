@@ -38,6 +38,8 @@ export type ReportSpec = {
   docHref: (id: string) => string;
   /** Number groups shown, in column order. */
   buckets: readonly Bucket[];
+  /** Purchase Outstanding (ADR-0044): its own names for the number groups (Purchase / Sale / Balance Outstanding). */
+  bucketLabels?: Partial<Record<Bucket, string>>;
   sortKeys: readonly SortKey[];
   openValueCaption: string;
   emptyText: string;
@@ -269,6 +271,8 @@ export type ViewColumn = (typeof VIEW_COLUMNS)[number]["key"];
 export const BUCKET_COLUMNS = ["memo", "return", "sold", "reserve", "outstanding"] as const satisfies readonly ViewColumn[];
 export type Bucket = (typeof BUCKET_COLUMNS)[number];
 export const BUCKET_LABEL: Record<Bucket, string> = { memo: "Memo", return: "Return", sold: "Sold", reserve: "Reserve", outstanding: "Outstanding" };
+/** A number group's column name in a report (its own label, else the shared one). */
+export const bucketLabel = (spec: ReportSpec, bucket: Bucket) => spec.bucketLabels?.[bucket] ?? BUCKET_LABEL[bucket];
 export const BUCKET_SORT: Record<Bucket, SortKey> = { memo: "memoPcs", return: "returnPcs", sold: "soldPcs", reserve: "reservePcs", outstanding: "outstandingPcs" };
 
 export type SubtaskMode = "collapsed" | "expanded";
@@ -307,7 +311,8 @@ export const showAllColumns = (prefs: ViewPrefs): ViewPrefs => ({ ...prefs, hidd
 
 /** The switchable columns of a report: its number groups only (From Customer has no Reserve). */
 export const reportColumns = (spec: ReportSpec) =>
-  VIEW_COLUMNS.filter((column) => !(BUCKET_COLUMNS as readonly string[]).includes(column.key) || spec.buckets.includes(column.key as Bucket));
+  VIEW_COLUMNS.filter((column) => !(BUCKET_COLUMNS as readonly string[]).includes(column.key) || spec.buckets.includes(column.key as Bucket))
+    .map((column) => ((BUCKET_COLUMNS as readonly string[]).includes(column.key) ? { ...column, label: bucketLabel(spec, column.key as Bucket) } : column));
 
 /** Panel lists: shown and hidden switchable columns, each in column-header order. */
 export function viewLists(prefs: ViewPrefs, spec: ReportSpec = VENDOR_SPEC) {

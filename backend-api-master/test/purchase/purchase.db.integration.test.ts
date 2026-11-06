@@ -56,7 +56,7 @@ const orderLine = (patch: Record<string, unknown> = {}) => ({
 /** What the page sends for a picked line: placeholders the server replaces from the source row. */
 const typed = { stoneCodeId: null, stoneCode: "typed", stone: "typed", shape: "typed", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "typed",
   location: "typed", cerType: "", cerNo: "", priceUnit: "PER_PCS" as const, discount: { type: "NONE" as const, value: "0" }, itemNote: "", photoIds: [] as [] };
-const stockLine = (memoStockId: string, memoGroup: "IN_STOCK" | "SOLD", pcs: number, weightCt: string, patch: Record<string, unknown> = {}) =>
+const stockLine = (memoStockId: string, memoGroup: "IN_STOCK" | "SOLD" | "MERGED", pcs: number, weightCt: string, patch: Record<string, unknown> = {}) =>
   ({ ...typed, source: "STOCK" as const, memoStockId, memoGroup, pcs, weightCt, unitPrice: "900", ...patch });
 const poLine = (purchaseOrderLineId: string, pcs: number, weightCt: string, patch: Record<string, unknown> = {}) =>
   ({ ...typed, source: "PURCHASE_ORDER" as const, purchaseOrderLineId, pcs, weightCt, unitPrice: "90", ...patch });
@@ -235,7 +235,7 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
   it("IT-PU-B02 Memo Stock approve: IN_STOCK moves pending → sold + purchased, SOLD adds purchased; save holds nothing; the report shows Sold", async () => {
     const { receiveId, items: [x, y] } = await approvedStock(vendorA, [receiveLine({ lot: "X" }), receiveLine({ lot: "Y", pcs: 3, weightCt: "1.5" })]);
     await sell(y.id, 2, "1.000");
-    const saved = await purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(x.id, "IN_STOCK", 2, "1"), stockLine(y.id, "SOLD", 1, "0.5"), stockLine(y.id, "IN_STOCK", 1, "0.5")]));
+    const saved = await purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(x.id, "IN_STOCK", 2, "1"), stockLine(y.id, "SOLD", 2, "1"), stockLine(y.id, "IN_STOCK", 1, "0.5")]));
     expect(saved.stockIds).toEqual([x.stockId, y.stockId, y.stockId]);
     // Save checks and copies but moves nothing (D2).
     expect(await buckets(x.id)).toMatchObject({ pending: [5, "2.500"], sold: [0, "0.000"], purchased: [0, "0.000"] });
@@ -249,7 +249,7 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     const approved = await purchase.approve(ACTOR, saved.id, saved.version);
     expect(approved).toEqual({ id: saved.id, version: 2, status: "APPROVED", lineCount: 3 });
     expect(await buckets(x.id)).toMatchObject({ pending: [3, "1.500"], sold: [2, "1.000"], purchased: [2, "1.000"], balanced: true, version: 2 });
-    expect(await buckets(y.id)).toMatchObject({ pending: [0, "0.000"], sold: [3, "1.500"], purchased: [2, "1.000"], balanced: true });
+    expect(await buckets(y.id)).toMatchObject({ pending: [0, "0.000"], sold: [3, "1.500"], purchased: [3, "1.500"], balanced: true });
     const after = await purchase.get(saved.id);
     expect(after).toMatchObject({ status: "APPROVED", approvedBy: ACTOR });
     expect(after.lines.every((line) => line.limitPcs === null && line.limitWeightCt === null)).toBe(true);
@@ -457,5 +457,87 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     expect(moved._sum).toEqual({ pendingPcs: 200, soldPcs: 200, purchasedPcs: 200 });
     console.info(`IT-PU-B06 approve 200 STOCK lines: ${elapsed.toFixed(0)} ms (target < 500 ms)`);
     expect(elapsed).toBeLessThan(2_000);
+  });
+
+  it("IT-PU-B08 merged line (ADR-0043): save range, Sold part first at approve, sold part stored, short refusal; SOLD line must equal the Sold part", async () => {
+    const { items: [m, n, s] } = await approvedStock(vendorA, [receiveLine({ lot: "M", pcs: 2, weightCt: "1.52" }), receiveLine({ lot: "N", pcs: 2, weightCt: "1.52" }), receiveLine({ lot: "S", pcs: 2, weightCt: "1.52" })]);
+    for (const id of [m.id, n.id, s.id]) await sell(id, 1, "0.760"); // each: Sold 1 / 0.76 + In stock 1 / 0.76
+
+    // Save: Sold part ≤ q ≤ Sold + pending, pcs and weight on their own; nothing moves.
+    expect(await failure(purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(m.id, "MERGED", 0, "0.5")])))).toMatchObject({
+      status: 400, code: "VALIDATION_ERROR", fieldErrors: [{ path: "lines.0.pcs", code: "below_sold" }, { path: "lines.0.weightCt", code: "below_sold" }],
+    });
+    expect(await failure(purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(m.id, "MERGED", 3, "1.52")])))).toMatchObject({ fieldErrors: [{ path: "lines.0.pcs", code: "exceeds_available" }] });
+    expect(await failure(purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(s.id, "SOLD", 1, "0.5")])))).toMatchObject({ fieldErrors: [{ path: "lines.0.weightCt", code: "must_equal_sold" }] });
+    const one = await purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(m.id, "MERGED", 1, "0.76"), stockLine(n.id, "MERGED", 2, "1.52"), stockLine(s.id, "SOLD", 1, "0.76")]));
+    expect(await buckets(m.id)).toMatchObject({ pending: [1, "0.760"], sold: [1, "0.760"], purchased: [0, "0.000"] });
+    const pending = await purchase.get(one.id);
+    expect(pending.lines.map((line) => [line.memoGroup, line.minPcs, line.minWeightCt, line.limitPcs, line.limitWeightCt, line.soldPartPcs])).toEqual([
+      ["MERGED", 1, "0.760", 2, "1.520", null], ["MERGED", 1, "0.760", 2, "1.520", null], ["SOLD", 1, "0.760", 1, "0.760", null],
+    ]);
+
+    // Approve: Sold part first. m keeps 1 → only the Sold part is settled; n keeps 2 → Sold 1 + In stock 1.
+    await purchase.approve(ACTOR, one.id, one.version);
+    expect(await buckets(m.id)).toMatchObject({ pending: [1, "0.760"], sold: [1, "0.760"], purchased: [1, "0.760"], balanced: true });
+    expect(await buckets(n.id)).toMatchObject({ pending: [0, "0.000"], sold: [2, "1.520"], purchased: [2, "1.520"], balanced: true });
+    expect(await buckets(s.id)).toMatchObject({ pending: [1, "0.760"], sold: [1, "0.760"], purchased: [1, "0.760"], balanced: true });
+    const approved = await purchase.get(one.id);
+    expect(approved.lines.map((line) => [line.soldPartPcs, line.soldPartWeightCt, line.minPcs, line.limitPcs])).toEqual([
+      [1, "0.760", null, null], [1, "0.760", null, null], [null, null, null, null],
+    ]);
+
+    // Q-PU-33: the stock part leaves between Save and Approve → refused on that row, nothing moves, still pending.
+    const { items: [k] } = await approvedStock(vendorA, [receiveLine({ lot: "K", pcs: 2, weightCt: "1.52" })]);
+    await sell(k.id, 1, "0.760");
+    const later = await purchase.create(ACTOR, purchaseInput(vendorA, [manualLine(), stockLine(k.id, "MERGED", 2, "1.52")]));
+    await purchase.approve(ACTOR, (await purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(k.id, "IN_STOCK", 1, "0.76")]))).id, 1);
+    const before = await buckets(k.id);
+    expect(await failure(purchase.approve(ACTOR, later.id, later.version))).toEqual({
+      status: 409, code: "PURCHASE_PENDING_SHORT",
+      fieldErrors: [{ path: "lines.1.pcs", code: "exceeds_available" }, { path: "lines.1.weightCt", code: "exceeds_available" }],
+    });
+    expect(await buckets(k.id)).toEqual(before);
+    // An item with no stock part left can't be merged any more.
+    expect(await failure(purchase.update(ACTOR, later.id, later.version, purchaseInput(vendorA, [stockLine(k.id, "MERGED", 1, "0.76")])))).toMatchObject({
+      fieldErrors: [{ path: "lines.0.memoStockId", code: "not_mergeable" }],
+    });
+
+    // CHECKs: MERGED is a valid group; a sold part is only allowed on MERGED lines and within the line quantity.
+    const lineId = (await prisma.purchaseLine.findFirstOrThrow({ where: { purchaseId: one.id, memoGroup: "SOLD" }, select: { id: true } })).id;
+    expect(await sqlState(`UPDATE "partner"."purchase_line" SET sold_part_pcs = 1, sold_part_weight_ct = 0.5 WHERE id = '${lineId}'`)).toBe("23514");
+    const mergedId = (await prisma.purchaseLine.findFirstOrThrow({ where: { purchaseId: one.id, memoGroup: "MERGED" }, select: { id: true } })).id;
+    expect(await sqlState(`UPDATE "partner"."purchase_line" SET sold_part_pcs = 9 WHERE id = '${mergedId}'`)).toBe("23514");
+  });
+
+  it("IT-POS-01 Purchase Outstanding (ADR-0044): Memo, Return, Purchase, Sale = sold − purchased, Balance = Memo − Return − Purchase; listed while Balance > 0", async () => {
+    const vendor = await vendorFixture("POS IT Vendor");
+    // One memo: item p 10 pcs / 10 ct at 100 per ct, item q 4 pcs / 2 ct.
+    const { receiveId, items: [p, q] } = await approvedStock(vendor, [receiveLine({ lot: "P", pcs: 10, weightCt: "10", unitPrice: "100" }), receiveLine({ lot: "Q", pcs: 4, weightCt: "2", unitPrice: "100" })]);
+    await sell(p.id, 5, "5.000"); // p: Sold 5 + In stock 5
+    // Buy p merged 7 (Sold 5 first + 2 from stock) and q in stock 1.
+    const bought = await purchase.create(ACTOR, purchaseInput(vendor, [stockLine(p.id, "MERGED", 7, "7"), stockLine(q.id, "IN_STOCK", 1, "0.5")]));
+    await purchase.approve(ACTOR, bought.id, bought.version);
+    await sell(q.id, 1, "0.500"); // q: one more sold to a customer, not yet purchased
+
+    const filters = { vendorIds: [vendor.id] };
+    const items = await outstanding.purchaseItems({ memoReceiveIds: [receiveId] });
+    expect(items.items.map((row) => [row.lot, row.memo, row.return, row.purchase, row.sale, row.balance, row.openValue])).toEqual([
+      ["P", { pcs: 10, weightCt: "10.000" }, { pcs: 0, weightCt: "0.000" }, { pcs: 7, weightCt: "7.000" }, { pcs: 0, weightCt: "0.000" }, { pcs: 3, weightCt: "3.000" }, "300.00"],
+      ["Q", { pcs: 4, weightCt: "2.000" }, { pcs: 0, weightCt: "0.000" }, { pcs: 1, weightCt: "0.500" }, { pcs: 1, weightCt: "0.500" }, { pcs: 3, weightCt: "1.500" }, "150.00"],
+    ]);
+    const list = await outstanding.purchaseList({ ...filters, page: 1, pageSize: 10, sort: "balancePcs", dir: "desc" });
+    expect(list.total).toBe(1);
+    expect(list.items[0]).toMatchObject({
+      memoReceiveId: receiveId, memo: { pcs: 14, weightCt: "12.000" }, purchase: { pcs: 8, weightCt: "7.500" }, sale: { pcs: 1, weightCt: "0.500" },
+      balance: { pcs: 6, weightCt: "4.500" }, openValue: "450.00", vendor: { name: "POS IT Vendor" },
+    });
+    expect(await outstanding.purchaseSummary(filters)).toMatchObject({ documents: 1, grandTotal: "450.00" });
+
+    // Everything bought → the memo leaves the report.
+    const rest = await purchase.create(ACTOR, purchaseInput(vendor, [stockLine(p.id, "IN_STOCK", 3, "3"), stockLine(q.id, "SOLD", 1, "0.5"), stockLine(q.id, "IN_STOCK", 2, "1")]));
+    await purchase.approve(ACTOR, rest.id, rest.version);
+    expect((await outstanding.purchaseList({ ...filters, page: 1, pageSize: 10 })).total).toBe(0);
+    expect((await outstanding.purchaseItems({ memoReceiveIds: [receiveId] })).items).toEqual([]);
+    expect(await outstanding.purchaseSummary(filters)).toMatchObject({ documents: 0, grandTotal: "0.00" });
   });
 });
