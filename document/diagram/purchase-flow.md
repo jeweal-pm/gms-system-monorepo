@@ -57,3 +57,18 @@ flowchart TD
   - a Sale document, which is what makes items "Sold to customers";
   - piece type (Pair / Parcel / Single);
   - line photos.
+
+## Revision 3 (proposed 2026-11-05): merge Sold + In stock
+
+```mermaid
+flowchart TD
+  P[Add Memo Stock: tick rows · OK] --> Q{Sold + In stock of the same Stock ID ticked?}
+  Q -->|no| A[Rows added as today]
+  Q -->|yes| M{Merge items?}
+  M -->|Merge| R[One row · Pcs/Weight ≥ Sold part, ≤ Sold + In stock · Price editable]
+  M -->|Don't merge / ✕| T[Two rows · Sold row: Price only]
+  R --> S[Save: check soldOpen ≤ q ≤ soldOpen + pending]
+  S --> AP[Approve: Sold part first, rest from pending]
+```
+
+Sources: [ui-spec › Revision 3](../apps/frontend/purchase/ui-spec.md#revision-3-merge-the-sold-and-in-stock-parts-of-one-item-pending-review), [ADR-0043](../adr/0043-purchase-merged-memo-stock-line.md).

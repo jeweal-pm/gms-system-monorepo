@@ -132,7 +132,7 @@ export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText
                       />
                     </th>
                     <th rowSpan={2} className="w-8 font-normal text-[#6B7480]">#</th>
-                    <Th title="Stock ID" sub="Lot" />
+                    <Th title="Stone Code" sub="Stock ID · Lot" />
                     <Th title="Location" />
                     <Th title="Ref." sub="Doc Date" />
                     <Th title="Stone" sub="Shape · Size" />
@@ -177,9 +177,11 @@ export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText
                       </td>
                       <td className="py-4 text-[#6B7480]">{index + 1}</td>
                       <td className="px-3 py-4">
-                        <div className="font-medium">{item.stockId}</div>
+                        {/* Owner 2026-11-05: Stone Code first (bold), then Stock ID with the lot badge. */}
+                        <div className="font-medium">{item.stoneCode || "—"}</div>
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6B7480]">
-                          {item.lot && <span>{item.lot}</span>}
+                          <span>{item.stockId}</span>
+                          {item.lot && <Badge variant="lot">{item.lot}</Badge>}
                           {vendorId === undefined && <span>{item.vendor.code}</span>}
                         </div>
                         {item.itemNote && (

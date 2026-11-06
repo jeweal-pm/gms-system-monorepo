@@ -32,7 +32,7 @@ const STOCK = "22222222-2222-4222-8222-222222222222";
 const noop = () => undefined;
 const manual = (patch: Partial<MemoOutLine> = {}): MemoOutLine => ({ ...emptyMemoOut().lines[0], ...emptyLine(), stone: "Ruby", pcs: "1", weightCt: "1.12", unitPrice: "65000", ...patch });
 const stockItem: MemoStockItem = {
-  id: STOCK, stockId: "260005", lot: "L-1", location: "Memo", itemNote: "vendor note", stone: "Sapphire", shape: "Oval", size: "7×5", color: "Blue", clarity: "VS",
+  id: STOCK, stockId: "260005", stoneCode: "", lot: "L-1", location: "Memo", itemNote: "vendor note", stone: "Sapphire", shape: "Oval", size: "7×5", color: "Blue", clarity: "VS",
   cutting: "Excellent", quality: "AA", cerType: "GIA", cerNo: "G-1", receivedPcs: 10, receivedWeightCt: "10.000", pendingPcs: 5, pendingWeightCt: "5.000",
   priceUnit: "CTS", unitPrice: "100.00", netUnitPrice: "100.0000", currency: "THB", amount: "500.00", vendor: { id: ID, code: "V001", name: "Aom" },
   memoReceive: { id: ID, docNo: "3", docDate: "2026-10-29", dueDate: "2026-10-30" },

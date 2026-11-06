@@ -435,3 +435,79 @@ Approval evidence: direct owner instructions 2026-11-04 (with screenshots 21–2
 | R3-02 | Purchase **Add Memo Stock** (R2-MS) | First column header **Memo ID** (sub "Stock ID · Lot"). The cell swaps: the memo doc no. is the bold top line, "{Stock ID} · {Lot}" under it, then the note line. Tabs, Sold / In stock groups and the Status column are unchanged. |
 | R3-03 | Purchase **Add Purchase Order** (R2-PO) | Looks like the normal From Stock picker (screenshot 23): a flat list in server order, **no tabs, no PO group rows, no Status column**. Columns: **PO No.** (sub "Doc Date": bold PO no., PO Doc Date under it), **Stone Code** (sub "Stock ID · Lot": the PO line's stone code, then "Auto" (no Stock ID yet, R2-05) and the lot badge, then the note), Location, Stone, Color · Clarity, Cer Type, Pcs (Weight) = open quantity, Price (Unit), Amount. Search, Start → Due, Load more, selection and OK are unchanged; the query keeps `status: "ALL"`. This supersedes the R2-PO Tabs, Groups, Col 3 and Col 8 rows. |
 
+=======
+## Revision 3: merge the Sold and In-stock parts of one item (pending review)
+
+### Request and sources
+
+- Status: **pending-review** 2026-11-05. Approval evidence: none. Owner answers 2026-11-05: Q-PU-24/25/26/27/29/31/35 (Q-PU-26 changed from the default) and Q-PU-33 (default).
+- Branch: `feat/05-11-26-purchase-merge-outstanding` (from `change-to-nginx-with-new-skill-agent`, `c401880`).
+- Source: [source/08-merge-sold-and-in-stock.png](source/08-merge-sold-and-in-stock.png), the current Add Memo Stock dialog (All 5 · Sold 2 · In stock 3).
+- Owner request 2026-11-05 (verbatim): "หลักการ merge คือแบบนี้ถ้าเราเลือกของจากของที่ขายไปเเล้ว หรือ column ด้านบน 1 item เเละ เลือกของด้านล่านที่เป็นของจะซื้อเข้า หรือ column ด้านล่าง 1 item และของทั้งสองนั้นเป็นของ stockID เดียวกัน รายละเอียดเดียวกัน พอกด ok จะมี modal เด้งขึ้นมาถามว่า ต้องการ merge ไหม ถ้าใช่รวมเป็น 1 บรรทัด แก้ได้เเค่ pcs weight price เเต่เเก้ pcs กับ weight ต้องไม่สามารถปรับให้ต่ำกว่าของที่ซื้อเข้า อย่างเช่นต้องนี้ก็ห้ามต่ำกว่า 1 itemถ้าตัดสินใจซื้อ 1 item ให้ตัดยอดที่ขายเเล้วก่อน เเละ ถ้ากดไม่ต้องการmerge ก็เป็น 2 บรรทัด ปกติ เเละ ปรับให้ถ้าเราดึงของที่ขายไปเเล้วมาเเก้ได้เเค่ price เพราะ ตอนนี้ถ้าเราดึงของที่ขายไปเเล้วแก้อะไรไม่ได้เลย ยังไม่ต้องปรับนะแก้เอกสาร ถามคำถาม เปิด adr มาก่อน"
+- Questions: [open-questions › Revision 3](open-questions.md#revision-3-merge-q-pu-2435). Backend: [SA revision 2](../../backend/master/purchase/decisions.md#sa-revision-2-proposed-2026-11-05-merged-memo-stock-lines). ADR: [ADR-0043](../../../adr/0043-purchase-merged-memo-stock-line.md) (Proposed). TODO: [purchase.md › Revision 3](../../../task/todo/purchase.md#revision-3-merge-sold--in-stock-pending-review).
+- No new package. Changes stay inside `features/purchase/**` and the Purchase API.
+
+### Words used here
+
+- **Sold part** of an item: its row in the "Sold to customers · must be purchased" group. Quantity = sold − purchased.
+- **In-stock part**: its row in the "Still in stock on memo · buy now or return later" group. Quantity = pending.
+- A **pair** is the Sold part and the In-stock part of the **same Memo Stock item** (same Stock ID). Both rows come from one item, so their stone details, certificate, price unit and memo price are the same (Q-PU-24).
+
+### R3-01 Merge question after OK
+
+1. In Add Memo Stock the user ticks rows and presses **OK**.
+2. If the ticked rows contain no pair, the rows are added as today and nothing is asked.
+3. If they contain one or more pairs, one dialog opens before anything is added:
+   - Title: **"Merge items?"**
+   - Body: "These items are both sold and still in stock. Merge each into one row?" Then one line per pair: "{Stock ID} · Sold {p} pcs / {w} cts + In stock {p} pcs / {w} cts".
+   - Buttons: **Don't merge** (secondary) and **Merge** (primary). Escape or ✕ adds nothing: the question closes and Add Memo Stock stays open with the same rows ticked (owner Q-PU-26, "เท่ากับกลับไปเลือกใหม่").
+   - The answer applies to every pair in the list (Q-PU-25).
+4. **Merge**: each pair becomes **one row** (a merged row, R3-02). Ticked rows that are not part of a pair are added as usual.
+5. **Don't merge**: every ticked row becomes its own row, as today (one Sold row and one In-stock row).
+6. The toast stays "Added N items from Memo Stock", where N counts the rows added.
+7. A pair is also offered when one part is already on the form and the user picks the other part later. Merge then turns the existing row into the merged row (Q-PU-27).
+
+### R3-02 Merged row
+
+| Part | Behaviour |
+|---|---|
+| Table, first column | Stock ID, Lot and Memo No. as today, plus a tag **"Sold + In stock"** |
+| Copied, read-only | All stone details, Location, certificate and price unit (as other Memo Stock rows) |
+| Pcs / Weight | Start at Sold + In stock (all that is available). Editable. **Minimum = the Sold part**, maximum = Sold + In stock (Q-PU-31). Pcs fills Weight in proportion, as on other stock rows; all pcs gives exactly the full weight. |
+| Price | Starts at the memo net unit price; editable, > 0. One price for the whole row (Q-PU-32). |
+| Discount, Duplicate | Line discount locked (D8). No Duplicate (an item is on the form once). |
+| Row panel note | "Sold {p} pcs / {w} cts must be purchased. Up to {p} pcs / {w} cts more from stock." |
+| Remove | Removes the whole merged row. To split it, remove it and pick again with Don't merge (Q-PU-28). |
+
+Errors in the row panel and on Save:
+- Below the Sold part: "At least {p} pcs / {w} cts (already sold to customers)".
+- Above Sold + In stock: "More than available ({p} pcs / {w} cts)".
+
+What a merged row buys is decided by the server at Approve (R3-04): the **Sold part first**, then the rest from In stock. Owner example: Sold 1 pc + In stock 1 pc. Keep 1 pc → that 1 pc settles the Sold part and nothing is taken from stock. Keep 2 pcs → 1 Sold + 1 In stock.
+
+### R3-03 Sold rows that are not merged: Price only
+
+Owner: "ถ้าเราดึงของที่ขายไปเเล้วมาเเก้ได้เเค่ price". A Sold row keeps Pcs and Weight **fixed** at the Sold part, because the stone is already with a customer and must be bought whole (Q-PU-29). Only **Price** (and Item Note, Q-PU-30) is editable. Today nothing on a Sold row can be edited; revision 3 fixes that. In-stock rows and Purchase Order rows keep today's rule (Pcs, Weight, Price).
+
+### R3-04 Approve
+
+- The confirm text is unchanged; a merged row counts as one item.
+- If the Sold or In-stock quantity changed between Save and Approve so that the row no longer fits (for example the stock part was returned to the vendor), Approve is refused with the existing short error on that row, saying what is left, and nothing moves. The user presses Edit, lowers the row, saves and approves again (owner Q-PU-33, 2026-11-05).
+
+### R3 tests (frontend)
+
+| ID | Check |
+|---|---|
+| UT-PU-12 | `findMergePairs(picked, existing)`: a pair only for one Memo Stock item with one SOLD and one IN_STOCK row; single rows and rows of different items give none. |
+| UT-PU-13 | Merge builds one row: pcs/weight = sum, min = Sold part, max = sum, price = net unit price, `memoGroup: "MERGED"`. Don't merge gives two rows as today. |
+| UT-PU-14 | Merged-row limits: below the Sold part and above the sum are refused with the R3-02 messages; Pcs fills Weight. |
+| UT-PU-15 | A Sold row edits only Price (and Item Note); Pcs/Weight are read-only. In-stock and PO rows are unchanged. |
+| UT-PU-16 | Mapping: merged row → `memoGroup: "MERGED"`; `fromPurchase` restores the merged row with its parts. |
+| TC-PU-14 | Manual: pick Sold 1 + In stock 1 of one Stock ID → Merge → one row of 2 pcs; lower to 1 → allowed; lower to 0 → refused; Save; Approve → Memo Outstanding › Vendor shows the Sold part purchased and pending unchanged. |
+| TC-PU-15 | Manual: same pick → Don't merge → two rows; the Sold row edits only Price. |
+
+### R3 out of scope
+
+- Merging different Stock IDs, or a Memo Stock row with a Purchase Order row.
+- Splitting a merged row in place.
+- The Purchase Outstanding report (asked on 2026-11-05; its own revision, Q-PU-35).

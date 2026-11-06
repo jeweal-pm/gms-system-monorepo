@@ -154,3 +154,12 @@ WHERE o.id = h.purchase_order_line_id;
 SOLD-group purchases disappear with the dropped `purchased_*` columns, and every purchase is lost with the tables. A rollback with approved data is therefore a business decision.
 
 Data size: thousands of purchases a year, ≤ 200 lines each. The tables stay in the low MB range, and every query is keyset ≤ 50 or a primary-key read.
+
+## SA revision 2 (proposed 2026-11-05): merged lines
+
+Migration `20261105090000_purchase_merged_line` (additive) on `purchase_line`:
+
+- `sold_part_pcs` int NULL, `sold_part_weight_ct` numeric(12,3) NULL: the Sold part taken first, written at Approve for `MERGED` lines (SA-PU-23/25).
+- CHECK `purchase_line_memo_group_check`: `memo_group IS NULL OR memo_group IN ('IN_STOCK', 'SOLD', 'MERGED')`.
+- CHECK `purchase_line_sold_part_check`: both NULL unless `memo_group = 'MERGED'`; when set, `0 ≤ sold_part_pcs ≤ pcs` and `0 ≤ sold_part_weight_ct ≤ weight_ct`.
+- `memo_stock` is unchanged; a MERGED approval writes the same columns as a SOLD line plus an IN_STOCK line.

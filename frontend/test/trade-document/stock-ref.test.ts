@@ -53,3 +53,14 @@ describe("UT-SR-03 From Stock column order", () => {
     expect(source).not.toContain("from {item.memoReceive.docNo}");
   });
 });
+
+describe("UT-SR-04 From Stock first column", () => {
+  it("is Stone Code (bold) over Stock ID · Lot (owner 2026-11-05)", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync("src/features/trade-document/memo-stock-modal.tsx", "utf8");
+    expect(source).toContain('<Th title="Stone Code" sub="Stock ID · Lot" />');
+    expect(source).not.toContain('<Th title="Stock ID" sub="Lot" />');
+    expect(source).toContain('<div className="font-medium">{item.stoneCode || "—"}</div>');
+    expect(source).toContain('{item.lot && <Badge variant="lot">{item.lot}</Badge>}');
+  });
+});
