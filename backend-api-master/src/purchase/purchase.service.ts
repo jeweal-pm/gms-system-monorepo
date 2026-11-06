@@ -3,7 +3,7 @@ import { validationException, type FieldError } from "../common/errors";
 import { WRITE_TX } from "../common/persistence";
 import { prisma } from "../database/prisma-client";
 import { Prisma } from "../generated/prisma/client";
-import { TradeDocumentEngine, type LineHook, type TradeDocumentInput } from "../trade-document/document-engine";
+import { explainMiss, MISS_SELECT, TradeDocumentEngine, type LineHook, type TradeDocumentInput, type MissRow } from "../trade-document/document-engine";
 import { vendorDocumentOptions, vendorParty, type VendorOut } from "../trade-document/memo-out-return.service";
 import { issueStockIds } from "../trade-document/memo-receive.service";
 import { purchaseMemoStock, purchaseOrderLines } from "./purchase-pickers";
@@ -136,9 +136,13 @@ export class PurchaseService {
   update(actorId: string, id: string, expectedVersion: number, input: PurchaseInput) {
     return this.engine.update(actorId, id, expectedVersion, asEngine(input)) as Promise<{ id: string; version: number; stockIds: string[] }>;
   }
-  /** SA-PU-08: pending only, guarded by version; lines and charges CASCADE; no stock change (nothing was cut). */
+  /** SA-PU-08 / ADR-0044 D4: soft delete of a pending purchase, guarded by version; lines and charges stay; no stock change (nothing was cut). */
   delete(actorId: string, id: string, expectedVersion: number) {
     return this.engine.delete(actorId, id, expectedVersion);
+  }
+  /** transaction-soft-delete D6: a deleted document back to its unchanged status. */
+  restore(actorId: string, id: string, expectedVersion: number) {
+    return this.engine.restore(actorId, id, expectedVersion);
   }
 
   /** `purchaseOrder.options` shape (stone lists with codes) plus `numbering` for Document Setup key `purchase`. */
@@ -171,14 +175,12 @@ export class PurchaseService {
       const approved = await prisma.$transaction(async (tx) => {
         const now = new Date();
         const updated = await tx.purchase.updateMany({
-          where: { id, version: expectedVersion, status: PENDING },
+          where: { id, version: expectedVersion, status: PENDING, deletedAt: null },
           data: { status: APPROVED, approvedAt: now, approvedBy: actorId, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
         });
         if (updated.count === 0) {
-          const row = await tx.purchase.findUnique({ where: { id }, select: { status: true } });
-          if (!row) throw purchaseErrors.notFound();
-          if (row.status !== PENDING) throw purchaseErrors.statusInvalid();
-          throw purchaseErrors.changed();
+          // D8: NOT_FOUND → DELETED → STATUS_INVALID → CHANGED.
+          explainMiss(purchaseErrors, (await tx.purchase.findUnique({ where: { id }, select: MISS_SELECT })) as MissRow, [PENDING]);
         }
         const document = await tx.purchase.findUniqueOrThrow({
           where: { id },

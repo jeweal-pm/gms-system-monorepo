@@ -3,7 +3,7 @@ import { partnerException } from "../common/errors";
 import { WRITE_TX, type Tx } from "../common/persistence";
 import { prisma } from "../database/prisma-client";
 import type { Prisma } from "../generated/prisma/client";
-import { TradeDocumentEngine, type LineHook } from "../trade-document/document-engine";
+import { explainMiss, MISS_SELECT, TradeDocumentEngine, type LineHook, type MissRow } from "../trade-document/document-engine";
 import { documentErrors } from "../trade-document/document-errors";
 import { vendorDocumentOptions, vendorParty, type VendorOut } from "../trade-document/memo-out-return.service";
 import type { PurchaseOrderInput, PurchaseOrderListInput, PurchaseOrderStatus } from "./purchase-order.schemas";
@@ -98,6 +98,10 @@ export class PurchaseOrderService {
   delete(actorId: string, id: string, expectedVersion: number) {
     return this.engine.delete(actorId, id, expectedVersion);
   }
+  /** transaction-soft-delete D6: a deleted document back to its unchanged status. */
+  restore(actorId: string, id: string, expectedVersion: number) {
+    return this.engine.restore(actorId, id, expectedVersion);
+  }
 
   /** `memoReceive.options` shape with stone codes kept, for the Stone Code field (SA-PO-10). */
   async options(includeVendorId?: string) {
@@ -122,14 +126,12 @@ export class PurchaseOrderService {
       const approved = await prisma.$transaction(async (tx) => {
         const now = new Date();
         const updated = await tx.purchaseOrder.updateMany({
-          where: { id, version: expectedVersion, status: PENDING },
+          where: { id, version: expectedVersion, status: PENDING, deletedAt: null },
           data: { status: APPROVED, approvedAt: now, approvedBy: actorId, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
         });
         if (updated.count === 0) {
-          const row = await tx.purchaseOrder.findUnique({ where: { id }, select: { status: true } });
-          if (!row) throw errors.notFound();
-          if (row.status !== PENDING) throw errors.statusInvalid();
-          throw errors.changed();
+          // D8: NOT_FOUND → DELETED → STATUS_INVALID → CHANGED.
+          explainMiss(errors, (await tx.purchaseOrder.findUnique({ where: { id }, select: MISS_SELECT })) as MissRow, [PENDING]);
         }
         const document = await tx.purchaseOrder.findUniqueOrThrow({ where: { id }, select: { docNo: true, _count: { select: { lines: true } } } });
         return { docNo: document.docNo, lineCount: document._count.lines };

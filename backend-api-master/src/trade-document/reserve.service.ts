@@ -43,6 +43,10 @@ export class ReserveService {
   delete(actorId: string, id: string, expectedVersion: number) {
     return reserve.delete(actorId, id, expectedVersion);
   }
+  /** transaction-soft-delete D6: a deleted document back to its unchanged status. */
+  restore(actorId: string, id: string, expectedVersion: number) {
+    return reserve.restore(actorId, id, expectedVersion);
+  }
   approve(actorId: string, id: string, expectedVersion: number) {
     return reserve.approve(actorId, id, expectedVersion);
   }

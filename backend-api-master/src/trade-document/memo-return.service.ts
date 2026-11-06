@@ -4,7 +4,7 @@ import { WRITE_TX, type Tx } from "../common/persistence";
 import { prisma } from "../database/prisma-client";
 import { Prisma } from "../generated/prisma/client";
 import { documentErrors } from "./document-errors";
-import { TradeDocumentEngine, type LineHook } from "./document-engine";
+import { explainMiss, MISS_SELECT, TradeDocumentEngine, type LineHook, type MissRow } from "./document-engine";
 import { vendorDocumentOptions, vendorParty, type VendorOut } from "./memo-out-return.service";
 import type { MemoReceiveListInput, MemoReceiveStatus, MemoReturnInput } from "./memo-schemas";
 import { takeFromMemoStock } from "./memo-stock.service";
@@ -130,6 +130,10 @@ export class MemoReturnService {
   delete(actorId: string, id: string, expectedVersion: number) {
     return this.engine.delete(actorId, id, expectedVersion);
   }
+  /** transaction-soft-delete D6: a deleted document back to its unchanged status. */
+  restore(actorId: string, id: string, expectedVersion: number) {
+    return this.engine.restore(actorId, id, expectedVersion);
+  }
 
   async options(includeVendorId?: string) {
     try {
@@ -152,14 +156,12 @@ export class MemoReturnService {
       const approved = await prisma.$transaction(async (tx) => {
         const now = new Date();
         const updated = await tx.memoReturn.updateMany({
-          where: { id, version: expectedVersion, status: PENDING },
+          where: { id, version: expectedVersion, status: PENDING, deletedAt: null },
           data: { status: APPROVED, approvedAt: now, approvedBy: actorId, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
         });
         if (updated.count === 0) {
-          const row = await tx.memoReturn.findUnique({ where: { id }, select: { status: true } });
-          if (!row) throw errors.notFound();
-          if (row.status !== PENDING) throw errors.statusInvalid();
-          throw errors.changed();
+          // D8: NOT_FOUND → DELETED → STATUS_INVALID → CHANGED.
+          explainMiss(errors, (await tx.memoReturn.findUnique({ where: { id }, select: MISS_SELECT })) as MissRow, [PENDING]);
         }
         const document = await tx.memoReturn.findUniqueOrThrow({
           where: { id },

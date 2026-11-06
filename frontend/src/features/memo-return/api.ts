@@ -7,7 +7,7 @@ import { fromTradeDocument, toTradeDocumentInput } from "@/features/quotation/ap
 import { dec, toFixed } from "@/features/quotation/lib/decimal";
 import { emptyQuotation, newKey } from "@/features/quotation/lib/defaults";
 import { isFilledLine, lineSchema, tradeDocumentRules, tradeDocumentShape, type QuotationLine } from "@/features/quotation/schema";
-import { documentLoadError, mapDocumentSaveError } from "@/features/trade-document/document-api";
+import { documentLoadError, mapDocumentSaveError, daybookInput, daybookQueryOptions, mapDocumentRestoreError } from "@/features/trade-document/document-api";
 import type { DocumentApi } from "@/features/trade-document/document-form";
 import type { MemoStockItem } from "@/features/trade-document/memo-stock-api";
 import { masterTrpc } from "@/lib/master-trpc";
@@ -170,12 +170,16 @@ export function mapMemoReturnSaveError(error: unknown) {
 }
 export const memoReturnLoadError = (error: unknown) => documentLoadError(error, "MEMO_RETURN", "memo return", "memo returns");
 
+/** transaction-soft-delete FE-SD-003: Restore errors (not deleted any more, changed, gone). */
+export const memoReturnRestoreError = (error: unknown) => mapDocumentRestoreError(error, "MEMO_RETURN", "memo return");
+
 export function useMemoReturnDetail(id: string | null) {
   return masterTrpc.memoReturn.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient });
 }
 
+/** FE-SD-001: the daybook's active or deleted memo returns, newest first, 50 a page; a new view starts on page one. */
 export function useMemoReturnDaybook() {
-  return masterTrpc.memoReturn.list.useQuery({ limit: 50 }, { staleTime: 15_000, retry: retryTransient });
+  return masterTrpc.memoReturn.list.useInfiniteQuery(daybookInput(), daybookQueryOptions);
 }
 
 export function useMemoReturnApi(vendorId: string | undefined, docDate: string, isNew: boolean): DocumentApi<MemoReturnInput, MemoReturnOptions> {
@@ -187,6 +191,7 @@ export function useMemoReturnApi(vendorId: string | undefined, docDate: string, 
   const update = masterTrpc.memoReturn.update.useMutation(writes);
   const remove = masterTrpc.memoReturn.delete.useMutation(writes);
   const approve = masterTrpc.memoReturn.approve.useMutation(writes);
+  const restore = masterTrpc.memoReturn.restore.useMutation(writes);
   return {
     options: options.data,
     companyCurrency: options.data?.companyCurrency,
@@ -195,8 +200,9 @@ export function useMemoReturnApi(vendorId: string | undefined, docDate: string, 
     update: (args) => update.mutateAsync(args),
     remove: (args) => remove.mutateAsync(args),
     approve: (args) => approve.mutateAsync(args),
+    restore: (args) => restore.mutateAsync(args),
     invalidate: () =>
       Promise.all([utils.memoReturn.list.invalidate(), utils.memoReturn.get.invalidate(), utils.memoReturn.nextNumber.invalidate(), utils.memoStock.list.invalidate()]),
-    busy: create.isPending || update.isPending || remove.isPending || approve.isPending,
+    busy: create.isPending || update.isPending || remove.isPending || approve.isPending || restore.isPending,
   };
 }

@@ -1,9 +1,18 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CircleCheck, FileSearch, Trash2 } from "lucide-react";
-import Link from "next/link";
+import { CircleCheck, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { deleteDocumentConfirm, restoreDocumentConfirm, useConfirm } from "@/features/quotation/components/use-confirm";
+import {
+  daybookLoadError,
+  daybookState,
+  deletedInfo,
+  DocumentDaybook,
+  DocumentDeletedBanner,
+  restoredStatusLabel,
+  type DeletedInfo,
+} from "@/features/trade-document/document-api";
 import { useTabDirty, useTabDocument, useTabReplace } from "@/features/home/tabs/tab-host";
 import { FormProvider, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -14,11 +23,10 @@ import { ItemTable, type RowAction } from "@/features/quotation/components/items
 import { DocumentNote } from "@/features/quotation/components/note/DocumentNote";
 import { RailButtons, RailPanelView, type RailPanel } from "@/features/quotation/components/rail/RightRail";
 import { SummaryValue } from "@/features/quotation/components/summary/SummaryValue";
-import { Button, cx, Toast } from "@/features/quotation/components/ui";
+import { Button, Toast } from "@/features/quotation/components/ui";
 import { DocumentKindContext } from "@/features/quotation/document-kind";
 import { calculateTotals } from "@/features/quotation/lib/calculate";
 import { emptyLine, newKey } from "@/features/quotation/lib/defaults";
-import { formatDate } from "@/features/quotation/lib/format";
 import { LinePhotoContext, type LinePhotoTarget } from "@/features/quotation/options-context";
 import { isFilledLine } from "@/features/quotation/schema";
 import { VendorDocumentInfoForm } from "@/features/trade-document/vendor-info-form";
@@ -28,6 +36,7 @@ import {
   isPendingApproval,
   mapPurchaseOrderError,
   purchaseOrderLoadError,
+  purchaseOrderRestoreError,
   purchaseOrderPhotoUrl,
   stoneChoices,
   toPurchaseOrderInput,
@@ -66,9 +75,12 @@ export const approveMessage = (count: number) =>
   `Approve this Purchase Order? Its ${count} ${count === 1 ? "item is" : "items are"} sent to Purchase and it can no longer be edited.`;
 
 /** One Purchase Order (ADR-0041): Quotation's layout and components, a vendor header, keyed-in rows and Approve. */
-export function PurchaseOrderForm({ initial, access }: { initial?: PurchaseOrderFormValues; access: PurchaseOrderAccess }) {
+export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, access }: { initial?: PurchaseOrderFormValues; deleted?: DeletedInfo | null; access: PurchaseOrderAccess }) {
   const replaceTab = useTabReplace();
   const [saved, setSaved] = useState<PurchaseOrderFormValues | undefined>(initial);
+  // transaction-soft-delete D10: a deleted purchase order is read-only with the banner.
+  const [deleted, setDeleted] = useState<DeletedInfo | null>(initialDeleted);
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [mode, setMode] = useState<"view" | "edit">(initial ? "view" : "edit");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -84,7 +96,8 @@ export function PurchaseOrderForm({ initial, access }: { initial?: PurchaseOrder
   const lines = useMemo(() => values.lines ?? [], [values.lines]);
   const totals = useMemo(() => calculateTotals(values), [values]);
 
-  const readOnly = mode === "view";
+  const isDeleted = Boolean(deleted && saved?.id);
+  const readOnly = mode === "view" || isDeleted;
   const status = saved?.status;
   const editable = Boolean(saved?.id) && isEditablePurchaseOrder(status);
   const options = usePurchaseOrderOptions(saved?.vendorId);
@@ -94,7 +107,7 @@ export function PurchaseOrderForm({ initial, access }: { initial?: PurchaseOrder
   const kind = useMemo(() => ({ ...PURCHASE_ORDER_KIND, stone: stoneChoices(options.data) }), [options.data]);
   useTabDocument(saved?.docNo);
   useTabDirty(formState.isDirty && !readOnly);
-  const showApprove = canApprovePurchaseOrder({ saved: Boolean(saved?.id), status, editing: !readOnly, dirty: formState.isDirty, approve: access.approve });
+  const showApprove = !isDeleted && canApprovePurchaseOrder({ saved: Boolean(saved?.id), status, editing: !readOnly, dirty: formState.isDirty, approve: access.approve });
 
   // A new PO starts in the company currency (the shared header then fills its rate).
   const companyCurrency = options.data?.companyCurrency ?? null;
@@ -112,6 +125,7 @@ export function PurchaseOrderForm({ initial, access }: { initial?: PurchaseOrder
   const show = (detail: PurchaseOrderDetail) => {
     const latest = fromPurchaseOrder(detail);
     setSaved(latest);
+    setDeleted(deletedInfo(detail));
     reset(latest);
     setMode("view");
     setEditorOpen(false);
@@ -170,7 +184,8 @@ export function PurchaseOrderForm({ initial, access }: { initial?: PurchaseOrder
   };
 
   const onDelete = async () => {
-    if (!saved?.id || !saved.version || !window.confirm(`Delete ${saved.docNo}?`)) return;
+    // The shared confirm modal and text (deleteDocumentConfirm), as on the other documents.
+    if (!saved?.id || !saved.version || !(await confirm(deleteDocumentConfirm(saved.docNo)))) return;
     try {
       await writes.remove({ id: saved.id, expectedVersion: saved.version });
       await writes.invalidate();
@@ -199,6 +214,20 @@ export function PurchaseOrderForm({ initial, access }: { initial?: PurchaseOrder
     }
   };
 
+  /** FE-SD-002: a deleted purchase order back to its status; the reloaded copy is editable again. */
+  const onRestore = async () => {
+    if (!saved?.id || !saved.version || !(await confirm(restoreDocumentConfirm(saved.docNo, restoredStatusLabel(saved.status))))) return;
+    try {
+      await writes.restore({ id: saved.id, expectedVersion: saved.version });
+      show(await writes.reload(saved.id));
+      setToast(`Restored ${saved.docNo ?? ""}`.trim());
+    } catch (error) {
+      const outcome = purchaseOrderRestoreError(error);
+      if (outcome.refetch) await reloadSaved();
+      setToast(outcome.message);
+    }
+  };
+
   const onRefresh = async () => {
     if (!readOnly && formState.isDirty && !window.confirm("Discard unsaved changes?")) return;
     await reloadSaved();
@@ -209,6 +238,7 @@ export function PurchaseOrderForm({ initial, access }: { initial?: PurchaseOrder
   const onDuplicate = () => {
     const current = getValues();
     setSaved(undefined);
+    setDeleted(null);
     reset({ ...current, id: undefined, docNo: undefined, status: undefined, version: undefined, lines: current.lines.map((l) => ({ ...l, key: newKey() })) });
     setMode("edit");
     setToast("Duplicated as a new purchase order");
@@ -270,6 +300,7 @@ export function PurchaseOrderForm({ initial, access }: { initial?: PurchaseOrder
         <FormProvider {...form}>
           <div className="relative flex h-full bg-white">
             <div className="min-w-0 flex-1 overflow-y-auto">
+              {isDeleted && deleted && <DocumentDeletedBanner info={deleted} canRestore={access.delete} busy={writes.busy} onRestore={() => void onRestore()} />}
               <QuotationHeader
                 noLabel="Purchase Order No.:"
                 newHref={PURCHASE_ORDER_HREF}
@@ -277,13 +308,13 @@ export function PurchaseOrderForm({ initial, access }: { initial?: PurchaseOrder
                 docNo={docNo}
                 isPreview={!saved?.docNo}
                 status={status}
-                mode={mode}
+                mode={isDeleted ? "view" : mode}
                 saving={writes.busy}
-                canSave={saved?.id ? access.edit : access.add}
+                canSave={!isDeleted && (saved?.id ? access.edit : access.add)}
                 canCreate={access.add}
-                canEdit={editable && access.edit}
-                canDelete={editable && access.delete}
-                hideEditDelete={status === "APPROVED"}
+                canEdit={editable && access.edit && !isDeleted}
+                canDelete={editable && access.delete && !isDeleted}
+                hideEditDelete={status === "APPROVED" || isDeleted}
                 extraActions={
                   showApprove && (
                     <Button variant="primary" onClick={() => setApproving(true)} disabled={writes.busy} className="min-w-24">
@@ -392,6 +423,7 @@ export function PurchaseOrderForm({ initial, access }: { initial?: PurchaseOrder
             onCancel={() => setApproving(false)}
             onConfirm={() => void onApprove()}
           />
+          {confirmDialog}
           {toast && <Toast message={toast} onClose={() => setToast(null)} />}
         </FormProvider>
       </LinePhotoContext.Provider>
@@ -399,35 +431,16 @@ export function PurchaseOrderForm({ initial, access }: { initial?: PurchaseOrder
   );
 }
 
-/** Saved purchase orders, newest first; orange = Pending Approval, green = Approved (Q-PO-10). */
+
+/** Saved purchase orders, newest first; orange = Pending Approval, green = Approved (Q-PO-10); grey = Deleted (FE-SD-001). */
 function PurchaseOrderDaybook() {
   const list = usePurchaseOrderDaybook();
-  if (list.isPending) return <p className="py-16 text-center text-sm text-[#6B7480]">Loading…</p>;
-  if (list.error) return <p className="py-16 text-center text-sm text-[#E5484D]">{purchaseOrderLoadError(list.error, "purchase orders")}</p>;
-  const entries = list.data?.items ?? [];
-  if (entries.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-4 py-20 text-[#6B7480]">
-        <FileSearch className="size-10 text-[#1C252E]" strokeWidth={1.5} />
-        No results found.
-      </div>
-    );
-  }
   return (
-    <ul className="px-5 py-3">
-      {entries.map((entry, index) => (
-        <li key={entry.id}>
-          <Link href={purchaseOrderHref(entry.id)} className="flex w-full items-start gap-3 rounded-lg px-2 py-2.5 text-left hover:bg-[#F6F7F8]">
-            <span className="w-8 shrink-0 text-[#1C252E]">#{index + 1}</span>
-            <span className={cx("mt-1.5 size-3 shrink-0 rounded-full", entry.status === "APPROVED" ? "bg-[#22C55E]" : "bg-[#F5A524]")} title={STATUS_LABELS[entry.status]?.label} />
-            <span className="min-w-0 flex-1">
-              <span className="block font-medium text-[#1C252E]">{entry.docNo}</span>
-              <span className="block truncate text-sm text-[#1C252E]">{entry.vendorName}</span>
-            </span>
-            <span className="shrink-0 text-sm text-[#A9B1B9]">{formatDate(entry.docDate)}</span>
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <DocumentDaybook
+      plural="purchase orders"
+      href={purchaseOrderHref}
+      emptyText="No results found."
+      state={daybookState(list, (error) => daybookLoadError(error, "purchase orders"), (item) => String(item.vendorName ?? ""))}
+    />
   );
 }

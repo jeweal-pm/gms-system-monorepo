@@ -185,7 +185,7 @@ describe.runIf(canRun)("IT-MO memo out From Stock on PostgreSQL", () => {
     expect(await failure(memoOut.approve(ACTOR, saved.id, 3))).toMatchObject({ status: 409, code: "MEMO_OUT_STATUS_INVALID" });
     expect(await failure(memoOut.update(ACTOR, saved.id, 3, outInput([stockLine(item.id, 1, "0.5")])))).toMatchObject({ status: 409, code: "MEMO_OUT_STATUS_INVALID" });
     expect(await failure(memoOut.delete(ACTOR, saved.id, 3))).toMatchObject({ status: 409, code: "MEMO_OUT_STATUS_INVALID" });
-    expect((await memoOut.list({ partyId: customer.id, status: "APPROVED", limit: 50 })).items.map((row) => row.id)).toContain(saved.id);
+    expect((await memoOut.list({ partyId: customer.id, status: "APPROVED", limit: 50, deleted: false })).items.map((row) => row.id)).toContain(saved.id);
   });
 
   it("IT-MO-04 over-pull guard: of two memo outs that together take more than pending, only the first approval passes", async () => {

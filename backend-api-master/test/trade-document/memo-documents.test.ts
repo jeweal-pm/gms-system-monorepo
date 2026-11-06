@@ -46,7 +46,8 @@ vi.mock("../../src/database/prisma-client", () => {
     create: vi.fn(async ({ data }: { data: Row }) => { db.created.push({ model, data }); return data; }),
     findUnique: vi.fn(async () => db.stored),
     updateMany: vi.fn(async (args: Row) => { db.updates.push(args); return { count: db.writeCount }; }),
-    deleteMany: vi.fn(async () => ({ count: db.writeCount })),
+    // Soft delete / restore (ADR-0044): one guarded UPDATE … RETURNING.
+    updateManyAndReturn: vi.fn(async (args: Row) => { db.updates.push(args); return db.writeCount ? [{ docNo: "MO-1", status: "PENDING_APPROVAL" }] : []; }),
     findMany: vi.fn(async (args: Row) => { db.findManyArgs.push(args); return []; }),
     count: vi.fn(async () => 0),
   });
@@ -259,8 +260,9 @@ describe("update and delete (SA-MO-07)", () => {
     expect(await failure(memoOut.update("editor", DOC, 2, outInput()))).toMatchObject({ status: 404, code: "MEMO_OUT_NOT_FOUND" });
   });
 
-  it("UT-MO-B08 delete needs the current version of a pending memo out (SA-MO-11)", async () => {
-    await expect(memoOut.delete("actor", DOC, 1)).resolves.toEqual({ ok: true });
+  it("UT-MO-B08 delete (now soft, ADR-0044) needs the current version of a pending memo out (SA-MO-11)", async () => {
+    await expect(memoOut.delete("actor", DOC, 1)).resolves.toEqual({ ok: true, version: 2 });
+    expect(db.updates[0]).toMatchObject({ where: { id: DOC, version: 1, status: { in: ["PENDING_APPROVAL"] }, deletedAt: null }, data: { deletedBy: "actor" } });
     db.writeCount = 0;
     db.stored = { status: "PENDING_APPROVAL", version: 4 };
     expect(await failure(memoOut.delete("actor", DOC, 1))).toMatchObject({ status: 409, code: "MEMO_OUT_CHANGED" });

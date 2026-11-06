@@ -8,7 +8,7 @@ import { Prisma } from "../generated/prisma/client";
 import { CHARGE_TYPES } from "../quotation/quotation.schemas";
 import { formatAddress, stoneLineOptions } from "../quotation/quotation.service";
 import { documentErrors, type DocumentErrors } from "./document-errors";
-import { TradeDocumentEngine, type LineHook, type PartyAdapter, type TradeDocumentInput } from "./document-engine";
+import { explainMiss, MISS_SELECT, TradeDocumentEngine, type LineHook, type PartyAdapter, type TradeDocumentInput, type MissRow } from "./document-engine";
 import { customerDocumentOptions, customerParty, type CustomerOut } from "./memo-out.service";
 import type { MemoOutOutstandingInput, MemoOutReturnInput, MemoReceiveListInput, MemoReceiveStatus } from "./memo-schemas";
 import { releaseToMemoStock, type MemoStockTake } from "./memo-stock.service";
@@ -276,6 +276,10 @@ export class MemoOutReturnService {
   delete(actorId: string, id: string, expectedVersion: number) {
     return this.engine.delete(actorId, id, expectedVersion);
   }
+  /** transaction-soft-delete D6: a deleted document back to its unchanged status. */
+  restore(actorId: string, id: string, expectedVersion: number) {
+    return this.engine.restore(actorId, id, expectedVersion);
+  }
 
   /** The `memoOut.options` shape (customers with Shipping / Invoice addresses), Document Setup key `memo-out-return`. */
   async options(includeCustomerId?: string) {
@@ -344,14 +348,12 @@ export class MemoOutReturnService {
       const approved = await prisma.$transaction(async (tx) => {
         const now = new Date();
         const updated = await tx.memoOutReturn.updateMany({
-          where: { id, version: expectedVersion, status: PENDING },
+          where: { id, version: expectedVersion, status: PENDING, deletedAt: null },
           data: { status: APPROVED, approvedAt: now, approvedBy: actorId, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
         });
         if (updated.count === 0) {
-          const row = await tx.memoOutReturn.findUnique({ where: { id }, select: { status: true } });
-          if (!row) throw errors.notFound();
-          if (row.status !== PENDING) throw errors.statusInvalid();
-          throw errors.changed();
+          // D8: NOT_FOUND → DELETED → STATUS_INVALID → CHANGED.
+          explainMiss(errors, (await tx.memoOutReturn.findUnique({ where: { id }, select: MISS_SELECT })) as MissRow, [PENDING]);
         }
         const document = await tx.memoOutReturn.findUniqueOrThrow({
           where: { id },

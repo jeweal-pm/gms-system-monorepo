@@ -1,15 +1,18 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { DISCARD_CHANGES_CONFIRM, deleteDocumentConfirm, useConfirm } from "./use-confirm";
+import { DISCARD_CHANGES_CONFIRM, deleteDocumentConfirm, restoreDocumentConfirm, useConfirm } from "./use-confirm";
+import { clearNotice, DocumentDeletedBanner, handOverNotice, peekNotice, restoredStatusLabel, type DeletedInfo } from "@/features/trade-document/document-api";
 import { Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTabDirty, useTabDocument, useTabReplace } from "@/features/home/tabs/tab-host";
 import { FormProvider, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { ScanIcon } from "@/components/ui/scan-icon";
 import {
+  isDeletableStatus,
   isEditableStatus,
   mapSaveError,
+  quotationRestoreError,
   toQuotationInput,
   useNextNumber,
   useQuotationMutations,
@@ -38,7 +41,7 @@ import { Button, IconButton, Toast } from "./ui";
  * One quotation document (ADR-0025 layout, data from SA quotation rev 1). A saved quotation is remounted
  * with the new server version after every write (QuotationPage keys on id + version).
  */
-export function QuotationForm({ initial, access }: { initial?: QuotationFormValues; access: QuotationAccess }) {
+export function QuotationForm({ initial, deleted: initialDeleted = null, access }: { initial?: QuotationFormValues; deleted?: DeletedInfo | null; access: QuotationAccess }) {
   const replaceTab = useTabReplace();
   const [saved, setSaved] = useState<QuotationFormValues | undefined>(initial);
   const [mode, setMode] = useState<"view" | "edit">(initial ? "view" : "edit");
@@ -47,7 +50,10 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
   const [railPanel, setRailPanel] = useState<RailPanel>(null);
   const [fromStockOpen, setFromStockOpen] = useState(false);
   const [checkedKeys, setCheckedKeys] = useState<Set<string>>(new Set());
-  const [toast, setToast] = useState<string | null>(null);
+  // A message handed over from the copy before this version (deleted elsewhere, restored).
+  const [toast, setToast] = useState<string | null>(() => peekNotice(initial?.id));
+  // transaction-soft-delete D10: a deleted quotation is read-only with the banner.
+  const [deleted, setDeleted] = useState<DeletedInfo | null>(initialDeleted);
   const { confirm, dialog: confirmDialog } = useConfirm();
 
   const form = useForm<QuotationFormValues>({
@@ -64,20 +70,23 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
   const lines = useMemo(() => values.lines ?? [], [values.lines]);
   const totals = useMemo(() => calculateTotals(values), [values]);
 
-  const readOnly = mode === "view";
+  const isDeleted = Boolean(deleted && saved?.id);
+  const readOnly = mode === "view" || isDeleted;
   const status = values.status ?? "DRAFT";
   const options = useQuotationOptions(saved?.customerId);
   const nextNumber = useNextNumber(values.docDate ?? "", !saved?.docNo);
   // Without a Document Setup row in effect the server numbers plainly 1, 2, 3 … (owner 2026-10-26).
   const docNo = saved?.docNo ?? nextNumber.data?.docNo ?? "—";
   const mutations = useQuotationMutations();
-  const busy = mutations.create.isPending || mutations.update.isPending || mutations.remove.isPending;
+  const busy = mutations.create.isPending || mutations.update.isPending || mutations.remove.isPending || mutations.restore.isPending;
 
   // A new quotation starts in the company currency once the options arrive.
   const companyCurrency = options.data?.companyCurrency;
   useEffect(() => {
     if (!saved && companyCurrency && getValues("currency") === "") setValue("currency", companyCurrency);
   }, [saved, companyCurrency, getValues, setValue]);
+
+  useEffect(() => clearNotice(initial?.id), [initial?.id]);
 
   useEffect(() => {
     if (!toast) return;
@@ -91,6 +100,12 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
     const outcome = mapSaveError(error);
     for (const field of outcome.fieldErrors) setError(field.name, { type: "server", message: field.message });
     setToast(outcome.message);
+    // FE-SD-003: deleted in another tab; reload it (the page remounts read-only with the banner) and keep the message.
+    if (outcome.deleted && saved?.id) {
+      handOverNotice(saved.id, outcome.message);
+      setMode("view");
+      void mutations.invalidate();
+    }
   };
 
   /** After a write: reload the saved document (the page remounts with the new version). */
@@ -149,9 +164,27 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
     }
   };
 
+  /** FE-SD-002: a deleted quotation back to its status (Draft / Pending Approval); the page remounts editable. */
+  const onRestore = async () => {
+    if (!saved?.id || !saved.version || !(await confirm(restoreDocumentConfirm(saved.docNo, restoredStatusLabel(saved.status))))) return;
+    try {
+      await mutations.restore.mutateAsync({ id: saved.id, expectedVersion: saved.version });
+      handOverNotice(saved.id, `Restored ${saved.docNo ?? ""}`.trim());
+      await mutations.invalidate();
+    } catch (error) {
+      const outcome = quotationRestoreError(error);
+      setToast(outcome.message);
+      if (outcome.refetch) {
+        handOverNotice(saved.id, outcome.message);
+        await mutations.invalidate();
+      }
+    }
+  };
+
   const onDuplicate = () => {
     const current = getValues();
     setSaved(undefined);
+    setDeleted(null);
     reset({
       ...emptyQuotation(),
       ...current,
@@ -234,17 +267,21 @@ export function QuotationForm({ initial, access }: { initial?: QuotationFormValu
       {/* AppShell <main> เป็นตัว scroll: ฝั่งซ้าย scroll เอง, editor panel สูงเต็มจอไม่ถูกตัด */}
       <div className="relative flex h-full bg-white">
         <div className="min-w-0 flex-1 overflow-y-auto">
+          {isDeleted && deleted && <DocumentDeletedBanner info={deleted} canRestore={access.delete} busy={busy} onRestore={() => void onRestore()} />}
           <QuotationHeader
             docNo={docNo}
             isPreview={!saved?.docNo}
             status={saved ? status : undefined}
             statusReason={saved?.statusReason}
-            mode={mode}
+            mode={isDeleted ? "view" : mode}
             saving={busy}
-            canSave={saved ? access.edit : access.add}
+            canSave={!isDeleted && (saved ? access.edit : access.add)}
             canCreate={access.add}
-            canEdit={Boolean(saved) && access.edit && isEditableStatus(status)}
-            canDelete={Boolean(saved) && access.delete && isEditableStatus(status)}
+            canEdit={Boolean(saved) && access.edit && isEditableStatus(status) && !isDeleted}
+            // OQ-1: Delete only before approval; it is hidden for APPROVED / REJECTED / CANCELLED and for a deleted copy.
+            canDelete={Boolean(saved) && access.delete && isDeletableStatus(status) && !isDeleted}
+            hideEditDelete={isDeleted}
+            hideDelete={Boolean(saved) && !isDeletableStatus(status)}
             actions={{
               onCancel: () => void onCancel(),
               onSave: () => void onSave(),

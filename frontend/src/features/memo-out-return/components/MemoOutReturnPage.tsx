@@ -2,7 +2,7 @@
 
 import { QuotationInfoForm } from "@/features/quotation/components/info/QuotationInfoForm";
 import { QuotationOptionsContext } from "@/features/quotation/options-context";
-import { DocumentDaybook, useDocumentAccess } from "@/features/trade-document/document-api";
+import { daybookLoadError, daybookState, deletedInfo, DocumentDaybook, useDocumentAccess } from "@/features/trade-document/document-api";
 import { APPROVAL_STATUS_LABELS, DocumentForm, type DocumentFormConfig } from "@/features/trade-document/document-form";
 import {
   emptyMemoOutReturn,
@@ -10,6 +10,7 @@ import {
   MEMO_OUT_RETURN_HREF,
   MEMO_OUT_RETURN_NOTE_MAX,
   mapMemoOutReturnSaveError,
+  memoOutReturnRestoreError,
   memoOutReturnHref,
   memoOutReturnLoadError,
   memoOutReturnSchema,
@@ -34,12 +35,7 @@ function MemoOutReturnDaybook() {
     <DocumentDaybook
       plural="memo out returns"
       href={memoOutReturnHref}
-      state={{
-        isPending: daybook.isPending,
-        isError: daybook.isError,
-        errorMessage: daybook.error ? memoOutReturnLoadError(daybook.error) : undefined,
-        items: (daybook.data?.items ?? []).map((item) => ({ id: item.id, docNo: item.docNo, docDate: item.docDate, status: item.status, name: String(item.customerName ?? "") })),
-      }}
+      state={daybookState(daybook, (error) => daybookLoadError(error, "memo out returns"), (item) => String(item.customerName ?? ""))}
     />
   );
 }
@@ -67,6 +63,7 @@ const CONFIG: DocumentFormConfig<MemoOutReturnFormValues, MemoOutReturnInput, Me
     </QuotationOptionsContext.Provider>
   ),
   mapSaveError: mapMemoOutReturnSaveError,
+  mapRestoreError: memoOutReturnRestoreError,
   pickLabel: "Memo Outstanding",
   pickHint: "Pick stones this customer still has on memo",
   emptyRowText: "Empty row · click to pick from Memo Outstanding",
@@ -116,5 +113,5 @@ export function EditMemoOutReturnPage({ id }: { id: string }) {
   if (!access || (access.view && detail.isPending)) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{DENIED}</p>;
   if (detail.isError || !detail.data) return <p className={message}>{detail.error ? memoOutReturnLoadError(detail.error) : "Memo out return not found."}</p>;
-  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromMemoOutReturn(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
+  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromMemoOutReturn(detail.data)} deleted={deletedInfo(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
 }

@@ -13,6 +13,8 @@ export function documentErrors(code: string, logContext: string, event: string) 
   const changed = () => partnerException(`${code}_CHANGED`, HttpStatus.CONFLICT);
   const statusInvalid = () => partnerException(`${code}_STATUS_INVALID`, HttpStatus.CONFLICT);
   const inUse = () => partnerException(`${code}_IN_USE`, HttpStatus.CONFLICT);
+  /** transaction-soft-delete D8: a write (other than restore) on a soft-deleted document. */
+  const deleted = () => partnerException(`${code}_DELETED`, HttpStatus.CONFLICT);
   const referenceInvalid = (fieldErrors: FieldError[]) => partnerException(`${code}_REFERENCE_INVALID`, HttpStatus.UNPROCESSABLE_ENTITY, fieldErrors);
   /**
    * P2002 on (numbering, running no) / doc no = a concurrent save got the same number first → CHANGED so the
@@ -28,7 +30,7 @@ export function documentErrors(code: string, logContext: string, event: string) 
     }
     return error;
   };
-  return { notFound, changed, statusInvalid, inUse, referenceInvalid, map };
+  return { notFound, changed, statusInvalid, inUse, deleted, referenceInvalid, map };
 }
 
 export type DocumentErrors = ReturnType<typeof documentErrors>;

@@ -37,19 +37,19 @@ const decimalSetup = { get: vi.fn(), save: vi.fn() };
 const currency = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
 const quotation = {
   list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(),
-  submit: vi.fn(), approve: vi.fn(), reject: vi.fn(), cancel: vi.fn(), delete: vi.fn(),
+  submit: vi.fn(), approve: vi.fn(), reject: vi.fn(), cancel: vi.fn(), delete: vi.fn(), restore: vi.fn(),
 };
-const memoOut = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
-const memoOutReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), outstanding: vi.fn(), approve: vi.fn() };
-const memoReceive = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
+const memoOut = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
+const memoOutReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), outstanding: vi.fn(), approve: vi.fn() };
+const memoReceive = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
 const memoStock = { list: vi.fn() };
-const memoReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
+const memoReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
 const memoOutstanding = { vendorSummary: vi.fn(), vendorList: vi.fn(), vendorItems: vi.fn(), vendorOptions: vi.fn(), customerSummary: vi.fn(), customerList: vi.fn(), customerItems: vi.fn(), customerOptions: vi.fn() };
-const reserve = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
-const purchaseOrder = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn() };
+const reserve = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
+const purchaseOrder = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
 const purchase = {
   list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), memoStock: vi.fn(), purchaseOrderLines: vi.fn(),
-  create: vi.fn(), update: vi.fn(), delete: vi.fn(), approve: vi.fn(),
+  create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn(),
 };
 const router = createMasterRouter({
   customer: customer as unknown as CustomerService,
@@ -809,5 +809,46 @@ describe("staged master domain tRPC boundary", () => {
     expect(currency.options).toHaveBeenCalledTimes(1);
     await expect(router.createCaller(context(["purchase:VIEW"])).memoStock.list({ vendorId: ID })).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(memoStock.list).not.toHaveBeenCalled();
+  });
+  it("GP-SD-01 transaction-soft-delete: restore needs <menu> DELETE + CSRF on all 8 routers; list {deleted: true} needs VIEW only", async () => {
+    const versioned = { id: ID, expectedVersion: 2 };
+    const docs = [
+      ["quotation", "quotation", quotation], ["memoOut", "memo-out", memoOut], ["reserve", "reserve", reserve], ["memoOutReturn", "memo-out-return", memoOutReturn],
+      ["memoReceive", "memo-receive", memoReceive], ["memoReturn", "memo-return", memoReturn], ["purchaseOrder", "purchase-order", purchaseOrder], ["purchase", "purchase", purchase],
+    ] as const;
+    type DocCaller = { restore(input: unknown): Promise<unknown>; list(input: unknown): Promise<unknown> };
+    const doc = (grants: string[], key: string, overrides: Partial<MasterContext> = {}) =>
+      (router.createCaller(context(grants, overrides)) as unknown as Record<string, DocCaller>)[key];
+    for (const [key, menu, service] of docs) {
+      await doc([`${menu}:DELETE`], key).restore(versioned);
+      expect(service.restore).toHaveBeenCalledWith("user-1", ID, 2);
+      for (const grants of [[`${menu}:VIEW`], [`${menu}:EDIT`], [`${menu}:VIEW`, `${menu}:EDIT`, `${menu}:ADD`, `${menu}:APPROVE`]]) {
+        await expect(doc(grants, key).restore(versioned)).rejects.toMatchObject({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+      }
+      await expect(doc([`${menu}:DELETE`], key, { csrfVerified: false }).restore(versioned)).rejects.toMatchObject({ code: "FORBIDDEN", message: "CSRF_INVALID" });
+      // Same strict schema as delete.
+      await expect(doc([`${menu}:DELETE`], key).restore({ id: "nope", expectedVersion: 2 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      await expect(doc([`${menu}:DELETE`], key).restore({ ...versioned, extra: 1 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(service.restore).toHaveBeenCalledTimes(1);
+      // The Deleted list view: VIEW only, no CSRF; deleted is passed through and defaults to false.
+      await doc([`${menu}:VIEW`], key, { csrfVerified: false }).list({ deleted: true });
+      expect(service.list).toHaveBeenLastCalledWith(expect.objectContaining({ deleted: true }));
+      await doc([`${menu}:VIEW`], key).list({});
+      expect(service.list).toHaveBeenLastCalledWith(expect.objectContaining({ deleted: false }));
+      await expect(doc([`${menu}:VIEW`], key).list({ deleted: "yes" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      await expect(doc([`${menu}:DELETE`], key).list({ deleted: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    }
+    // Purchase reports the restore / list refusal as contract field errors.
+    const fieldErrors = async (promise: Promise<unknown>) => {
+      try { await promise; } catch (error) { return (error as { cause?: { getResponse(): { error: { fieldErrors: unknown } } } }).cause?.getResponse().error.fieldErrors; }
+      throw new Error("expected a refusal");
+    };
+    expect(await fieldErrors(doc(["purchase:DELETE"], "purchase").restore({ id: ID, expectedVersion: 0 }))).toEqual([{ path: "expectedVersion", code: "too_small" }]);
+    expect(await fieldErrors(doc(["purchase:VIEW"], "purchase").list({ deleted: "yes" }))).toEqual([{ path: "deleted", code: "invalid_type" }]);
+    // Domain codes kept.
+    memoReceive.restore.mockRejectedValueOnce(new HttpException({ error: { code: "MEMO_RECEIVE_STATUS_INVALID", message: "x" } }, 409));
+    await expect(doc(["memo-receive:DELETE"], "memoReceive").restore(versioned)).rejects.toMatchObject({ code: "CONFLICT", message: "MEMO_RECEIVE_STATUS_INVALID" });
+    memoOut.approve.mockRejectedValueOnce(new HttpException({ error: { code: "MEMO_OUT_DELETED", message: "x" } }, 409));
+    await expect(router.createCaller(context(["memo-out:APPROVE"])).memoOut.approve(versioned)).rejects.toMatchObject({ code: "CONFLICT", message: "MEMO_OUT_DELETED" });
   });
 });

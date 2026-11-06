@@ -355,7 +355,7 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     expect((await purchase.get(saved.id)).lines.slice(0, 2).map((line) => line.id)).toEqual([manualId, poLineId]);
     expect(await failure(purchase.update(ACTOR, saved.id, 1, purchaseInput(vendorA, [manualLine()])))).toMatchObject({ status: 409, code: "PURCHASE_CHANGED" });
 
-    const listed = await purchase.list({ partyId: vendorA.id, status: "PENDING_APPROVAL", q: saved.docNo, limit: 50 });
+    const listed = await purchase.list({ partyId: vendorA.id, status: "PENDING_APPROVAL", q: saved.docNo, limit: 50, deleted: false });
     expect(listed.items.map((row) => row.id)).toEqual([saved.id]);
     expect(listed.items[0]).toMatchObject({ vendorName: "PU IT Vendor A", status: "PENDING_APPROVAL" });
 
@@ -367,8 +367,10 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     const before = await buckets(item.id);
     const doomed = await purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(item.id, "IN_STOCK", 1, "0.5")]));
     expect(await failure(purchase.delete(ACTOR, doomed.id, 2))).toMatchObject({ code: "PURCHASE_CHANGED" });
-    expect(await purchase.delete(ACTOR, doomed.id, 1)).toEqual({ ok: true });
-    expect(await failure(purchase.get(doomed.id))).toMatchObject({ status: 404, code: "PURCHASE_NOT_FOUND" });
+    // transaction-soft-delete (ADR-0044 D4): the delete is soft; the purchase stays readable and read-only.
+    expect(await purchase.delete(ACTOR, doomed.id, 1)).toEqual({ ok: true, version: 2 });
+    expect(await purchase.get(doomed.id)).toMatchObject({ status: "PENDING_APPROVAL", deletedBy: ACTOR, version: 2 });
+    expect(await failure(purchase.approve(ACTOR, doomed.id, 2))).toMatchObject({ code: "PURCHASE_DELETED" });
     expect(await buckets(item.id)).toEqual(before);
 
     await purchase.approve(ACTOR, saved.id, 2);

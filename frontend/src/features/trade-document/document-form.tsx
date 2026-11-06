@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { DISCARD_CHANGES_CONFIRM, deleteDocumentConfirm, useConfirm } from "@/features/quotation/components/use-confirm";
+import { DISCARD_CHANGES_CONFIRM, deleteDocumentConfirm, restoreDocumentConfirm, useConfirm } from "@/features/quotation/components/use-confirm";
 import { CircleCheck, Trash2 } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { useTabDirty, useTabDocument, useTabReplace } from "@/features/home/tabs/tab-host";
@@ -22,6 +22,7 @@ import { emptyLine, newKey } from "@/features/quotation/lib/defaults";
 import { DocumentKindContext, QUOTATION_KIND, type DocumentKind } from "@/features/quotation/document-kind";
 import { LineOptionsContext, LinePhotoContext, type LineOptions } from "@/features/quotation/options-context";
 import { isFilledLine, type QuotationFormValues, type QuotationLine, type QuotationStatus } from "@/features/quotation/schema";
+import { clearNotice, DocumentDeletedBanner, handOverNotice, peekNotice, restoredStatusLabel, type DeletedInfo, type RestoreOutcome } from "./document-api";
 
 /** Everything the form needs from a document's API, read through the document's own hooks. */
 export type DocumentApi<Input, Options extends LineOptions = LineOptions> = {
@@ -35,11 +36,14 @@ export type DocumentApi<Input, Options extends LineOptions = LineOptions> = {
   remove(args: { id: string; expectedVersion: number }): Promise<unknown>;
   /** Documents with an approval step (memo return). */
   approve?(args: { id: string; expectedVersion: number }): Promise<unknown>;
+  /** transaction-soft-delete: a deleted document back to its status (`<doc>.restore`, DELETE grant). */
+  restore(args: { id: string; expectedVersion: number }): Promise<unknown>;
   invalidate(): Promise<unknown>;
   busy: boolean;
 };
 
-export type SaveOutcome = { fieldErrors: { name: string; message: string }[]; message: string };
+/** `deleted`: the document was deleted elsewhere (`<CODE>_DELETED`); reload it read-only. */
+export type SaveOutcome = { fieldErrors: { name: string; message: string }[]; message: string; deleted?: boolean };
 
 /** An item picker dialog: picked rows go to `onAdd`. */
 export type PickerRender<V> = (props: { values: V; onClose: () => void; onAdd: (lines: QuotationLine[]) => void }) => ReactNode;
@@ -64,6 +68,8 @@ export type DocumentFormConfig<V extends FieldValues & Saved, Input, Options ext
   partyId: (values: V | undefined) => string | undefined;
   header: (args: { readOnly: boolean; options: Options | undefined }) => ReactNode;
   mapSaveError: (error: unknown) => SaveOutcome;
+  /** `<doc>.restore` errors (transaction-soft-delete). */
+  mapRestoreError: (error: unknown) => RestoreOutcome;
   pickLabel: string;
   pickHint: string;
   emptyRowText?: string;
@@ -186,9 +192,11 @@ const NO_PHOTOS = { upload: null, url: (id: string) => id };
  * document type supplies its schema, header fields, API hooks and wording. A saved document is remounted with
  * the new server version after every write (its page keys on id + version).
  */
-export function DocumentForm<V extends FieldValues & Saved, Input, Options extends LineOptions = LineOptions>({ config, initial, canAdd, canEdit, canDelete, canApprove = false }: {
+export function DocumentForm<V extends FieldValues & Saved, Input, Options extends LineOptions = LineOptions>({ config, initial, deleted: initialDeleted = null, canAdd, canEdit, canDelete, canApprove = false }: {
   config: DocumentFormConfig<V, Input, Options>;
   initial?: V;
+  /** A soft-deleted document (ADR-0044 D10): read-only with the banner, Restore with DELETE. */
+  deleted?: DeletedInfo | null;
   canAdd: boolean;
   canEdit: boolean;
   canDelete: boolean;
@@ -201,7 +209,9 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   const [editorOpen, setEditorOpen] = useState(false);
   const [railPanel, setRailPanel] = useState<RailPanel>(null);
   const [checkedKeys, setCheckedKeys] = useState<Set<string>>(new Set());
-  const [toast, setToast] = useState<string | null>(null);
+  // A message handed over from the copy before this version (deleted elsewhere, restored).
+  const [toast, setToast] = useState<string | null>(() => peekNotice(initial?.id));
+  const [deleted, setDeleted] = useState<DeletedInfo | null>(initialDeleted);
   const { confirm, dialog: confirmDialog } = useConfirm();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [secondaryOpen, setSecondaryOpen] = useState(false);
@@ -214,14 +224,15 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   const lines = useMemo(() => values.lines ?? [], [values.lines]);
   const totals = useMemo(() => calculateTotals(values), [values]);
 
-  const readOnly = mode === "view";
+  const isDeleted = Boolean(deleted && saved?.id);
+  const readOnly = mode === "view" || isDeleted;
   const api = config.useApi(config.partyId(saved), values.docDate ?? "", !saved?.docNo);
   const docNo = saved?.docNo ?? api.nextDocNo ?? "—";
   const { approval } = config;
   const status = approval && saved?.docNo ? (saved.status as QuotationStatus | undefined) : undefined;
   /** An approved document is read-only (approval documents edit only while pending). */
   const locked = Boolean(approval && status && status !== approval.pendingStatus);
-  const showApprove = Boolean(approval && api.approve && saved?.id && status === approval.pendingStatus && readOnly && !formState.isDirty && canApprove);
+  const showApprove = Boolean(approval && api.approve && saved?.id && status === approval.pendingStatus && readOnly && !isDeleted && !formState.isDirty && canApprove);
   // app-shell-tabs T-03 / Q-TAB-03: the tab shows the document number and a dot while edits are unsaved.
   useTabDocument(saved?.docNo);
   useTabDirty(formState.isDirty && !readOnly);
@@ -230,6 +241,8 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   useEffect(() => {
     if (!saved && api.companyCurrency && getValues("currency" as Path<V>) === "") setValue("currency" as Path<V>, api.companyCurrency as never);
   }, [saved, api.companyCurrency, getValues, setValue]);
+
+  useEffect(() => clearNotice(initial?.id), [initial?.id]);
 
   useEffect(() => {
     if (!toast) return;
@@ -241,6 +254,12 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
     const outcome = config.mapSaveError(error);
     for (const field of outcome.fieldErrors) setError(field.name as Path<V>, { type: "server", message: field.message });
     setToast(outcome.message);
+    // FE-SD-003: deleted in another tab; reload it (the page remounts read-only with the banner) and keep the message.
+    if (outcome.deleted && saved?.id) {
+      handOverNotice(saved.id, outcome.message);
+      setMode("view");
+      void api.invalidate();
+    }
   };
 
   const onSave = handleSubmit(
@@ -291,6 +310,23 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
     }
   };
 
+  const onRestore = async () => {
+    if (!saved?.id || !saved.version || !(await confirm(restoreDocumentConfirm(saved.docNo, restoredStatusLabel(saved.status))))) return;
+    try {
+      await api.restore({ id: saved.id, expectedVersion: saved.version });
+      // The page remounts editable with the new version; the message goes with it.
+      handOverNotice(saved.id, `Restored ${saved.docNo ?? ""}`.trim());
+      await api.invalidate();
+    } catch (error) {
+      const outcome = config.mapRestoreError(error);
+      setToast(outcome.message);
+      if (outcome.refetch) {
+        handOverNotice(saved.id, outcome.message);
+        await api.invalidate();
+      }
+    }
+  };
+
   const onApprove = async () => {
     if (!saved?.id || !saved.version || !api.approve) return;
     try {
@@ -307,6 +343,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   const onDuplicate = () => {
     const current = getValues() as V & { lines: QuotationLine[] };
     setSaved(undefined);
+    setDeleted(null);
     reset({ ...config.empty(), ...current, id: undefined, docNo: undefined, version: undefined, status: approval?.pendingStatus ?? "DRAFT", lines: current.lines.map((l) => ({ ...l, key: newKey() })) });
     setMode("edit");
     setToast(`Duplicated as a new ${config.noun}`);
@@ -389,6 +426,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
         <FormProvider {...form}>
           <div className="relative flex h-full bg-white">
             <div className="min-w-0 flex-1 overflow-y-auto">
+              {isDeleted && deleted && <DocumentDeletedBanner info={deleted} canRestore={canDelete} busy={api.busy} onRestore={() => void onRestore()} />}
               <QuotationHeader
                 noLabel={config.noLabel}
                 newHref={config.newHref}
@@ -396,7 +434,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
                 isPreview={!saved?.docNo}
                 status={status}
                 statusLabels={approval?.statusLabels}
-                hideEditDelete={locked}
+                hideEditDelete={locked || isDeleted}
                 extraActions={
                   showApprove && (
                     <Button variant="primary" onClick={() => setApproving(true)}>
@@ -404,12 +442,12 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
                     </Button>
                   )
                 }
-                mode={mode}
+                mode={isDeleted ? "view" : mode}
                 saving={api.busy}
-                canSave={saved ? canEdit : canAdd}
+                canSave={!isDeleted && (saved ? canEdit : canAdd)}
                 canCreate={canAdd}
-                canEdit={Boolean(saved) && canEdit && !locked}
-                canDelete={Boolean(saved) && canDelete && !locked}
+                canEdit={Boolean(saved) && canEdit && !locked && !isDeleted}
+                canDelete={Boolean(saved) && canDelete && !locked && !isDeleted}
                 actions={{
                   onCancel: () => void onCancel(),
                   onSave: () => void onSave(),

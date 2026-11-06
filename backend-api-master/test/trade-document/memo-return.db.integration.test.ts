@@ -185,7 +185,7 @@ describe.runIf(canRun)("IT-MRT memo return on PostgreSQL", () => {
     const listed = (await stock.list({ vendorId: vendorA.id, limit: 50 })).items;
     expect(listed.find((row) => row.id === part.id)).toMatchObject({ pendingPcs: 1, pendingWeightCt: "0.500" });
     expect(listed.map((row) => row.id)).not.toContain(whole.id);
-    expect((await memoReturn.list({ partyId: vendorA.id, status: "APPROVED", limit: 50 })).items.map((row) => row.id)).toContain(saved.id);
+    expect((await memoReturn.list({ partyId: vendorA.id, status: "APPROVED", limit: 50, deleted: false })).items.map((row) => row.id)).toContain(saved.id);
   });
 
   it("IT-MRT-04 over-pull guard: of two returns that together take more than pending, only the first approval passes", async () => {

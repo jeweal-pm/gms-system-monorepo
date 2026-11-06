@@ -119,7 +119,11 @@ export const quotationListSchema = z.object({
   from: isoDate.optional(),
   to: isoDate.optional(),
   cursor: z.string().max(200).nullish(),
+  /** Sent by tRPC useInfiniteQuery (Load more); ignored, as in the other paged lists. */
+  direction: z.enum(["forward", "backward"]).optional(),
   limit: z.number().int().min(1).max(QUOTATION_LIST_LIMIT).default(QUOTATION_LIST_LIMIT),
+  /** transaction-soft-delete D9: false (default) = not deleted; true = deleted quotations only. */
+  deleted: z.boolean().default(false),
 }).strict();
 
 export type QuotationInput = z.output<typeof createQuotationSchema>;

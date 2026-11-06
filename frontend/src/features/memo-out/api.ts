@@ -13,7 +13,7 @@ import {
   type CustomerStockFormValues,
   type CustomerStockLine,
 } from "@/features/trade-document/customer-stock";
-import { documentLoadError } from "@/features/trade-document/document-api";
+import { documentLoadError, daybookInput, daybookQueryOptions, mapDocumentRestoreError } from "@/features/trade-document/document-api";
 import type { DocumentApi } from "@/features/trade-document/document-form";
 import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
@@ -44,12 +44,16 @@ export const fromMemoOut = (detail: MemoOutDetail) => fromCustomerStock(detail);
 export const mapMemoOutSaveError = customerStockSaveError("MEMO_OUT", "memo out");
 export const memoOutLoadError = (error: unknown) => documentLoadError(error, "MEMO_OUT", "memo out", "memo outs");
 
+/** transaction-soft-delete FE-SD-003: Restore errors (not deleted any more, changed, gone). */
+export const memoOutRestoreError = (error: unknown) => mapDocumentRestoreError(error, "MEMO_OUT", "memo out");
+
 export function useMemoOutDetail(id: string | null) {
   return masterTrpc.memoOut.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient });
 }
 
+/** FE-SD-001: the daybook's active or deleted memo outs, newest first, 50 a page; a new view starts on page one. */
 export function useMemoOutDaybook() {
-  return masterTrpc.memoOut.list.useQuery({ limit: 50 }, { staleTime: 15_000, retry: retryTransient });
+  return masterTrpc.memoOut.list.useInfiniteQuery(daybookInput(), daybookQueryOptions);
 }
 
 /** Options, number preview, writes and approval for the shared document form. */
@@ -62,6 +66,7 @@ export function useMemoOutApi(customerId: string | undefined, docDate: string, i
   const update = masterTrpc.memoOut.update.useMutation(writes);
   const remove = masterTrpc.memoOut.delete.useMutation(writes);
   const approve = masterTrpc.memoOut.approve.useMutation(writes);
+  const restore = masterTrpc.memoOut.restore.useMutation(writes);
   return {
     options: options.data,
     companyCurrency: options.data?.companyCurrency,
@@ -70,8 +75,9 @@ export function useMemoOutApi(customerId: string | undefined, docDate: string, i
     update: (args) => update.mutateAsync(args),
     remove: (args) => remove.mutateAsync(args),
     approve: (args) => approve.mutateAsync(args),
+    restore: (args) => restore.mutateAsync(args),
     invalidate: () =>
       Promise.all([utils.memoOut.list.invalidate(), utils.memoOut.get.invalidate(), utils.memoOut.nextNumber.invalidate(), utils.memoStock.list.invalidate()]),
-    busy: create.isPending || update.isPending || remove.isPending || approve.isPending,
+    busy: create.isPending || update.isPending || remove.isPending || approve.isPending || restore.isPending,
   };
 }

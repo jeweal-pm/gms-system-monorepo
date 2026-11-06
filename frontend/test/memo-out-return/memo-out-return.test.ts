@@ -128,7 +128,7 @@ describe("form and mapping (UT-MOR-04)", () => {
       discount: { type: "NONE", value: "0" },
       tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "0.00", discountAmount: "0.00", priceBeforeTax: "0.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "0.00" },
-      createdAt: "", createdBy: "", updatedAt: "",
+      createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null,
     } satisfies MemoOutReturnDetail;
     expect(fromMemoOutReturn(detail)).toMatchObject({
       id: ID, docNo: "MOR-1", version: 3, status: "APPROVED", customerId: ID, shippingAddressId: "", invoiceAddressId: ID,

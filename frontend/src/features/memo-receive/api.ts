@@ -14,6 +14,7 @@ import type { StoneChoices } from "@/features/quotation/document-kind";
 import { isFilledLine } from "@/features/quotation/schema";
 import { authTrpc } from "@/lib/auth-trpc";
 import { masterTrpc } from "@/lib/master-trpc";
+import { daybookInput, daybookQueryOptions, deletedMessage, mapDocumentRestoreError } from "@/features/trade-document/document-api";
 import { isCallerLicenseCode, readDomainError, retryTransient } from "@/lib/trpc-error";
 import type { MemoReceiveFormValues, MemoReceiveStatus } from "./schema";
 
@@ -139,6 +140,9 @@ export function mapMemoReceiveError(error: unknown): MemoReceiveOutcome {
       return outcome("A photo couldn't be used. Remove it and add it again.", { fieldErrors: onFields("Check the photos") });
     case "MEMO_RECEIVE_NOT_FOUND":
       return outcome("This Memo Receive no longer exists.", { gone: true });
+    case "MEMO_RECEIVE_DELETED":
+      // transaction-soft-delete FE-SD-003: deleted elsewhere; reload it read-only with the banner.
+      return outcome(deletedMessage("memo receive"), { reload: true });
     case "MEMO_RECEIVE_CHANGED":
       return outcome("Someone changed this document. Refresh to see the latest.");
     case "MEMO_RECEIVE_STATUS_INVALID":
@@ -168,14 +172,18 @@ export function memoReceiveLoadError(error: unknown, what = "this memo receive")
   return `Couldn't load ${what}. Try again.`;
 }
 
+/** transaction-soft-delete FE-SD-003: Restore errors (not deleted any more, changed, gone). */
+export const memoReceiveRestoreError = (error: unknown) => mapDocumentRestoreError(error, "MEMO_RECEIVE", "memo receive");
+
 // ---- reads ----
 
 export function useMemoReceiveDetail(id: string | null) {
   return masterTrpc.memoReceive.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient });
 }
 
+/** FE-SD-001: the daybook's active or deleted memo receives, newest first, 50 a page; a new view starts on page one. */
 export function useMemoReceiveDaybook() {
-  return masterTrpc.memoReceive.list.useQuery({ limit: 50 }, { staleTime: 15_000, retry: retryTransient });
+  return masterTrpc.memoReceive.list.useInfiniteQuery(daybookInput(), daybookQueryOptions);
 }
 
 /** Vendors, currencies, numbering state and stone lists; `vendorId` keeps a saved, now inactive vendor listed. */
@@ -202,6 +210,7 @@ export function useMemoReceiveWrites() {
   const update = masterTrpc.memoReceive.update.useMutation(writes);
   const remove = masterTrpc.memoReceive.delete.useMutation(writes);
   const approve = masterTrpc.memoReceive.approve.useMutation(writes);
+  const restore = masterTrpc.memoReceive.restore.useMutation(writes);
   const invalidate = useCallback(
     () => Promise.all([utils.memoReceive.list.invalidate(), utils.memoReceive.get.invalidate(), utils.memoReceive.nextNumber.invalidate()]),
     [utils],
@@ -216,9 +225,10 @@ export function useMemoReceiveWrites() {
     update: update.mutateAsync,
     remove: remove.mutateAsync,
     approve: approve.mutateAsync,
+    restore: restore.mutateAsync,
     invalidate,
     reload,
-    busy: create.isPending || update.isPending || remove.isPending || approve.isPending,
+    busy: create.isPending || update.isPending || remove.isPending || approve.isPending || restore.isPending,
   };
 }
 

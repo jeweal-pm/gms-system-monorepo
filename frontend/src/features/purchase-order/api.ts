@@ -12,6 +12,7 @@ import { fromTradeDocument, toTradeDocumentInput, uploadLinePhoto, type Quotatio
 import type { StoneChoices } from "@/features/quotation/document-kind";
 import { authTrpc } from "@/lib/auth-trpc";
 import { masterTrpc } from "@/lib/master-trpc";
+import { daybookInput, daybookQueryOptions, deletedMessage, mapDocumentRestoreError } from "@/features/trade-document/document-api";
 import { isCallerLicenseCode, readDomainError, retryTransient } from "@/lib/trpc-error";
 import type { PurchaseOrderFormValues, PurchaseOrderStatus } from "./schema";
 
@@ -102,6 +103,9 @@ export function mapPurchaseOrderError(error: unknown): PurchaseOrderOutcome {
       return outcome(firstRow ? `Row ${rowOf(firstRow.path)}: a photo couldn't be used. Remove it and add it again.` : "A photo couldn't be used. Remove it and add it again.", { fieldErrors: onFields("Check the photos") });
     case "PURCHASE_ORDER_NOT_FOUND":
       return outcome("This purchase order no longer exists.", { gone: true });
+    case "PURCHASE_ORDER_DELETED":
+      // transaction-soft-delete FE-SD-003: deleted elsewhere; reload it read-only with the banner.
+      return outcome(deletedMessage("purchase order"), { reload: true });
     case "PURCHASE_ORDER_CHANGED":
       return outcome("This purchase order was changed by someone else. Reload to see the latest.");
     case "PURCHASE_ORDER_STATUS_INVALID":
@@ -129,14 +133,18 @@ export function purchaseOrderLoadError(error: unknown, what = "this purchase ord
   return `Couldn't load ${what}. Try again.`;
 }
 
+/** transaction-soft-delete FE-SD-003: Restore errors (not deleted any more, changed, gone). */
+export const purchaseOrderRestoreError = (error: unknown) => mapDocumentRestoreError(error, "PURCHASE_ORDER", "purchase order");
+
 // ---- reads ----
 
 export function usePurchaseOrderDetail(id: string | null) {
   return masterTrpc.purchaseOrder.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient });
 }
 
+/** FE-SD-001: the daybook's active or deleted purchase orders, newest first, 50 a page; a new view starts on page one. */
 export function usePurchaseOrderDaybook() {
-  return masterTrpc.purchaseOrder.list.useQuery({ limit: 50 }, { staleTime: 15_000, retry: retryTransient });
+  return masterTrpc.purchaseOrder.list.useInfiniteQuery(daybookInput(), daybookQueryOptions);
 }
 
 /** Vendors, currencies, numbering state and stone lists; `vendorId` keeps a saved, now inactive vendor listed. */
@@ -158,6 +166,7 @@ export function usePurchaseOrderWrites() {
   const update = masterTrpc.purchaseOrder.update.useMutation(writes);
   const remove = masterTrpc.purchaseOrder.delete.useMutation(writes);
   const approve = masterTrpc.purchaseOrder.approve.useMutation(writes);
+  const restore = masterTrpc.purchaseOrder.restore.useMutation(writes);
   const invalidate = useCallback(
     () => Promise.all([utils.purchaseOrder.list.invalidate(), utils.purchaseOrder.get.invalidate(), utils.purchaseOrder.nextNumber.invalidate()]),
     [utils],
@@ -172,9 +181,10 @@ export function usePurchaseOrderWrites() {
     update: update.mutateAsync,
     remove: remove.mutateAsync,
     approve: approve.mutateAsync,
+    restore: restore.mutateAsync,
     invalidate,
     reload,
-    busy: create.isPending || update.isPending || remove.isPending || approve.isPending,
+    busy: create.isPending || update.isPending || remove.isPending || approve.isPending || restore.isPending,
   };
 }
 

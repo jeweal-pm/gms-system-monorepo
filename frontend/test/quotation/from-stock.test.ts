@@ -70,7 +70,7 @@ describe("UT-QT-11 contract mapping", () => {
       lines: [line({ id: "l1", source: "STOCK", memoStockId: STOCK, stockId: "260003", stockPendingPcs: 2, stockPendingWeightCt: "1.360", location: "Memo" }), line({ id: "l2" })],
       discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "0", discountAmount: "0", priceBeforeTax: "0", taxAmount: "0", chargesAmount: "0", laborAmount: "0", grandTotal: "0" },
-      statusReason: null, createdAt: "", createdBy: "u", updatedAt: "", approvedAt: null, approvedBy: null,
+      statusReason: null, createdAt: "", createdBy: "u", updatedAt: "", approvedAt: null, approvedBy: null, deletedAt: null, deletedBy: null,
     } as QuotationDetail;
     const form = fromQuotation(detail);
     expect(form.lines[0]).toMatchObject({ source: "STOCK", stockId: "260003", memoStockId: STOCK, stockPendingPcs: "2", stockPendingWeightCt: "1.360", locationId: "Memo" });
