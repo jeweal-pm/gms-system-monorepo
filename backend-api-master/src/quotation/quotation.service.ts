@@ -453,7 +453,7 @@ export class QuotationService {
   }
 
   /**
-   * Soft delete (ADR-0044 D4, D2 owner OQ-1): only DRAFT / PENDING_APPROVAL, in one guarded `UPDATE … RETURNING`;
+   * Soft delete (ADR-0045 D4, D2 owner OQ-1): only DRAFT / PENDING_APPROVAL, in one guarded `UPDATE … RETURNING`;
    * status, lines, charges and photos stay. The Doc No. stays taken (D5), so the next save never reuses it.
    */
   async delete(actorId: string, id: string, expectedVersion: number) {

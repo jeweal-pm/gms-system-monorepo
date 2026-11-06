@@ -18,7 +18,7 @@ import { memoReceiveListSchema } from "../../src/trade-document/memo-schemas";
 import { ReserveService } from "../../src/trade-document/reserve.service";
 
 /**
- * transaction-soft-delete SA rev 1 (ADR-0044) UT-SD-01…07, UT-SD-10…12: the shared engine and the seven engine documents
+ * transaction-soft-delete SA rev 1 (ADR-0045) UT-SD-01…07, UT-SD-10…12: the shared engine and the seven engine documents
  * against a recording fake Prisma. Real SQL (CHECK, partial index, races) is in soft-delete.db.integration.test.ts.
  */
 

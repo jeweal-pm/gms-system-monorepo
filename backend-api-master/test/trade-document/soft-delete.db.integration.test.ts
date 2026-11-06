@@ -3,7 +3,7 @@ import { HttpException } from "@nestjs/common";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 /**
- * IT-SD-01…10 (transaction-soft-delete SA rev 1 / ADR-0044, owner 2026-11-06) against real PostgreSQL: the migration's
+ * IT-SD-01…10 (transaction-soft-delete SA rev 1 / ADR-0045, owner 2026-11-06) against real PostgreSQL: the migration's
  * 8 CHECKs and partial indexes, soft delete / restore of Memo Receive (Stock IDs, photo links), Purchase Order, Memo
  * Out and Quotation, the Deleted list view with keyset paging, number non-reuse (D5), read-only refusals inside the
  * rolled-back transaction, unchanged readers (D11) and a delete-vs-approve race.

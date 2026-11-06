@@ -1,7 +1,8 @@
-# ADR-0044: Soft delete for transaction documents
+# ADR-0045: Soft delete for transaction documents
 
 - Status: Accepted (2026-11-06)
 - Date: 2026-11-06
+- Renumbered 2026-11-06 from ADR-0044 at the merge with `change-to-nginx-with-new-skill-agent`, because ADR-0044 is the Purchase Outstanding report. The header comment of migration `20261106090000_transaction_soft_delete` still says ADR-0044 and is left unchanged to keep its applied checksum. That migration shares its timestamp with `20261106090000_purchase_merged_line` (ADR-0043). The two are independent (header columns vs `purchase_line`), and neither is renamed, because both have been applied.
 - Feature / source UI revision: `transaction-soft-delete` / no UI spec revision (owner behaviour request 2026-11-06; frontend items in the central TODO)
 - SA revision: 1
 - Deciders: project owner

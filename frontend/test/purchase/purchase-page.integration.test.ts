@@ -10,12 +10,13 @@ import {
   mapPurchaseSaveError,
   purchaseRestoreError,
   memoStockToPurchaseLine,
+  pickedSourceKeys,
   purchaseOrderLineToPurchaseLine,
   toPurchaseInput,
   usePurchaseApi,
   type PurchaseFormValues,
 } from "@/features/purchase/api";
-import { EditPurchasePage, PURCHASE_CONFIG } from "@/features/purchase/components/PurchasePage";
+import { EditPurchasePage, MemoStockPickStep, PURCHASE_CONFIG } from "@/features/purchase/components/PurchasePage";
 import { MemoStockPicker, pickerInput, PurchaseOrderPicker } from "@/features/purchase/components/purchase-pickers";
 import { todayIso } from "@/features/quotation/lib/format";
 import { daybookInput } from "@/features/trade-document/document-api";
@@ -335,11 +336,12 @@ describe("IT-PU-03 Add Memo Stock wired (FE-PU-004)", () => {
   it("the page's Memo Stock button: picked rows are left out, OK maps rows to purchase lines for the shared form", () => {
     const values = { ...validValues(), lines: [memoStockToPurchaseLine(memoRow())] };
     const onAdd = vi.fn();
-    const picker = lazyChild(PURCHASE_CONFIG.picker!.render({ values, onClose: () => undefined, onAdd }));
-    expect(picker.props).toMatchObject({ vendorId: ID, currency: "THB" });
-    expect([...(picker.props.excluded as Set<string>)]).toEqual([`${STOCK}:IN_STOCK`]);
-    (picker.props.onConfirm as (rows: unknown[]) => void)([memoRow({ key: "y:SOLD", memoStockId: "y", status: "SOLD" })]);
-    expect(onAdd.mock.calls[0]![0]).toMatchObject([{ source: "STOCK", memoStockId: "y", memoGroup: "SOLD", stockPendingPcs: "2" }]);
+    // rev 3: the button opens the pick step that asks the merge question (R3-01) around the Memo Stock picker.
+    const step = lazyChild(PURCHASE_CONFIG.picker!.render({ values, onClose: () => undefined, onAdd }));
+    expect(step.type).toBe(MemoStockPickStep);
+    expect(step.props).toMatchObject({ values, onAdd });
+    expect([...pickedSourceKeys(values.lines)]).toEqual([`${STOCK}:IN_STOCK`]);
+    expect(memoStockToPurchaseLine(memoRow({ key: "y:SOLD", memoStockId: "y", status: "SOLD" }))).toMatchObject({ source: "STOCK", memoStockId: "y", memoGroup: "SOLD", stockPendingPcs: "2", stockMinPcs: "2" });
   });
 });
 

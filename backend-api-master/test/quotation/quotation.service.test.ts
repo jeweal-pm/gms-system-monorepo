@@ -72,7 +72,7 @@ vi.mock("../../src/database/prisma-client", () => {
       create: vi.fn(async ({ data }: { data: Row }) => { db.created.push(data); return data; }),
       findUnique: vi.fn(async () => db.stored),
       updateMany: vi.fn(async (args: Row) => { db.updates.push(args); return { count: db.writeCount }; }),
-      // Soft delete / restore (ADR-0044): one guarded UPDATE … RETURNING.
+      // Soft delete / restore (ADR-0045): one guarded UPDATE … RETURNING.
       updateManyAndReturn: vi.fn(async (args: Row) => { db.deletes.push(args); return db.writeCount ? [{ docNo: "QT-26001", status: db.restoredStatus }] : []; }),
       findMany: vi.fn(async (args: Row) => { db.findManyArgs.push(args); return db.listRows; }),
       count: vi.fn(async (args: Row) => { db.countArgs.push(args); return db.listRows.length; }),
@@ -144,7 +144,7 @@ describe("numbering (SA-QT-04, owner Q-QT-03)", () => {
     expect(db.rawSql[0]).toContain("FOR UPDATE");
   });
 
-  it("UT-QT-B02 later numbers are the highest stored + 1 (a soft-deleted number stays taken, ADR-0044 D5)", async () => {
+  it("UT-QT-B02 later numbers are the highest stored + 1 (a soft-deleted number stays taken, ADR-0045 D5)", async () => {
     db.maxRunning = 26004;
     await expect(service.create("actor", input())).resolves.toMatchObject({ docNo: "QT-26005" });
   });

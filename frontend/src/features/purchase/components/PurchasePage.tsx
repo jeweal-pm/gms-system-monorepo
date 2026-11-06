@@ -1,6 +1,6 @@
 "use client";
 
-import { lazy, Suspense, useEffect, useMemo, useRef, type ComponentProps } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { useFormContext } from "react-hook-form";
 import { ItemTable } from "@/features/quotation/components/items/ItemTable";
 import { Toast } from "@/features/quotation/components/ui";
@@ -9,8 +9,10 @@ import { daybookLoadError, daybookState, deletedInfo, DocumentDaybook, documentA
 import { APPROVAL_STATUS_LABELS, DocumentForm, type DocumentFormConfig } from "@/features/trade-document/document-form";
 import { VendorDocumentInfoForm } from "@/features/trade-document/vendor-info-form";
 import {
+  applyMerge,
   clearPickedRows,
   emptyPurchase,
+  findMergePairs,
   fromPurchase,
   mapPurchaseSaveError,
   purchaseRestoreError,
@@ -23,15 +25,19 @@ import {
   purchaseLoadError,
   purchaseOrderLineToPurchaseLine,
   purchaseSchema,
+  purchaseStockNote,
   purchaseTableLine,
   toPurchaseInput,
   usePurchaseApi,
   usePurchaseDaybook,
   usePurchaseDetail,
+  type MergePair,
   type PurchaseFormValues,
+  type PurchaseLine,
   type PurchaseInput,
   type PurchaseOptions,
 } from "../api";
+import { MergeDialog } from "./merge-dialog";
 
 export { PURCHASE_HREF };
 
@@ -57,6 +63,7 @@ export const PURCHASE_KIND: DocumentKind = {
   locations: "text",
   stockQuantity: true,
   lockStockDiscount: true,
+  stockNote: (line) => purchaseStockNote(line),
   priceTitle: "Price",
   emptyRowText: PURCHASE_EMPTY_ROW_TEXT,
   documentNote: { max: PURCHASE_NOTE_MAX, hint: PURCHASE_NOTE_HINT },
@@ -106,6 +113,50 @@ export function PurchaseItemTable(props: ComponentProps<typeof ItemTable>) {
   return <ItemTable {...props} lines={lines} />;
 }
 
+/**
+ * Add Memo Stock with the rev 3 merge question (R3-01, ADR-0043): after OK, the Sold and In-stock parts of one item
+ * (ticked together, or one already on the form, Q-PU-27) ask "Merge items?". Merge makes one row per pair, a pair with
+ * a row on the form replaces that row; Don't merge adds every ticked row; ✕ / Escape keeps the picker open with the same
+ * rows ticked (Q-PU-26).
+ */
+export function MemoStockPickStep({ values, onClose, onAdd }: { values: PurchaseFormValues; onClose: () => void; onAdd: (lines: PurchaseLine[]) => void }) {
+  const { getValues, setValue } = useFormContext<PurchaseFormValues>();
+  const [asking, setAsking] = useState<{ picked: PurchaseLine[]; pairs: MergePair[] } | null>(null);
+  const onConfirm = (rows: Parameters<typeof memoStockToPurchaseLine>[0][]) => {
+    const picked = rows.map(memoStockToPurchaseLine);
+    const pairs = findMergePairs(picked, getValues("lines"));
+    if (pairs.length === 0) onAdd(picked);
+    else setAsking({ picked, pairs });
+  };
+  const merge = () => {
+    if (!asking) return;
+    const { rows, replace } = applyMerge(asking.picked, asking.pairs);
+    if (replace.size > 0) setValue("lines", getValues("lines").map((line, index) => replace.get(index) ?? line), { shouldDirty: true });
+    setAsking(null);
+    if (rows.length > 0) onAdd(rows);
+    else onClose();
+  };
+  return (
+    <>
+      <MemoStockPicker vendorId={values.vendorId} currency={values.currency} excluded={pickedSourceKeys(values.lines)} onCancel={onClose} onConfirm={onConfirm} />
+      {asking && (
+        <MergeDialog
+          pairs={asking.pairs}
+          currency={values.currency}
+          separateCount={asking.picked.length}
+          onMerge={merge}
+          onSplit={() => {
+            const { picked } = asking;
+            setAsking(null);
+            onAdd(picked);
+          }}
+          onBack={() => setAsking(null)}
+        />
+      )}
+    </>
+  );
+}
+
 /** R-01: saved purchases, newest first. */
 function PurchaseDaybook() {
   const daybook = usePurchaseDaybook();
@@ -142,7 +193,7 @@ export const PURCHASE_CONFIG: DocumentFormConfig<PurchaseFormValues, PurchaseInp
     blockedReason: purchasePickerBlocked,
     render: ({ values, onClose, onAdd }) => (
       <Suspense fallback={null}>
-        <MemoStockPicker vendorId={values.vendorId} currency={values.currency} excluded={pickedSourceKeys(values.lines)} onCancel={onClose} onConfirm={(rows) => onAdd(rows.map(memoStockToPurchaseLine))} />
+        <MemoStockPickStep values={values} onClose={onClose} onAdd={onAdd} />
       </Suspense>
     ),
     addedToast: added("Memo Stock"),

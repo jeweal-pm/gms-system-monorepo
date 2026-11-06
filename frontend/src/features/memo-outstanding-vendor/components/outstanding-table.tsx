@@ -7,7 +7,7 @@ import { cx, focusRing } from "@/components/ui/button";
 import { SortIcon } from "@/components/ui/sort-icon";
 import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import {
-  BUCKET_LABEL,
+  bucketLabel,
   BUCKET_SORT,
   formatDate,
   formatUnitPrice,
@@ -194,7 +194,7 @@ export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggl
             </th>
             {buckets.map((bucket) => (
               <th key={bucket} colSpan={2} scope="colgroup" aria-sort={ariaSort(sort, BUCKET_SORT[bucket])} className={cx(headCell, "border-l border-gms-border text-center")}>
-                <SortButton label={BUCKET_LABEL[bucket]} sortKey={BUCKET_SORT[bucket]} sort={sort} onSort={onSort} />
+                <SortButton label={bucketLabel(spec, bucket)} sortKey={BUCKET_SORT[bucket]} sort={sort} onSort={onSort} />
               </th>
             ))}
             {showPrice && (
@@ -209,11 +209,11 @@ export function OutstandingTable({ entries, prefs, sort, onSort, isOpen, onToggl
               <Fragment key={bucket}>
                 <th scope="col" className="relative border-l border-gms-border px-3 py-2 text-right text-gms-body font-medium text-gms-text">
                   Pcs
-                  {handle(`${bucket}.pcs`, `${BUCKET_LABEL[bucket]} Pcs`)}
+                  {handle(`${bucket}.pcs`, `${bucketLabel(spec, bucket)} Pcs`)}
                 </th>
                 <th scope="col" className="relative px-3 py-2 text-right text-gms-body font-medium text-gms-text">
                   Weight
-                  {handle(`${bucket}.weight`, `${BUCKET_LABEL[bucket]} Weight`)}
+                  {handle(`${bucket}.weight`, `${bucketLabel(spec, bucket)} Weight`)}
                 </th>
               </Fragment>
             ))}

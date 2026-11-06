@@ -85,8 +85,8 @@ describe("UT-PO-01 route, menu and access", () => {
     expect(REAL_PAGE_HREFS["purchase-order"]).toBe("/purchase/purchase-order");
     expect(navigationHref({ label: "Purchase Order (PO)", slug: "purchase-order" })).toBe(PURCHASE_ORDER_HREF);
     expect(purchaseOrderHref(ID)).toBe(`/purchase/purchase-order/${ID}`);
-    // Purchase Outstanding stays a placeholder in rev 1; Purchase (PU) has its own page (purchase FE-PU-006, owner 2026-11-04).
-    expect(navigationHref({ label: "Purchase Outstanding", slug: "purchase-outstanding" })).toBe("/modules/purchase-outstanding");
+    // Purchase (PU) and Purchase Outstanding (purchase-outstanding UI rev 1, ADR-0044) have their own pages.
+    expect(navigationHref({ label: "Purchase Outstanding", slug: "purchase-outstanding" })).toBe("/purchase-order/purchase-outstanding");
   });
 
   it("reads only purchase-order grants; APPROVE is separate", () => {

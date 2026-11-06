@@ -195,7 +195,7 @@ const NO_PHOTOS = { upload: null, url: (id: string) => id };
 export function DocumentForm<V extends FieldValues & Saved, Input, Options extends LineOptions = LineOptions>({ config, initial, deleted: initialDeleted = null, canAdd, canEdit, canDelete, canApprove = false }: {
   config: DocumentFormConfig<V, Input, Options>;
   initial?: V;
-  /** A soft-deleted document (ADR-0044 D10): read-only with the banner, Restore with DELETE. */
+  /** A soft-deleted document (ADR-0045 D10): read-only with the banner, Restore with DELETE. */
   deleted?: DeletedInfo | null;
   canAdd: boolean;
   canEdit: boolean;

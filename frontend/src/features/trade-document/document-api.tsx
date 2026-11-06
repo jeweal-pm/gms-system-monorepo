@@ -72,7 +72,7 @@ export function daybookLoadError(error: unknown, plural: string): string {
   return `Couldn't load ${plural}. Try again.`;
 }
 
-// ---- transaction-soft-delete (ADR-0044, FE-SD-001…003) ----
+// ---- transaction-soft-delete (ADR-0045, FE-SD-001…003) ----
 
 /** FE-SD-003: a write on a deleted document (`<CODE>_DELETED`). */
 export const deletedMessage = (noun: string) => `This ${noun} was deleted. Restore it to edit.`;

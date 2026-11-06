@@ -34,7 +34,7 @@ type DocDelegate = {
   count(args: unknown): Promise<number>;
   create(args: unknown): Promise<unknown>;
   updateMany(args: unknown): Promise<{ count: number }>;
-  /** One guarded `UPDATE … RETURNING` (soft delete / restore, ADR-0044 D4/D6). */
+  /** One guarded `UPDATE … RETURNING` (soft delete / restore, ADR-0045 D4/D6). */
   updateManyAndReturn(args: unknown): Promise<Row[]>;
 };
 
@@ -320,7 +320,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
   }
 
   /**
-   * Soft delete (ADR-0044 D4): only editable documents (PENDING_APPROVAL drafts) in one guarded `UPDATE … RETURNING`
+   * Soft delete (ADR-0045 D4): only editable documents (PENDING_APPROVAL drafts) in one guarded `UPDATE … RETURNING`
    * that sets `deleted_at/by` and `version + 1`; status, lines, charges, photos and stock are untouched. The row keeps
    * its Doc No., so the number is never reused (D5: `max + 1` still sees it).
    */

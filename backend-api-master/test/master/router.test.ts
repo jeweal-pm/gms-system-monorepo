@@ -44,7 +44,7 @@ const memoOutReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), option
 const memoReceive = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
 const memoStock = { list: vi.fn() };
 const memoReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
-const memoOutstanding = { vendorSummary: vi.fn(), vendorList: vi.fn(), vendorItems: vi.fn(), vendorOptions: vi.fn(), customerSummary: vi.fn(), customerList: vi.fn(), customerItems: vi.fn(), customerOptions: vi.fn() };
+const memoOutstanding = { vendorSummary: vi.fn(), vendorList: vi.fn(), vendorItems: vi.fn(), vendorOptions: vi.fn(), customerSummary: vi.fn(), customerList: vi.fn(), customerItems: vi.fn(), customerOptions: vi.fn(), purchaseSummary: vi.fn(), purchaseList: vi.fn(), purchaseItems: vi.fn(), purchaseOptions: vi.fn() };
 const reserve = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
 const purchaseOrder = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
 const purchase = {
@@ -850,5 +850,36 @@ describe("staged master domain tRPC boundary", () => {
     await expect(doc(["memo-receive:DELETE"], "memoReceive").restore(versioned)).rejects.toMatchObject({ code: "CONFLICT", message: "MEMO_RECEIVE_STATUS_INVALID" });
     memoOut.approve.mockRejectedValueOnce(new HttpException({ error: { code: "MEMO_OUT_DELETED", message: "x" } }, 409));
     await expect(router.createCaller(context(["memo-out:APPROVE"])).memoOut.approve(versioned)).rejects.toMatchObject({ code: "CONFLICT", message: "MEMO_OUT_DELETED" });
+  });
+
+  it("GP-MT-POS purchaseOutstanding.*: purchase-outstanding VIEW on every procedure; sort whitelist and bounds (SA-POS-05)", async () => {
+    const viewer = router.createCaller(context(["purchase-outstanding:VIEW"]));
+    await viewer.purchaseOutstanding.summary({ q: " MR ", vendorIds: [ID], from: "2026-01-01", to: "2026-11-06" });
+    expect(memoOutstanding.purchaseSummary).toHaveBeenCalledWith({ q: "MR", vendorIds: [ID], from: "2026-01-01", to: "2026-11-06" });
+    await viewer.purchaseOutstanding.list({ pageSize: 25, sort: "balancePcs", dir: "desc" });
+    expect(memoOutstanding.purchaseList).toHaveBeenCalledWith({ page: 1, pageSize: 25, sort: "balancePcs", dir: "desc" });
+    for (const sort of ["purchasePcs", "salePcs", "openValue", "vendorName"] as const) await viewer.purchaseOutstanding.list({ pageSize: 10, sort });
+    await viewer.purchaseOutstanding.items({ memoReceiveIds: [ID] });
+    expect(memoOutstanding.purchaseItems).toHaveBeenCalledWith({ memoReceiveIds: [ID] });
+    await viewer.purchaseOutstanding.options({});
+    expect(memoOutstanding.purchaseOptions).toHaveBeenCalledTimes(1);
+
+    // Grant: exactly purchase-outstanding:VIEW; the memo reports and purchase grants are not enough.
+    for (const grants of [["memo-outstanding-vendor:VIEW", "purchase:VIEW", "purchase-order:VIEW"], ["purchase-outstanding:PRINT"], []]) {
+      const caller = router.createCaller(context(grants));
+      await expect(caller.purchaseOutstanding.summary({})).rejects.toMatchObject({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+      await expect(caller.purchaseOutstanding.list({ pageSize: 10 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller.purchaseOutstanding.items({ memoReceiveIds: [ID] })).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(caller.purchaseOutstanding.options({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    }
+    await expect(viewer.memoOutstanding.vendorSummary({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    // Bounds: memo-report sort keys, 26 ids, a reversed range.
+    const ids = (count: number) => Array.from({ length: count }, (_, n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`);
+    await expect(viewer.purchaseOutstanding.list({ pageSize: 10, sort: "soldPcs" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(viewer.purchaseOutstanding.list({ pageSize: 10, sort: "reservePcs" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(viewer.purchaseOutstanding.items({ memoReceiveIds: ids(26) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(viewer.purchaseOutstanding.summary({ from: "2026-11-06", to: "2026-11-01" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(memoOutstanding.purchaseList).toHaveBeenCalledTimes(5);
   });
 });

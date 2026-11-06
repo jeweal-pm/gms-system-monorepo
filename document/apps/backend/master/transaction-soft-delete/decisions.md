@@ -2,7 +2,7 @@
 
 - feature-id: `transaction-soft-delete`; SA revision 1; source: owner request 2026-11-06 (no UI spec revision; the frontend behaviour is in the [central TODO](../../../../task/todo/transaction-soft-delete.md)).
 - status: **approved** 2026-11-06 by the owner: owner answer in chat 2026-11-06, "อนุมัติ เริ่มทำเลย" (with OQ-1: Quotation deletable only before approval; OQ-3: after Delete return to Create New; OQ-2/4/5: defaults kept). Recorded in place in revision 1 (no new revision).
-- ADR: [ADR-0044](../../../../adr/0044-transaction-document-soft-delete.md) (Accepted 2026-11-06).
+- ADR: [ADR-0045](../../../../adr/0045-transaction-document-soft-delete.md) (Accepted 2026-11-06).
 - Bundle: [api-contract](api-contract.md), [architecture](architecture.md), [authorization](authorization.md), [database-diagram](database-diagram.md), [sequence-diagram](sequence-diagram.md), [error-handling](error-handling.md), [dependencies](dependencies.md), [testing](testing.md), [main flow](../../../../diagram/transaction-soft-delete-flow.md).
 
 ## Owner request and decisions (2026-11-06)
@@ -46,7 +46,7 @@
 | D13 | Audit: the structured log event `<event>.deleted` (the existing name) gains `version` and `docNo`, and a new event `<event>.restored` logs `{actorId, id, docNo, version}`. The database keeps who/when of the **latest** delete in `deleted_*`; the restorer and time go to `updated_by/at`. No audit table. | No audit table exists today. Owner OQ-4: default kept, no audit table. |
 | D14 | Lines, charges, photo link rows (`quotation_line_photo`, `memo_receive_line_photo`, `purchase_order_line_photo`) and `stored_files` are untouched on delete and restore. Photo download authorization is unchanged (VIEW). | ADR-0030 permanent retention. This adds no upload capability and no new `files/{module}/` scope. |
 | D15 | There is no purge and no hard-delete endpoint; deleted documents are kept permanently. | Matches the restore requirement and ADR-0030. |
-| D16 | Convention for documents not yet built (Load to Stock, Merge/Split, Stock Transfer Location, Stock Adjustment, Sale): the same two columns, CHECK, partial index, `deleted` list filter, `restore` mutation, `<CODE>_DELETED` error, and readers that use only posted/approved rows or exclude `deleted_at IS NOT NULL`. A new document on the shared engine gets this automatically. | The owner listed them; each one's SA bundle cites ADR-0044. |
+| D16 | Convention for documents not yet built (Load to Stock, Merge/Split, Stock Transfer Location, Stock Adjustment, Sale): the same two columns, CHECK, partial index, `deleted` list filter, `restore` mutation, `<CODE>_DELETED` error, and readers that use only posted/approved rows or exclude `deleted_at IS NOT NULL`. A new document on the shared engine gets this automatically. | The owner listed them; each one's SA bundle cites ADR-0045. |
 | D17 | Memo Receive Stock IDs and Purchase Stock IDs issued at save stay on the deleted draft's lines. The yearly counter never goes back, and restore keeps the same IDs. | Stock IDs stay unique; nothing is reissued. |
 | D18 | Migration `20261106090000_transaction_soft_delete`: after the newest existing `20261104150000_purchase` and the ADR-0043 proposal `20261105090000_purchase_merged_line`. If a newer migration exists at implementation time, use the next timestamp. Existing migrations are not edited. | Prisma applies migrations in name order. |
 

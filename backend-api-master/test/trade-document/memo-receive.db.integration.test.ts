@@ -236,7 +236,7 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
 
     const pending = await receive.create(ACTOR, input(vendorA, [line()]));
     await expect(receive.delete(ACTOR, pending.id, 1)).resolves.toEqual({ ok: true, version: 2 });
-    // transaction-soft-delete (ADR-0044): kept and readable; every write is refused with MEMO_RECEIVE_DELETED.
+    // transaction-soft-delete (ADR-0045): kept and readable; every write is refused with MEMO_RECEIVE_DELETED.
     expect(await receive.get(pending.id)).toMatchObject({ status: "PENDING_APPROVAL", deletedBy: ACTOR });
     expect(await failure(receive.approve(ACTOR, pending.id, 2))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_DELETED" });
     expect(await prisma.memoStock.count({ where: { memoReceiveId: pending.id } })).toBe(0);

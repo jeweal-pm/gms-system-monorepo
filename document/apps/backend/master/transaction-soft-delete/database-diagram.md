@@ -67,7 +67,7 @@ Constraint and index names stay under 63 bytes; the longest is `memo_out_return_
 
 - Expand only. `ALTER TABLE … ADD COLUMN` ×2, `ADD CONSTRAINT … CHECK` and `CREATE INDEX` per table, in one migration. No backfill: every existing row is `NULL/NULL`, so each CHECK validates at once.
 - Locks: `ADD COLUMN` (nullable, no default) is metadata-only. `ADD CONSTRAINT CHECK` scans the table (small today). `CREATE INDEX` is not `CONCURRENTLY`, because Prisma runs a migration in a transaction; the index builds over zero matching rows. Run during the normal deploy window.
-- The header comment records the owner request, ADR-0044 and the rollback text below. Existing migrations are not edited.
+- The header comment records the owner request, ADR-0045 and the rollback text below. Existing migrations are not edited.
 
 ### Rollback
 

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Tx } from "../../src/common/persistence";
 import { Prisma } from "../../src/generated/prisma/client";
 import { purchasePendingShort } from "../../src/purchase/purchase.errors";
-import { takeForPurchase, totalsPerKey, type PurchaseTake } from "../../src/purchase/purchase-stock";
+import { memoLineRange, takeForPurchase, totalsPerKey, type PurchaseTake } from "../../src/purchase/purchase-stock";
 
 /**
  * UT-PU-B03 (purchase SA-PU-09, BE-PU-004): `takeForPurchase` sums per key, locks in id order, reports every short
@@ -75,7 +75,7 @@ describe("takeForPurchase (UT-PU-B03)", () => {
       take({ memoStockId: A, pcs: 1, weightCt: D("0.5"), index: 2 }),
       take({ source: "PURCHASE_ORDER", memoStockId: null, memoGroup: null, purchaseOrderLineId: P, pcs: 8, weightCt: D("8"), index: 3 }),
     ], purchasePendingShort, now);
-    expect(moved).toEqual({ memoStockKeys: 3, purchaseOrderKeys: 1 });
+    expect(moved).toEqual({ memoStockKeys: 3, purchaseOrderKeys: 1, soldParts: [] });
     expect(queries).toHaveLength(2);
     expect(queries[0].sql).toMatch(/FROM "partner"\."memo_stock"[\s\S]*ORDER BY id FOR UPDATE/);
     expect(queries[0].values).toEqual([[A, B]]);
@@ -125,7 +125,7 @@ describe("takeForPurchase (UT-PU-B03)", () => {
 
   it("a purchase with only manual lines locks and moves nothing", async () => {
     const { tx, queries, updates } = fakeTx([]);
-    expect(await takeForPurchase(tx, scope, [take({ source: "MANUAL", memoStockId: null, memoGroup: null })], purchasePendingShort, now)).toEqual({ memoStockKeys: 0, purchaseOrderKeys: 0 });
+    expect(await takeForPurchase(tx, scope, [take({ source: "MANUAL", memoStockId: null, memoGroup: null })], purchasePendingShort, now)).toEqual({ memoStockKeys: 0, purchaseOrderKeys: 0, soldParts: [] });
     expect(queries).toHaveLength(0);
     expect(updates).toHaveLength(0);
   });
@@ -138,5 +138,54 @@ describe("takeForPurchase (UT-PU-B03)", () => {
       take({ source: "PURCHASE_ORDER", memoStockId: null, memoGroup: null, purchaseOrderLineId: P, pcs: 8, weightCt: D("8"), index: 2 }),
     ], purchasePendingShort, now);
     expect(updates).toHaveLength(2);
+  });
+});
+
+describe("merged Memo Stock lines (UT-PU-B06, SA-PU-22/23, ADR-0043)", () => {
+  const stored = { pendingPcs: 1, pendingWeightCt: D("0.76"), soldPcs: 1, soldWeightCt: D("0.76"), purchasedPcs: 0, purchasedWeightCt: D("0") };
+
+  it("line ranges: IN_STOCK 0…pending, SOLD exactly the Sold part, MERGED Sold part…Sold + pending", () => {
+    expect(memoLineRange(stored, "IN_STOCK")).toEqual({ min: null, max: { pcs: 1, weightCt: D("0.76") } });
+    expect(memoLineRange(stored, "SOLD")).toEqual({ min: { pcs: 1, weightCt: D("0.76") }, max: { pcs: 1, weightCt: D("0.76") } });
+    expect(memoLineRange(stored, "MERGED")).toEqual({ min: { pcs: 1, weightCt: D("0.76") }, max: { pcs: 2, weightCt: D("1.52") } });
+  });
+
+  it("approve takes the Sold part first and the rest from pending, in the one bulk UPDATE; returns the Sold part per line", async () => {
+    // A: sold − purchased = 3 pcs / 3 ct, pending 5 / 5. The merged line buys 4 / 3.5 → Sold 3 / 3 + In stock 1 / 0.5.
+    const { tx, updates } = fakeTx([item(A)]);
+    const result = await takeForPurchase(tx, scope, [take({ memoGroup: "MERGED", pcs: 4, weightCt: D("3.5"), index: 2 })], purchasePendingShort, now);
+    expect(result.soldParts).toEqual([{ index: 2, pcs: 3, weightCt: D("3") }]);
+    expect(result.memoStockKeys).toBe(2);
+    expect(updates).toHaveLength(1);
+    expect(updates[0].values).toEqual(expect.arrayContaining([A, 1, "0.500", 3, "3.000"]));
+  });
+
+  it("exactly the Sold part buys nothing from stock (owner example: keep 1 of Sold 1 + In stock 1)", async () => {
+    const { tx, updates } = fakeTx([item(A, { sold_pcs: 1, sold_weight_ct: "0.760", purchased_pcs: 0, purchased_weight_ct: "0.000", pending_pcs: 1, pending_weight_ct: "0.760" })]);
+    const result = await takeForPurchase(tx, scope, [take({ memoGroup: "MERGED", pcs: 1, weightCt: D("0.76") })], purchasePendingShort, now);
+    expect(result.soldParts).toEqual([{ index: 0, pcs: 1, weightCt: D("0.76") }]);
+    expect(updates[0].values).toEqual(expect.arrayContaining([A, 0, "0.000", 1, "0.760"]));
+  });
+
+  it("below the current Sold part or above Sold + pending is short and updates nothing (Q-PU-33)", async () => {
+    const below = fakeTx([item(A)]);
+    expect(await shortFields(takeForPurchase(below.tx, scope, [take({ memoGroup: "MERGED", pcs: 2, weightCt: D("4") })], purchasePendingShort, now))).toMatchObject({
+      code: "PURCHASE_PENDING_SHORT", fieldErrors: [{ path: "lines.0.pcs", code: "below_sold" }],
+    });
+    expect(below.updates).toHaveLength(0);
+    const above = fakeTx([item(A)]);
+    expect(await shortFields(takeForPurchase(above.tx, scope, [take({ memoGroup: "MERGED", pcs: 9, weightCt: D("8.001") })], purchasePendingShort, now))).toMatchObject({
+      fieldErrors: [{ path: "lines.0.pcs", code: "exceeds_available" }, { path: "lines.0.weightCt", code: "exceeds_available" }],
+    });
+    expect(above.updates).toHaveLength(0);
+    const missing = fakeTx([]);
+    expect((await shortFields(takeForPurchase(missing.tx, scope, [take({ memoGroup: "MERGED" })], purchasePendingShort, now))).fieldErrors).toHaveLength(2);
+  });
+
+  it("totalsPerKey keeps MERGED apart from SOLD and IN_STOCK", () => {
+    const totals = totalsPerKey([take({ memoGroup: "MERGED", index: 0 }), take({ memoStockId: B, memoGroup: "SOLD", index: 1 })]);
+    expect([...totals.merged.keys()]).toEqual([A]);
+    expect([...totals.sold.keys()]).toEqual([B]);
+    expect(totals.inStock.size).toBe(0);
   });
 });

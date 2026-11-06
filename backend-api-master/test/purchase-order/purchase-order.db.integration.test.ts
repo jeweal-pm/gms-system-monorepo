@@ -145,7 +145,7 @@ describe.runIf(canRun)("IT-PO purchase order on PostgreSQL", () => {
     expect(await failure(service.update(ACTOR, result.id, 1, input(vendor, [line()])))).toMatchObject({ status: 409, code: "PURCHASE_ORDER_CHANGED" });
     expect(await failure(service.delete(ACTOR, plain.id, 9))).toMatchObject({ status: 409, code: "PURCHASE_ORDER_CHANGED" });
     await expect(service.delete(ACTOR, plain.id, 1)).resolves.toEqual({ ok: true, version: 2 });
-    // transaction-soft-delete (ADR-0044 D4/D10): kept and readable, marked deleted.
+    // transaction-soft-delete (ADR-0045 D4/D10): kept and readable, marked deleted.
     expect(await service.get(plain.id)).toMatchObject({ status: "PENDING_APPROVAL", deletedBy: ACTOR });
     expect(await failure(service.create(ACTOR, input(vendor, [line()], { vendorId: randomUUID() })))).toMatchObject({ status: 422, code: "PURCHASE_ORDER_REFERENCE_INVALID" });
   });

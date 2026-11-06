@@ -1,11 +1,11 @@
 # ADR-0043: Merged Memo Stock line on a Purchase
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-05
 - Feature / source UI revision: `purchase` / UI revision 3
 - SA revision: 2
-- Deciders: project owner; approval pending
-- Approval evidence: none
+- Deciders: project owner
+- Approval evidence: owner 2026-11-06: "อนุมัติ purchase revision 3"
 - Supersedes / related ADRs: extends [ADR-0042](0042-purchase-document-and-stock-deduction.md) (D1 bucket and D2 cut at Approve unchanged); [ADR-0034](0034-memo-receive-approval-and-memo-stock.md)
 
 ## Context
@@ -29,11 +29,11 @@ In Add Memo Stock on the Purchase page, a Memo Stock item can show twice: once i
 
 ## Consequences and capacity
 
-- Migration `20261105090000_purchase_merged_line`: two nullable columns and two CHECK changes on `purchase_line`; additive. Rollback is possible while no MERGED line exists.
+- Migration `20261106090000_purchase_merged_line`: two nullable columns and two CHECK changes on `purchase_line`; additive. Rollback is possible while no MERGED line exists.
 - No new query, index, service, container or package. Approve still locks each touched item once; Save reads nothing extra.
 - Older purchases are unaffected (IN_STOCK / SOLD lines keep their meaning).
 
 ## Acceptance and approval
 
 - UT-PU-12…16, TC-PU-14/15 (frontend); backend tests for SA-PU-21…26 (save bounds, sold-first approve, short refusal, SOLD exact quantity, CHECKs).
-- Covers UI revision 3, SA revision 2 and this ADR. Stays Proposed until the owner approves.
+- Covers UI revision 3, SA revision 2 and this ADR. Accepted 2026-11-06.

@@ -1,7 +1,7 @@
 # Handoff: transaction-soft-delete backend → frontend (BE-SD-002…005 done)
 
 - Feature ID / revision: `transaction-soft-delete`, SA revision 1 (no UI spec revision; frontend behaviour in FE-SD-001…004 of the [TODO](../../task/todo/transaction-soft-delete.md)).
-- Approval: owner 2026-11-06 in chat, "อนุมัติ เริ่มทำเลย" (OQ-1 Quotation deletable only before approval; OQ-2 Restore uses DELETE; OQ-3 after Delete return to Create New; OQ-4 no audit table; OQ-5 default). [ADR-0044](../../adr/0044-transaction-document-soft-delete.md) Accepted.
+- Approval: owner 2026-11-06 in chat, "อนุมัติ เริ่มทำเลย" (OQ-1 Quotation deletable only before approval; OQ-2 Restore uses DELETE; OQ-3 after Delete return to Create New; OQ-4 no audit table; OQ-5 default). [ADR-0045](../../adr/0045-transaction-document-soft-delete.md) Accepted.
 - From: backend (`senior-nestjs-developer`), `backend-api-master` only. To: parent (security reviews, integration) → frontend (`senior-react-developer`) for FE-SD-001…004.
 - Source revision: HEAD `dc4c42d` + uncommitted `backend-api-master` working tree of 2026-11-06 (nothing committed). `backend-api-auth/**` untouched.
 - Bundle (governs): [api-contract](../../apps/backend/master/transaction-soft-delete/api-contract.md), [decisions](../../apps/backend/master/transaction-soft-delete/decisions.md), [error-handling](../../apps/backend/master/transaction-soft-delete/error-handling.md), [authorization](../../apps/backend/master/transaction-soft-delete/authorization.md), [testing results](../../apps/backend/master/transaction-soft-delete/testing.md#results-2026-11-06-backend-be-sd-002005), [changelog](../../changelog/2026-11-06-transaction-soft-delete-backend.md).

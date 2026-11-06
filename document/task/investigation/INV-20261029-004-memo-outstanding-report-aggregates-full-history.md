@@ -45,3 +45,7 @@
 - `customerItems` (`:421-460`) already prunes with `EXISTS` and is bounded by 25 ids; `customerOptions` is bounded to 1,000 rows. Neither is affected.
 - Same category/verdict (hardening, not-applicable), same owner (backend), same proposed remediation: apply the `EXISTS` open-line predicate before grouping in both customer CTEs, and use `count(*) OVER ()` or a pruned count. Acceptance adds: the IT-MOC integration suite passes unchanged.
 - No new ticket was created for this; this record remains the single canonical item for both reports.
+
+## Scope note 2026-11-06 (purchase-outstanding rev 1, ADR-0044)
+
+`purchaseOutstanding.summary` / `list` use the same `receiveFilters` + GROUP BY over all approved Memo Receives, so they share this root cause (sec-auditor, 2026-11-06). Any fix for this ticket should cover them too; no separate ticket.

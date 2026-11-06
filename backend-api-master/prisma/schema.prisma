@@ -530,7 +530,7 @@ model Quotation {
   @@index([customerId, docDate(sort: Desc)], map: "quotation_customer_idx")
   @@index([shippingAddressId], map: "quotation_shipping_address_idx")
   @@index([invoiceAddressId], map: "quotation_invoice_address_idx")
-  /// ADR-0044 D12: only deleted drafts (the Deleted list view).
+  /// ADR-0045 D12: only deleted drafts (the Deleted list view).
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "quotation_deleted_list_idx")
   @@map("quotation")
   @@schema("partner")
@@ -689,7 +689,7 @@ model MemoOut {
   @@index([status, docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "memo_out_status_idx")
   @@index([shippingAddressId], map: "memo_out_shipping_address_idx")
   @@index([invoiceAddressId], map: "memo_out_invoice_address_idx")
-  /// ADR-0044 D12: only deleted drafts (the Deleted list view).
+  /// ADR-0045 D12: only deleted drafts (the Deleted list view).
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "memo_out_deleted_list_idx")
   @@map("memo_out")
   @@schema("partner")
@@ -816,7 +816,7 @@ model MemoOutReturn {
   @@index([status, docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "memo_out_return_status_idx")
   @@index([shippingAddressId], map: "memo_out_return_shipping_address_idx")
   @@index([invoiceAddressId], map: "memo_out_return_invoice_address_idx")
-  /// ADR-0044 D12: only deleted drafts (the Deleted list view).
+  /// ADR-0045 D12: only deleted drafts (the Deleted list view).
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "memo_out_return_deleted_list_idx")
   @@map("memo_out_return")
   @@schema("partner")
@@ -938,7 +938,7 @@ model MemoReceive {
   @@index([vendorId, docDate(sort: Desc)], map: "memo_receive_vendor_idx")
   @@index([status, docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "memo_receive_status_idx")
   @@index([addressId], map: "memo_receive_address_idx")
-  /// ADR-0044 D12: only deleted drafts (the Deleted list view).
+  /// ADR-0045 D12: only deleted drafts (the Deleted list view).
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "memo_receive_deleted_list_idx")
   @@map("memo_receive")
   @@schema("partner")
@@ -1144,7 +1144,7 @@ model MemoReturn {
   @@index([vendorId, docDate(sort: Desc)], map: "memo_return_vendor_idx")
   @@index([status, docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "memo_return_status_idx")
   @@index([addressId], map: "memo_return_address_idx")
-  /// ADR-0044 D12: only deleted drafts (the Deleted list view).
+  /// ADR-0045 D12: only deleted drafts (the Deleted list view).
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "memo_return_deleted_list_idx")
   @@map("memo_return")
   @@schema("partner")
@@ -1268,7 +1268,7 @@ model Reserve {
   @@index([status, docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "reserve_status_idx")
   @@index([shippingAddressId], map: "reserve_shipping_address_idx")
   @@index([invoiceAddressId], map: "reserve_invoice_address_idx")
-  /// ADR-0044 D12: only deleted drafts (the Deleted list view).
+  /// ADR-0045 D12: only deleted drafts (the Deleted list view).
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "reserve_deleted_list_idx")
   @@map("reserve")
   @@schema("partner")
@@ -1387,7 +1387,7 @@ model PurchaseOrder {
   @@index([vendorId, docDate(sort: Desc)], map: "purchase_order_vendor_idx")
   @@index([status, docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "purchase_order_status_idx")
   @@index([addressId], map: "purchase_order_address_idx")
-  /// ADR-0044 D12: only deleted drafts (the Deleted list view).
+  /// ADR-0045 D12: only deleted drafts (the Deleted list view).
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "purchase_order_deleted_list_idx")
   @@map("purchase_order")
   @@schema("partner")
@@ -1523,7 +1523,7 @@ model Purchase {
   @@index([vendorId, docDate(sort: Desc)], map: "purchase_vendor_idx")
   @@index([status, docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "purchase_status_idx")
   @@index([addressId], map: "purchase_address_idx")
-  /// ADR-0044 D12: only deleted drafts (the Deleted list view).
+  /// ADR-0045 D12: only deleted drafts (the Deleted list view).
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "purchase_deleted_list_idx")
   @@map("purchase")
   @@schema("partner")
@@ -1539,6 +1539,9 @@ model PurchaseLine {
   source              String             @db.VarChar(16)
   memoStockId         String?            @map("memo_stock_id") @db.Uuid
   memoGroup           String?            @map("memo_group") @db.VarChar(10)
+  /// SA-PU-25 (ADR-0043): the Sold part a MERGED line took first, written at Approve; NULL otherwise.
+  soldPartPcs         Int?               @map("sold_part_pcs")
+  soldPartWeightCt    Decimal?           @map("sold_part_weight_ct") @db.Decimal(12, 3)
   purchaseOrderLineId String?            @map("purchase_order_line_id") @db.Uuid
   stockId             String             @map("stock_id") @db.VarChar(10)
   stoneCodeId         String?            @map("stone_code_id") @db.Uuid

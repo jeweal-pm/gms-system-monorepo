@@ -71,7 +71,7 @@ const messages: Record<string, string> = {
   PURCHASE_REFERENCE_INVALID: "A selected item is missing or inactive",
   PURCHASE_PENDING_SHORT: "Some items no longer have enough quantity available",
   PURCHASE_STOCK_ID_EXHAUSTED: "The Stock ID limit for this year has been reached",
-  // transaction-soft-delete SA rev 1 (ADR-0044 D8): a write on a deleted document.
+  // transaction-soft-delete SA rev 1 (ADR-0045 D8): a write on a deleted document.
   QUOTATION_DELETED: "The quotation was deleted",
   RESERVE_DELETED: "The reserve was deleted",
   MEMO_RECEIVE_DELETED: "The memo receive was deleted",
