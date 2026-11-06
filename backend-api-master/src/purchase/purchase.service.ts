@@ -7,9 +7,9 @@ import { TradeDocumentEngine, type LineHook, type TradeDocumentInput } from "../
 import { vendorDocumentOptions, vendorParty, type VendorOut } from "../trade-document/memo-out-return.service";
 import { issueStockIds } from "../trade-document/memo-receive.service";
 import { purchaseMemoStock, purchaseOrderLines } from "./purchase-pickers";
-import { completeSourceLines, memoAvailable, purchaseOrderAvailable, takeForPurchase, type PreparedInput } from "./purchase-stock";
+import { completeSourceLines, memoLineRange, purchaseOrderAvailable, takeForPurchase, type PreparedInput, type SoldPart } from "./purchase-stock";
 import { purchaseErrors, purchasePendingShort, purchaseStockIdExhausted } from "./purchase.errors";
-import type { MemoGroup, PurchaseInput, PurchaseLineSource, PurchaseListInput, PurchaseMemoStockInput, PurchaseOrderLinesInput, PurchaseStatus } from "./purchase.schemas";
+import type { LineMemoGroup, PurchaseInput, PurchaseLineSource, PurchaseListInput, PurchaseMemoStockInput, PurchaseOrderLinesInput, PurchaseStatus } from "./purchase.schemas";
 
 const PENDING: PurchaseStatus = "PENDING_APPROVAL";
 const APPROVED: PurchaseStatus = "APPROVED";
@@ -72,8 +72,12 @@ export class PurchaseService {
       const { outstandingPcs: _pcs, outstandingWeightCt: _weight, ...rest } = base;
       const memoStock = line.memoStock as StoredMemoStock | null | undefined;
       const poLine = line.purchaseOrderLine as StoredPoLine | null | undefined;
-      const group = line.memoGroup as MemoGroup | null;
-      const limit = memoStock && group ? memoAvailable(memoStock, group) : poLine ? purchaseOrderAvailable(poLine) : null;
+      const group = line.memoGroup as LineMemoGroup | null;
+      // SA-PU-26: the row range while pending (min = the Sold part for SOLD / MERGED lines, ADR-0043).
+      const range = memoStock && group ? memoLineRange(memoStock, group) : poLine ? { min: null, max: purchaseOrderAvailable(poLine) } : null;
+      const limit = range?.max ?? null;
+      const min = range?.min ?? null;
+      const soldPartWeight = line.soldPartWeightCt as Dec | null | undefined;
       return {
         ...rest,
         source: line.source as PurchaseLineSource,
@@ -86,6 +90,10 @@ export class PurchaseService {
         purchaseOrder: poLine ? { id: poLine.document.id, docNo: poLine.document.docNo, position: poLine.position } : null,
         limitPcs: limit ? limit.pcs : null,
         limitWeightCt: limit ? limit.weightCt.toFixed(3) : null,
+        minPcs: min ? min.pcs : null,
+        minWeightCt: min ? min.weightCt.toFixed(3) : null,
+        soldPartPcs: (line.soldPartPcs as number | null | undefined) ?? null,
+        soldPartWeightCt: soldPartWeight ? soldPartWeight.toFixed(3) : null,
       };
     },
     result: (assigned) => ({ stockIds: assigned.map((line) => line.stockId as string) }),
@@ -120,11 +128,11 @@ export class PurchaseService {
     return this.engine.list(input);
   }
 
-  /** SA-PU-16: `limitPcs` / `limitWeightCt` only while PENDING_APPROVAL (null once approved and for manual lines). */
+  /** SA-PU-16/26: `limit*` / `min*` only while PENDING_APPROVAL (null once approved and for manual lines). */
   async get(id: string): Promise<PurchaseDetail> {
     const detail = (await this.engine.get(id)) as unknown as PurchaseDetail;
     if (detail.status === PENDING) return detail;
-    return { ...detail, lines: detail.lines.map((line) => ({ ...line, limitPcs: null, limitWeightCt: null })) };
+    return { ...detail, lines: detail.lines.map((line) => ({ ...line, limitPcs: null, limitWeightCt: null, minPcs: null, minWeightCt: null })) };
   }
 
   nextNumber(docDate: string) {
@@ -184,11 +192,12 @@ export class PurchaseService {
           where: { id },
           select: {
             docNo: true, vendorId: true, currencyCode: true,
-            lines: { orderBy: { position: "asc" }, select: { source: true, memoStockId: true, memoGroup: true, purchaseOrderLineId: true, pcs: true, weightCt: true } },
+            lines: { orderBy: { position: "asc" }, select: { id: true, source: true, memoStockId: true, memoGroup: true, purchaseOrderLineId: true, pcs: true, weightCt: true } },
           },
         });
         const takes = document.lines.map((line, index) => ({ ...line, index }));
-        const moved = await takeForPurchase(tx, { vendorId: document.vendorId, currency: document.currencyCode }, takes, purchasePendingShort, now);
+        const { soldParts, ...moved } = await takeForPurchase(tx, { vendorId: document.vendorId, currency: document.currencyCode }, takes, purchasePendingShort, now);
+        await writeSoldParts(tx, document.lines.map((line) => line.id), soldParts);
         return { docNo: document.docNo, lineCount: document.lines.length, ...moved };
       }, WRITE_TX);
       this.logger.log({ event: "purchase.approved", actorId, id, docNo: approved.docNo, lineCount: approved.lineCount, memoStockKeys: approved.memoStockKeys, purchaseOrderKeys: approved.purchaseOrderKeys });
@@ -199,13 +208,27 @@ export class PurchaseService {
   }
 }
 
+/**
+ * SA-PU-25: records the Sold part each MERGED line took first (one `UPDATE … FROM (VALUES …)`, bound parameters only),
+ * inside the approve transaction. `lineIds` are the purchase lines in position order.
+ */
+async function writeSoldParts(tx: Prisma.TransactionClient, lineIds: string[], soldParts: SoldPart[]) {
+  if (soldParts.length === 0) return;
+  const rows = soldParts.map((part) => Prisma.sql`(${lineIds[part.index]}::uuid, ${part.pcs}::int, ${part.weightCt.toFixed(3)}::numeric)`);
+  await tx.$executeRaw(Prisma.sql`
+    UPDATE "partner"."purchase_line" AS l
+    SET sold_part_pcs = r.pcs, sold_part_weight_ct = r.weight
+    FROM (VALUES ${Prisma.join(rows)}) AS r(id, pcs, weight)
+    WHERE l.id = r.id`);
+}
+
 type EngineDetail = Awaited<ReturnType<TradeDocumentEngine<EngineInput, VendorOut, PurchaseStatus>["get"]>>;
 type EngineLineOut = Omit<EngineDetail["lines"][number], "outstandingPcs" | "outstandingWeightCt" | "source" | "photoIds">;
 /** api-contract `PurchaseLine` (the line hook shapes the engine output at run time). */
 export type PurchaseLineOut = EngineLineOut & {
   source: PurchaseLineSource;
   memoStockId: string | null;
-  memoGroup: MemoGroup | null;
+  memoGroup: LineMemoGroup | null;
   purchaseOrderLineId: string | null;
   stockId: string;
   photoIds: [];
@@ -213,6 +236,10 @@ export type PurchaseLineOut = EngineLineOut & {
   purchaseOrder: { id: string; docNo: string; position: number } | null;
   limitPcs: number | null;
   limitWeightCt: string | null;
+  minPcs: number | null;
+  minWeightCt: string | null;
+  soldPartPcs: number | null;
+  soldPartWeightCt: string | null;
 };
 /** api-contract `Purchase`. */
 export type PurchaseDetail = Omit<EngineDetail, "lines"> & { lines: PurchaseLineOut[]; approvedAt: string | null; approvedBy: string | null };

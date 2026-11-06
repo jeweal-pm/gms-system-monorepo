@@ -20,6 +20,18 @@ const PRICE_UNITS = [
   { value: "PER_PCS", label: "per pcs" },
 ];
 
+/**
+ * Purchase rev 3: the value a stock row's Pcs / Weight snaps back to when the field is left, or null when the typed
+ * value is already within min…cap (an empty field counts as 0). Rows without a minimum never snap.
+ */
+export function stockQuantityBound(text: string, minText: string | undefined, capText: string | undefined): string | null {
+  if (!minText) return null;
+  const value = dec(text);
+  if (value < dec(minText)) return minText;
+  if (capText && value > dec(capText)) return capText;
+  return null;
+}
+
 export function ItemEditorPanel({
   index,
   total,
@@ -55,7 +67,11 @@ export function ItemEditorPanel({
   const locked = readOnly || fromStock;
   // memo-out rev 2: a From Stock row takes part or all of its item, up to the pending it was picked with.
   const stockQuantity = fromStock && Boolean(kind.stockQuantity);
-  const stockPending = line as typeof line & { stockPendingPcs?: string; stockPendingWeightCt?: string };
+  const stockPending = line as typeof line & { stockPendingPcs?: string; stockPendingWeightCt?: string; stockMinPcs?: string; stockMinWeightCt?: string };
+  // Purchase rev 3 (Q-PU-29): a row whose minimum equals its cap is bought whole, so its quantity is fixed; Price stays editable.
+  const fixedQuantity = stockQuantity && Boolean(stockPending.stockMinPcs)
+    && stockPending.stockMinPcs === stockPending.stockPendingPcs && stockPending.stockMinWeightCt === stockPending.stockPendingWeightCt;
+  const quantityReadOnly = readOnly || (fromStock && !stockQuantity) || fixedQuantity;
   const fillWeight = (pcsText: string) => {
     const pendingPcs = dec(stockPending.stockPendingPcs);
     if (!stockQuantity || pendingPcs <= ZERO || pcsText === "") return;
@@ -64,6 +80,17 @@ export function ItemEditorPanel({
     const pcs = dec(pcsText);
     const weight = div(mul(full, pcs), pendingPcs);
     set("weightCt", pcs === pendingPcs ? toFixed(full, 3) : toFixed(weight > full ? full : weight, nf.weightInputDecimals));
+  };
+  // Purchase rev 3 (owner 2026-11-06): a row with a minimum (the Sold part) snaps back into min…cap when the field is
+  // left, so Pcs and Weight never stay below what is already sold; typing in between keeps the red row error.
+  const clampQuantity = (key: "pcs" | "weightCt", text: string) => {
+    const minText = key === "pcs" ? stockPending.stockMinPcs : stockPending.stockMinWeightCt;
+    const capText = key === "pcs" ? stockPending.stockPendingPcs : stockPending.stockPendingWeightCt;
+    if (!stockQuantity || !minText || quantityReadOnly) return;
+    const bound = stockQuantityBound(text, minText, capText);
+    if (bound === null) return;
+    setValue(`lines.${index}.${key}` as never, (key === "pcs" ? toFixed(dec(bound), 0) : toFixed(dec(bound), 3)) as never, { shouldDirty: true, shouldValidate: true });
+    if (key === "pcs") fillWeight(bound);
   };
   const name = <K extends keyof typeof line>(key: K) => `lines.${index}.${key}` as const;
 
@@ -218,16 +245,19 @@ export function ItemEditorPanel({
               compact
               decimals={0}
               placeholder="0"
-              readOnly={readOnly || (fromStock && !stockQuantity)}
-              {...register(name("pcs"), { onChange: (event: { target: { value: string } }) => fillWeight(event.target.value) })}
+              readOnly={quantityReadOnly}
+              {...register(name("pcs"), {
+                onChange: (event: { target: { value: string } }) => fillWeight(event.target.value),
+                onBlur: (event: { target: { value: string } }) => clampQuantity("pcs", event.target.value),
+              })}
             />
           </Field>
           <Field label="Weight (ct)" error={stockQuantity ? lineErrors?.weightCt?.message : undefined}>
-            <NumberInput compact decimals={nf.weightInputDecimals} placeholder="0.00" readOnly={readOnly || (fromStock && !stockQuantity)} {...register(name("weightCt"))} />
+            <NumberInput compact decimals={nf.weightInputDecimals} placeholder="0.00" readOnly={quantityReadOnly} {...register(name("weightCt"), { onBlur: (event: { target: { value: string } }) => clampQuantity("weightCt", event.target.value) })} />
           </Field>
           {stockQuantity && (
             <p className="col-span-full -mt-2 text-xs text-[#6B7480]">
-              Pending {stockPending.stockPendingPcs || "0"} pcs / {nf.weight(stockPending.stockPendingWeightCt || "0")} ct
+              {kind.stockNote?.(line) ?? `Pending ${stockPending.stockPendingPcs || "0"} pcs / ${nf.weight(stockPending.stockPendingWeightCt || "0")} ct`}
             </p>
           )}
           <Field label="Price Unit">

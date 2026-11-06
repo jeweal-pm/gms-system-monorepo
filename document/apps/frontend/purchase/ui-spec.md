@@ -440,7 +440,7 @@ Approval evidence: direct owner instructions 2026-11-04 (with screenshots 21–2
 
 ### Request and sources
 
-- Status: **pending-review** 2026-11-05. Approval evidence: none. Owner answers 2026-11-05: Q-PU-24/25/26/27/29/31/35 (Q-PU-26 changed from the default) and Q-PU-33 (default).
+- Status: **approved** 2026-11-06 (owner 2026-11-06: "อนุมัติ purchase revision 3"). Owner answers 2026-11-05: Q-PU-24/25/26/27/29/31/35 (Q-PU-26 changed from the default) and Q-PU-33 (default).
 - Branch: `feat/05-11-26-purchase-merge-outstanding` (from `change-to-nginx-with-new-skill-agent`, `c401880`).
 - Source: [source/08-merge-sold-and-in-stock.png](source/08-merge-sold-and-in-stock.png), the current Add Memo Stock dialog (All 5 · Sold 2 · In stock 3).
 - Owner request 2026-11-05 (verbatim): "หลักการ merge คือแบบนี้ถ้าเราเลือกของจากของที่ขายไปเเล้ว หรือ column ด้านบน 1 item เเละ เลือกของด้านล่านที่เป็นของจะซื้อเข้า หรือ column ด้านล่าง 1 item และของทั้งสองนั้นเป็นของ stockID เดียวกัน รายละเอียดเดียวกัน พอกด ok จะมี modal เด้งขึ้นมาถามว่า ต้องการ merge ไหม ถ้าใช่รวมเป็น 1 บรรทัด แก้ได้เเค่ pcs weight price เเต่เเก้ pcs กับ weight ต้องไม่สามารถปรับให้ต่ำกว่าของที่ซื้อเข้า อย่างเช่นต้องนี้ก็ห้ามต่ำกว่า 1 itemถ้าตัดสินใจซื้อ 1 item ให้ตัดยอดที่ขายเเล้วก่อน เเละ ถ้ากดไม่ต้องการmerge ก็เป็น 2 บรรทัด ปกติ เเละ ปรับให้ถ้าเราดึงของที่ขายไปเเล้วมาเเก้ได้เเค่ price เพราะ ตอนนี้ถ้าเราดึงของที่ขายไปเเล้วแก้อะไรไม่ได้เลย ยังไม่ต้องปรับนะแก้เอกสาร ถามคำถาม เปิด adr มาก่อน"
@@ -457,11 +457,13 @@ Approval evidence: direct owner instructions 2026-11-04 (with screenshots 21–2
 
 1. In Add Memo Stock the user ticks rows and presses **OK**.
 2. If the ticked rows contain no pair, the rows are added as today and nothing is asked.
-3. If they contain one or more pairs, one dialog opens before anything is added:
-   - Title: **"Merge items?"**
-   - Body: "These items are both sold and still in stock. Merge each into one row?" Then one line per pair: "{Stock ID} · Sold {p} pcs / {w} cts + In stock {p} pcs / {w} cts".
-   - Buttons: **Don't merge** (secondary) and **Merge** (primary). Escape or ✕ adds nothing: the question closes and Add Memo Stock stays open with the same rows ticked (owner Q-PU-26, "เท่ากับกลับไปเลือกใหม่").
-   - The answer applies to every pair in the list (Q-PU-25).
+3. If they contain one or more pairs, one dialog opens before anything is added. Design: [source/09](source/09-merge-dialog-merge.png) and [source/10](source/10-merge-dialog-separate.png) (owner 2026-11-06, "ปรับ design modal เป็นเเบบนี้"):
+   - Title: **"{Stock ID} is both sold and in stock"** ("N items are both sold and in stock" for several pairs).
+   - Text: "Part of this stone was sold to a customer and the rest is still with us on memo. Both parts must go on this purchase. Choose how they appear."
+   - One card per item: Stock ID with Stone Shape · Color, then Memo No. · Lot; a table **Stock status / Qty / Weight / Amount** with a **Sold** row (caption "sold to a customer" until a Sale exists), an **In stock** row ("with us since memo") and **Total to buy**. Amount = price × weight (per ct) or × pcs (per pcs) at the memo net unit price, in the document currency.
+   - Two choice cards (radio), one answer for every pair (Q-PU-25): **Merge into one row** · "Recommended if you buy it all" (preselected) and **Don't merge · keep separate rows**.
+     - The card texts follow the approved rules, not the design's "locked" wording: a merged row's Pcs, Weight and Price can be changed but never below the sold part (Q-PU-31); a separate Sold row changes only its Price (Q-PU-29).
+   - Footer: **Back to list** (secondary) and the primary button **Merge** or **Add N rows** (N = every ticked row) by the choice. Back to list and Escape add nothing and go back to the picker with the same rows ticked (owner Q-PU-26).
 4. **Merge**: each pair becomes **one row** (a merged row, R3-02). Ticked rows that are not part of a pair are added as usual.
 5. **Don't merge**: every ticked row becomes its own row, as today (one Sold row and one In-stock row).
 6. The toast stays "Added N items from Memo Stock", where N counts the rows added.

@@ -1507,6 +1507,9 @@ model PurchaseLine {
   source              String             @db.VarChar(16)
   memoStockId         String?            @map("memo_stock_id") @db.Uuid
   memoGroup           String?            @map("memo_group") @db.VarChar(10)
+  /// SA-PU-25 (ADR-0043): the Sold part a MERGED line took first, written at Approve; NULL otherwise.
+  soldPartPcs         Int?               @map("sold_part_pcs")
+  soldPartWeightCt    Decimal?           @map("sold_part_weight_ct") @db.Decimal(12, 3)
   purchaseOrderLineId String?            @map("purchase_order_line_id") @db.Uuid
   stockId             String             @map("stock_id") @db.VarChar(10)
   stoneCodeId         String?            @map("stone_code_id") @db.Uuid

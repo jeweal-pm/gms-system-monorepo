@@ -79,6 +79,9 @@ export function fromPurchase(detail: PurchaseDetail): PurchaseFormValues {
         sourceDocNo: saved.memoReceive?.docNo ?? saved.purchaseOrder?.docNo ?? "",
         stockPendingPcs: saved.limitPcs === null ? "" : String(saved.limitPcs),
         stockPendingWeightCt: saved.limitWeightCt ?? "",
+        // rev 3 (SA-PU-26): the Sold part of a SOLD or MERGED row while pending.
+        stockMinPcs: saved.minPcs === null ? "" : String(saved.minPcs),
+        stockMinWeightCt: saved.minWeightCt ?? "",
       };
     }),
     status: detail.status,
@@ -100,6 +103,10 @@ const rowsText = (errors: readonly FieldError[]) => {
   return rows.length === 1 ? `Row ${rows[0]}` : `Rows ${rows.join(", ")}`;
 };
 const isQuantityShort = (entry: FieldError) => /^lines\.\d+\.(pcs|weightCt)$/.test(entry.path) && entry.code === "exceeds_available";
+/** rev 3 (ADR-0043): a row below the Sold part, a Sold row not bought whole, or an item with nothing left to merge. */
+const isSoldRule = (entry: FieldError) => ["below_sold", "must_equal_sold", "not_mergeable"].includes(entry.code);
+export const PURCHASE_BELOW_SOLD = "At least the quantity already sold to customers";
+export const PURCHASE_MUST_EQUAL_SOLD = "A sold item is purchased whole";
 const isRowReference = (entry: FieldError) => /^lines\.\d+\.(memoStockId|purchaseOrderLineId|stoneCodeId)$/.test(entry.path);
 
 /**
@@ -111,17 +118,28 @@ export function mapPurchaseSaveError(error: unknown): SaveOutcome {
   const { domainCode, fieldErrors } = readDomainError(error);
   const short = fieldErrors.filter(isQuantityShort);
   const references = fieldErrors.filter(isRowReference);
+  const soldRules = fieldErrors.filter(isSoldRule);
+  const soldRuleRows = soldRules.map((entry) => ({
+    name: entry.path,
+    message: entry.code === "below_sold" ? PURCHASE_BELOW_SOLD : entry.code === "must_equal_sold" ? PURCHASE_MUST_EQUAL_SOLD : "Nothing left in stock to merge",
+  }));
   const onRows = (entries: readonly FieldError[], message: string) => entries.map((entry) => ({ name: entry.path, message }));
   switch (domainCode) {
     case "PURCHASE_PENDING_SHORT": {
       const lost = fieldErrors.filter((entry) => entry.path.endsWith(".purchaseOrderLineId"));
-      const all = [...short, ...lost];
+      const all = [...short, ...lost, ...soldRules];
       return {
-        fieldErrors: [...onRows(short, PURCHASE_AVAILABLE_SHORT), ...onRows(lost, "No longer available")],
+        fieldErrors: [...onRows(short, PURCHASE_AVAILABLE_SHORT), ...onRows(lost, "No longer available"), ...soldRuleRows],
         message: `${all.length > 0 ? rowsText(all) : "Some rows"}: not enough is available any more. Lower the quantity or remove the row, then save and approve again.`,
       };
     }
     case "VALIDATION_ERROR":
+      if (soldRules.some((entry) => entry.code === "not_mergeable")) {
+        return { fieldErrors: soldRuleRows, message: `${rowsText(soldRules)}: this item has nothing left in stock to merge. Remove the row and choose again.` };
+      }
+      if (soldRules.length > 0) {
+        return { fieldErrors: soldRuleRows, message: `${rowsText(soldRules)}: the quantity already sold to customers must be purchased. Nothing was saved.` };
+      }
       if (short.length > 0) return { fieldErrors: onRows(short, PURCHASE_AVAILABLE_SHORT), message: `${rowsText(short)}: more than the available quantity. Nothing was saved.` };
       break;
     case "PURCHASE_REFERENCE_INVALID":

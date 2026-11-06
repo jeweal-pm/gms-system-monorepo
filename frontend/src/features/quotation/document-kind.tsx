@@ -3,7 +3,7 @@
 import { createContext, useContext } from "react";
 import { photoUrl, uploadQuotationPhoto, type QuotationOptions } from "./api";
 import type { Option } from "./components/ui";
-import { MAX_DOCUMENT_NOTE, type PhotoRef } from "./schema";
+import { MAX_DOCUMENT_NOTE, type PhotoRef, type QuotationLine } from "./schema";
 
 /** Stone choices for the row panel, in the shape `quotation.options` returns. */
 export type StoneChoices = QuotationOptions["stone"];
@@ -33,6 +33,11 @@ export type DocumentKind = {
    * appears once per document). Quotation rev 2 (Q-QTS-03) uses it too.
    */
   stockQuantity?: boolean;
+  /**
+   * Row panel note under Pcs / Weight of a From Stock row; null or absent keeps "Pending x pcs / y ct" (Purchase rev 3:
+   * Sold and merged rows explain their Sold part).
+   */
+  stockNote?: (line: QuotationLine) => string | null;
   /**
    * Rows come only from the picker (memo-out rev 3, owner 2026-10-31): no Add row button, and clicking an empty row opens
    * the picker instead of the row panel, so nothing can be keyed in by hand.

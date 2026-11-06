@@ -14,12 +14,18 @@ export const PURCHASE_LINE_SOURCES = ["STOCK", "PURCHASE_ORDER", "MANUAL"] as co
 export type PurchaseLineSource = (typeof PURCHASE_LINE_SOURCES)[number];
 export const MEMO_GROUPS = ["IN_STOCK", "SOLD"] as const;
 export type MemoGroup = (typeof MEMO_GROUPS)[number];
+/**
+ * Groups a STOCK line may name (SA-PU-21, ADR-0043): one picker group, or MERGED = the item's Sold part plus part or all
+ * of its In-stock part in one line. The picker itself still lists only SOLD and IN_STOCK rows.
+ */
+export const LINE_MEMO_GROUPS = [...MEMO_GROUPS, "MERGED"] as const;
+export type LineMemoGroup = (typeof LINE_MEMO_GROUPS)[number];
 
 const purchaseLineSchema = lineInputSchema.extend({
   id: uuid.optional(),
   source: z.enum(PURCHASE_LINE_SOURCES),
   memoStockId: uuid.nullish(),
-  memoGroup: z.enum(MEMO_GROUPS).nullish(),
+  memoGroup: z.enum(LINE_MEMO_GROUPS).nullish(),
   purchaseOrderLineId: uuid.nullish(),
   // Q-PU-11: no photos in revision 1.
   photoIds: z.array(uuid).max(0),
@@ -33,6 +39,8 @@ type PurchaseValues = z.output<z.ZodObject<typeof purchaseFields>>;
 export function purchaseLineRules(value: Pick<PurchaseValues, "lines">, ctx: z.RefinementCtx) {
   const issue = (index: number, field: string, code: string) => ctx.addIssue({ code: "custom", path: ["lines", index, field], params: { code }, message: code });
   const memoKeys = new Set<string>();
+  /** SA-PU-21: an item is one MERGED line or separate SOLD / IN_STOCK lines, never both forms. */
+  const memoForms = new Map<string, "MERGED" | "SPLIT">();
   const poLines = new Set<string>();
   const lineIds = new Set<string>();
   value.lines.forEach((line, index) => {
@@ -52,6 +60,10 @@ export function purchaseLineRules(value: Pick<PurchaseValues, "lines">, ctx: z.R
       const key = `${line.memoStockId}:${line.memoGroup}`;
       if (memoKeys.has(key)) issue(index, "memoStockId", "duplicate");
       memoKeys.add(key);
+      const form = line.memoGroup === "MERGED" ? "MERGED" : "SPLIT";
+      const seen = memoForms.get(line.memoStockId);
+      if (seen !== undefined && (seen === "MERGED" || form === "MERGED")) issue(index, "memoStockId", "duplicate");
+      else memoForms.set(line.memoStockId, form);
     }
     if (line.source === "PURCHASE_ORDER" && line.purchaseOrderLineId) {
       if (poLines.has(line.purchaseOrderLineId)) issue(index, "purchaseOrderLineId", "duplicate");

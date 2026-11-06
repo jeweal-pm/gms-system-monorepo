@@ -146,13 +146,13 @@ describe("completeSourceLines (UT-PU-B02)", () => {
     expect((await failure(completeSourceLines(tx, input([stockLine(), poLine()])))).code).toBe("PURCHASE_REFERENCE_INVALID");
   });
 
-  it("checks the quantity against current availability: IN_STOCK = pending, SOLD = sold − purchased, PO = ordered − purchased", async () => {
+  it("checks the quantity against current availability: IN_STOCK ≤ pending, SOLD = sold − purchased exactly (Q-PU-29), PO ≤ ordered − purchased", async () => {
     // pending 3 / 2.5; sold − purchased = 1 / 0.5; PO ordered − purchased = 6 / 2.5.
     expect(await failure(completeSourceLines(tx, input([stockLine({ pcs: 4, weightCt: "2.5" }), stockLine({ memoGroup: "SOLD", pcs: 1, weightCt: "0.501" }), poLine({ pcs: 7, weightCt: "2.501" })])))).toMatchObject({
       code: "VALIDATION_ERROR",
       fieldErrors: [
         { path: "lines.0.pcs", code: "exceeds_available" },
-        { path: "lines.1.weightCt", code: "exceeds_available" },
+        { path: "lines.1.weightCt", code: "must_equal_sold" },
         { path: "lines.2.pcs", code: "exceeds_available" },
         { path: "lines.2.weightCt", code: "exceeds_available" },
       ],

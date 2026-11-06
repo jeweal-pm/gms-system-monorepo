@@ -2,7 +2,7 @@ import { validationException, type FieldError } from "../common/errors";
 import type { Tx } from "../common/persistence";
 import { Prisma } from "../generated/prisma/client";
 import { purchaseErrors } from "./purchase.errors";
-import type { MemoGroup, PurchaseInput, PurchaseLineInput } from "./purchase.schemas";
+import type { LineMemoGroup, MemoGroup, PurchaseInput, PurchaseLineInput } from "./purchase.schemas";
 
 const Decimal = Prisma.Decimal;
 type Dec = Prisma.Decimal;
@@ -24,6 +24,27 @@ export function memoAvailable(item: { pendingPcs: number; pendingWeightCt: Dec; 
     ? { pcs: item.pendingPcs, weightCt: new Decimal(item.pendingWeightCt) }
     : { pcs: item.soldPcs - item.purchasedPcs, weightCt: new Decimal(item.soldWeightCt).minus(item.purchasedWeightCt) };
 }
+
+type MemoItem = Parameters<typeof memoAvailable>[0];
+
+/**
+ * The quantity range of a line per its group (SA-PU-22/24): IN_STOCK 0…pending; SOLD exactly sold − purchased (bought
+ * whole, Q-PU-29); MERGED from the Sold part up to Sold + pending (Q-PU-31). `min` is null when there is no lower bound.
+ */
+export function memoLineRange(item: MemoItem, group: LineMemoGroup) {
+  if (group === "IN_STOCK") return { min: null, max: memoAvailable(item, "IN_STOCK") };
+  const sold = memoAvailable(item, "SOLD");
+  if (group === "SOLD") return { min: sold, max: sold };
+  const pending = memoAvailable(item, "IN_STOCK");
+  return { min: sold, max: { pcs: sold.pcs + pending.pcs, weightCt: sold.weightCt.plus(pending.weightCt) } };
+}
+
+/** A MERGED line needs both a Sold part and an In-stock part (SA-PU-22 `not_mergeable`). */
+const hasBothParts = (item: MemoItem) => {
+  const sold = memoAvailable(item, "SOLD");
+  const pending = memoAvailable(item, "IN_STOCK");
+  return (sold.pcs > 0 || sold.weightCt.gt(0)) && (pending.pcs > 0 || pending.weightCt.gt(0));
+};
 
 /** Current availability of a PO line (SA-PU-06): ordered − purchased. */
 export function purchaseOrderAvailable(line: { pcs: number; weightCt: Dec; purchasedPcs: number; purchasedWeightCt: Dec }) {
@@ -54,6 +75,23 @@ export async function completeSourceLines(tx: Tx, input: PurchaseInput): Promise
     if (line.pcs > available.pcs) quantities.push({ path: `lines.${index}.pcs`, code: "exceeds_available" });
     if (new Decimal(line.weightCt).gt(available.weightCt)) quantities.push({ path: `lines.${index}.weightCt`, code: "exceeds_available" });
   };
+  // ADR-0043: a SOLD line equals the Sold part (`must_equal_sold`); a MERGED line is at least the Sold part (`below_sold`)
+  // and needs both parts (`not_mergeable`); pcs and weight are checked on their own.
+  const checkMemoQuantity = (index: number, line: PurchaseLineInput, item: MemoItem, group: LineMemoGroup) => {
+    if (group === "MERGED" && !hasBothParts(item)) {
+      quantities.push({ path: `lines.${index}.memoStockId`, code: "not_mergeable" });
+      return;
+    }
+    const { min, max } = memoLineRange(item, group);
+    if (group === "SOLD") {
+      if (line.pcs !== max.pcs) quantities.push({ path: `lines.${index}.pcs`, code: "must_equal_sold" });
+      if (!new Decimal(line.weightCt).eq(max.weightCt)) quantities.push({ path: `lines.${index}.weightCt`, code: "must_equal_sold" });
+      return;
+    }
+    if (min && line.pcs < min.pcs) quantities.push({ path: `lines.${index}.pcs`, code: "below_sold" });
+    if (min && new Decimal(line.weightCt).lt(min.weightCt)) quantities.push({ path: `lines.${index}.weightCt`, code: "below_sold" });
+    checkQuantity(index, line, max);
+  };
 
   const lines = input.lines.map((line, index): PreparedLine => {
     if (line.source === "STOCK") {
@@ -62,7 +100,7 @@ export async function completeSourceLines(tx: Tx, input: PurchaseInput): Promise
         references.push({ path: `lines.${index}.memoStockId`, code: "invalid_reference" });
         return line;
       }
-      checkQuantity(index, line, memoAvailable(item, line.memoGroup));
+      checkMemoQuantity(index, line, item, line.memoGroup);
       const copied: CopiedFields = {
         stoneCodeId: null, stoneCode: "", stone: item.stone, shape: item.shape, size: item.size, color: item.color, clarity: item.clarity,
         cutting: item.cutting, quality: item.quality, lot: item.lot, location: item.location, cerType: item.cerType, cerNo: item.cerNo,
@@ -108,6 +146,7 @@ type KeyTotal = { id: string; pcs: number; weightCt: Dec; indexes: number[] };
 export function totalsPerKey(takes: PurchaseTake[]) {
   const inStock = new Map<string, KeyTotal>();
   const sold = new Map<string, KeyTotal>();
+  const merged = new Map<string, KeyTotal>();
   const po = new Map<string, KeyTotal>();
   const add = (map: Map<string, KeyTotal>, id: string, take: PurchaseTake) => {
     const total = map.get(id);
@@ -120,10 +159,50 @@ export function totalsPerKey(takes: PurchaseTake[]) {
     }
   };
   for (const take of takes) {
-    if (take.source === "STOCK" && take.memoStockId) add(take.memoGroup === "SOLD" ? sold : inStock, take.memoStockId, take);
+    if (take.source === "STOCK" && take.memoStockId) add(take.memoGroup === "SOLD" ? sold : take.memoGroup === "MERGED" ? merged : inStock, take.memoStockId, take);
     else if (take.source === "PURCHASE_ORDER" && take.purchaseOrderLineId) add(po, take.purchaseOrderLineId, take);
   }
-  return { inStock, sold, po };
+  return { inStock, sold, merged, po };
+}
+
+/** The Sold part a MERGED line took first, by line position (written to `purchase_line.sold_part_*`, SA-PU-25). */
+export type SoldPart = { index: number; pcs: number; weightCt: Dec };
+
+/**
+ * SA-PU-23 (ADR-0043): splits each MERGED total under the lock, Sold part first: `soldTake` = sold − purchased now,
+ * `stockTake` = q − soldTake, for pcs and weight on their own. Below the Sold part (`below_sold`) or a stock part above
+ * pending (`exceeds_available`) is short. The parts join the SOLD / IN_STOCK totals, so the guards and the one bulk
+ * UPDATE stay as for separate lines (an item is never both MERGED and SOLD / IN_STOCK on one purchase, SA-PU-21).
+ */
+export function splitMerged(
+  merged: Map<string, KeyTotal>,
+  items: Map<string, LockedItem>,
+  totals: { inStock: Map<string, KeyTotal>; sold: Map<string, KeyTotal> },
+): { shortFields: FieldError[]; soldParts: SoldPart[] } {
+  const shortFields: FieldError[] = [];
+  const soldParts: SoldPart[] = [];
+  for (const total of merged.values()) {
+    const item = items.get(total.id);
+    if (!item) {
+      shortFields.push(...shortPaths(total, "pcs"), ...shortPaths(total, "weightCt"));
+      continue;
+    }
+    const soldPcs = item.sold_pcs - item.purchased_pcs;
+    const soldWeight = dec(item.sold_weight_ct).minus(dec(item.purchased_weight_ct));
+    const stockPcs = total.pcs - soldPcs;
+    const stockWeight = total.weightCt.minus(soldWeight);
+    const before = shortFields.length;
+    if (stockPcs < 0) shortFields.push(...shortPaths(total, "pcs", "below_sold"));
+    else if (stockPcs > item.pending_pcs) shortFields.push(...shortPaths(total, "pcs"));
+    if (stockWeight.lt(0)) shortFields.push(...shortPaths(total, "weightCt", "below_sold"));
+    else if (stockWeight.gt(dec(item.pending_weight_ct))) shortFields.push(...shortPaths(total, "weightCt"));
+    // A short line moves nothing (the caller throws); only a line that fits joins the per-group totals.
+    if (shortFields.length > before) continue;
+    totals.sold.set(total.id, { id: total.id, pcs: soldPcs, weightCt: soldWeight, indexes: total.indexes });
+    totals.inStock.set(total.id, { id: total.id, pcs: stockPcs, weightCt: stockWeight, indexes: total.indexes });
+    for (const index of total.indexes) soldParts.push({ index, pcs: soldPcs, weightCt: soldWeight });
+  }
+  return { shortFields, soldParts };
 }
 
 const shortPaths = (total: KeyTotal, field: "pcs" | "weightCt" | "purchaseOrderLineId", code = "exceeds_available"): FieldError[] =>
@@ -158,7 +237,8 @@ const zero = () => new Decimal(0);
  * 2. locks the touched `memo_stock` rows `FOR UPDATE` in id order, then the touched `purchase_order_line` rows in id
  *    order (lock order purchase → memo_stock → purchase_order_line; other memo_stock writers lock only memo_stock);
  * 3. re-checks each PO is APPROVED with the purchase's vendor and currency;
- * 4. guards every key (IN_STOCK q ≤ pending; SOLD q ≤ sold − purchased; PO q ≤ ordered − purchased). Any short →
+ * 4. splits each MERGED line Sold part first (`splitMerged`, ADR-0043), then guards every key (IN_STOCK q ≤ pending;
+ *    SOLD q ≤ sold − purchased; PO q ≤ ordered − purchased). Any short →
  *    `short(fields)` with every short line, before any UPDATE, so the caller's transaction rolls back and nothing moves;
  * 5. applies ≤ 1 `UPDATE … FROM (VALUES …)` per table: IN_STOCK pending −= q, sold += q, purchased += q; SOLD
  *    purchased += q; PO purchased_* += q. Fixed SQL fragments only; ids and quantities are bound parameters.
@@ -170,9 +250,9 @@ export async function takeForPurchase(
   takes: PurchaseTake[],
   short: (fields: FieldError[]) => Error,
   now: Date,
-): Promise<{ memoStockKeys: number; purchaseOrderKeys: number }> {
-  const { inStock, sold, po } = totalsPerKey(takes);
-  const memoIds = [...new Set([...inStock.keys(), ...sold.keys()])].sort();
+): Promise<{ memoStockKeys: number; purchaseOrderKeys: number; soldParts: SoldPart[] }> {
+  const { inStock, sold, merged, po } = totalsPerKey(takes);
+  const memoIds = [...new Set([...inStock.keys(), ...sold.keys(), ...merged.keys()])].sort();
   const poIds = [...po.keys()].sort();
   const shortFields: FieldError[] = [];
 
@@ -186,6 +266,8 @@ export async function takeForPurchase(
     WHERE l.id = ANY(${poIds}::uuid[]) ORDER BY l.id FOR UPDATE OF l`);
 
   const items = new Map(lockedItems.map((row) => [row.id, row]));
+  const mergedParts = splitMerged(merged, items, { inStock, sold });
+  shortFields.push(...mergedParts.shortFields);
   for (const total of inStock.values()) {
     const item = items.get(total.id);
     if (!item || total.pcs > item.pending_pcs) shortFields.push(...shortPaths(total, "pcs"));
@@ -238,5 +320,5 @@ export async function takeForPurchase(
       FROM (VALUES ${Prisma.join(rows)}) AS r(id, pcs, weight)
       WHERE o.id = r.id`);
   }
-  return { memoStockKeys: inStock.size + sold.size, purchaseOrderKeys: po.size };
+  return { memoStockKeys: inStock.size + sold.size, purchaseOrderKeys: po.size, soldParts: mergedParts.soldParts };
 }

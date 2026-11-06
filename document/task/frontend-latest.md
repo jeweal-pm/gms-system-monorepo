@@ -2,10 +2,10 @@
 
 - feature-id: `purchase`
 - revision: UI 3 + SA 2 (TODO revision 3)
-- status: **pending-review** 2026-11-05: merge the Sold and In-stock parts of one Memo Stock item into one row (sold part first), and Sold rows edit Price only. Questions Q-PU-24…35. Documents only; no code until approved.
+- status: **approved** 2026-11-06 (owner 2026-11-06: "อนุมัติ purchase revision 3"), in progress: merge the Sold and In-stock parts of one Memo Stock item into one row (sold part first), and Sold rows edit Price only. Questions Q-PU-24…35. 
 - todo: [todo/purchase.md › Revision 3](todo/purchase.md#revision-3-merge-sold--in-stock-pending-review)
 - source: [apps/frontend/purchase/source/08-merge-sold-and-in-stock.png](../apps/frontend/purchase/source/08-merge-sold-and-in-stock.png); owner text 2026-11-05
-- backend-bundles: [SA revision 2](../apps/backend/master/purchase/decisions.md#sa-revision-2-proposed-2026-11-05-merged-memo-stock-lines), [ADR-0043](../adr/0043-purchase-merged-memo-stock-line.md) (Proposed)
+- backend-bundles: [SA revision 2](../apps/backend/master/purchase/decisions.md#sa-revision-2-proposed-2026-11-05-merged-memo-stock-lines), [ADR-0043](../adr/0043-purchase-merged-memo-stock-line.md) (Accepted)
 - dependencies: none new
 - updated-at: 2026-11-05
 
