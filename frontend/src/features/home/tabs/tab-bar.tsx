@@ -90,7 +90,7 @@ function TabStrip({ tabs, activeId, onSelect, onClose }: Readonly<Pick<TabBarPro
   return (
     <div className="hidden min-w-0 flex-1 items-stretch md:flex">
       {edges.overflow && <ArrowButton label="Scroll tabs left" disabled={edges.atStart} onClick={() => scrollBy(-SCROLL_STEP)} icon="left" />}
-      <div ref={stripRef} role="tablist" aria-label="Open pages" onScroll={measure} className="flex min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div ref={stripRef} role="tablist" aria-label="Open pages" onScroll={measure} className="-mb-px flex min-w-0 flex-1 items-stretch overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {tabs.map((tab, index) => {
           const active = tab.id === activeId;
           return (
@@ -99,7 +99,11 @@ function TabStrip({ tabs, activeId, onSelect, onClose }: Readonly<Pick<TabBarPro
               data-tab-id={tab.id}
               role="presentation"
               className={`group flex max-w-[220px] shrink-0 items-center gap-2 rounded-t-gms-md border-r border-gms-border-header px-3 transition-colors last:border-r-0 ${
-                active ? "bg-[#FFFFFF] text-gms-text" : "bg-transparent text-gms-text-muted hover:bg-gms-surface-sunken"
+                // Owner 2026-11-05: active #FFFFFF, hover #F9F9F9, inactive #EDEDED. The strip overlaps the topbar's bottom
+                // border by 1px (-mb-px): the active tab covers it so it joins the page below; inactive tabs draw the line.
+                active
+                  ? "bg-[#FFFFFF] text-gms-text"
+                  : "bg-[#EDEDED] text-gms-text-muted shadow-[inset_0_-1px_0_var(--color-gms-border-header)] hover:bg-[#F9F9F9]"
               }`}
             >
               <button

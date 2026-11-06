@@ -103,7 +103,7 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: #fff; color: var(--gms-ink); font-family: var(--font-sans); font-size: var(--text-gms-body); line-height: var(--text-gms-body--line-height); }
+body { margin: 0; background: var(--color-gms-page); color: var(--gms-ink); font-family: var(--font-sans); font-size: var(--text-gms-body); line-height: var(--text-gms-body--line-height); }
 button, input, select, textarea { font: inherit; }
 
 /*
