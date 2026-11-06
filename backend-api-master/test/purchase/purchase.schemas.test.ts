@@ -111,3 +111,14 @@ describe("purchase input (UT-PU-B01)", () => {
     expect(paths(purchaseOrderLinesSchema.safeParse({ vendorId: ID(1), currency: "USD", from: "2025-01-01", to: "2026-11-04" }))).toEqual(["to:range_too_long"]);
   });
 });
+
+describe("merged lines (UT-PU-B07, SA-PU-21)", () => {
+  it("accepts MERGED as a STOCK group; an item is one MERGED line or SOLD / IN_STOCK lines, never both", () => {
+    expect(createPurchaseSchema.safeParse(input([stock({ memoGroup: "MERGED" }), stock({ memoStockId: ID(6), memoGroup: "SOLD" }), stock({ memoStockId: ID(6) })])).success).toBe(true);
+    expect(paths(createPurchaseSchema.safeParse(input([stock({ memoGroup: "MERGED" }), stock({ memoGroup: "SOLD" })])))).toEqual(["lines.1.memoStockId:duplicate"]);
+    expect(paths(createPurchaseSchema.safeParse(input([stock(), stock({ memoGroup: "MERGED" })])))).toEqual(["lines.1.memoStockId:duplicate"]);
+    expect(paths(createPurchaseSchema.safeParse(input([stock({ memoGroup: "MERGED" }), stock({ memoGroup: "MERGED" })])))).toContain("lines.1.memoStockId:duplicate");
+    expect(createPurchaseSchema.safeParse(input([manual({ memoGroup: "MERGED" })])).success).toBe(false);
+    expect(purchaseMemoStockSchema.safeParse({ vendorId: ID(1), currency: "THB", status: "MERGED" }).success).toBe(false);
+  });
+});

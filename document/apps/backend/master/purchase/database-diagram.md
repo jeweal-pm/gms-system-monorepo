@@ -157,7 +157,7 @@ Data size: thousands of purchases a year, ≤ 200 lines each. The tables stay in
 
 ## SA revision 2 (proposed 2026-11-05): merged lines
 
-Migration `20261105090000_purchase_merged_line` (additive) on `purchase_line`:
+Migration `20261106090000_purchase_merged_line` (additive) on `purchase_line`:
 
 - `sold_part_pcs` int NULL, `sold_part_weight_ct` numeric(12,3) NULL: the Sold part taken first, written at Approve for `MERGED` lines (SA-PU-23/25).
 - CHECK `purchase_line_memo_group_check`: `memo_group IS NULL OR memo_group IN ('IN_STOCK', 'SOLD', 'MERGED')`.

@@ -4,7 +4,7 @@ import { Fragment, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import {
-  BUCKET_LABEL,
+  bucketLabel,
   dueLabel,
   formatDate,
   formatUnitPrice,
@@ -68,7 +68,7 @@ export function PrintContent({ entries, prefs, filters, scope, printedAt }: Prin
             <th className={cell}>Doc Number / Doc Date</th>
             <th className={cell}>Due Date / Overdue</th>
             <th className={cell}>{`${spec.party} Name`}</th>
-            {buckets.map((bucket) => <th key={bucket} className={num} colSpan={2}>{`${BUCKET_LABEL[bucket]} Pcs / Weight`}</th>)}
+            {buckets.map((bucket) => <th key={bucket} className={num} colSpan={2}>{`${bucketLabel(spec, bucket)} Pcs / Weight`}</th>)}
             {showPrice && <th className={num}>Price</th>}
           </tr>
         </thead>

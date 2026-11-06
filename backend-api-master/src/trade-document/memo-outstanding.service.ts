@@ -14,6 +14,8 @@ import type {
   MemoOutstandingItemsInput,
   MemoOutstandingListInput,
   MemoOutstandingSortKey,
+  PurchaseOutstandingListInput,
+  PurchaseOutstandingSortKey,
 } from "./memo-outstanding.schemas";
 
 const Decimal = Prisma.Decimal;
@@ -108,6 +110,65 @@ function receiveFilters(input: MemoOutstandingFilters): Prisma.Sql {
   if (input.to) filters.push(Prisma.sql`r.doc_date <= ${toDbDate(input.to)}::date`);
   return Prisma.join(filters, " AND ");
 }
+
+// ---- Purchase Outstanding (purchase-outstanding SA-POS-01…06, ADR-0044): Memo Stock owed to the vendor ----
+
+/** SA-POS-02: balance = received − returned − purchased (the sold part waiting for Purchase is still owed). */
+const PU_BALANCE_PCS = Prisma.sql`(s.received_pcs - s.returned_pcs - s.purchased_pcs)`;
+const PU_BALANCE_WT = Prisma.sql`(s.received_weight_ct - s.returned_weight_ct - s.purchased_weight_ct)`;
+
+/** SA-POS-04: balance value = line_amount × balance basis ÷ received basis, 2 dp half-up (the SA-MOV-06 rule). */
+const PU_OPEN_VALUE = Prisma.sql`round(CASE WHEN s.price_unit = 'PER_CT' THEN
+    CASE WHEN s.received_weight_ct = 0 THEN s.net_unit_price * ${PU_BALANCE_WT}
+      ELSE s.line_amount * ${PU_BALANCE_WT} / s.received_weight_ct END
+  ELSE
+    CASE WHEN s.received_pcs = 0 THEN s.net_unit_price * ${PU_BALANCE_PCS}
+      ELSE s.line_amount * ${PU_BALANCE_PCS} / s.received_pcs END
+  END, 2)`;
+
+/** SA-POS-03: a document is listed while any of its items has a balance above 0. */
+const PU_HAS_BALANCE = Prisma.sql`bool_or(${PU_BALANCE_PCS} > 0 OR ${PU_BALANCE_WT} > 0)`;
+
+/** Per-item buckets of SA-POS-02; the document row sums them. */
+const PU_ITEM_BUCKETS = Prisma.sql`
+  s.received_pcs AS memo_pcs, s.received_weight_ct AS memo_wt,
+  s.returned_pcs AS return_pcs, s.returned_weight_ct AS return_wt,
+  s.purchased_pcs AS purchase_pcs, s.purchased_weight_ct AS purchase_wt,
+  (s.sold_pcs - s.purchased_pcs) AS sale_pcs, (s.sold_weight_ct - s.purchased_weight_ct) AS sale_wt,
+  ${PU_BALANCE_PCS} AS balance_pcs, ${PU_BALANCE_WT} AS balance_wt,
+  ${PU_OPEN_VALUE} AS open_value`;
+const PU_DOC_SUMS = Prisma.sql`
+  sum(s.received_pcs)::bigint AS memo_pcs, sum(s.received_weight_ct) AS memo_wt,
+  sum(s.returned_pcs)::bigint AS return_pcs, sum(s.returned_weight_ct) AS return_wt,
+  sum(s.purchased_pcs)::bigint AS purchase_pcs, sum(s.purchased_weight_ct) AS purchase_wt,
+  sum(s.sold_pcs - s.purchased_pcs)::bigint AS sale_pcs, sum(s.sold_weight_ct - s.purchased_weight_ct) AS sale_wt,
+  sum(${PU_BALANCE_PCS})::bigint AS balance_pcs, sum(${PU_BALANCE_WT}) AS balance_wt,
+  sum(${PU_OPEN_VALUE}) AS open_value`;
+
+/** Whitelisted ORDER BY columns (SA-POS-05). Never built from client text. */
+const PU_SORT_COLUMNS: Record<PurchaseOutstandingSortKey, Prisma.Sql> = {
+  docNo: Prisma.sql`doc_no`,
+  dueDate: Prisma.sql`due_date`,
+  vendorName: Prisma.sql`vendor_name_snapshot`,
+  memoPcs: Prisma.sql`memo_pcs`,
+  returnPcs: Prisma.sql`return_pcs`,
+  purchasePcs: Prisma.sql`purchase_pcs`,
+  salePcs: Prisma.sql`sale_pcs`,
+  balancePcs: Prisma.sql`balance_pcs`,
+  openValue: Prisma.sql`open_value`,
+};
+
+type PurchaseSums = {
+  memo_pcs: Num; memo_wt: Num; return_pcs: Num; return_wt: Num; purchase_pcs: Num; purchase_wt: Num;
+  sale_pcs: Num; sale_wt: Num; balance_pcs: Num; balance_wt: Num; open_value: Num;
+};
+const purchaseBuckets = (row: PurchaseSums) => ({
+  memo: qty(row.memo_pcs, row.memo_wt),
+  return: qty(row.return_pcs, row.return_wt),
+  purchase: qty(row.purchase_pcs, row.purchase_wt),
+  sale: qty(row.sale_pcs, row.sale_wt),
+  balance: qty(row.balance_pcs, row.balance_wt),
+});
 
 // ---- From Customer (memo-outstanding-customer SA-MOC-01…10, ADR-0039): approved Memo Outs and their stock lines ----
 
@@ -476,6 +537,140 @@ export class MemoOutstandingService {
     } catch (error) {
       throw memoOutErrors.map(error, "memo_outstanding.customer_options");
     }
+  }
+
+  // ---- Purchase Outstanding (SA-POS-04…06) ----
+
+  async purchaseSummary(input: MemoOutstandingFilters) {
+    const today = toDbDate(bangkokToday(this.clock()));
+    try {
+      const [row] = await prisma.$queryRaw<SummaryRow[]>(Prisma.sql`
+        WITH company AS (SELECT currency_code FROM "partner"."company_profile" WHERE id = 1),
+        docs AS (
+          SELECT r.id, r.due_date, r.currency_code, r.exchange_rate, sum(${PU_OPEN_VALUE}) AS open_value
+          FROM "partner"."memo_receive" r
+          JOIN "partner"."memo_stock" s ON s.memo_receive_id = r.id
+          WHERE ${receiveFilters(input)}
+          GROUP BY r.id
+          HAVING ${PU_HAS_BALANCE}
+        )
+        SELECT count(*)::bigint AS documents,
+          count(*) FILTER (WHERE d.due_date < ${today}::date)::bigint AS overdue,
+          count(*) FILTER (WHERE d.due_date >= ${today}::date AND d.due_date <= ${today}::date + 7)::bigint AS due_in_7_days,
+          round(sum(d.open_value * CASE WHEN d.currency_code = (SELECT currency_code FROM company) THEN 1
+            ELSE COALESCE(d.exchange_rate, 1) END), 2) AS grand_total,
+          (SELECT currency_code FROM company) AS company_currency
+        FROM docs d`);
+      return {
+        documents: Number(row?.documents ?? 0),
+        overdue: Number(row?.overdue ?? 0),
+        dueIn7Days: Number(row?.due_in_7_days ?? 0),
+        grandTotal: dec(row?.grand_total ?? 0).toFixed(2),
+        companyCurrency: row?.company_currency?.trim() ?? "",
+      };
+    } catch (error) {
+      throw memoReceiveErrors.map(error, "purchase_outstanding.summary");
+    }
+  }
+
+  async purchaseList(input: PurchaseOutstandingListInput) {
+    const today = toDbDate(bangkokToday(this.clock()));
+    const dir = input.dir === "desc" ? Prisma.sql`DESC` : Prisma.sql`ASC`;
+    const sort = input.sort ?? "dueDate";
+    const orderBy = sort === "dueDate"
+      ? Prisma.sql`due_date ${dir}, doc_no ASC, id ASC`
+      : Prisma.sql`${PU_SORT_COLUMNS[sort]} ${dir}, id ASC`;
+    const docs = Prisma.sql`
+      SELECT r.id, r.doc_no, r.doc_date, r.due_date, r.vendor_id, r.vendor_code_snapshot, r.vendor_name_snapshot, r.currency_code,
+        ${PU_DOC_SUMS}
+      FROM "partner"."memo_receive" r
+      JOIN "partner"."memo_stock" s ON s.memo_receive_id = r.id
+      WHERE ${receiveFilters(input)}
+      GROUP BY r.id
+      HAVING ${PU_HAS_BALANCE}`;
+    try {
+      const [rows, counted] = await Promise.all([
+        prisma.$queryRaw<(Omit<DocRow, keyof BucketSums> & PurchaseSums)[]>(Prisma.sql`
+          WITH docs AS (${docs})
+          SELECT id::text AS id, doc_no, doc_date, due_date, (due_date - ${today}::date)::int AS due_in_days,
+            vendor_id::text AS vendor_id, vendor_code_snapshot, vendor_name_snapshot, currency_code,
+            memo_pcs, memo_wt, return_pcs, return_wt, purchase_pcs, purchase_wt, sale_pcs, sale_wt, balance_pcs, balance_wt, open_value
+          FROM docs
+          ORDER BY ${orderBy}
+          LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}`),
+        prisma.$queryRaw<{ total: Num }[]>(Prisma.sql`WITH docs AS (${docs}) SELECT count(*)::bigint AS total FROM docs`),
+      ]);
+      return {
+        items: rows.map((row) => ({
+          memoReceiveId: row.id,
+          docNo: row.doc_no,
+          docDate: fromDbDate(row.doc_date),
+          dueDate: fromDbDate(row.due_date),
+          dueInDays: Number(row.due_in_days),
+          vendor: { id: row.vendor_id, code: row.vendor_code_snapshot, name: row.vendor_name_snapshot },
+          currency: row.currency_code.trim(),
+          openValue: dec(row.open_value).toFixed(2),
+          ...purchaseBuckets(row),
+        })),
+        total: Number(counted[0]?.total ?? 0),
+        page: input.page,
+        pageSize: input.pageSize,
+      };
+    } catch (error) {
+      throw memoReceiveErrors.map(error, "purchase_outstanding.list");
+    }
+  }
+
+  /** SA-POS-06: every item of the listed documents (approved, with a balance), so the items sum to the document row. */
+  async purchaseItems(input: MemoOutstandingItemsInput) {
+    const ids = [...new Set(input.memoReceiveIds)].map((id) => Prisma.sql`${id}::uuid`);
+    try {
+      const rows = await prisma.$queryRaw<(Omit<ItemRow, keyof BucketSums> & PurchaseSums)[]>(Prisma.sql`
+        SELECT s.id::text AS id, s.memo_receive_id::text AS memo_receive_id, l.position, s.stock_id, s.lot, s.location,
+          s.stone, s.shape, s.size, s.color, s.clarity, s.cutting, s.quality, s.cer_type, s.cer_no, s.item_note,
+          ${PU_ITEM_BUCKETS}, s.price_unit, s.net_unit_price, s.currency_code,
+          (SELECT count(*) FROM "partner"."memo_receive_line_photo" p WHERE p.line_id = s.memo_receive_line_id)::bigint AS photo_count
+        FROM "partner"."memo_stock" s
+        JOIN "partner"."memo_receive" r ON r.id = s.memo_receive_id
+        JOIN "partner"."memo_receive_line" l ON l.id = s.memo_receive_line_id
+        WHERE r.status = ${APPROVED} AND r.id IN (${Prisma.join(ids)})
+          AND EXISTS (SELECT 1 FROM "partner"."memo_stock" o WHERE o.memo_receive_id = r.id
+            AND (o.received_pcs - o.returned_pcs - o.purchased_pcs > 0 OR o.received_weight_ct - o.returned_weight_ct - o.purchased_weight_ct > 0))
+        ORDER BY r.doc_no ASC, r.id ASC, l.position ASC`);
+      return {
+        items: rows.map((row) => ({
+          id: row.id,
+          memoReceiveId: row.memo_receive_id,
+          position: Number(row.position),
+          stockId: row.stock_id,
+          lot: row.lot,
+          location: row.location as "Memo",
+          stone: row.stone,
+          shape: row.shape,
+          size: row.size,
+          color: row.color,
+          clarity: row.clarity,
+          cutting: row.cutting,
+          quality: row.quality,
+          cerType: row.cer_type,
+          cerNo: row.cer_no,
+          itemNote: row.item_note,
+          photoCount: Number(row.photo_count),
+          priceUnit: (row.price_unit === "PER_CT" ? "CTS" : "PCS") as "CTS" | "PCS",
+          netUnitPrice: dec(row.net_unit_price).toFixed(4),
+          currency: row.currency_code.trim(),
+          openValue: dec(row.open_value).toFixed(2),
+          ...purchaseBuckets(row),
+        })),
+      };
+    } catch (error) {
+      throw memoReceiveErrors.map(error, "purchase_outstanding.items");
+    }
+  }
+
+  /** SA-POS-05: the From Vendor vendor choices (vendors with approved Memo Receives). */
+  purchaseOptions() {
+    return this.vendorOptions();
   }
 
   /** SA-MOV-09: distinct vendors with approved Memo Receive documents, by name, at most 1,000. */
