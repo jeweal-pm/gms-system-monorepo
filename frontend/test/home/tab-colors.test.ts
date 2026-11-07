@@ -15,6 +15,13 @@ describe("tab strip colours and body background", () => {
     expect(source).not.toMatch(/"bg-\[#FFFFFF\] text-gms-text[^"]*shadow/);
   });
 
+  it("UT-TAB-08 (owner 2026-11-07): the tab shell is 40px high and each tab 36px, bottom-aligned", () => {
+    const css = readFileSync("src/app/globals.css", "utf8");
+    expect(css).toMatch(/--spacing-gms-topbar:\s*40px;/);
+    expect(source).toMatch(/role="tablist"[^>]*className="-mb-px flex min-w-0 flex-1 items-end /);
+    expect(source).toContain("group flex h-9 max-w-[220px]");
+  });
+
   it("the body uses the #F9F9F9 page colour", () => {
     const css = readFileSync("src/app/globals.css", "utf8");
     expect(css).toMatch(/--color-gms-page:\s*#f9f9f9;/i);

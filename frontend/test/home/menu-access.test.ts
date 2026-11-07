@@ -15,8 +15,8 @@ describe("menu visibility", () => {
     expect(canViewWith({ isSuperAdmin: false, permissions: "ALL" }, ["quotation"])).toBe(true);
   });
 
-  it("UT-MENU-02 without grants only ungated items remain (Home, Approve)", () => {
-    expect(ids(visibleSections(sidebarSections, canViewFor([])))).toEqual(["home", "approve"]);
+  it("UT-MENU-02 without grants only ungated items remain (Home; Approve needs an APPROVE grant since approve-center rev 1)", () => {
+    expect(ids(visibleSections(sidebarSections, canViewFor([])))).toEqual(["home"]);
   });
 
   it("UT-MENU-03 VIEW is required; other actions alone do not show a menu", () => {
@@ -53,7 +53,7 @@ describe("menu visibility", () => {
   it("UT-MENU-06 rail sections follow the visible sidebar sections", () => {
     const canView = canViewFor(["sale:VIEW"]);
     const modules = visibleRailModules(railModules, visibleSections(sidebarSections, canView), canView).map((module) => module.id);
-    expect(modules).toEqual(["home", "approve", "sale"]);
+    expect(modules).toEqual(["home", "sale"]);
   });
 
   it("UT-MENU-07 navigation ids map to catalog keys", () => {

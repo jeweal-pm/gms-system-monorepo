@@ -1,0 +1,31 @@
+# Handoff: approve-center → SA (phase 2 service design)
+
+- **Status: not dispatched.** Waiting for the owner's review of UI revision 1 and answers to Q-AP-01/02/05/14/15. Phase 1 UI (FE-AP-001…008) needs no SA work.
+- Feature ID / UI revision: `approve-center` / 1 (**pending-review**)
+- SA revision / source UI revision: none / 1
+- From role/scope: ui-spec (documents only)
+- To role/scope / parent integration owner: SA, via the parent, after owner approval of UI revision 1 and the owner selecting phase 2
+- Exact TODO IDs and source documents: FE-AP-009…011 (blocked, requires-sa) in [task/todo/approve-center.md](../../task/todo/approve-center.md); [ui-spec.md](../../apps/frontend/approve-center/ui-spec.md), [data-fetching.md](../../apps/frontend/approve-center/data-fetching.md), [open-questions.md](../../apps/frontend/approve-center/open-questions.md), [flow](../../diagram/approve-center-flow.md); sources [01](../../apps/frontend/approve-center/source/01-approve-quotation-empty.png), [02](../../apps/frontend/approve-center/source/02-approve-reserve-pending.png)
+- Approval status, approved revision, and owner evidence: none. The owner request of 2026-11-07 ("uxui ช่วยเขียนสเปค … ของ Approve …") asks for the spec; it is not an approval.
+- Required contract / diagrams / ADRs (proposal; SA decides):
+  - **SA-AP-01 Approval summary:** one bounded call returning pending counts per document type the caller may APPROVE (and VIEW), deleted excluded; replaces 7 count queries. Owning service: master (all documents live there). Cache/freshness rule; no push channel unless an ADR justifies it.
+  - **SA-AP-02 Pending rows:** per document type (or one union endpoint), rows with `version`, line count, distinct stone names (bounded), Σ pcs / Σ weight, submitted time, submitter display name and role/position (master stores only `createdBy` / `updatedBy` user ids; auth has `User.name` and `role` — decide the cross-service lookup), `sort` including oldest-first, cursor paging ≤ 50.
+  - **SA-AP-03 Search:** `q` also matching line stone names and Stock IDs, with an index/plan that stays bounded.
+  - **SA-AP-04 Reject / Revise:** only after the owner answers Q-AP-01/02 — status model change on 7 documents, reason storage, effect on stock (none expected while pending), audit, permission (APPROVE or a new action), document-page display of the reason. Schema change → migration + ADR.
+  - **SA-AP-05 Inventory documents:** Load to Stock, Merge/Split Stock, Transfer Location approvals when those documents are designed (separate features).
+  - Sequence diagram for approve-from-center (get → approve with version, sequential bulk), database notes, API contract, capacity note.
+- Dependency ledger entries and installation status: none
+- Allowed code/document paths: SA documents only (`document/apps/backend/master/approve-center/**`, `document/adr/**`, `document/diagram/approve-center-flow.md` refinements, backend items in the central TODO). No code.
+- Integration-owned changes: none expected
+- Infra service bundle/revision, ADR/config drift, network/egress and secret-adapter prerequisites: none expected (no new container/service/storage). A push channel for live counts would be an architecture change → ADR + infra research.
+- DevOps pipeline/source revision, …: none
+- Resource budget / capacity impact (4 GB RAM / 2 vCPU total): phase 1 adds at most 7 `limit: 1` count queries per user per minute (focus/mutation refetch only) and ≤ 50-row pages. SA-AP-01/02 must stay single bounded queries per call using the existing `(status, doc_date, created_at, id)` indexes; no per-row fan-out across services.
+- Expected output and acceptance criteria: SA bundle (decisions, sequence, contract, ADR if status models change) presented for separate owner approval; backend TODO items BE-AP-* added to the central TODO.
+- Verification completed / not run: none (not dispatched)
+- Blocking item: owner approval of UI revision 1; answers to Q-AP-01, Q-AP-02, Q-AP-05, Q-AP-14, Q-AP-15
+- Resume action and destination: owner approves/selects → parent dispatches SA → owner approves SA bundle → backend → frontend FE-AP-009…011
+- Corrective work ID / root-cause ledger link: n/a
+- Existing pass limit / allocated passes / active pass: n/a (no corrective work)
+- Changed evidence, contract, or prerequisite justifying this handoff: initial record
+- Concrete receiving-role output / next fact needed: owner definitions of Reject and Revise, and of "Submitted (role)"
+- Stop reason / terminal outcome: stopped at review boundary (not dispatched)
