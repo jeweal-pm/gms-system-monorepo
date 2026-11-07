@@ -44,6 +44,10 @@
   --color-gms-excel: #187949;
   --color-gms-warning-subtle: #ffe7b8;
   --color-gms-warning-text: #9a5b00;
+  /* approve-center UI rev 1: Revise outline, count badge (sources 01/02, measured). */
+  --color-gms-revise: #ffab00;
+  --color-gms-count-badge: #e2f0f0;
+  --color-gms-count-badge-text: #1c7b80;
   --color-gms-checkbox-readonly: #a9a9a9;
   /* Toast (owner design 2026-10-20): dark card; each tone is a coloured disc on a tinted halo. */
   --color-gms-toast: #002628;
@@ -67,7 +71,7 @@
   --color-gms-text-muted: #637381;
   --color-gms-border-header: #e3e7ec;
   --spacing-gms-sidebar: 236px;
-  --spacing-gms-topbar: 48px;
+  --spacing-gms-topbar: 40px;
 
   /* app-navigation UI revision 1 (FE-NAV-009; document/apps/frontend/app-navigation/design-system.md). */
   --color-gms-rail-button: #f7f7f7;

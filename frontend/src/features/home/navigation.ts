@@ -23,6 +23,7 @@ import {
   StockTransferIcon,
   type NavIcon,
 } from "./nav-icons";
+import { APPROVE_HREF, APPROVE_PERMISSIONS } from "@/features/approve-center/menus";
 import { DEFAULT_STONE_SLUG, STONE_MENU_KEY, STONE_PAGES, stonePageHref } from "@/features/stone-master/kinds";
 
 /**
@@ -63,6 +64,8 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   "purchase-outstanding": "/purchase-order/purchase-outstanding",
   // purchase UI rev 1 (FE-PU-006, owner 2026-11-04): Purchase Order › Purchase (PU), linked before the API exists.
   purchase: "/purchase-order/purchase",
+  // approve-center UI rev 1 (FE-AP-001): the Approve page.
+  approve: APPROVE_HREF,
 };
 
 export function navigationHref(item: NavigationItem): string {
@@ -103,7 +106,8 @@ export type NavLink = {
   activeHrefs?: readonly string[];
   /**
    * Permission catalog keys; the link is shown when the user has VIEW on any of them (owner
-   * 2026-10-17). Undefined = no permission exists for it (Home, Approve, placeholders): always shown.
+   * 2026-10-17). An entry `<key>:<ACTION>` needs that action instead (Approve: any `<leaf>:APPROVE`). Undefined = no
+   * permission exists for it (Home, placeholders): always shown.
    */
   permission?: readonly string[];
 };
@@ -190,7 +194,11 @@ const setupLink: NavLink = {
   activeHrefs: setupOwnedPlaceholders.map((item) => moduleHref(item.slug)),
   permission: SETUP_MENU_KEYS,
 };
-const approveLink = link("approve", "Approve", ApproveIcon);
+/**
+ * approve-center FE-AP-001/002: Approve opens `/approve` and stays active on `/approve/*`; it is shown when the user
+ * may approve any Approve menu (`<leaf>:APPROVE`, Q-AP-13).
+ */
+const approveLink: NavLink = { kind: "link", id: "approve", label: "Approve", href: APPROVE_HREF, icon: ApproveIcon, activePrefix: APPROVE_HREF, permission: APPROVE_PERMISSIONS };
 
 /**
  * Sidebar order, labels and icons from S3/S2; Account and Report groups are the Q-NAV-01 defaults.
@@ -354,13 +362,14 @@ export function contextNavFor(pathname: string): ContextNav | null {
 /** True when the user may see an item gated by `permission` (see `NavLink.permission`). */
 export type CanView = (permission: readonly string[] | undefined) => boolean;
 
-/** Pure rule behind `useMenuAccess`: Super Admin / "ALL" see everything; others need `<key>:VIEW`. */
+/** Pure rule behind `useMenuAccess`: Super Admin / "ALL" see everything; others need `<key>:VIEW` (or the named `<key>:<ACTION>`). */
 export function canViewWith(mine: { isSuperAdmin: boolean; permissions: "ALL" | readonly string[] } | undefined, permission: readonly string[] | undefined): boolean {
   if (!permission) return true;
   if (!mine) return false;
   if (mine.isSuperAdmin || mine.permissions === "ALL") return true;
   const granted = mine.permissions;
-  return permission.some((key) => granted.includes(`${key}:VIEW`));
+  // A key naming its action (`reserve:APPROVE`, approve-center) is matched as is; a bare key needs VIEW.
+  return permission.some((key) => granted.includes(key.includes(":") ? key : `${key}:VIEW`));
 }
 
 /** Sidebar sections without the items the user may not see; empty disclosures and sections drop out. */

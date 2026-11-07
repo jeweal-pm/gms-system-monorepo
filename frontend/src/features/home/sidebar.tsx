@@ -2,19 +2,33 @@
 
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
+import { useApprovalTotal } from "@/features/approve-center/api";
+import { capCount } from "@/features/approve-center/model";
 import { GmsMark } from "./gms-mark";
 import { activeDisclosureIds, isNavItemActive, sidebarSections, sidebarToggleIcon, visibleSections, type NavLink } from "./navigation";
 import { SIDEBAR_ICON_SIZE, SidebarDisclosure, sidebarFocusRing, sidebarRow } from "./sidebar-disclosure";
 import { RailActionButton, type SidebarFocusRequest, type TakeSidebarFocusRequest } from "./sidebar-rail";
 import { useMenuAccess } from "./use-menu-access";
 
-function SidebarLink({ item, pathname, onNavigate }: Readonly<{ item: NavLink; pathname: string; onNavigate?: () => void }>) {
+/** C-AP-01: the Approve total pill (26 × 20, #E2F0F0 / #1C7B80), capped at 99+. */
+export function SidebarCountBadge({ count }: { count: number }) {
+  return (
+    <span className="ml-auto inline-flex h-5 min-w-[26px] shrink-0 items-center justify-center rounded-full bg-gms-count-badge px-1.5 text-gms-label font-medium text-gms-count-badge-text tabular-nums">
+      <span className="sr-only">, </span>
+      {capCount(count)}
+      <span className="sr-only"> waiting for approval</span>
+    </span>
+  );
+}
+
+function SidebarLink({ item, pathname, onNavigate, badge }: Readonly<{ item: NavLink; pathname: string; onNavigate?: () => void; badge?: number | null }>) {
   const active = isNavItemActive(item, pathname);
   const Icon = item.icon;
   return (
     <Link href={item.href} aria-current={active ? "page" : undefined} onNavigate={onNavigate} className={`${sidebarRow} ${active ? "bg-gms-nav-active font-semibold" : ""}`}>
       {Icon && <Icon aria-hidden size={SIDEBAR_ICON_SIZE} strokeWidth={1.5} className="shrink-0" />}
       <span className="truncate">{item.label}</span>
+      {badge ? <SidebarCountBadge count={badge} /> : null}
     </Link>
   );
 }
@@ -44,6 +58,8 @@ export function Sidebar({
   const rootRef = useRef<HTMLDivElement>(null);
   // Menus without VIEW are not shown at all (owner 2026-10-17).
   const sections = visibleSections(sidebarSections, useMenuAccess());
+  // approve-center FE-AP-003: pending total on the Approve item (no badge while loading, on error or at 0).
+  const approvalTotal = useApprovalTotal();
   const [openIds, setOpenIds] = useState(() => new Set([...rememberedOpenIds, ...activeDisclosureIds(pathname)]));
   const [openedForPath, setOpenedForPath] = useState(pathname);
 
@@ -107,7 +123,7 @@ export function Sidebar({
                   {section.items.map((item) => (
                     <li key={item.id}>
                       {item.kind === "link" ? (
-                        <SidebarLink item={item} pathname={pathname} onNavigate={onNavigate} />
+                        <SidebarLink item={item} pathname={pathname} onNavigate={onNavigate} badge={item.id === "approve" ? approvalTotal : undefined} />
                       ) : (
                         <SidebarDisclosure
                           item={item}
