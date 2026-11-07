@@ -19,7 +19,7 @@ const noop = () => undefined;
 const line = { ...emptyLine(), stone: "Ruby", stoneCode: "RU-1", pcs: "1", weightCt: "1.000", unitPrice: "100" };
 const RESERVE_KIND = customerStockConfig({
   noun: "reserve", title: "Reserve", newHref: "/pre-sale/reserve", detailHref: (id) => id, useApi: () => { throw new Error("not called"); },
-  mapSaveError: () => ({ fieldErrors: [], message: "" }), pickerTitle: "Add From Stock", approvedStock: "held", noStock: "held", notePlaceholder: "", noteHint: "", daybook: null,
+  mapSaveError: () => ({ fieldErrors: [], message: "" }), mapRestoreError: () => ({ message: "", refetch: false }), pickerTitle: "Add From Stock", approvedStock: "held", noStock: "held", notePlaceholder: "", noteHint: "", daybook: null,
 }).kind as DocumentKind;
 
 function table(kind: DocumentKind) {

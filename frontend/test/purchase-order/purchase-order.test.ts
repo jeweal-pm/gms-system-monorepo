@@ -58,7 +58,7 @@ function detail(status: "PENDING_APPROVAL" | "APPROVED" = "PENDING_APPROVAL"): P
       discount: { type: "NONE", value: "0" }, discountAmount: "0.00", amount: "1500.00", itemNote: "", photoIds: [P1], purchasedPcs: 0, purchasedWeightCt: "0.000",
     }],
     discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
-    totals, approvedAt: status === "APPROVED" ? "2026-11-04T03:00:00.000Z" : null, approvedBy: null, createdAt: "", createdBy: "", updatedAt: "",
+    totals, approvedAt: status === "APPROVED" ? "2026-11-04T03:00:00.000Z" : null, approvedBy: null, createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null,
   } as unknown as PurchaseOrderDetail;
 }
 

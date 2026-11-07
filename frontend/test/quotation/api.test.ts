@@ -47,7 +47,7 @@ const detail: QuotationDetail = {
   serviceCharges: [{ type: "SHIPPING", amount: "100.00" }],
   labor: null,
   totals: { subtotal: "72800.00", discountAmount: "100.00", priceBeforeTax: "72700.00", taxAmount: "5089.00", chargesAmount: "100.00", laborAmount: "0.00", grandTotal: "77889.00" },
-  statusReason: "Price too high", createdAt: "", createdBy: "u", updatedAt: "", approvedAt: null, approvedBy: null,
+  statusReason: "Price too high", createdAt: "", createdBy: "u", updatedAt: "", approvedAt: null, approvedBy: null, deletedAt: null, deletedBy: null,
 };
 
 afterEach(() => vi.unstubAllGlobals());

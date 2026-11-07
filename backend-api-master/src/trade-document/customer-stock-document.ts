@@ -9,7 +9,7 @@ import { Prisma } from "../generated/prisma/client";
 import { CHARGE_TYPES } from "../quotation/quotation.schemas";
 import { customerLineOptions, formatAddress, stoneLineOptions } from "../quotation/quotation.service";
 import { documentErrors, type DocumentErrors } from "./document-errors";
-import { TradeDocumentEngine, type LineHook, type PartyAdapter, type TradeDocumentInput } from "./document-engine";
+import { explainMiss, MISS_SELECT, TradeDocumentEngine, type LineHook, type PartyAdapter, type TradeDocumentInput, type MissRow } from "./document-engine";
 import type { MemoOutInput, MemoReceiveListInput, MemoReceiveStatus } from "./memo-schemas";
 import { takeFromMemoStock } from "./memo-stock.service";
 import { completeFromMemoStock } from "./stock-lines";
@@ -135,7 +135,7 @@ export type CustomerStockConfig = {
 
 type ApprovalDelegate = {
   updateMany(args: unknown): Promise<{ count: number }>;
-  findUnique(args: unknown): Promise<{ status: string } | null>;
+  findUnique(args: unknown): Promise<unknown>;
   findUniqueOrThrow(args: unknown): Promise<{ docNo: string; lines: { memoStockId: string | null; pcs: number; weightCt: Prisma.Decimal }[] }>;
 };
 
@@ -189,6 +189,10 @@ export class CustomerStockDocument {
   delete(actorId: string, id: string, expectedVersion: number) {
     return this.engine.delete(actorId, id, expectedVersion);
   }
+  /** transaction-soft-delete D6: a deleted document back to its unchanged status. */
+  restore(actorId: string, id: string, expectedVersion: number) {
+    return this.engine.restore(actorId, id, expectedVersion);
+  }
 
   /**
    * PENDING_APPROVAL → APPROVED, and each stock line's pcs / weight move from its Memo Stock item's pending into Reserve
@@ -203,14 +207,12 @@ export class CustomerStockDocument {
         const doc = (tx as unknown as Record<string, ApprovalDelegate>)[this.config.model];
         const now = new Date();
         const updated = await doc.updateMany({
-          where: { id, version: expectedVersion, status: PENDING },
+          where: { id, version: expectedVersion, status: PENDING, deletedAt: null },
           data: { status: APPROVED, approvedAt: now, approvedBy: actorId, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
         });
         if (updated.count === 0) {
-          const row = await doc.findUnique({ where: { id }, select: { status: true } });
-          if (!row) throw errors.notFound();
-          if (row.status !== PENDING) throw errors.statusInvalid();
-          throw errors.changed();
+          // D8: NOT_FOUND → DELETED → STATUS_INVALID → CHANGED.
+          explainMiss(errors, (await doc.findUnique({ where: { id }, select: MISS_SELECT })) as MissRow, [PENDING]);
         }
         const document = await doc.findUniqueOrThrow({
           where: { id },

@@ -34,8 +34,31 @@ type DocDelegate = {
   count(args: unknown): Promise<number>;
   create(args: unknown): Promise<unknown>;
   updateMany(args: unknown): Promise<{ count: number }>;
-  deleteMany(args: unknown): Promise<{ count: number }>;
+  /** One guarded `UPDATE … RETURNING` (soft delete / restore, ADR-0045 D4/D6). */
+  updateManyAndReturn(args: unknown): Promise<Row[]>;
 };
+
+/** The columns a guarded write reads to explain a miss (transaction-soft-delete D8). */
+export const MISS_SELECT = { status: true, version: true, deletedAt: true } as const;
+export type MissRow = { status: string; version: number; deletedAt: Date | null } | null;
+
+/**
+ * A guarded write (update / approve / delete) changed no row; throws the first match of D8:
+ * missing → NOT_FOUND, soft-deleted → `<CODE>_DELETED`, status outside `allowed` → STATUS_INVALID, else CHANGED.
+ */
+export function explainMiss(errors: Pick<DocumentErrors, "notFound" | "deleted" | "statusInvalid" | "changed">, row: MissRow, allowed: readonly string[]): never {
+  if (!row) throw errors.notFound();
+  if (row.deletedAt) throw errors.deleted();
+  if (!allowed.includes(row.status)) throw errors.statusInvalid();
+  throw errors.changed();
+}
+
+/** Restore changed no row (D8): missing → NOT_FOUND, not deleted → STATUS_INVALID, else (stale version) CHANGED. */
+export function explainRestoreMiss(errors: Pick<DocumentErrors, "notFound" | "statusInvalid" | "changed">, row: MissRow): never {
+  if (!row) throw errors.notFound();
+  if (!row.deletedAt) throw errors.statusInvalid();
+  throw errors.changed();
+}
 type ChildDelegate = { createMany(args: unknown): Promise<unknown>; deleteMany(args: unknown): Promise<unknown> };
 type Client = Tx | typeof prisma;
 
@@ -127,7 +150,11 @@ export const documentListFields = {
   from: z.iso.date().optional(),
   to: z.iso.date().optional(),
   cursor: z.string().max(200).nullish(),
+  /** Sent by tRPC useInfiniteQuery (Load more); ignored, as in the other paged lists. */
+  direction: z.enum(["forward", "backward"]).optional(),
   limit: z.number().int().min(1).max(50).default(50),
+  /** transaction-soft-delete D9: false (default) = not deleted, as before; true = deleted documents only. */
+  deleted: z.boolean().default(false),
 };
 export const documentListSchema = z.object(documentListFields).strict();
 /** `status` is accepted only by documents with more than one status (memo receive). */
@@ -136,6 +163,7 @@ export type DocumentListInput = z.output<typeof documentListSchema> & { status?:
 const cursorSchema = z.object({ d: z.iso.date(), c: z.iso.datetime(), i: z.uuid(), v: z.literal(1) }).strict();
 
 const money = (value: unknown) => (value as Dec).toFixed(2);
+const isoOrNull = (value: unknown) => (value instanceof Date ? value.toISOString() : null);
 const text = (value: unknown) => (value === null ? null : (value as Dec).toString());
 
 export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends Row = Row, Status extends string = "DRAFT"> {
@@ -158,6 +186,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
   async list(input: DocumentListInput) {
     const { party, errors } = this.config;
     const where: Row = {
+      deletedAt: input.deleted ? { not: null } : null,
       ...(input.partyId ? { [party.partyColumn]: input.partyId } : {}),
       ...(input.status ? { status: input.status } : {}),
       ...(input.from || input.to ? { docDate: { ...(input.from ? { gte: toDbDate(input.from) } : {}), ...(input.to ? { lte: toDbDate(input.to) } : {}) } } : {}),
@@ -179,7 +208,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
           where: { ...where, AND: and },
           orderBy: [{ docDate: "desc" }, { createdAt: "desc" }, { id: "desc" }],
           take: input.limit + 1,
-          select: { id: true, docNo: true, status: true, docDate: true, dueDate: true, [party.nameColumn]: true, currencyCode: true, grandTotal: true, createdAt: true, updatedAt: true },
+          select: { id: true, docNo: true, status: true, docDate: true, dueDate: true, [party.nameColumn]: true, currencyCode: true, grandTotal: true, createdAt: true, updatedAt: true, deletedAt: true },
         }),
         this.doc(prisma).count({ where }),
       ]);
@@ -196,6 +225,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
           currency: row.currencyCode as string,
           grandTotal: money(row.grandTotal),
           updatedAt: (row.updatedAt as Date).toISOString(),
+          deletedAt: isoOrNull(row.deletedAt),
         })),
         nextCursor: rows.length > input.limit && last
           ? encodeCursor(fromDbDate(last.docDate as Date), (last.createdAt as Date).toISOString(), last.id as string)
@@ -260,9 +290,11 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
       const saved = await prisma.$transaction(async (tx) => {
         const stored = await this.doc(tx).findUnique({
           where: { id },
-          select: { status: true, version: true, currencyCode: true, ...party.storedSelect, lines: { select: storedLineSelect } },
+          select: { status: true, version: true, deletedAt: true, currencyCode: true, ...party.storedSelect, lines: { select: storedLineSelect } },
         });
         if (!stored) throw errors.notFound();
+        // D8: a soft-deleted document is read-only until restored; reported before status and version.
+        if (stored.deletedAt) throw errors.deleted();
         // Status first: a document that left its editable status (memo receive APPROVED) reports that, not a stale version.
         if (!this.editable.includes(stored.status as string)) throw errors.statusInvalid();
         if (stored.version !== expectedVersion) throw errors.changed();
@@ -271,7 +303,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
         const header = this.headerData(input);
         const assigned = lineHook ? await lineHook.assign(tx, input, stored.lines as Row[]) : null;
         const result = await this.doc(tx).updateMany({
-          where: { id, version: expectedVersion, status: { in: [...this.editable] } },
+          where: { id, version: expectedVersion, status: { in: [...this.editable] }, deletedAt: null },
           data: { ...header, ...partyColumns, version: { increment: 1 }, updatedAt: new Date(), updatedBy: actorId },
         });
         if (result.count === 0) throw errors.changed();
@@ -287,22 +319,57 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
     }
   }
 
-  /** Only editable documents (drafts; memo receive PENDING_APPROVAL) can be deleted; the next save may reuse the latest number (Q-QT-03 rule). */
+  /**
+   * Soft delete (ADR-0045 D4): only editable documents (PENDING_APPROVAL drafts) in one guarded `UPDATE … RETURNING`
+   * that sets `deleted_at/by` and `version + 1`; status, lines, charges, photos and stock are untouched. The row keeps
+   * its Doc No., so the number is never reused (D5: `max + 1` still sees it).
+   */
   async delete(actorId: string, id: string, expectedVersion: number) {
     const { errors, event } = this.config;
+    let docNo: string;
     try {
-      const result = await this.doc(prisma).deleteMany({ where: { id, version: expectedVersion, status: { in: [...this.editable] } } });
-      if (result.count === 0) {
-        const row = await this.doc(prisma).findUnique({ where: { id }, select: { version: true, status: true } });
-        if (!row) throw errors.notFound();
-        if (!this.editable.includes(row.status as string)) throw errors.statusInvalid();
-        throw errors.changed();
-      }
+      const now = new Date();
+      const rows = await this.doc(prisma).updateManyAndReturn({
+        where: { id, version: expectedVersion, status: { in: [...this.editable] }, deletedAt: null },
+        data: { deletedAt: now, deletedBy: actorId, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
+        select: { docNo: true },
+      });
+      if (rows.length === 0) explainMiss(errors, await this.missRow(id), this.editable);
+      docNo = rows[0].docNo as string;
     } catch (error) {
       throw errors.map(error, "delete");
     }
-    this.logger.log({ event: `${event}.deleted`, actorId, id });
-    return { ok: true as const };
+    const version = expectedVersion + 1;
+    this.logger.log({ event: `${event}.deleted`, actorId, id, docNo, version });
+    return { ok: true as const, version };
+  }
+
+  /**
+   * Restore (D6/D7): a deleted document back to its unchanged status (editable again) in one guarded
+   * `UPDATE … RETURNING`; content is not re-checked (the next Save / Approve does that).
+   */
+  async restore(actorId: string, id: string, expectedVersion: number) {
+    const { errors, event } = this.config;
+    let restored: Row;
+    try {
+      const now = new Date();
+      const rows = await this.doc(prisma).updateManyAndReturn({
+        where: { id, version: expectedVersion, deletedAt: { not: null } },
+        data: { deletedAt: null, deletedBy: null, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
+        select: { docNo: true, status: true },
+      });
+      if (rows.length === 0) explainRestoreMiss(errors, await this.missRow(id));
+      restored = rows[0];
+    } catch (error) {
+      throw errors.map(error, "restore");
+    }
+    const version = expectedVersion + 1;
+    this.logger.log({ event: `${event}.restored`, actorId, id, docNo: restored.docNo as string, version });
+    return { id, version, status: restored.status as Status };
+  }
+
+  private async missRow(id: string): Promise<MissRow> {
+    return (await this.doc(prisma).findUnique({ where: { id }, select: MISS_SELECT })) as MissRow;
   }
 
   /** Document Setup row in effect on the doc date: prefix + separator + max + 1; none → plain 1, 2, 3 … */
@@ -483,6 +550,9 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
       createdAt: (row.createdAt as Date).toISOString(),
       createdBy: row.createdBy as string,
       updatedAt: (row.updatedAt as Date).toISOString(),
+      // D10: non-null = deleted, shown read-only.
+      deletedAt: isoOrNull(row.deletedAt),
+      deletedBy: (row.deletedBy as string | null | undefined) ?? null,
     };
   }
 

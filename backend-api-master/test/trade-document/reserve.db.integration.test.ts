@@ -163,7 +163,7 @@ describe.runIf(canRun)("IT-RS reserve From Stock on PostgreSQL", () => {
     // Saving holds nothing, so From Stock still offers the item.
     expect((await stock.list({ limit: 50 })).items.map((row) => row.id)).toContain(item.id);
     expect((await reserve.nextNumber("2026-11-02")).docNo).toEqual(expect.any(String));
-    expect((await reserve.list({ partyId: customer.id, status: "PENDING_APPROVAL", limit: 50 })).items.map((row) => row.id)).toContain(saved.id);
+    expect((await reserve.list({ partyId: customer.id, status: "PENDING_APPROVAL", limit: 50, deleted: false })).items.map((row) => row.id)).toContain(saved.id);
   });
 
   it("IT-RS-02 save rejects a missing item and more than pending with RESERVE_* / field errors", async () => {
@@ -188,7 +188,7 @@ describe.runIf(canRun)("IT-RS reserve From Stock on PostgreSQL", () => {
     expect(await failure(reserve.delete(ACTOR, saved.id, 2))).toMatchObject({ status: 409, code: "RESERVE_STATUS_INVALID" });
     // A pending reserve can still be deleted.
     const draft = await reserve.create(ACTOR, outInput([stockLine(item.id, 1, "0.5")]));
-    await expect(reserve.delete(ACTOR, draft.id, 1)).resolves.toEqual({ ok: true });
+    await expect(reserve.delete(ACTOR, draft.id, 1)).resolves.toEqual({ ok: true, version: 2 });
     expect(await bucketsOf(item.id)).toEqual({ pending: [4, "2.000"], reserved: [6, "3.000"] });
   });
 

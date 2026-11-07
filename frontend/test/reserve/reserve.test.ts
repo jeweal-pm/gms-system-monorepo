@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { FormProvider, useForm } from "react-hook-form";
 import { describe, expect, it } from "vitest";
 import { navigationHref, REAL_PAGE_HREFS } from "@/features/home/navigation";
-import { fromReserve, mapReserveSaveError, RESERVE_HREF, reserveHref, reserveLoadError, type ReserveDetail } from "@/features/reserve/api";
+import { fromReserve, mapReserveSaveError, RESERVE_HREF, reserveHref, reserveLoadError, reserveRestoreError, type ReserveDetail } from "@/features/reserve/api";
 import { canViewReserve } from "@/features/reserve/components/ReservePage";
 import { ItemTable } from "@/features/quotation/components/items/ItemTable";
 import { DocumentKindContext, QUOTATION_KIND, type DocumentKind } from "@/features/quotation/document-kind";
@@ -27,7 +27,7 @@ const stockItem: MemoStockItem = {
 const noop = () => undefined;
 const config = customerStockConfig({
   noun: "reserve", title: "Reserve", newHref: RESERVE_HREF, detailHref: reserveHref, useApi: () => { throw new Error("not called"); },
-  mapSaveError: mapReserveSaveError, pickerTitle: "Add From Stock", approvedStock: "held for the customer", noStock: "held",
+  mapSaveError: mapReserveSaveError, mapRestoreError: reserveRestoreError, pickerTitle: "Add From Stock", approvedStock: "held for the customer", noStock: "held",
   notePlaceholder: "", noteHint: "Printed on the reserve for the customer", daybook: null,
 });
 
@@ -81,7 +81,7 @@ describe("mapping (UT-RS-03/04)", () => {
       lines: [{ ...base, source: "STOCK" as const, stone: "Tourmaline", location: "Memo", pcs: 1, weightCt: "0.680", unitPrice: "5000.00", amount: "3400.00", memoStockId: STOCK, stockId: "260003", stockPendingPcs: 2, stockPendingWeightCt: "1.360" }],
       discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "3400.00", discountAmount: "0.00", priceBeforeTax: "3400.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "3400.00" },
-      approvedAt: "2026-11-02T03:00:00.000Z", approvedBy: "u", createdAt: "", createdBy: "", updatedAt: "",
+      approvedAt: "2026-11-02T03:00:00.000Z", approvedBy: "u", createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null,
     } satisfies ReserveDetail;
     expect(fromReserve(detail)).toMatchObject({
       docNo: "RS-1", status: "APPROVED", invoiceAddressId: "",
@@ -122,7 +122,7 @@ describe("From Stock only (UT-RS-06, owner 2026-11-02: \"Reserve ไม่มี
     expect(reserveTable).not.toContain("Add row");
     expect(reserveTable).toContain("Empty row · click to pick From Stock");
     expect(renderTable(QUOTATION_KIND)).toContain("Add row");
-    const memoOut = customerStockConfig({ noun: "memo out", title: "Memo Out", newHref: "/memo/memo-out", detailHref: (id: string) => id, useApi: () => { throw new Error("not called"); }, mapSaveError: mapReserveSaveError, pickerTitle: "From Stock", approvedStock: "cut from Memo Stock", noStock: "cut", notePlaceholder: "", noteHint: "", daybook: null });
+    const memoOut = customerStockConfig({ noun: "memo out", title: "Memo Out", newHref: "/memo/memo-out", detailHref: (id: string) => id, useApi: () => { throw new Error("not called"); }, mapSaveError: mapReserveSaveError, mapRestoreError: reserveRestoreError, pickerTitle: "From Stock", approvedStock: "cut from Memo Stock", noStock: "cut", notePlaceholder: "", noteHint: "", daybook: null });
     expect(memoOut.kind?.pickOnly).toBe(true);
     expect(renderTable(memoOut.kind!)).not.toContain("Add row");
   });

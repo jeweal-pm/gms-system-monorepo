@@ -3,7 +3,7 @@
 import { skipToken } from "@tanstack/react-query";
 import type { InferQueryLikeData } from "@trpc/react-query/shared";
 import { customerStockSaveError, fromCustomerStock, type toCustomerStockInput } from "@/features/trade-document/customer-stock";
-import { documentLoadError } from "@/features/trade-document/document-api";
+import { documentLoadError, daybookInput, daybookQueryOptions, mapDocumentRestoreError } from "@/features/trade-document/document-api";
 import type { DocumentApi } from "@/features/trade-document/document-form";
 import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
@@ -24,12 +24,16 @@ export const fromReserve = (detail: ReserveDetail) => fromCustomerStock(detail);
 export const mapReserveSaveError = customerStockSaveError("RESERVE", "reserve");
 export const reserveLoadError = (error: unknown) => documentLoadError(error, "RESERVE", "reserve", "reserves");
 
+/** transaction-soft-delete FE-SD-003: Restore errors (not deleted any more, changed, gone). */
+export const reserveRestoreError = (error: unknown) => mapDocumentRestoreError(error, "RESERVE", "reserve");
+
 export function useReserveDetail(id: string | null) {
   return masterTrpc.reserve.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient });
 }
 
+/** FE-SD-001: the daybook's active or deleted reserves, newest first, 50 a page; a new view starts on page one. */
 export function useReserveDaybook() {
-  return masterTrpc.reserve.list.useQuery({ limit: 50 }, { staleTime: 15_000, retry: retryTransient });
+  return masterTrpc.reserve.list.useInfiniteQuery(daybookInput(), daybookQueryOptions);
 }
 
 /** Options, number preview, writes and approval for the shared document form. */
@@ -42,6 +46,7 @@ export function useReserveApi(customerId: string | undefined, docDate: string, i
   const update = masterTrpc.reserve.update.useMutation(writes);
   const remove = masterTrpc.reserve.delete.useMutation(writes);
   const approve = masterTrpc.reserve.approve.useMutation(writes);
+  const restore = masterTrpc.reserve.restore.useMutation(writes);
   return {
     options: options.data,
     companyCurrency: options.data?.companyCurrency,
@@ -50,8 +55,9 @@ export function useReserveApi(customerId: string | undefined, docDate: string, i
     update: (args) => update.mutateAsync(args),
     remove: (args) => remove.mutateAsync(args),
     approve: (args) => approve.mutateAsync(args),
+    restore: (args) => restore.mutateAsync(args),
     invalidate: () =>
       Promise.all([utils.reserve.list.invalidate(), utils.reserve.get.invalidate(), utils.reserve.nextNumber.invalidate(), utils.memoStock.list.invalidate()]),
-    busy: create.isPending || update.isPending || remove.isPending || approve.isPending,
+    busy: create.isPending || update.isPending || remove.isPending || approve.isPending || restore.isPending,
   };
 }

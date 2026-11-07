@@ -1,9 +1,9 @@
 "use client";
 
 import { customerStockConfig } from "@/features/trade-document/customer-stock-config";
-import { DocumentDaybook, documentAccess, useDocumentAccess } from "@/features/trade-document/document-api";
+import { daybookLoadError, daybookState, deletedInfo, DocumentDaybook, documentAccess, useDocumentAccess } from "@/features/trade-document/document-api";
 import { DocumentForm } from "@/features/trade-document/document-form";
-import { fromReserve, mapReserveSaveError, RESERVE_HREF, reserveHref, reserveLoadError, useReserveApi, useReserveDaybook, useReserveDetail } from "../api";
+import { fromReserve, mapReserveSaveError, RESERVE_HREF, reserveHref, reserveLoadError, reserveRestoreError, useReserveApi, useReserveDaybook, useReserveDetail } from "../api";
 
 export { RESERVE_HREF };
 
@@ -18,12 +18,7 @@ function ReserveDaybook() {
     <DocumentDaybook
       plural="reserves"
       href={reserveHref}
-      state={{
-        isPending: daybook.isPending,
-        isError: daybook.isError,
-        errorMessage: daybook.error ? reserveLoadError(daybook.error) : undefined,
-        items: (daybook.data?.items ?? []).map((item) => ({ id: item.id, docNo: item.docNo, docDate: item.docDate, status: item.status, name: String(item.customerName ?? "") })),
-      }}
+      state={daybookState(daybook, (error) => daybookLoadError(error, "reserves"), (item) => String(item.customerName ?? ""))}
     />
   );
 }
@@ -41,6 +36,7 @@ const CONFIG = customerStockConfig({
   detailHref: reserveHref,
   useApi: useReserveApi,
   mapSaveError: mapReserveSaveError,
+  mapRestoreError: reserveRestoreError,
   pickerTitle: "Add From Stock",
   approvedStock: "held for the customer",
   noStock: "held",
@@ -67,5 +63,5 @@ export function EditReservePage({ id }: { id: string }) {
   if (!access || (access.view && detail.isPending)) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{DENIED}</p>;
   if (detail.isError || !detail.data) return <p className={message}>{detail.error ? reserveLoadError(detail.error) : "Reserve not found."}</p>;
-  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromReserve(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
+  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromReserve(detail.data)} deleted={deletedInfo(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
 }

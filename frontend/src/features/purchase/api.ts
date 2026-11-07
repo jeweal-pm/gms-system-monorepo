@@ -4,7 +4,7 @@ import { skipToken } from "@tanstack/react-query";
 import type { InferQueryLikeData } from "@trpc/react-query/shared";
 import { fromTradeDocument, toTradeDocumentInput, type TradeDocumentDetail } from "@/features/quotation/api";
 import { isFilledLine } from "@/features/quotation/schema";
-import { documentLoadError, mapDocumentSaveError } from "@/features/trade-document/document-api";
+import { documentLoadError, mapDocumentSaveError, daybookInput, daybookQueryOptions, mapDocumentRestoreError } from "@/features/trade-document/document-api";
 import type { DocumentApi, SaveOutcome } from "@/features/trade-document/document-form";
 import { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError, retryTransient } from "@/lib/trpc-error";
@@ -161,15 +161,18 @@ export function mapPurchaseSaveError(error: unknown): SaveOutcome {
 export const purchaseLoadError = (error: unknown) =>
   readDomainError(error).domainCode === "PURCHASE_NOT_FOUND" ? "Purchase not found." : documentLoadError(error, "PURCHASE", "purchase", "purchases");
 
+/** transaction-soft-delete FE-SD-003: Restore errors (not deleted any more, changed, gone). */
+export const purchaseRestoreError = (error: unknown) => mapDocumentRestoreError(error, "PURCHASE", "purchase");
+
 // ---- hooks ----
 
 export function usePurchaseDetail(id: string | null) {
   return masterTrpc.purchase.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient });
 }
 
-/** Daybook: the newest 50 purchases. */
+/** FE-SD-001: the daybook's active or deleted purchases, newest first, 50 a page; a new view starts on page one. */
 export function usePurchaseDaybook() {
-  return masterTrpc.purchase.list.useQuery({ limit: 50 }, { staleTime: 15_000, retry: retryTransient });
+  return masterTrpc.purchase.list.useInfiniteQuery(daybookInput(), daybookQueryOptions);
 }
 
 type MasterUtils = ReturnType<typeof masterTrpc.useUtils>;
@@ -190,6 +193,7 @@ export function usePurchaseApi(vendorId: string | undefined, docDate: string, is
   const update = masterTrpc.purchase.update.useMutation(writes);
   const remove = masterTrpc.purchase.delete.useMutation(writes);
   const approve = masterTrpc.purchase.approve.useMutation(writes);
+  const restore = masterTrpc.purchase.restore.useMutation(writes);
   return {
     options: options.data,
     companyCurrency: options.data?.companyCurrency,
@@ -198,7 +202,8 @@ export function usePurchaseApi(vendorId: string | undefined, docDate: string, is
     update: (args) => update.mutateAsync(args),
     remove: (args) => remove.mutateAsync(args),
     approve: (args) => approve.mutateAsync(args),
+    restore: (args) => restore.mutateAsync(args),
     invalidate: () => invalidateAfterPurchaseWrite(utils),
-    busy: create.isPending || update.isPending || remove.isPending || approve.isPending,
+    busy: create.isPending || update.isPending || remove.isPending || approve.isPending || restore.isPending,
   };
 }

@@ -81,7 +81,7 @@ describe("mapping (UT-MO-03)", () => {
       currency: "THB", exchangeRate: null, ref: "", documentNote: "", lines: [], discount: { type: "NONE", value: "0" },
       tax: { enabled: true, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "0.00", discountAmount: "0.00", priceBeforeTax: "0.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "0.00" },
-      approvedAt: null, approvedBy: null, createdAt: "", createdBy: "", updatedAt: "",
+      approvedAt: null, approvedBy: null, createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null,
     } satisfies MemoOutDetail;
     expect(fromMemoOut(detail)).toMatchObject({ docNo: "MO-2609001", version: 2, status: "PENDING_APPROVAL", customerId: ID, shippingAddressId: ID, invoiceAddressId: "" });
   });
@@ -131,7 +131,7 @@ describe("From Stock rows (UT-MO-201…205, memo-out rev 2)", () => {
       ],
       discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "77800.00", discountAmount: "0.00", priceBeforeTax: "77800.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "77800.00" },
-      approvedAt: "2026-10-31T03:00:00.000Z", approvedBy: "u", createdAt: "", createdBy: "", updatedAt: "",
+      approvedAt: "2026-10-31T03:00:00.000Z", approvedBy: "u", createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null,
     } satisfies MemoOutDetail;
     const loaded = fromMemoOut(detail);
     expect(loaded.status).toBe("APPROVED");

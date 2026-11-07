@@ -6,6 +6,8 @@ import { isPrismaUnavailable, prismaCode } from "../common/persistence";
 export const quotationNotFound = () => partnerException("QUOTATION_NOT_FOUND", HttpStatus.NOT_FOUND);
 export const quotationChanged = () => partnerException("QUOTATION_CHANGED", HttpStatus.CONFLICT);
 export const quotationStatusInvalid = () => partnerException("QUOTATION_STATUS_INVALID", HttpStatus.CONFLICT);
+/** transaction-soft-delete D8: a write (other than restore) on a soft-deleted quotation. */
+export const quotationDeleted = () => partnerException("QUOTATION_DELETED", HttpStatus.CONFLICT);
 export const quotationReferenceInvalid = (fieldErrors: FieldError[]) => partnerException("QUOTATION_REFERENCE_INVALID", HttpStatus.UNPROCESSABLE_ENTITY, fieldErrors);
 export const quotationPhotoInvalid = (path: string) => partnerException("QUOTATION_PHOTO_INVALID", HttpStatus.UNPROCESSABLE_ENTITY, [{ path, code: "invalid_photo" }]);
 

@@ -15,6 +15,7 @@ import {
   type CustomerStockOptions,
 } from "./customer-stock";
 import { APPROVAL_STATUS_LABELS, type DocumentApi, type DocumentFormConfig, type SaveOutcome } from "./document-form";
+import type { RestoreOutcome } from "./document-api";
 import { MemoStockModal } from "./memo-stock-modal";
 
 type CustomerStockInput = ReturnType<typeof toCustomerStockInput>;
@@ -29,6 +30,8 @@ export type CustomerStockPageOptions = {
   detailHref: (id: string) => string;
   useApi: (customerId: string | undefined, docDate: string, isNew: boolean) => DocumentApi<CustomerStockInput, CustomerStockOptions>;
   mapSaveError: (error: unknown) => SaveOutcome;
+  /** `<doc>.restore` errors (transaction-soft-delete). */
+  mapRestoreError: (error: unknown) => RestoreOutcome;
   /** The From Stock dialog title (Reserve design: "Add From Stock"). */
   pickerTitle: string;
   /** What approval does to the stock rows, e.g. "cut from Memo Stock" / "held for the customer". */
@@ -74,6 +77,7 @@ export function customerStockConfig(options: CustomerStockPageOptions): Document
       </QuotationOptionsContext.Provider>
     ),
     mapSaveError: options.mapSaveError,
+    mapRestoreError: options.mapRestoreError,
     pickLabel: "From Stock",
     pickHint: "Pick stones from stock (Memo Stock)",
     kind,

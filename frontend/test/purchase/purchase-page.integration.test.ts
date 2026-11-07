@@ -8,6 +8,7 @@ import {
   emptyPurchase,
   fromPurchase,
   mapPurchaseSaveError,
+  purchaseRestoreError,
   memoStockToPurchaseLine,
   pickedSourceKeys,
   purchaseOrderLineToPurchaseLine,
@@ -18,6 +19,7 @@ import {
 import { EditPurchasePage, MemoStockPickStep, PURCHASE_CONFIG } from "@/features/purchase/components/PurchasePage";
 import { MemoStockPicker, pickerInput, PurchaseOrderPicker } from "@/features/purchase/components/purchase-pickers";
 import { todayIso } from "@/features/quotation/lib/format";
+import { daybookInput } from "@/features/trade-document/document-api";
 import { MemoStockModal } from "@/features/trade-document/memo-stock-modal";
 import { memoStockInput } from "@/features/trade-document/memo-stock-api";
 import { authTrpc, createAuthTrpcClient } from "@/lib/auth-trpc";
@@ -165,6 +167,49 @@ describe("IT-PU-02 purchase page composition (rev 2, wired)", () => {
     expect(html).toContain("Approved");
     expect(button(html, "lucide-circle-check")).toBe("");
     expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>).)*>Delete<\/button>/);
+  });
+
+  it("IT-SD-F01 a soft-deleted purchase: banner, every write control off, Restore only with DELETE", () => {
+    const deletedPurchase = savedPurchase({ version: 4, deletedAt: "2026-11-06T04:20:33.572Z", deletedBy: "someone-else" });
+    const queryClient = seeded(ALL);
+    queryClient.setQueryData(getQueryKey(masterTrpc.purchase.get, { id: ID }, "query"), deletedPurchase);
+    const html = render(queryClient, createElement(EditPurchasePage, { id: ID }));
+    expect(html).toContain("Deleted by another user on 06/11/2026 11:20");
+    expect(html).toContain('role="status" tabindex="0"');
+    expect(button(html, "Restore")).not.toBe("");
+    expect(button(html, "lucide-circle-check")).toBe("");
+    expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>).)*> Edit<\/button>/);
+    expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>).)*>Delete<\/button>/);
+    expect(button(html, "Save")).toContain('disabled=""');
+    // Header fields, rows and the note sit in disabled fieldsets; both item pickers are disabled.
+    expect(html).not.toMatch(/<fieldset(?![^>]*disabled)[^>]*>/);
+    expect(button(html, "Memo Stock")).toContain('disabled=""');
+    expect(button(html, "Purchase Order")).toContain('disabled=""');
+
+    const viewer = seeded(["purchase:VIEW", "purchase:EDIT"]);
+    viewer.setQueryData(getQueryKey(masterTrpc.purchase.get, { id: ID }, "query"), deletedPurchase);
+    expect(button(render(viewer, createElement(EditPurchasePage, { id: ID })), "Restore")).toBe("");
+  });
+});
+
+describe("IT-SD-F02 restore and the deleted daybook through the real link (FE-SD-001/003)", () => {
+  it("restore → POST purchase.restore with { id, expectedVersion } and CSRF; STATUS_INVALID maps to \"no longer deleted\"", async () => {
+    respond = (path) => (path === "purchase.restore" ? ok({ id: ID, version: 5, status: "PENDING_APPROVAL" }) : ok(null));
+    const { api } = probe(seeded(ALL));
+    await expect(api.restore({ id: ID, expectedVersion: 4 })).resolves.toEqual({ id: ID, version: 5, status: "PENDING_APPROVAL" });
+    expect(calls).toEqual([{ path: "purchase.restore", method: "POST", input: { id: ID, expectedVersion: 4 }, csrf: "1" }]);
+    respond = () => fail(409, "CONFLICT", "PURCHASE_STATUS_INVALID");
+    const error = await api.restore({ id: ID, expectedVersion: 5 }).catch((caught: unknown) => caught);
+    expect(purchaseRestoreError(error)).toEqual({ message: "This purchase is no longer deleted.", refetch: true });
+  });
+
+  it("the daybook asks list without deleted (active only) and no cursor", async () => {
+    respond = (_path, input) => ok({ items: [], nextCursor: (input as { cursor?: string }).cursor ? null : "c2", total: 1 });
+    const { utils } = probe(seeded(ALL));
+    await utils.purchase.list.fetchInfinite(daybookInput());
+    expect(calls[0]).toMatchObject({ path: "purchase.list", method: "GET", input: { limit: 50 } });
+    expect(calls[0]?.input).not.toHaveProperty("deleted");
+    expect(calls[0]?.input).not.toHaveProperty("cursor");
   });
 });
 

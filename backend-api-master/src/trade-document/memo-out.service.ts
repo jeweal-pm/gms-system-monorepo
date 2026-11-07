@@ -45,6 +45,10 @@ export class MemoOutService {
   delete(actorId: string, id: string, expectedVersion: number) {
     return memoOut.delete(actorId, id, expectedVersion);
   }
+  /** transaction-soft-delete D6: a deleted document back to its unchanged status. */
+  restore(actorId: string, id: string, expectedVersion: number) {
+    return memoOut.restore(actorId, id, expectedVersion);
+  }
   approve(actorId: string, id: string, expectedVersion: number) {
     return memoOut.approve(actorId, id, expectedVersion);
   }

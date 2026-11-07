@@ -1,7 +1,7 @@
 "use client";
 
 import { useFormContext } from "react-hook-form";
-import { DocumentDaybook, useDocumentAccess } from "@/features/trade-document/document-api";
+import { daybookLoadError, daybookState, deletedInfo, DocumentDaybook, useDocumentAccess } from "@/features/trade-document/document-api";
 import { APPROVAL_STATUS_LABELS, DocumentForm, type DocumentFormConfig } from "@/features/trade-document/document-form";
 import { returnItemTable } from "@/features/trade-document/return-item-table";
 import { VendorDocumentDetails, VendorDocumentInfoForm } from "@/features/trade-document/vendor-info-form";
@@ -12,6 +12,7 @@ import {
   MEMO_RETURN_HREF,
   MEMO_RETURN_NOTE_MAX,
   mapMemoReturnSaveError,
+  memoReturnRestoreError,
   memoReturnHref,
   memoReturnLoadError,
   memoReturnSchema,
@@ -48,12 +49,7 @@ function MemoReturnDaybook() {
     <DocumentDaybook
       plural="memo returns"
       href={memoReturnHref}
-      state={{
-        isPending: daybook.isPending,
-        isError: daybook.isError,
-        errorMessage: daybook.error ? memoReturnLoadError(daybook.error) : undefined,
-        items: (daybook.data?.items ?? []).map((item) => ({ id: item.id, docNo: item.docNo, docDate: item.docDate, status: item.status, name: String(item.vendorName ?? "") })),
-      }}
+      state={daybookState(daybook, (error) => daybookLoadError(error, "memo returns"), (item) => String(item.vendorName ?? ""))}
     />
   );
 }
@@ -77,6 +73,7 @@ const CONFIG: DocumentFormConfig<MemoReturnFormValues, MemoReturnInput, MemoRetu
   header: ({ options }) => <MemoReturnInfoForm options={options} />,
   viewHeader: ({ values, options }) => <VendorDocumentDetails title="Memo Return Details" values={values} options={options} />,
   mapSaveError: mapMemoReturnSaveError,
+  mapRestoreError: memoReturnRestoreError,
   pickLabel: "Memo Stock",
   pickHint: "Pick stones still out on memo from this vendor",
   emptyRowText: "Empty row · click to pick from Memo Stock",
@@ -128,5 +125,5 @@ export function EditMemoReturnPage({ id }: { id: string }) {
   if (!access || (access.view && detail.isPending)) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{DENIED}</p>;
   if (detail.isError || !detail.data) return <p className={message}>{detail.error ? memoReturnLoadError(detail.error) : "Memo return not found."}</p>;
-  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromMemoReturn(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
+  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromMemoReturn(detail.data)} deleted={deletedInfo(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
 }

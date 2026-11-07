@@ -42,6 +42,7 @@ export function QuotationHeader({
   statusLabels = STATUS_LABEL,
   extraActions,
   hideEditDelete = false,
+  hideDelete = false,
 }: {
   docNo: string;
   isPreview: boolean;
@@ -64,6 +65,8 @@ export function QuotationHeader({
   extraActions?: ReactNode;
   /** Hides Edit and Delete (a read-only Approved Memo Receive, rev 3). Quotation keeps both. */
   hideEditDelete?: boolean;
+  /** Hides only Delete (a Quotation past approval can't be deleted, transaction-soft-delete OQ-1). */
+  hideDelete?: boolean;
 }) {
   const editing = mode === "edit";
   const badge = status ? statusLabels[status] : undefined;
@@ -123,9 +126,11 @@ export function QuotationHeader({
               <Button variant="primary" onClick={actions.onEdit} disabled={editing || !canEdit} className="min-w-24">
                 <Pencil className="size-4" /> Edit
               </Button>
-              <Button variant="danger" onClick={actions.onDelete} disabled={editing || !canDelete || saving} className="min-w-24">
-                <Trash2 className="size-4" /> Delete
-              </Button>
+              {!hideDelete && (
+                <Button variant="danger" onClick={actions.onDelete} disabled={editing || !canDelete || saving} className="min-w-24">
+                  <Trash2 className="size-4" /> Delete
+                </Button>
+              )}
             </>
           )}
           {extraActions}

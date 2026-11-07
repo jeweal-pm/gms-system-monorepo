@@ -149,7 +149,7 @@ describe("mapping and errors (UT-MRT-05/06)", () => {
       }],
       discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "40320.00", discountAmount: "0.00", priceBeforeTax: "40320.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "40320.00" },
-      approvedAt: null, approvedBy: null, createdAt: "", createdBy: "", updatedAt: "",
+      approvedAt: null, approvedBy: null, createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null,
     } satisfies MemoReturnDetail;
     expect(fromMemoReturn(detail)).toMatchObject({
       docNo: "MRT-1", version: 2, status: "PENDING_APPROVAL", vendorId: ID,

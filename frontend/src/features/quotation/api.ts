@@ -7,6 +7,7 @@ import type { InferQueryLikeData } from "@trpc/react-query/shared";
 import { authTrpc } from "@/lib/auth-trpc";
 import { masterTrpc } from "@/lib/master-trpc";
 import { isCallerLicenseCode, readDomainError, retryTransient } from "@/lib/trpc-error";
+import { daybookInput, daybookQueryOptions, deletedMessage, mapDocumentRestoreError } from "@/features/trade-document/document-api";
 import { isFilledLine, type QuotationFormValues, type QuotationLine } from "./schema";
 
 export type QuotationDetail = InferQueryLikeData<typeof masterTrpc.quotation.get>;
@@ -32,6 +33,10 @@ export function useQuotationAccess(): QuotationAccess | undefined {
 /** Edit/Submit are allowed only before approval (SA-QT-03). */
 /** Quotation has no approval step (owner 2026-10-27): every saved, non-cancelled quotation can be edited or deleted. */
 export const isEditableStatus = (status: QuotationStatus | undefined) => status !== undefined && status !== "CANCELLED";
+
+/** transaction-soft-delete OQ-1 / D2: only a quotation before approval can be deleted (every quotation created today is APPROVED). */
+export const DELETABLE_QUOTATION_STATUSES: readonly QuotationStatus[] = ["DRAFT", "PENDING_APPROVAL"];
+export const isDeletableStatus = (status: QuotationStatus | undefined) => status !== undefined && DELETABLE_QUOTATION_STATUSES.includes(status);
 
 // ---- form ↔ contract ----
 
@@ -195,9 +200,9 @@ export function useNextNumber(docDate: string, enabled: boolean) {
   return masterTrpc.quotation.nextNumber.useQuery(enabled && /^\d{4}-\d{2}-\d{2}$/.test(docDate) ? { docDate } : skipToken, { staleTime: 10_000, retry: retryTransient });
 }
 
-/** Daybook: newest first, no cancelled documents (owner 2026-10-26, Q-QT-06). */
+/** Daybook: newest first, no cancelled documents (owner 2026-10-26, Q-QT-06); active or deleted (FE-SD-001), 50 a page. */
 export function useDaybook() {
-  return masterTrpc.quotation.list.useQuery({ limit: 50 }, { staleTime: 15_000, retry: retryTransient });
+  return masterTrpc.quotation.list.useInfiniteQuery(daybookInput(), daybookQueryOptions);
 }
 
 export function useQuotationMutations() {
@@ -207,6 +212,7 @@ export function useQuotationMutations() {
     create: masterTrpc.quotation.create.useMutation(options),
     update: masterTrpc.quotation.update.useMutation(options),
     remove: masterTrpc.quotation.delete.useMutation(options),
+    restore: masterTrpc.quotation.restore.useMutation(options),
     invalidate: () => Promise.all([utils.quotation.list.invalidate(), utils.quotation.get.invalidate(), utils.quotation.nextNumber.invalidate()]),
   };
 }
@@ -250,7 +256,8 @@ export async function uploadLinePhoto(route: string, file: File): Promise<string
 // ---- errors (api-contract.md "Errors") ----
 
 export type QuotationField = "docDate" | "dueDate" | "customerId" | "shippingAddressId" | "invoiceAddressId" | "currency" | "exchangeRate" | "ref" | "documentNote" | "lines";
-export type SaveOutcome = { fieldErrors: { name: QuotationField; message: string }[]; message: string; stale?: boolean; recheckAccess?: boolean };
+/** `deleted`: deleted elsewhere (`QUOTATION_DELETED`); reload it read-only. */
+export type SaveOutcome = { fieldErrors: { name: QuotationField; message: string }[]; message: string; stale?: boolean; recheckAccess?: boolean; deleted?: boolean };
 
 const HEADER_FIELDS = new Set<string>(["docDate", "dueDate", "customerId", "shippingAddressId", "invoiceAddressId", "currency", "exchangeRate", "ref", "documentNote"]);
 
@@ -267,6 +274,8 @@ export function mapSaveError(error: unknown): SaveOutcome {
       return { fieldErrors: onFields("Choose an active option"), message: stockMessage ?? "A selected customer, address or stone code is no longer available." };
     case "QUOTATION_PHOTO_INVALID":
       return { fieldErrors: onFields("Check the photos"), message: "A photo couldn't be used. Remove it and add it again." };
+    case "QUOTATION_DELETED":
+      return { fieldErrors: [], message: deletedMessage("quotation"), stale: true, deleted: true };
     case "QUOTATION_CHANGED":
       return { fieldErrors: [], message: "Someone else changed this quotation. Refresh to see the latest.", stale: true };
     case "QUOTATION_STATUS_INVALID":
@@ -308,3 +317,6 @@ export function loadErrorMessage(error: unknown): string {
   return "Couldn't load this quotation. Try again.";
 }
 
+
+/** transaction-soft-delete FE-SD-003: Restore errors (not deleted any more, changed, gone). */
+export const quotationRestoreError = (error: unknown) => mapDocumentRestoreError(error, "QUOTATION", "quotation");

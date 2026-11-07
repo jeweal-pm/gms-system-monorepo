@@ -67,7 +67,7 @@ function detail(status: "PENDING_APPROVAL" | "APPROVED" = "PENDING_APPROVAL"): M
     currency: "THB", exchangeRate: null, ref: "", documentNote: "",
     lines: [detailLine(LINE_A, "260001", "Ruby"), detailLine(LINE_B, "260002", "Sapphire")],
     discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
-    totals, approvedAt: status === "APPROVED" ? "2026-10-29T03:00:00.000Z" : null, approvedBy: null,
+    totals, approvedAt: status === "APPROVED" ? "2026-10-29T03:00:00.000Z" : null, approvedBy: null, deletedAt: null, deletedBy: null,
     createdAt: "", createdBy: "", updatedAt: "",
   } as unknown as MemoReceiveDetail;
 }

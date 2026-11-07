@@ -5,7 +5,7 @@ import { useFormContext } from "react-hook-form";
 import { ItemTable } from "@/features/quotation/components/items/ItemTable";
 import { Toast } from "@/features/quotation/components/ui";
 import { QUOTATION_KIND, type DocumentKind } from "@/features/quotation/document-kind";
-import { DocumentDaybook, documentAccess, useDocumentAccess } from "@/features/trade-document/document-api";
+import { daybookLoadError, daybookState, deletedInfo, DocumentDaybook, documentAccess, useDocumentAccess } from "@/features/trade-document/document-api";
 import { APPROVAL_STATUS_LABELS, DocumentForm, type DocumentFormConfig } from "@/features/trade-document/document-form";
 import { VendorDocumentInfoForm } from "@/features/trade-document/vendor-info-form";
 import {
@@ -15,6 +15,7 @@ import {
   findMergePairs,
   fromPurchase,
   mapPurchaseSaveError,
+  purchaseRestoreError,
   memoStockToPurchaseLine,
   pickedSourceKeys,
   PURCHASE_HREF,
@@ -163,12 +164,7 @@ function PurchaseDaybook() {
     <DocumentDaybook
       plural="purchases"
       href={purchaseHref}
-      state={{
-        isPending: daybook.isPending,
-        isError: daybook.isError,
-        errorMessage: daybook.error ? purchaseLoadError(daybook.error) : undefined,
-        items: (daybook.data?.items ?? []).map((item) => ({ id: item.id, docNo: item.docNo, docDate: item.docDate, status: item.status, name: String(item.vendorName ?? "") })),
-      }}
+      state={daybookState(daybook, (error) => daybookLoadError(error, "purchases"), (item) => String(item.vendorName ?? ""))}
     />
   );
 }
@@ -190,6 +186,7 @@ export const PURCHASE_CONFIG: DocumentFormConfig<PurchaseFormValues, PurchaseInp
   partyId: (values) => values?.vendorId,
   header: ({ options }) => <PurchaseInfoForm options={options} />,
   mapSaveError: mapPurchaseSaveError,
+  mapRestoreError: purchaseRestoreError,
   pickLabel: "Memo Stock",
   pickHint: "Pick stones on memo from this vendor",
   picker: {
@@ -248,5 +245,5 @@ export function EditPurchasePage({ id }: { id: string }) {
   if (!access || (access.view && detail.isPending)) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{PURCHASE_DENIED}</p>;
   if (detail.isError || !detail.data) return <p className={message}>{detail.error ? purchaseLoadError(detail.error) : "Purchase not found."}</p>;
-  return <DocumentForm key={`${id}:${detail.data.version}`} config={PURCHASE_CONFIG} initial={fromPurchase(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
+  return <DocumentForm key={`${id}:${detail.data.version}`} config={PURCHASE_CONFIG} initial={fromPurchase(detail.data)} deleted={deletedInfo(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
 }

@@ -135,7 +135,7 @@ describe.runIf(canRun)("IT-PO purchase order on PostgreSQL", () => {
     const plain = await service.create(ACTOR, input(vendor, [line()], { docDate: "2025-06-01", dueDate: "2025-06-30" }));
     expect(plain.docNo).toMatch(/^\d+$/);
     expect((await service.nextNumber("2026-11-04")).docNo).toMatch(/^PO-\d+$/);
-    const listed = await service.list({ partyId: vendor.id, status: "PENDING_APPROVAL", limit: 50 });
+    const listed = await service.list({ partyId: vendor.id, status: "PENDING_APPROVAL", limit: 50, deleted: false });
     expect(listed.items.map((item) => item.id)).toEqual(expect.arrayContaining([result.id, plain.id]));
     expect(listed.items[0]).toMatchObject({ status: "PENDING_APPROVAL", vendorName: "PO IT Vendor" });
 
@@ -144,8 +144,9 @@ describe.runIf(canRun)("IT-PO purchase order on PostgreSQL", () => {
     expect((await service.get(result.id)).lines.map((entry) => [entry.location, entry.pcs])).toEqual([["Safe B", 3], ["Safe A", 2]]);
     expect(await failure(service.update(ACTOR, result.id, 1, input(vendor, [line()])))).toMatchObject({ status: 409, code: "PURCHASE_ORDER_CHANGED" });
     expect(await failure(service.delete(ACTOR, plain.id, 9))).toMatchObject({ status: 409, code: "PURCHASE_ORDER_CHANGED" });
-    await service.delete(ACTOR, plain.id, 1);
-    expect(await failure(service.get(plain.id))).toMatchObject({ status: 404, code: "PURCHASE_ORDER_NOT_FOUND" });
+    await expect(service.delete(ACTOR, plain.id, 1)).resolves.toEqual({ ok: true, version: 2 });
+    // transaction-soft-delete (ADR-0045 D4/D10): kept and readable, marked deleted.
+    expect(await service.get(plain.id)).toMatchObject({ status: "PENDING_APPROVAL", deletedBy: ACTOR });
     expect(await failure(service.create(ACTOR, input(vendor, [line()], { vendorId: randomUUID() })))).toMatchObject({ status: 422, code: "PURCHASE_ORDER_REFERENCE_INVALID" });
   });
 
@@ -163,7 +164,7 @@ describe.runIf(canRun)("IT-PO purchase order on PostgreSQL", () => {
     expect(await failure(service.update(ACTOR, result.id, 2, input(vendor, [line()])))).toMatchObject({ status: 409, code: "PURCHASE_ORDER_STATUS_INVALID" });
     expect(await failure(service.delete(ACTOR, result.id, 2))).toMatchObject({ status: 409, code: "PURCHASE_ORDER_STATUS_INVALID" });
     expect(await failure(service.approve(ACTOR, randomUUID(), 1))).toMatchObject({ status: 404, code: "PURCHASE_ORDER_NOT_FOUND" });
-    expect((await service.list({ partyId: vendor.id, status: "APPROVED", limit: 50 })).items.map((item) => item.id)).toContain(result.id);
+    expect((await service.list({ partyId: vendor.id, status: "APPROVED", limit: 50, deleted: false })).items.map((item) => item.id)).toContain(result.id);
 
     // The purchased CHECK keeps purchased ≤ ordered for the future Purchase writer.
     const lineId = (await prisma.purchaseOrderLine.findFirstOrThrow({ where: { purchaseOrderId: result.id }, select: { id: true } })).id;

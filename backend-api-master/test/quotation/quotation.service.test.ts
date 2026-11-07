@@ -30,6 +30,9 @@ const db = vi.hoisted(() => ({
   charges: [] as Row[],
   findManyArgs: [] as Row[],
   deletes: [] as Row[],
+  restoredStatus: "DRAFT",
+  listRows: [] as Row[],
+  countArgs: [] as Row[],
 }));
 
 vi.mock("@gms/storage", () => ({
@@ -69,9 +72,10 @@ vi.mock("../../src/database/prisma-client", () => {
       create: vi.fn(async ({ data }: { data: Row }) => { db.created.push(data); return data; }),
       findUnique: vi.fn(async () => db.stored),
       updateMany: vi.fn(async (args: Row) => { db.updates.push(args); return { count: db.writeCount }; }),
-      deleteMany: vi.fn(async (args: Row) => { db.deletes.push(args); return { count: db.writeCount }; }),
-      findMany: vi.fn(async (args: Row) => { db.findManyArgs.push(args); return []; }),
-      count: vi.fn(async () => 0),
+      // Soft delete / restore (ADR-0045): one guarded UPDATE … RETURNING.
+      updateManyAndReturn: vi.fn(async (args: Row) => { db.deletes.push(args); return db.writeCount ? [{ docNo: "QT-26001", status: db.restoredStatus }] : []; }),
+      findMany: vi.fn(async (args: Row) => { db.findManyArgs.push(args); return db.listRows; }),
+      count: vi.fn(async (args: Row) => { db.countArgs.push(args); return db.listRows.length; }),
     },
     quotationLine: {
       createMany: vi.fn(async ({ data }: { data: Row[] }) => { db.lines.push(...data); return { count: data.length }; }),
@@ -128,7 +132,7 @@ beforeEach(() => {
     companyCurrency: "THB",
     stored: null,
     writeCount: 1,
-    rawSql: [], created: [], updates: [], lines: [], linePhotos: [], charges: [], findManyArgs: [], deletes: [],
+    rawSql: [], created: [], updates: [], lines: [], linePhotos: [], charges: [], findManyArgs: [], deletes: [], restoredStatus: "DRAFT", listRows: [], countArgs: [],
   });
 });
 
@@ -140,7 +144,7 @@ describe("numbering (SA-QT-04, owner Q-QT-03)", () => {
     expect(db.rawSql[0]).toContain("FOR UPDATE");
   });
 
-  it("UT-QT-B02 later numbers are the highest stored + 1 (a deleted latest number is reused)", async () => {
+  it("UT-QT-B02 later numbers are the highest stored + 1 (a soft-deleted number stays taken, ADR-0045 D5)", async () => {
     db.maxRunning = 26004;
     await expect(service.create("actor", input())).resolves.toMatchObject({ docNo: "QT-26005" });
   });
@@ -265,26 +269,84 @@ describe("edit and status guards (SA-QT-03/09)", () => {
     expect(await failure(service.cancel("a", QT, 1, "x"))).toMatchObject({ code: "QUOTATION_NOT_FOUND" });
   });
 
-  it("UT-QT-B19 delete is for non-cancelled quotations at the expected version", async () => {
-    await expect(service.delete("a", QT, 1)).resolves.toEqual({ ok: true });
-    expect(db.deletes[0]).toEqual({ where: { id: QT, version: 1, status: { in: ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED"] } } });
+  it("UT-QT-B19 / UT-SD-08 delete is a soft delete of a DRAFT / PENDING_APPROVAL quotation at the expected version (OQ-1)", async () => {
+    await expect(service.delete("actor", QT, 1)).resolves.toEqual({ ok: true, version: 2 });
+    expect(db.deletes[0]).toMatchObject({
+      where: { id: QT, version: 1, status: { in: ["DRAFT", "PENDING_APPROVAL"] }, deletedAt: null },
+      data: { deletedBy: "actor", version: { increment: 1 }, updatedBy: "actor" },
+      select: { docNo: true },
+    });
+    expect((db.deletes[0].data as Row).deletedAt).toBeInstanceOf(Date);
     db.writeCount = 0;
-    db.stored = { version: 1 };
-    expect(await failure(service.delete("a", QT, 1))).toMatchObject({ code: "QUOTATION_STATUS_INVALID" });
+    // APPROVED / REJECTED / CANCELLED at the current version → STATUS_INVALID (D2).
+    db.stored = { version: 1, deletedAt: null };
+    expect(await failure(service.delete("a", QT, 1))).toMatchObject({ status: 409, code: "QUOTATION_STATUS_INVALID" });
+    db.stored = { version: 3, deletedAt: null };
+    expect(await failure(service.delete("a", QT, 1))).toMatchObject({ status: 409, code: "QUOTATION_CHANGED" });
+    db.stored = { version: 2, deletedAt: new Date() };
+    expect(await failure(service.delete("a", QT, 1))).toMatchObject({ status: 409, code: "QUOTATION_DELETED" });
+    db.stored = null;
+    expect(await failure(service.delete("a", QT, 1))).toMatchObject({ status: 404, code: "QUOTATION_NOT_FOUND" });
+  });
+
+  it("UT-SD-08 restore clears both columns at the expected version and keeps the status; misses explain why", async () => {
+    db.restoredStatus = "PENDING_APPROVAL";
+    await expect(service.restore("restorer", QT, 2)).resolves.toEqual({ id: QT, version: 3, status: "PENDING_APPROVAL" });
+    expect(db.deletes[0]).toMatchObject({
+      where: { id: QT, version: 2, deletedAt: { not: null } },
+      data: { deletedAt: null, deletedBy: null, version: { increment: 1 }, updatedBy: "restorer" },
+    });
+    expect(db.deletes[0].data).not.toHaveProperty("status");
+    db.writeCount = 0;
+    db.stored = null;
+    expect(await failure(service.restore("a", QT, 2))).toMatchObject({ status: 404, code: "QUOTATION_NOT_FOUND" });
+    db.stored = { deletedAt: null };
+    expect(await failure(service.restore("a", QT, 2))).toMatchObject({ status: 409, code: "QUOTATION_STATUS_INVALID" });
+    db.stored = { deletedAt: new Date() };
+    expect(await failure(service.restore("a", QT, 2))).toMatchObject({ status: 409, code: "QUOTATION_CHANGED" });
+  });
+
+  it("UT-SD-09 update and submit/approve/reject/cancel refuse a deleted quotation with QUOTATION_DELETED", async () => {
+    db.stored = { ...stored("DRAFT"), deletedAt: new Date() };
+    expect(await failure(service.update("a", QT, 3, input()))).toMatchObject({ status: 409, code: "QUOTATION_DELETED" });
+    expect(db.updates).toHaveLength(0);
+    expect(db.lines).toHaveLength(0);
+    db.writeCount = 0;
+    db.stored = { version: 3, deletedAt: new Date() };
+    for (const call of [service.submit("a", QT, 3), service.approve("a", QT, 3), service.reject("a", QT, 3, "x"), service.cancel("a", QT, 3, "x")]) {
+      expect(await failure(call)).toMatchObject({ status: 409, code: "QUOTATION_DELETED" });
+    }
+    // Every transition guard excludes deleted rows.
+    for (const update of db.updates) expect(update).toMatchObject({ where: { deletedAt: null } });
+    expect(db.updates).toHaveLength(4);
   });
 });
 
 describe("list (SA-QT-11, owner Q-QT-06)", () => {
   it("UT-QT-B20 excludes cancelled by default, newest first, bounded; bad cursor is VALIDATION_ERROR", async () => {
-    await service.list({ limit: 50, q: "siam" });
+    await service.list({ limit: 50, q: "siam", deleted: false });
     expect(db.findManyArgs[0]).toMatchObject({
       where: { status: { not: "CANCELLED" } },
       orderBy: [{ docDate: "desc" }, { createdAt: "desc" }, { id: "desc" }],
       take: 51,
     });
-    await service.list({ limit: 10, status: "CANCELLED" });
+    await service.list({ limit: 10, status: "CANCELLED", deleted: false });
     expect(db.findManyArgs[1]).toMatchObject({ where: { status: "CANCELLED" } });
-    expect(await failure(service.list({ limit: 10, cursor: "!!" }))).toMatchObject({ code: "VALIDATION_ERROR", path: "cursor" });
+    expect(await failure(service.list({ limit: 10, cursor: "!!", deleted: false }))).toMatchObject({ code: "VALIDATION_ERROR", path: "cursor" });
+  });
+
+  it("UT-SD-08 list: deleted=false → deletedAt null on findMany and count; deleted=true → not null; items carry deletedAt", async () => {
+    await service.list({ limit: 50, deleted: false });
+    expect(db.findManyArgs[0]).toMatchObject({ where: { deletedAt: null, status: { not: "CANCELLED" } } });
+    expect(db.countArgs[0]).toMatchObject({ where: { deletedAt: null } });
+    const deletedAt = new Date("2026-11-06T03:00:00.000Z");
+    const { Prisma } = await import("../../src/generated/prisma/client");
+    db.listRows = [{ id: QT, docNo: "QT-1", status: "DRAFT", docDate: new Date("2026-11-06"), dueDate: new Date("2026-11-06"), customerNameSnapshot: "Siam", currencyCode: "THB", grandTotal: new Prisma.Decimal(1), createdAt: deletedAt, updatedAt: deletedAt, deletedAt }];
+    const result = await service.list({ limit: 50, deleted: true });
+    expect(db.findManyArgs[1]).toMatchObject({ where: { deletedAt: { not: null } }, select: { deletedAt: true } });
+    expect(db.countArgs[1]).toMatchObject({ where: { deletedAt: { not: null } } });
+    expect(result.items[0]).toMatchObject({ id: QT, deletedAt: "2026-11-06T03:00:00.000Z" });
+    expect(result.total).toBe(1);
   });
 
   it("UT-QT-B25 options carry customers, currencies, charge types and stone choices", async () => {

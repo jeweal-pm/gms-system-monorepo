@@ -14,6 +14,7 @@ import { calculateTotals, oversizeAmounts } from "./quotation.calculate";
 import {
   mapQuotationError,
   quotationChanged,
+  quotationDeleted,
   quotationNotFound,
   quotationPhotoInvalid,
   quotationReferenceInvalid,
@@ -24,10 +25,13 @@ import { QUOTATION_PHOTO_SOURCE } from "./quotation-photo.storage";
 import { CHARGE_TYPES, type QuotationInput, type QuotationListInput, type QuotationStatus } from "./quotation.schemas";
 
 /**
- * Quotation has no approval step (owner 2026-10-27): it is saved as APPROVED and stays editable and deletable
- * until cancelled. DRAFT/PENDING_APPROVAL/REJECTED remain only for rows saved before this change.
+ * Quotation has no approval step (owner 2026-10-27): it is saved as APPROVED and stays editable until cancelled.
+ * DRAFT/PENDING_APPROVAL/REJECTED remain only for rows saved before this change. Since transaction-soft-delete (owner
+ * OQ-1, 2026-11-06) only DRAFT / PENDING_APPROVAL can be deleted, and a delete is soft (DELETABLE below).
  */
 const EDITABLE: readonly QuotationStatus[] = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED"];
+/** transaction-soft-delete D2 (owner OQ-1, 2026-11-06): only a quotation before approval can be (soft) deleted. */
+export const DELETABLE: readonly QuotationStatus[] = ["DRAFT", "PENDING_APPROVAL"];
 const COMPANY_PROFILE_ID = 1;
 const CUSTOMER_OPTIONS_LIMIT = 1_000;
 const COUNTRY_NAME = new Map(COUNTRY_OPTIONS.map((item) => [item.code, item.name]));
@@ -150,6 +154,9 @@ export function toQuotation(row: DetailRow) {
     updatedAt: row.updatedAt.toISOString(),
     approvedAt: row.approvedAt?.toISOString() ?? null,
     approvedBy: row.approvedBy,
+    // D10: non-null = deleted, shown read-only.
+    deletedAt: row.deletedAt?.toISOString() ?? null,
+    deletedBy: row.deletedBy,
   };
 }
 
@@ -237,6 +244,7 @@ export class QuotationService {
 
   async list(input: QuotationListInput) {
     const where: Prisma.QuotationWhereInput = {
+      deletedAt: input.deleted ? { not: null } : null,
       status: input.status ?? { not: "CANCELLED" },
       ...(input.customerId ? { customerId: input.customerId } : {}),
       ...(input.from || input.to ? { docDate: { ...(input.from ? { gte: toDbDate(input.from) } : {}), ...(input.to ? { lte: toDbDate(input.to) } : {}) } } : {}),
@@ -262,7 +270,7 @@ export class QuotationService {
           where: { ...where, AND: and },
           orderBy: [{ docDate: "desc" }, { createdAt: "desc" }, { id: "desc" }],
           take: input.limit + 1,
-          select: { id: true, docNo: true, status: true, docDate: true, dueDate: true, customerNameSnapshot: true, currencyCode: true, grandTotal: true, createdAt: true, updatedAt: true },
+          select: { id: true, docNo: true, status: true, docDate: true, dueDate: true, customerNameSnapshot: true, currencyCode: true, grandTotal: true, createdAt: true, updatedAt: true, deletedAt: true },
         }),
         prisma.quotation.count({ where }),
       ]);
@@ -279,6 +287,7 @@ export class QuotationService {
           currency: row.currencyCode,
           grandTotal: money(row.grandTotal),
           updatedAt: row.updatedAt.toISOString(),
+          deletedAt: row.deletedAt?.toISOString() ?? null,
         })),
         nextCursor: rows.length > input.limit && last ? encodeCursor({ docDate: fromDbDate(last.docDate), createdAt: last.createdAt.toISOString(), id: last.id }) : null,
         total,
@@ -388,9 +397,10 @@ export class QuotationService {
       const version = await prisma.$transaction(async (tx) => {
         const stored = await tx.quotation.findUnique({
           where: { id },
-          select: { status: true, version: true, customerId: true, shippingAddressId: true, invoiceAddressId: true, currencyCode: true, lines: { select: { stoneCodeId: true, memoStockId: true, pcs: true, weightCt: true, stockPendingPcs: true, stockPendingWeightCt: true } } },
+          select: { status: true, version: true, deletedAt: true, customerId: true, shippingAddressId: true, invoiceAddressId: true, currencyCode: true, lines: { select: { stoneCodeId: true, memoStockId: true, pcs: true, weightCt: true, stockPendingPcs: true, stockPendingWeightCt: true } } },
         });
         if (!stored) throw quotationNotFound();
+        if (stored.deletedAt) throw quotationDeleted();
         if (stored.version !== expectedVersion) throw quotationChanged();
         if (!EDITABLE.includes(stored.status as QuotationStatus)) throw quotationStatusInvalid();
         const snapshot = await this.checkReferences(tx, input, {
@@ -402,7 +412,7 @@ export class QuotationService {
         });
         const prepared = await this.prepareStockLines(tx, input, stored.lines);
         const result = await tx.quotation.updateMany({
-          where: { id, version: expectedVersion, status: { in: [...EDITABLE] } },
+          where: { id, version: expectedVersion, status: { in: [...EDITABLE] }, deletedAt: null },
           data: {
             ...this.headerData(prepared, snapshot),
             // An older row is approved by its first save after the change.
@@ -442,22 +452,58 @@ export class QuotationService {
     return this.transition(actorId, id, expectedVersion, ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED"], "CANCELLED", { statusReason: reason }, "cancelled");
   }
 
-  /** Any non-cancelled quotation can be deleted (owner 2026-10-27); the next save may reuse the latest number (Q-QT-03). */
+  /**
+   * Soft delete (ADR-0045 D4, D2 owner OQ-1): only DRAFT / PENDING_APPROVAL, in one guarded `UPDATE … RETURNING`;
+   * status, lines, charges and photos stay. The Doc No. stays taken (D5), so the next save never reuses it.
+   */
   async delete(actorId: string, id: string, expectedVersion: number) {
+    let docNo: string;
     try {
-      const result = await prisma.quotation.deleteMany({ where: { id, version: expectedVersion, status: { in: [...EDITABLE] } } });
-      if (result.count === 0) await this.explainMiss(prisma, id, expectedVersion);
+      const now = new Date();
+      const rows = await prisma.quotation.updateManyAndReturn({
+        where: { id, version: expectedVersion, status: { in: [...DELETABLE] }, deletedAt: null },
+        data: { deletedAt: now, deletedBy: actorId, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
+        select: { docNo: true },
+      });
+      if (rows.length === 0) await this.explainMiss(prisma, id, expectedVersion);
+      docNo = rows[0].docNo;
     } catch (error) {
       throw mapQuotationError(error, "delete");
     }
-    this.logger.log({ event: "quotation.deleted", actorId, id });
-    return { ok: true as const };
+    const version = expectedVersion + 1;
+    this.logger.log({ event: "quotation.deleted", actorId, id, docNo, version });
+    return { ok: true as const, version };
+  }
+
+  /** Restore (D6/D7): a deleted quotation back to its unchanged status; content is not re-checked. */
+  async restore(actorId: string, id: string, expectedVersion: number) {
+    let restored: { docNo: string; status: string };
+    try {
+      const rows = await prisma.quotation.updateManyAndReturn({
+        where: { id, version: expectedVersion, deletedAt: { not: null } },
+        data: { deletedAt: null, deletedBy: null, version: { increment: 1 }, updatedAt: new Date(), updatedBy: actorId },
+        select: { docNo: true, status: true },
+      });
+      if (rows.length === 0) {
+        // D8 restore miss: missing → NOT_FOUND, not deleted → STATUS_INVALID, else (stale version) CHANGED.
+        const row = await prisma.quotation.findUnique({ where: { id }, select: { deletedAt: true } });
+        if (!row) throw quotationNotFound();
+        if (!row.deletedAt) throw quotationStatusInvalid();
+        throw quotationChanged();
+      }
+      restored = rows[0];
+    } catch (error) {
+      throw mapQuotationError(error, "restore");
+    }
+    const version = expectedVersion + 1;
+    this.logger.log({ event: "quotation.restored", actorId, id, docNo: restored.docNo, version });
+    return { id, version, status: restored.status as QuotationStatus };
   }
 
   private async transition(actorId: string, id: string, expectedVersion: number, from: readonly QuotationStatus[], to: QuotationStatus, data: Prisma.QuotationUpdateManyMutationInput, event: string) {
     try {
       const result = await prisma.quotation.updateMany({
-        where: { id, version: expectedVersion, status: { in: [...from] } },
+        where: { id, version: expectedVersion, status: { in: [...from] }, deletedAt: null },
         data: { ...data, status: to, version: { increment: 1 }, updatedAt: new Date(), updatedBy: actorId },
       });
       if (result.count === 0) await this.explainMiss(prisma, id, expectedVersion);
@@ -468,10 +514,11 @@ export class QuotationService {
     return { id, status: to, version: expectedVersion + 1 };
   }
 
-  /** A guarded write touched no row: missing → NOT_FOUND, other version → CHANGED, else STATUS_INVALID. */
+  /** A guarded write touched no row: missing → NOT_FOUND, deleted → DELETED (D8), other version → CHANGED, else STATUS_INVALID. */
   private async explainMiss(client: Tx | typeof prisma, id: string, expectedVersion: number): Promise<never> {
-    const row = await client.quotation.findUnique({ where: { id }, select: { version: true } });
+    const row = await client.quotation.findUnique({ where: { id }, select: { version: true, deletedAt: true } });
     if (!row) throw quotationNotFound();
+    if (row.deletedAt) throw quotationDeleted();
     if (row.version !== expectedVersion) throw quotationChanged();
     throw quotationStatusInvalid();
   }

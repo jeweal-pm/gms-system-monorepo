@@ -302,6 +302,8 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       reject: permitted("quotation", "APPROVE", true).input(reasonedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.reject(ctx.userId, input.id, input.expectedVersion, input.reason))),
       cancel: permitted("quotation", "CANCEL", true).input(reasonedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.cancel(ctx.userId, input.id, input.expectedVersion, input.reason))),
       delete: permitted("quotation", "DELETE", true).input(versionedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.delete(ctx.userId, input.id, input.expectedVersion))),
+      // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).
+      restore: permitted("quotation", "DELETE", true).input(versionedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.restore(ctx.userId, input.id, input.expectedVersion))),
     }),
     // memo-out / memo-out-return SA rev 1 / ADR-0033 (owner 2026-10-28): numbers from Document Setup, drafts only.
     memoOut: t.router({
@@ -316,6 +318,8 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
         return domainCall(() => memoOut.update(ctx.userId, id, expectedVersion, body));
       }),
       delete: permitted("memo-out", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOut.delete(ctx.userId, input.id, input.expectedVersion))),
+      // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).
+      restore: permitted("memo-out", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOut.restore(ctx.userId, input.id, input.expectedVersion))),
       // memo-out SA rev 2 (SA-MO-14): approval cuts the stock lines into Memo Stock Reserve; APPROVE is checked on every call.
       approve: permitted("memo-out", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOut.approve(ctx.userId, input.id, input.expectedVersion))),
     }),
@@ -333,6 +337,8 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
         return domainCall(() => reserve.update(ctx.userId, id, expectedVersion, body));
       }),
       delete: permitted("reserve", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => reserve.delete(ctx.userId, input.id, input.expectedVersion))),
+      // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).
+      restore: permitted("reserve", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => reserve.restore(ctx.userId, input.id, input.expectedVersion))),
       approve: permitted("reserve", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => reserve.approve(ctx.userId, input.id, input.expectedVersion))),
     }),
     memoOutReturn: t.router({
@@ -349,6 +355,8 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
         return domainCall(() => memoOutReturn.update(ctx.userId, id, expectedVersion, body));
       }),
       delete: permitted("memo-out-return", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOutReturn.delete(ctx.userId, input.id, input.expectedVersion))),
+      // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).
+      restore: permitted("memo-out-return", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOutReturn.restore(ctx.userId, input.id, input.expectedVersion))),
       // SA-MOR-17: approval adds to the Memo Out lines' returned and moves Memo Stock Reserve back to pending.
       approve: permitted("memo-out-return", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOutReturn.approve(ctx.userId, input.id, input.expectedVersion))),
     }),
@@ -365,6 +373,8 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
         return domainCall(() => memoReceive.update(ctx.userId, id, expectedVersion, body));
       }),
       delete: permitted("memo-receive", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoReceive.delete(ctx.userId, input.id, input.expectedVersion))),
+      // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).
+      restore: permitted("memo-receive", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoReceive.restore(ctx.userId, input.id, input.expectedVersion))),
       // The creator may approve (like quotation Q-QT-02); the server checks APPROVE on every call.
       approve: permitted("memo-receive", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoReceive.approve(ctx.userId, input.id, input.expectedVersion))),
     }),
@@ -385,6 +395,8 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
         return domainCall(() => memoReturn.update(ctx.userId, id, expectedVersion, body));
       }),
       delete: permitted("memo-return", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoReturn.delete(ctx.userId, input.id, input.expectedVersion))),
+      // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).
+      restore: permitted("memo-return", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoReturn.restore(ctx.userId, input.id, input.expectedVersion))),
       approve: permitted("memo-return", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoReturn.approve(ctx.userId, input.id, input.expectedVersion))),
     }),
     // purchase-order SA rev 1 / ADR-0041 (owner 2026-11-04): keyed-in vendor document; Approve on the page sends its
@@ -401,6 +413,8 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
         return domainCall(() => purchaseOrder.update(ctx.userId, id, expectedVersion, body));
       }),
       delete: permitted("purchase-order", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchaseOrder.delete(ctx.userId, input.id, input.expectedVersion))),
+      // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).
+      restore: permitted("purchase-order", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchaseOrder.restore(ctx.userId, input.id, input.expectedVersion))),
       approve: permitted("purchase-order", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchaseOrder.approve(ctx.userId, input.id, input.expectedVersion))),
     }),
     // purchase SA rev 1 / ADR-0042 (owner 2026-11-04): Memo Stock / PO / manual lines; Save checks, Approve cuts the stock
@@ -420,6 +434,8 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
         return domainCall(() => purchase.update(ctx.userId, id, expectedVersion, body));
       }),
       delete: permitted("purchase", "DELETE", true).input(purchaseVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchase.delete(ctx.userId, input.id, input.expectedVersion))),
+      // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).
+      restore: permitted("purchase", "DELETE", true).use(withFieldErrors(purchaseVersionedIdSchema)).input(purchaseVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchase.restore(ctx.userId, input.id, input.expectedVersion))),
       // SA-PU-09: the stock cut; the creator may approve; APPROVE + CSRF on every call.
       approve: permitted("purchase", "APPROVE", true).input(purchaseVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchase.approve(ctx.userId, input.id, input.expectedVersion))),
     }),

@@ -2,9 +2,9 @@
 
 import type { DocumentKind } from "@/features/quotation/document-kind";
 import { customerStockConfig } from "@/features/trade-document/customer-stock-config";
-import { DocumentDaybook, documentAccess, useDocumentAccess } from "@/features/trade-document/document-api";
+import { daybookLoadError, daybookState, deletedInfo, DocumentDaybook, documentAccess, useDocumentAccess } from "@/features/trade-document/document-api";
 import { DocumentForm } from "@/features/trade-document/document-form";
-import { fromMemoOut, MEMO_OUT_HREF, mapMemoOutSaveError, memoOutHref, memoOutLoadError, useMemoOutApi, useMemoOutDaybook, useMemoOutDetail } from "../api";
+import { fromMemoOut, MEMO_OUT_HREF, mapMemoOutSaveError, memoOutHref, memoOutLoadError, memoOutRestoreError, useMemoOutApi, useMemoOutDaybook, useMemoOutDetail } from "../api";
 
 export { MEMO_OUT_HREF };
 
@@ -19,12 +19,7 @@ function MemoOutDaybook() {
     <DocumentDaybook
       plural="memo outs"
       href={memoOutHref}
-      state={{
-        isPending: daybook.isPending,
-        isError: daybook.isError,
-        errorMessage: daybook.error ? memoOutLoadError(daybook.error) : undefined,
-        items: (daybook.data?.items ?? []).map((item) => ({ id: item.id, docNo: item.docNo, docDate: item.docDate, status: item.status, name: String(item.customerName ?? "") })),
-      }}
+      state={daybookState(daybook, (error) => daybookLoadError(error, "memo outs"), (item) => String(item.customerName ?? ""))}
     />
   );
 }
@@ -41,6 +36,7 @@ const CONFIG = customerStockConfig({
   detailHref: memoOutHref,
   useApi: useMemoOutApi,
   mapSaveError: mapMemoOutSaveError,
+  mapRestoreError: memoOutRestoreError,
   pickerTitle: "From Stock",
   approvedStock: "cut from Memo Stock",
   noStock: "cut",
@@ -70,5 +66,5 @@ export function EditMemoOutPage({ id }: { id: string }) {
   if (!access || (access.view && detail.isPending)) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{DENIED}</p>;
   if (detail.isError || !detail.data) return <p className={message}>{detail.error ? memoOutLoadError(detail.error) : "Memo out not found."}</p>;
-  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromMemoOut(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
+  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromMemoOut(detail.data)} deleted={deletedInfo(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
 }

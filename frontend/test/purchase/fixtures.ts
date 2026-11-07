@@ -37,7 +37,7 @@ export const savedPurchase = (patch: Record<string, unknown> = {}) => ({
   id: ID, docNo: "PU-7", status: "PENDING_APPROVAL", version: 3, docDate: "2026-11-04", dueDate: "2026-12-04", currency: "THB", exchangeRate: null, ref: "R-1",
   vendorId: ID, addressId: ID, vendor: { code: "V001", name: "Aom" }, addressText: "", documentNote: "Paid by transfer",
   discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
-  totals: {}, approvedAt: null, approvedBy: null, createdAt: "2026-11-04T01:00:00.000Z", createdBy: "u", updatedAt: "2026-11-04T01:00:00.000Z",
+  totals: {}, approvedAt: null, approvedBy: null, createdAt: "2026-11-04T01:00:00.000Z", createdBy: "u", updatedAt: "2026-11-04T01:00:00.000Z", deletedAt: null, deletedBy: null,
   lines: [
     savedLine({ id: "66666666-6666-4666-8666-666666666666", source: "STOCK", memoStockId: STOCK, memoGroup: "IN_STOCK", stockId: "260003", stoneCodeId: null, stoneCode: "", discount: { type: "NONE", value: "0" }, memoReceive: { docNo: "MR-1001" }, limitPcs: 2, limitWeightCt: "1.360", pcs: 1, weightCt: "0.680" }),
     savedLine({ id: "77777777-7777-4777-8777-777777777777", source: "PURCHASE_ORDER", purchaseOrderLineId: POL, stockId: "260012", discount: { type: "NONE", value: "0" }, purchaseOrder: { id: PO, docNo: "PO2611001", position: 2 }, limitPcs: 6, limitWeightCt: "3.000" }),

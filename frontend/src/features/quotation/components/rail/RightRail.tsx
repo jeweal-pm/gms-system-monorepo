@@ -1,12 +1,10 @@
 "use client";
 
-import { FileSearch } from "lucide-react";
-import Link from "next/link";
 import type { ReactNode } from "react";
 import { DaybookIcon, SummaryValueIcon } from "@/components/ui/rail-icons";
-import { loadErrorMessage, useDaybook, type QuotationStatus } from "../../api";
+import { daybookLoadError, daybookState, DocumentDaybook, type DaybookDot } from "@/features/trade-document/document-api";
+import { useDaybook, type QuotationStatus } from "../../api";
 import type { QuotationTotals } from "../../lib/calculate";
-import { formatDate } from "../../lib/format";
 import { SummaryValue } from "../summary/SummaryValue";
 import { cx, IconButton, SidePanel } from "../ui";
 
@@ -63,46 +61,26 @@ export function RailPanelView({
   );
 }
 
-const DOT: Record<QuotationStatus, string> = {
+const DOT: Record<QuotationStatus, DaybookDot> = {
   // No approval step (owner 2026-10-27): older Draft/Pending rows show as approved.
-  DRAFT: "bg-[#22C55E]",
-  PENDING_APPROVAL: "bg-[#22C55E]",
-  APPROVED: "bg-[#22C55E]",
-  REJECTED: "bg-[#E5484D]",
-  CANCELLED: "bg-[#D5DADF]",
+  DRAFT: { className: "bg-[#22C55E]", label: "DRAFT" },
+  PENDING_APPROVAL: { className: "bg-[#22C55E]", label: "PENDING_APPROVAL" },
+  APPROVED: { className: "bg-[#22C55E]", label: "APPROVED" },
+  REJECTED: { className: "bg-[#E5484D]", label: "REJECTED" },
+  CANCELLED: { className: "bg-[#D5DADF]", label: "CANCELLED" },
 };
+export const quotationDot = (status: string): DaybookDot => DOT[status as QuotationStatus] ?? DOT.APPROVED;
 
-/** Quotations newest first, without cancelled ones (owner 2026-10-26, Q-QT-06). */
+/** Quotations newest first, without cancelled ones (owner 2026-10-26, Q-QT-06); Active / Deleted (FE-SD-001). */
 function DaybookList() {
   const daybook = useDaybook();
-
-  if (daybook.isPending) return <p className="py-16 text-center text-sm text-[#6B7480]">Loading…</p>;
-  if (daybook.isError) return <p className="py-16 text-center text-sm text-[#E5484D]">{loadErrorMessage(daybook.error)}</p>;
-  const entries = daybook.data.items;
-  if (entries.length === 0) {
-    return (
-      <div className="flex flex-col items-center gap-4 py-20 text-[#6B7480]">
-        <FileSearch className="size-10 text-[#1C252E]" strokeWidth={1.5} />
-        No results found.
-      </div>
-    );
-  }
-
   return (
-    <ul className="px-5 py-3">
-      {entries.map((e, i) => (
-        <li key={e.id}>
-          <Link href={`/pre-sale/quotation/${e.id}`} className="flex w-full items-start gap-3 rounded-lg px-2 py-2.5 text-left hover:bg-[#F6F7F8]">
-            <span className="w-8 shrink-0 text-[#1C252E]">#{i + 1}</span>
-            <span className={cx("mt-1.5 size-3 shrink-0 rounded-full", DOT[e.status])} title={e.status} />
-            <span className="min-w-0 flex-1">
-              <span className="block font-medium text-[#1C252E]">{e.docNo}</span>
-              <span className="block truncate text-sm text-[#1C252E]">{e.customerName}</span>
-            </span>
-            <span className="shrink-0 text-sm text-[#A9B1B9]">{formatDate(e.docDate)}</span>
-          </Link>
-        </li>
-      ))}
-    </ul>
+    <DocumentDaybook
+      plural="quotations"
+      href={(id) => `/pre-sale/quotation/${id}`}
+      dot={quotationDot}
+      emptyText="No results found."
+      state={daybookState(daybook, (error) => daybookLoadError(error, "quotations"), (item) => String(item.customerName ?? ""))}
+    />
   );
 }
