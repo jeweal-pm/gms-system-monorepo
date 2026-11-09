@@ -191,7 +191,7 @@ describe("UT-PU-09 Purchase Order rows (R2-PO, R2-05)", () => {
     expect(purchaseTableLine(purchaseOrderLineToPurchaseLine(poRow()))).toMatchObject({ stockId: "Auto · from PO2611001", locationId: "Safe A" });
     expect(purchaseTableLine({ ...purchaseOrderLineToPurchaseLine(poRow()), stockId: "260010" })).toMatchObject({ stockId: "260010 · from PO2611001" });
     expect(purchaseTableLine(manualLine())).toMatchObject({ stockId: "Auto", locationId: "—" });
-    expect(purchaseTableLine(memoStockToPurchaseLine(memoRow()))).toMatchObject({ stockId: "260003", locationId: "Memo" });
+    expect(purchaseTableLine(memoStockToPurchaseLine(memoRow()))).toMatchObject({ stockId: "260003 · In stock", locationId: "Memo" });
     const empty = emptyPurchaseLine();
     expect(purchaseTableLine(empty)).toBe(empty);
   });

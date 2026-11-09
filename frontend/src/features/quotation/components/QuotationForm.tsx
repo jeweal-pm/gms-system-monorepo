@@ -60,7 +60,7 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, access 
     resolver: zodResolver(quotationSchema),
     defaultValues: initial ?? emptyQuotation(),
   });
-  const { control, reset, getValues, handleSubmit, formState, setValue, setError } = form;
+  const { control, reset, resetField, getValues, handleSubmit, formState, setError } = form;
   const lineArray = useFieldArray({ control, name: "lines", keyName: "_rhfId" });
   // app-shell-tabs T-03 / Q-TAB-03: the tab shows the document number and a dot while edits are unsaved.
   useTabDocument(saved?.docNo);
@@ -83,8 +83,9 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, access 
   // A new quotation starts in the company currency once the options arrive.
   const companyCurrency = options.data?.companyCurrency;
   useEffect(() => {
-    if (!saved && companyCurrency && getValues("currency") === "") setValue("currency", companyCurrency);
-  }, [saved, companyCurrency, getValues, setValue]);
+    // INV-20261107-008: a value the page fills in by itself becomes the field's default too, so an untouched document isn't "unsaved".
+    if (!saved && companyCurrency && getValues("currency") === "") resetField("currency", { defaultValue: companyCurrency });
+  }, [saved, companyCurrency, getValues, resetField]);
 
   useEffect(() => clearNotice(initial?.id), [initial?.id]);
 

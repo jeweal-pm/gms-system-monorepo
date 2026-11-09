@@ -29,6 +29,7 @@ import { calculateTotals } from "@/features/quotation/lib/calculate";
 import { emptyLine, newKey } from "@/features/quotation/lib/defaults";
 import { LinePhotoContext, type LinePhotoTarget } from "@/features/quotation/options-context";
 import { isFilledLine } from "@/features/quotation/schema";
+import { invalidSaveMessage, lineErrorMessages, type LineErrors } from "@/features/trade-document/document-form";
 import { VendorDocumentInfoForm } from "@/features/trade-document/vendor-info-form";
 import { readDomainError } from "@/lib/trpc-error";
 import {
@@ -90,7 +91,7 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
   const [approving, setApproving] = useState(false);
 
   const form = useForm<PurchaseOrderFormValues>({ resolver: zodResolver(purchaseOrderSchema), defaultValues: initial ?? emptyPurchaseOrder() });
-  const { control, reset, getValues, setValue, handleSubmit, formState, setError } = form;
+  const { control, reset, trigger, resetField, getValues, handleSubmit, formState, setError } = form;
   const lineArray = useFieldArray({ control, name: "lines", keyName: "_rhfId" });
   const values = useWatch({ control }) as PurchaseOrderFormValues;
   const lines = useMemo(() => values.lines ?? [], [values.lines]);
@@ -98,6 +99,11 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
 
   const isDeleted = Boolean(deleted && saved?.id);
   const readOnly = mode === "view" || isDeleted;
+  // INV-20261107-005: after a failed Save, "Add at least one item" is checked again as soon as a row is filled.
+  const filledCount = lines.filter(isFilledLine).length;
+  useEffect(() => {
+    if (formState.isSubmitted && filledCount > 0) void trigger("lines");
+  }, [filledCount, formState.isSubmitted, trigger]);
   const status = saved?.status;
   const editable = Boolean(saved?.id) && isEditablePurchaseOrder(status);
   const options = usePurchaseOrderOptions(saved?.vendorId);
@@ -109,11 +115,11 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
   useTabDirty(formState.isDirty && !readOnly);
   const showApprove = !isDeleted && canApprovePurchaseOrder({ saved: Boolean(saved?.id), status, editing: !readOnly, dirty: formState.isDirty, approve: access.approve });
 
-  // A new PO starts in the company currency (the shared header then fills its rate).
+  // A new PO starts in the company currency (the shared header then fills its rate). INV-20261107-008: a value the page fills in by itself becomes the field's default too, so an untouched document isn't "unsaved".
   const companyCurrency = options.data?.companyCurrency ?? null;
   useEffect(() => {
-    if (!values.currency && companyCurrency) setValue("currency", companyCurrency);
-  }, [values.currency, companyCurrency, setValue]);
+    if (!values.currency && companyCurrency) resetField("currency", { defaultValue: companyCurrency });
+  }, [values.currency, companyCurrency, resetField]);
 
   useEffect(() => {
     if (!toast) return;
@@ -172,7 +178,7 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
         await showError(error);
       }
     },
-    () => setToast("Please complete the required fields"),
+    (errors) => setToast(invalidSaveMessage(lineErrorMessages(errors.lines as unknown as LineErrors, lines.length))),
   );
 
   const onCancel = () => {
@@ -374,6 +380,7 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
                         onToggleAll={(checked) => setCheckedKeys(checked ? new Set(lines.map((l) => l.key)) : new Set())}
                         onRowAction={onRowAction}
                         onAddRow={addRow}
+                        rowErrors={formState.isSubmitted ? lineErrorMessages(formState.errors.lines as unknown as LineErrors, lines.length) : undefined}
                       />
                     </fieldset>
                   </div>

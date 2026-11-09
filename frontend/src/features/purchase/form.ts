@@ -179,6 +179,8 @@ export function purchaseOrderLineToPurchaseLine(row: PurchaseOrderLineRow): Purc
 
 /** R3-02: the table tag of a merged row. */
 export const MERGED_TAG = "Sold + In stock";
+/** The table tag of each Memo Stock row by its part (INV-20261107-003). */
+export const MEMO_GROUP_TAG: Record<"SOLD" | "IN_STOCK" | "MERGED", string> = { SOLD: "Sold", IN_STOCK: "In stock", MERGED: MERGED_TAG };
 
 /** One part of an item for the merge question: a row ticked in Add Memo Stock or a row already on the form. */
 export type MergePart = { line: PurchaseLine; existingIndex: number | null };
@@ -294,6 +296,21 @@ export function pickedSourceKeys(lines: readonly QuotationLine[]): Set<string> {
   );
 }
 
+/** Rows taken from Memo Stock or a Purchase Order (they go when the vendor changes, R2-04). */
+export const pickedRowCount = (lines: readonly PurchaseLine[]) => lines.filter((line) => isFilledLine(line) && purchaseLineSource(line) !== "MANUAL").length;
+
+/** INV-20261107-002: asked before a vendor change would remove picked rows; `currency` names a currency switch too. */
+export function vendorChangeConfirm(count: number, currency: string | null) {
+  const rows = `${count} ${count === 1 ? "row" : "rows"}`;
+  const money = currency ? ` The currency changes to ${currency}.` : "";
+  return {
+    title: "Change the vendor?",
+    body: `This removes the ${rows} taken from Memo Stock and Purchase Orders. Rows you keyed in stay.${money}`,
+    cancelLabel: "Keep vendor",
+    confirmLabel: "Change vendor",
+  };
+}
+
 /**
  * A new vendor (R2-04): rows picked from Memo Stock **and** from a Purchase Order become empty rows; manual rows stay.
  * Returns null when nothing changes.
@@ -310,7 +327,8 @@ export function clearPickedRows(lines: readonly PurchaseLine[]): PurchaseLine[] 
 export function purchaseTableLine<T extends QuotationLine>(line: T): T {
   if (!isFilledLine(line)) return line;
   const row = line as T & Partial<PurchaseLine>;
-  const from = row.purchaseOrderLineId ? ` · from ${row.sourceDocNo}` : row.memoGroup === "MERGED" ? ` · ${MERGED_TAG}` : "";
+  // R3-02 + INV-20261107-003: a Memo Stock row names its part (Sold / In stock / both), so separate rows of one Stock ID differ.
+  const from = row.purchaseOrderLineId ? ` · from ${row.sourceDocNo}` : row.memoGroup ? ` · ${MEMO_GROUP_TAG[row.memoGroup]}` : "";
   return { ...line, stockId: `${line.stockId || "Auto"}${from}`, locationId: line.locationId || "—" };
 }
 

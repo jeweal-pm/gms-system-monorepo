@@ -13,11 +13,13 @@ import {
   mergedPurchaseLine,
   mergePartAmount,
   MERGED_TAG,
+  pickedRowCount,
   pickedSourceKeys,
   purchaseSchema,
   purchaseStockNote,
   purchaseTableLine,
   toPurchaseInput,
+  vendorChangeConfirm,
   type PurchaseFormValues,
   type PurchaseLine,
 } from "@/features/purchase/api";
@@ -200,3 +202,23 @@ describe("UT-PU-16 contract mapping and errors (SA-PU-26)", () => {
     ]);
   });
 });
+
+describe("INV-20261107-002/003 vendor change and row tags", () => {
+  it("counts only picked rows and asks with the row count and any currency switch", () => {
+    const manual = { ...emptyPurchase().lines[0]!, stone: "Ruby", pcs: "1", weightCt: "1", unitPrice: "10" };
+    expect(pickedRowCount([sold(), inStock(), manual, emptyPurchase().lines[0]!])).toBe(2);
+    expect(pickedRowCount([manual])).toBe(0);
+    expect(vendorChangeConfirm(2, null)).toEqual({
+      title: "Change the vendor?", body: "This removes the 2 rows taken from Memo Stock and Purchase Orders. Rows you keyed in stay.",
+      cancelLabel: "Keep vendor", confirmLabel: "Change vendor",
+    });
+    expect(vendorChangeConfirm(1, "AED").body).toBe("This removes the 1 row taken from Memo Stock and Purchase Orders. Rows you keyed in stay. The currency changes to AED.");
+  });
+
+  it("separate Sold and In-stock rows of one Stock ID show their part in the table", () => {
+    expect(purchaseTableLine(sold()).stockId).toBe("260003 · Sold");
+    expect(purchaseTableLine(inStock()).stockId).toBe("260003 · In stock");
+    expect(purchaseTableLine(mergedPurchaseLine(sold(), inStock())).stockId).toBe(`260003 · ${MERGED_TAG}`);
+  });
+});
+

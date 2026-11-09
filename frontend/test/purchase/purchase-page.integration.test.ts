@@ -151,7 +151,7 @@ describe("IT-PU-02 purchase page composition (rev 2, wired)", () => {
     const html = render(queryClient, createElement(EditPurchasePage, { id: ID }));
     expect(html).toContain("PU-7");
     expect(html).toContain("Pending Approval");
-    expect(html).toContain(">260003<");
+    expect(html).toContain(">260003 · In stock<");
     expect(html).toContain("260012 · from PO2611001");
     expect(html).toContain(">260011<");
     expect(html).toContain("3 rows");

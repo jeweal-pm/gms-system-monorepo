@@ -30,6 +30,7 @@ import { calculateTotals } from "@/features/quotation/lib/calculate";
 import { emptyLine, newKey } from "@/features/quotation/lib/defaults";
 import { LinePhotoContext, type LinePhotoTarget } from "@/features/quotation/options-context";
 import { isFilledLine } from "@/features/quotation/schema";
+import { invalidSaveMessage, lineErrorMessages, type LineErrors } from "@/features/trade-document/document-form";
 import { readDomainError } from "@/lib/trpc-error";
 import {
   fromMemoReceive,
@@ -93,7 +94,7 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
   const [approving, setApproving] = useState(false);
 
   const form = useForm<MemoReceiveFormValues>({ resolver: zodResolver(memoReceiveSchema), defaultValues: initial ?? emptyMemoReceive() });
-  const { control, reset, getValues, handleSubmit, formState, setError } = form;
+  const { control, reset, trigger, getValues, handleSubmit, formState, setError } = form;
   const lineArray = useFieldArray({ control, name: "lines", keyName: "_rhfId" });
   const values = useWatch({ control }) as MemoReceiveFormValues;
   const lines = useMemo(() => values.lines ?? [], [values.lines]);
@@ -101,6 +102,11 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
 
   const isDeleted = Boolean(deleted && saved?.id);
   const readOnly = mode === "view" || isDeleted;
+  // INV-20261107-005: after a failed Save, "Add at least one item" is checked again as soon as a row is filled.
+  const filledCount = lines.filter(isFilledLine).length;
+  useEffect(() => {
+    if (formState.isSubmitted && filledCount > 0) void trigger("lines");
+  }, [filledCount, formState.isSubmitted, trigger]);
   const status = saved?.status;
   const editable = Boolean(saved?.id) && isEditableMemo(status);
   const options = useMemoReceiveOptions(saved?.vendorId);
@@ -173,7 +179,7 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
         await showError(error);
       }
     },
-    () => setToast("Please complete the required fields"),
+    (errors) => setToast(invalidSaveMessage(lineErrorMessages(errors.lines as unknown as LineErrors, lines.length))),
   );
 
   const onCancel = async () => {
@@ -377,6 +383,7 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
                         onToggleAll={(checked) => setCheckedKeys(checked ? new Set(lines.map((l) => l.key)) : new Set())}
                         onRowAction={onRowAction}
                         onAddRow={addRow}
+                        rowErrors={formState.isSubmitted ? lineErrorMessages(formState.errors.lines as unknown as LineErrors, lines.length) : undefined}
                       />
                     </fieldset>
                   </div>

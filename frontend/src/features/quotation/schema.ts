@@ -119,6 +119,7 @@ export function tradeDocumentRules(value: TradeDocumentValues, ctx: z.Refinement
   if (!value.lines.some(isFilledLine)) {
     ctx.addIssue({ code: "custom", path: ["lines"], message: "Add at least one item" });
   }
+  lineStoneRule(value.lines, ctx);
 }
 
 /**
@@ -156,6 +157,24 @@ export const quotationSchema = z
 export type QuotationFormValues = z.infer<typeof quotationSchema>;
 
 /** แถวว่าง (ยังไม่ key ข้อมูล) ไม่นับใน validation และยอดรวม */
+/**
+ * A row the user put something in (INV-20261107-004): any typed detail, quantity, price, note or photo, not only the stone.
+ * Such a row shows in the table, counts in Totals and is checked on Save (`lineStoneRule`) instead of being dropped.
+ */
 export function isFilledLine(line: QuotationLine): boolean {
-  return Boolean(line.stockId || line.stoneCode || line.stone);
+  return Boolean(
+    line.stockId || line.stoneCode || line.stone || line.shape || line.size || line.color || line.clarity || line.cutting || line.quality
+      || line.lot || line.cerNo || line.pcs || line.weightCt || line.unitPrice || line.itemNote || line.photos?.length,
+  );
+}
+
+export const STONE_REQUIRED_MESSAGE = "Choose the stone";
+
+/** INV-20261107-004: a filled row needs its stone (or a stone code / stock item that names it). */
+export function lineStoneRule(lines: readonly QuotationLine[], ctx: z.RefinementCtx) {
+  lines.forEach((line, index) => {
+    if (isFilledLine(line) && !(line.stone ?? "").trim() && !(line.stoneCode ?? "").trim() && !line.stockId) {
+      ctx.addIssue({ code: "custom", path: ["lines", index, "stone"], message: STONE_REQUIRED_MESSAGE });
+    }
+  });
 }
