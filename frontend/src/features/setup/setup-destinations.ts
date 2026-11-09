@@ -6,6 +6,7 @@ import {
   CertificateMasterIcon,
   CompanyProfileIcon,
   CurrencyIcon,
+  ApprovalSetupIcon,
   DocumentSetupIcon,
   LocationMasterIcon,
   MasterCodeIcon,
@@ -18,7 +19,7 @@ import {
 } from "./setup-icons";
 
 /** Tile square colors (design-system tokens, owner design 2026-10-16). */
-export type SetupTileColor = "indigo" | "green" | "red" | "blue" | "stone" | "neutral";
+export type SetupTileColor = "indigo" | "green" | "emerald" | "red" | "blue" | "stone" | "neutral";
 
 /** `permission`: catalog keys; the tile shows when the user has VIEW on any (owner 2026-10-17). Undefined = always. */
 export type SetupLinkDestination = { kind: "link"; id: string; label: string; href: string; icon: IconComponent; color: SetupTileColor; permission?: readonly string[] };
@@ -53,6 +54,9 @@ export const setupLandingTiles: (SetupLinkDestination | SetupMasterCodeEntry | S
   { kind: "master-code", id: "master-code", label: "Master Code", icon: MasterCodeIcon, color: "neutral", permission: MASTER_CODE_MENU_KEYS },
   // document-setup UI rev 1 (owner 2026-10-23): real page, gated by the new `document-setup` leaf.
   { kind: "link", id: "document-setup", label: "Document Setup", href: "/setup/document-setup", icon: DocumentSetupIcon, color: "blue", permission: ["document-setup"] },
+  // approval-setup UI rev 1 (FE-AS-001, Q-AS-10): after Document Setup. The `approval-setup` leaf does not exist yet
+  // (SA-AS-07), so only Super Admin / ALL see it in phase 1.
+  { kind: "link", id: "approval-setup", label: "Approval", href: "/setup/approval", icon: ApprovalSetupIcon, color: "emerald", permission: ["approval-setup"] },
   // decimal-setup UI rev 2 (FE-DEC-103): its own `decimal-setup` leaf (Q-DEC-14).
   { kind: "link", id: "decimal-setup", label: "Decimal Setup", href: "/setup/decimal-setup", icon: Calculator, color: "blue", permission: ["decimal-setup"] },
   { kind: "unavailable", id: "stone-factory", label: "Stone Factory", icon: Factory, color: "stone" },
