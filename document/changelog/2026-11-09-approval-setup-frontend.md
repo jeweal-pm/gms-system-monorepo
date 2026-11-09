@@ -1,0 +1,21 @@
+# 2026-11-09: Setup › Approval, phase 1 (UI only)
+
+- Feature: `approval-setup` UI rev 1. The owner approved it in chat on 2026-11-09 ("อนุมัติ ทำในแชท"), and it was implemented in the parent session.
+- Setup has a new **Approval** tile, placed after Document Setup. It uses the owner's SVG and a new `--color-gms-tile-emerald` (#14A460). The tile is gated by the proposed `approval-setup` leaf, so in phase 1 only Super Admin and ALL users see it.
+- `/setup/approval` shows a table of 11 types in sidebar order, including the Memo rows.
+  - The status chain starts with a **Save** chip (Q-AS-01). The On helper says the document "can't be edited until the approver decides" (Q-AS-02).
+  - Waiting counts use the Approve Center count queries; no new request is made and nothing polls.
+  - Each count links to `/approve/{slug}` when the user can approve that type.
+  - The Require approval switch:
+    - Turning **on** asks for a confirmation.
+    - Turning **off** waits while the count is loading. If documents are waiting, it opens the blocking dialog with Go to Approve (source 03). If the count failed, it opens a "Couldn't check" dialog. Otherwise it asks for a confirmation.
+  - Load to Stock, Merge/Split and Transfer Location show their switch disabled with "Not available yet".
+- **Nothing is saved.** Switch state lives in page state only and resets on refresh. A notice says so, and the toast ends with "Not saved yet." Approve Center and the document pages are unchanged.
+- The shared `ConfirmDialog` gained two additions: `body` can be rich content, and `confirmVariant` can be `"primary"`. The default stays `danger`, so existing dialogs are unchanged.
+- Tests:
+  - added `test/approval-setup/approval-setup.test.ts`;
+  - updated the tile order in `test/setup/setup-destinations.test.ts`;
+  - full suite: 87 files, 838 tests.
+- Follow-up:
+  - Phase 2 (save, Approve and document pages following the setting, permission leaf) needs SA.
+  - Q-AS-02 (pending documents locked) changes ADR-0046 D7.

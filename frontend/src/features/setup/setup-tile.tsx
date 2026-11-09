@@ -8,6 +8,7 @@ import type { SetupTileColor } from "./setup-destinations";
 const tileColorClass: Record<SetupTileColor, string> = {
   indigo: "bg-gms-tile-indigo",
   green: "bg-gms-tile-green",
+  emerald: "bg-gms-tile-emerald",
   red: "bg-gms-tile-red",
   blue: "bg-gms-tile-blue",
   stone: "bg-gms-tile-stone",

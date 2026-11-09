@@ -51,6 +51,7 @@ describe("setupLandingTiles", () => {
       ["Notifications", "link", "red"],
       ["Master Code", "master-code", "neutral"],
       ["Document Setup", "link", "blue"],
+      ["Approval", "link", "emerald"],
       ["Decimal Setup", "link", "blue"],
       ["Stone Factory", "unavailable", "stone"],
     ]);
