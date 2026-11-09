@@ -18,6 +18,7 @@ export function QuotationInfoForm() {
   const {
     register,
     setValue,
+    resetField,
     control,
     formState: { errors },
   } = useFormContext<QuotationFormValues>();
@@ -58,8 +59,9 @@ export function QuotationInfoForm() {
   // A new quotation starts with a currency but no rate: fill it once the currency list arrives.
   const initialRate = currencyOptions.data ? quotationExchangeRate(currencyOptions.data.items, currencyOptions.data.baseCode, currency) : "";
   useEffect(() => {
-    if (exchangeRate === "" && initialRate !== "") setValue("exchangeRate", initialRate, { shouldDirty: false });
-  }, [exchangeRate, initialRate, setValue]);
+    // INV-20261107-008: a value the page fills in by itself becomes the field's default too, so an untouched document isn't "unsaved".
+    if (exchangeRate === "" && initialRate !== "") resetField("exchangeRate", { defaultValue: initialRate });
+  }, [exchangeRate, initialRate, resetField]);
 
   return (
     // Columns follow the form's own width (the row panel narrows it), not the window (INV-20261102-005).

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DUE_BEFORE_DOC_MESSAGE, isFilledLine, lineSchema, MAX_DOCUMENT_NOTE, serviceChargeSchema } from "@/features/quotation/schema";
+import { DUE_BEFORE_DOC_MESSAGE, isFilledLine, lineSchema, lineStoneRule, MAX_DOCUMENT_NOTE, serviceChargeSchema } from "@/features/quotation/schema";
 
 /**
  * Purchase Order (purchase-order UI rev 1 / ADR-0041): the vendor header of Memo Receive with the Quotation lines,
@@ -47,6 +47,7 @@ export const purchaseOrderSchema = z
     if (!value.lines.some(isFilledLine)) {
       ctx.addIssue({ code: "custom", path: ["lines"], message: "Add at least one item" });
     }
+    lineStoneRule(value.lines, ctx);
   });
 
 export type PurchaseOrderFormValues = z.infer<typeof purchaseOrderSchema>;

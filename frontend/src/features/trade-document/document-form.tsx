@@ -115,7 +115,7 @@ export type DocumentFormConfig<V extends FieldValues & Saved, Input, Options ext
   daybook: ReactNode;
 };
 
-type LineErrors = readonly (Record<string, { message?: unknown } | undefined> | undefined)[] | undefined;
+export type LineErrors = readonly (Record<string, { message?: unknown } | undefined> | undefined)[] | undefined;
 
 /** The first message of each row's errors (INV-20261102-003), in row order. */
 export function lineErrorMessages(lines: LineErrors, count: number): (string | undefined)[] {
@@ -218,7 +218,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   const [approving, setApproving] = useState(false);
 
   const form = useForm<V>({ resolver: zodResolver(config.schema as never) as unknown as Resolver<V>, defaultValues: (initial ?? config.empty()) as DefaultValues<V> });
-  const { control, reset, getValues, handleSubmit, formState, setValue, setError } = form;
+  const { control, reset, resetField, getValues, handleSubmit, formState, setError } = form;
   const lineArray = useFieldArray({ control, name: "lines" as never, keyName: "_rhfId" });
   const values = useWatch({ control }) as unknown as QuotationFormValues;
   const lines = useMemo(() => values.lines ?? [], [values.lines]);
@@ -239,8 +239,9 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
 
   // A new document starts in the company currency once the options arrive.
   useEffect(() => {
-    if (!saved && api.companyCurrency && getValues("currency" as Path<V>) === "") setValue("currency" as Path<V>, api.companyCurrency as never);
-  }, [saved, api.companyCurrency, getValues, setValue]);
+    // INV-20261107-008: a value the page fills in by itself becomes the field's default too, so an untouched document isn't "unsaved".
+    if (!saved && api.companyCurrency && getValues("currency" as Path<V>) === "") resetField("currency" as Path<V>, { defaultValue: api.companyCurrency as never });
+  }, [saved, api.companyCurrency, getValues, resetField]);
 
   useEffect(() => clearNotice(initial?.id), [initial?.id]);
 

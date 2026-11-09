@@ -16,8 +16,9 @@ export function MemoReceiveInfoForm({ options, optionsError }: { options: MemoRe
   const {
     register,
     setValue,
+    resetField,
     control,
-    formState: { errors },
+    formState: { errors, isSubmitted },
   } = useFormContext<MemoReceiveFormValues>();
   const vendorId = useWatch({ control, name: "vendorId" }) ?? "";
   const currency = useWatch({ control, name: "currency" }) ?? "";
@@ -36,21 +37,22 @@ export function MemoReceiveInfoForm({ options, optionsError }: { options: MemoRe
   const onVendorChange = (id: string) => {
     const vendor = vendors.find((v) => v.id === id);
     const addresses = vendor?.addresses ?? [];
-    setValue("addressId", (addresses.find((a) => a.isDefault) ?? addresses[0])?.id ?? "", { shouldDirty: true });
+    // INV-20261107-005: once a Save was tried, a field the vendor fills is checked again (its "Required" clears).
+    setValue("addressId", (addresses.find((a) => a.isDefault) ?? addresses[0])?.id ?? "", { shouldDirty: true, shouldValidate: isSubmitted });
     if (vendor?.currency) {
-      setValue("currency", vendor.currency, { shouldDirty: true });
+      setValue("currency", vendor.currency, { shouldDirty: true, shouldValidate: isSubmitted });
       onCurrencyChange(vendor.currency);
     }
   };
 
-  // A new document starts in the company currency, and its rate fills once the currency list arrives.
+  // A new document starts in the company currency, and its rate fills once the currency list arrives. INV-20261107-008: a value the page fills in by itself becomes the field's default too, so an untouched document isn't "unsaved".
   useEffect(() => {
-    if (currency === "" && baseCode) setValue("currency", baseCode);
-  }, [currency, baseCode, setValue]);
+    if (currency === "" && baseCode) resetField("currency", { defaultValue: baseCode });
+  }, [currency, baseCode, resetField]);
   const initialRate = rates.data ? quotationExchangeRate(items, baseCode, currency) : "";
   useEffect(() => {
-    if (exchangeRate === "" && initialRate !== "") setValue("exchangeRate", initialRate, { shouldDirty: false });
-  }, [exchangeRate, initialRate, setValue]);
+    if (exchangeRate === "" && initialRate !== "") resetField("exchangeRate", { defaultValue: initialRate });
+  }, [exchangeRate, initialRate, resetField]);
 
   const optionsMessage = optionsError ? memoReceiveLoadError(optionsError, "vendors") : undefined;
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import { Field, FormDateInput, FormSelect, TextInput } from "@/features/quotation/components/ui";
 import { quotationCurrencyOptions, quotationExchangeRate } from "@/features/quotation/lib/currency";
@@ -20,10 +20,22 @@ export type VendorOptions = {
  * Header of the vendor documents (memo-out-return source 01, memo-return source 01): Doc Date, Vendor, Address;
  * Due Date, Currency, Exchange Rate (read-only, Setup › Currency) and Ref. Choosing a vendor picks its default
  * address and currency; `onVendorChange` lets a document react too (memo return clears rows of another vendor).
+ * INV-20261107-002: choosing the vendor that is already chosen changes nothing, and `confirmVendorChange` may ask before
+ * a real change (No keeps the old vendor and everything that depends on it).
  */
-export function VendorDocumentInfoForm({ options, onVendorChange: afterVendorChange }: { options: VendorOptions | undefined; onVendorChange?: (vendorId: string) => void }) {
-  const { register, control, setValue, formState: { errors } } = useFormContext<VendorHeaderValues>();
+export function VendorDocumentInfoForm({ options, onVendorChange: afterVendorChange, confirmVendorChange }: {
+  options: VendorOptions | undefined;
+  onVendorChange?: (vendorId: string) => void;
+  confirmVendorChange?: (vendorId: string) => Promise<boolean>;
+}) {
+  const { register, control, setValue, resetField, formState: { errors, isSubmitted } } = useFormContext<VendorHeaderValues>();
   const vendorId = useWatch({ control, name: "vendorId" });
+  // The vendor the document is on; it follows loads and resets, but not a choice that is still being confirmed.
+  const committedVendor = useRef(vendorId);
+  const choosing = useRef(false);
+  useEffect(() => {
+    if (!choosing.current) committedVendor.current = vendorId;
+  }, [vendorId]);
   const currency = useWatch({ control, name: "currency" }) ?? "";
   const exchangeRate = useWatch({ control, name: "exchangeRate" }) ?? "";
   const currencyOptions = masterTrpc.currency.options.useQuery(undefined, { staleTime: 60_000, retry: retryTransient });
@@ -35,21 +47,35 @@ export function VendorDocumentInfoForm({ options, onVendorChange: afterVendorCha
 
   // Owner 2026-10-27: one Exchange Rate per currency, read-only here.
   const onCurrencyChange = (code: string) => setValue("exchangeRate", quotationExchangeRate(items, baseCode, code), { shouldDirty: true });
-  const onVendorChange = (id: string) => {
+  const onVendorChange = async (id: string) => {
+    const previous = committedVendor.current;
+    if (id === previous) return;
+    if (confirmVendorChange) {
+      choosing.current = true;
+      const ok = await confirmVendorChange(id);
+      choosing.current = false;
+      if (!ok) {
+        setValue("vendorId", previous);
+        return;
+      }
+    }
+    committedVendor.current = id;
     const vendor = vendors.find((v) => v.id === id);
     const addresses = vendor?.addresses ?? [];
-    setValue("addressId", (addresses.find((a) => a.isDefault) ?? addresses[0])?.id ?? "", { shouldDirty: true });
+    // INV-20261107-005: once a Save was tried, a field the vendor fills is checked again (its "Required" clears).
+    setValue("addressId", (addresses.find((a) => a.isDefault) ?? addresses[0])?.id ?? "", { shouldDirty: true, shouldValidate: isSubmitted });
     afterVendorChange?.(id);
     if (vendor?.currency) {
-      setValue("currency", vendor.currency, { shouldDirty: true });
+      setValue("currency", vendor.currency, { shouldDirty: true, shouldValidate: isSubmitted });
       onCurrencyChange(vendor.currency);
     }
   };
 
   const initialRate = currencyOptions.data ? quotationExchangeRate(items, baseCode, currency) : "";
   useEffect(() => {
-    if (exchangeRate === "" && initialRate !== "") setValue("exchangeRate", initialRate, { shouldDirty: false });
-  }, [exchangeRate, initialRate, setValue]);
+    // INV-20261107-008: a value the page fills in by itself becomes the field's default too, so an untouched document isn't "unsaved".
+    if (exchangeRate === "" && initialRate !== "") resetField("exchangeRate", { defaultValue: initialRate });
+  }, [exchangeRate, initialRate, resetField]);
 
   return (
     <div className="@container flex flex-col gap-5 px-6 py-6">
@@ -58,7 +84,7 @@ export function VendorDocumentInfoForm({ options, onVendorChange: afterVendorCha
           <FormDateInput<VendorHeaderValues> name="docDate" />
         </Field>
         <Field label="Vendor" required error={errors.vendorId?.message}>
-          <FormSelect<VendorHeaderValues> name="vendorId" options={vendorOptions} onValueChange={onVendorChange} />
+          <FormSelect<VendorHeaderValues> name="vendorId" options={vendorOptions} onValueChange={(id) => void onVendorChange(id)} />
         </Field>
         <Field label="Address" required error={errors.addressId?.message}>
           <FormSelect<VendorHeaderValues> name="addressId" options={addressOptions} />
