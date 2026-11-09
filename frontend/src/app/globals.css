@@ -79,6 +79,8 @@
   --color-gms-tile-indigo: #5040db;
   /* Setup tiles, owner design 2026-10-16 (User and Permission teal, Notifications red, Document Setup blue, Stone Factory brown). */
   --color-gms-tile-green: #0e9888;
+  --color-gms-tile-emerald: #14a460;
+  --color-gms-pending-chip: #eedab9;
   --color-gms-tile-red: #e5484d;
   --color-gms-tile-blue: #0d80ea;
   --color-gms-tile-stone: #a1887f;

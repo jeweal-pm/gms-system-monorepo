@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import { Button } from "./button";
 
 type ConfirmDialogProps = {
   open: boolean;
   title: string;
-  body: string;
+  /** Plain text, or rich content such as a bold first sentence (approval-setup FE-AS-006). */
+  body: ReactNode;
   cancelLabel: string;
   confirmLabel: string;
   pendingLabel: string;
@@ -14,6 +15,8 @@ type ConfirmDialogProps = {
   error?: string;
   onCancel: () => void;
   onConfirm: () => void;
+  /** `danger` (default, destructive) or `primary` (a safe action such as "Go to Approve"). */
+  confirmVariant?: "danger" | "primary";
 };
 
 /**
@@ -21,7 +24,7 @@ type ConfirmDialogProps = {
  * background). Focus starts on the safe action, Esc maps to cancel except
  * while pending, and focus returns to the trigger on close.
  */
-export function ConfirmDialog({ open, title, body, cancelLabel, confirmLabel, pendingLabel, pending, error, onCancel, onConfirm }: ConfirmDialogProps) {
+export function ConfirmDialog({ open, title, body, cancelLabel, confirmLabel, pendingLabel, pending, error, onCancel, onConfirm, confirmVariant = "danger" }: ConfirmDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -55,14 +58,14 @@ export function ConfirmDialog({ open, title, body, cancelLabel, confirmLabel, pe
     >
       <h2 id={titleId} className="border-b border-gms-divider-dialog px-5 py-4 text-gms-heading font-bold">{title}</h2>
       <div className="border-b border-gms-divider-dialog px-5 py-4">
-        <p id={bodyId} className="text-gms-body">{body}</p>
+        <div id={bodyId} className="text-gms-body">{body}</div>
         {error && <p role="alert" className="mt-3 text-gms-body text-gms-danger">{error}</p>}
       </div>
       <div className="flex justify-end gap-3 px-5 py-3.5">
         <Button ref={cancelRef} variant="secondary" disabled={pending} onClick={onCancel} className="disabled:opacity-100">
           {cancelLabel}
         </Button>
-        <Button variant="danger" loading={pending} loadingLabel={pendingLabel} onClick={onConfirm} className="min-w-[118px]">
+        <Button variant={confirmVariant} loading={pending} loadingLabel={pendingLabel} onClick={onConfirm} className="min-w-[118px]">
           {confirmLabel}
         </Button>
       </div>
