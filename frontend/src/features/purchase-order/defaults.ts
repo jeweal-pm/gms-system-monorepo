@@ -34,6 +34,8 @@ export const PURCHASE_ORDER_KIND: DocumentKind = {
   location: true,
   locations: "text",
   stockQuantity: false,
+  // INV-20261107-006: the price paid to the vendor (ui-spec Items: "Price"); Quotation keeps "Sale Price".
+  priceTitle: "Price",
   emptyRowText: "Empty row · click to key in",
   documentNote: { max: MAX_DOCUMENT_NOTE, hint: "Printed on the purchase order for the vendor" },
   uploadPhoto: async (file) => {

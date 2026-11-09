@@ -8,6 +8,7 @@ import { QUOTATION_KIND, type DocumentKind } from "@/features/quotation/document
 import { daybookLoadError, daybookState, deletedInfo, DocumentDaybook, documentAccess, useDocumentAccess } from "@/features/trade-document/document-api";
 import { APPROVAL_STATUS_LABELS, DocumentForm, type DocumentFormConfig } from "@/features/trade-document/document-form";
 import { VendorDocumentInfoForm } from "@/features/trade-document/vendor-info-form";
+import { useConfirm } from "@/features/quotation/components/use-confirm";
 import {
   applyMerge,
   clearPickedRows,
@@ -17,6 +18,7 @@ import {
   mapPurchaseSaveError,
   purchaseRestoreError,
   memoStockToPurchaseLine,
+  pickedRowCount,
   pickedSourceKeys,
   PURCHASE_HREF,
   PURCHASE_NOTE_MAX,
@@ -27,6 +29,7 @@ import {
   purchaseSchema,
   purchaseStockNote,
   purchaseTableLine,
+  vendorChangeConfirm,
   toPurchaseInput,
   usePurchaseApi,
   usePurchaseDaybook,
@@ -97,14 +100,29 @@ function BlockedNotice({ message, onClose }: { message: string; onClose: () => v
   return <Toast message={message} onClose={onClose} />;
 }
 
-/** Header (I-01…07, R2-04): a new vendor empties the rows picked from Memo Stock and Purchase Orders; manual rows stay. */
+/**
+ * Header (I-01…07, R2-04): a new vendor empties the rows picked from Memo Stock and Purchase Orders; manual rows stay.
+ * INV-20261107-002: choosing the same vendor again keeps every row, and a real change asks first when picked rows would go.
+ */
 function PurchaseInfoForm({ options }: { options: PurchaseOptions | undefined }) {
   const { getValues, setValue } = useFormContext<PurchaseFormValues>();
+  const { confirm, dialog } = useConfirm();
   const onVendorChange = () => {
     const cleared = clearPickedRows(getValues("lines"));
     if (cleared) setValue("lines", cleared, { shouldDirty: true });
   };
-  return <VendorDocumentInfoForm options={options} onVendorChange={onVendorChange} />;
+  const confirmVendorChange = (vendorId: string) => {
+    const picked = pickedRowCount(getValues("lines"));
+    if (picked === 0) return Promise.resolve(true);
+    const next = options?.vendors.find((vendor) => vendor.id === vendorId);
+    return confirm(vendorChangeConfirm(picked, next?.currency && next.currency !== getValues("currency") ? next.currency : null));
+  };
+  return (
+    <>
+      <VendorDocumentInfoForm options={options} onVendorChange={onVendorChange} confirmVendorChange={confirmVendorChange} />
+      {dialog}
+    </>
+  );
 }
 
 /** The shared item table showing "Auto", "from {PO No.}" and "—" for a blank Location (display only). */

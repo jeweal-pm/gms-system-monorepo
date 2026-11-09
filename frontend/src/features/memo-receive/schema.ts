@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DUE_BEFORE_DOC_MESSAGE, isFilledLine, lineSchema, serviceChargeSchema } from "@/features/quotation/schema";
+import { DUE_BEFORE_DOC_MESSAGE, isFilledLine, lineSchema, lineStoneRule, serviceChargeSchema } from "@/features/quotation/schema";
 
 /** Memo Receive (ADR-0033, ADR-0034): lines, discounts and totals use the Quotation shape (D6, rev 2). */
 export const MEMO_RECEIVE_STATUSES = ["PENDING_APPROVAL", "APPROVED"] as const;
@@ -45,6 +45,7 @@ export const memoReceiveSchema = z
     if (!value.lines.some(isFilledLine)) {
       ctx.addIssue({ code: "custom", path: ["lines"], message: "Add at least one item" });
     }
+    lineStoneRule(value.lines, ctx);
   });
 
 export type MemoReceiveFormValues = z.infer<typeof memoReceiveSchema>;
