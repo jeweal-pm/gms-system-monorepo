@@ -198,6 +198,7 @@ const setupLink: NavLink = {
  * approve-center FE-AP-001/002: Approve opens `/approve` and stays active on `/approve/*`; it is shown when the user
  * may approve any Approve menu (`<leaf>:APPROVE`, Q-AP-13).
  */
+const saleLink = link("sale", "Sale", SaleIcon);
 const approveLink: NavLink = { kind: "link", id: "approve", label: "Approve", href: APPROVE_HREF, icon: ApproveIcon, activePrefix: APPROVE_HREF, permission: APPROVE_PERMISSIONS };
 
 /**
@@ -256,7 +257,7 @@ export const sidebarSections: NavSection[] = [
       link("barcode-printing", "Barcode Printing", BarcodeIcon),
     ],
   },
-  { id: "sale", title: "Sale", items: [link("sale", "Sale", SaleIcon)] },
+  { id: "sale", title: "Sale", items: [saleLink] },
   {
     id: "account",
     title: "Account",
@@ -279,6 +280,42 @@ export const sidebarSections: NavSection[] = [
     ],
   },
 ];
+
+/* ---------- Home shortcut cards (owner design 2026-11-09) ---------- */
+
+/** A titled block is a sidebar disclosure (Memo Outstanding, Account Outstanding, Report groups); untitled = plain links. */
+export type HomeCardBlock = { title?: string; links: NavLink[] };
+export type HomeCard = { id: string; title: string; blocks: HomeCardBlock[] };
+
+/** A sidebar section as a card: its plain links first, then one titled block per disclosure. */
+function sectionCard(id: string, leading: NavLink[] = []): HomeCard {
+  const section = sidebarSections.find((entry) => entry.id === id);
+  if (!section) throw new Error(`Unknown sidebar section ${id}`);
+  const links = [...leading, ...section.items.filter((item): item is NavLink => item.kind === "link")];
+  const groups = section.items.filter((item): item is NavDisclosure => item.kind === "disclosure").map((item) => ({ title: item.label, links: item.children }));
+  return { id, title: section.title ?? id, blocks: links.length > 0 ? [{ links }, ...groups] : groups };
+}
+
+/**
+ * Home follows the sidebar (same links, pages and permissions), arranged as the owner's design: Main Menu holds
+ * Dashboard, Setup, Sale and Approve (no Sale card); Account adds Payable and Receivable before Account Outstanding.
+ */
+export const homeCards: readonly HomeCard[] = [
+  { id: "main", title: "Main Menu", blocks: [{ links: [dashboardLink, setupLink, saleLink, approveLink] }] },
+  sectionCard("pre-sale"),
+  sectionCard("memo"),
+  sectionCard("purchase-order"),
+  sectionCard("inventory"),
+  sectionCard("account", [link("payable", "Payable"), link("receivable", "Receivable")]),
+  sectionCard("report"),
+];
+
+/** Cards without the links the user may not see; empty blocks and cards drop out (same rule as the sidebar). */
+export function visibleHomeCards(cards: readonly HomeCard[], canView: CanView): HomeCard[] {
+  return cards
+    .map((card) => ({ ...card, blocks: card.blocks.map((block) => ({ ...block, links: block.links.filter((entry) => canView(entry.permission)) })).filter((block) => block.links.length > 0) }))
+    .filter((card) => card.blocks.length > 0);
+}
 
 /** Collapsed rail (S1) in the expanded order; Report's clipboard-list glyph moves to the end (DV-04). */
 export const railModules: RailModule[] = [

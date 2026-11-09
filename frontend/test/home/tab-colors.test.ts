@@ -15,6 +15,12 @@ describe("tab strip colours and body background", () => {
     expect(source).not.toMatch(/"bg-\[#FFFFFF\] text-gms-text[^"]*shadow/);
   });
 
+  it("UT-TAB-10 (owner 2026-11-09): every tab label is IBM Plex Sans Thai 14/20 Medium (500), no bold on the active tab", () => {
+    expect(source).toContain("min-w-0 truncate rounded-gms-sm py-1 text-gms-body font-medium tracking-normal");
+    expect(source).not.toContain('active ? "font-bold"');
+    expect(readFileSync("src/app/globals.css", "utf8")).toMatch(/--text-gms-body:\s*14px;[\s\S]*--text-gms-body--line-height:\s*20px;/);
+  });
+
   it("UT-TAB-08 (owner 2026-11-07): the tab shell is 40px high and each tab 36px, bottom-aligned", () => {
     const css = readFileSync("src/app/globals.css", "utf8");
     expect(css).toMatch(/--spacing-gms-topbar:\s*40px;/);
