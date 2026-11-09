@@ -299,7 +299,7 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
     <DocumentKindContext.Provider value={kind}>
       <LinePhotoContext.Provider value={MEMO_RECEIVE_PHOTOS}>
         <FormProvider {...form}>
-          <div className="relative flex h-full bg-white">
+          <div className="relative flex h-full bg-gms-page">
             <div className="min-w-0 flex-1 overflow-y-auto">
               {isDeleted && deleted && <DocumentDeletedBanner info={deleted} canRestore={access.delete} busy={writes.busy} onRestore={() => void onRestore()} />}
               <QuotationHeader
@@ -333,13 +333,12 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
                 }}
               />
 
-              <fieldset disabled={readOnly}>
+              <fieldset disabled={readOnly} className="mx-6 rounded-gms-md bg-gms-surface">
                 <MemoReceiveInfoForm options={options.data} optionsError={options.error} />
               </fieldset>
 
-              <hr className="border-[#E3E6EA]" />
 
-              <div className="flex gap-4 px-6 py-6">
+              <div className="mx-6 rounded-gms-md bg-gms-surface mt-4 mb-6 flex gap-4 px-6 py-6">
                 <div className="min-w-0 flex-1">
                   <div className="mb-4 flex flex-wrap items-center gap-3">
                     <h2 className="text-lg font-medium text-[#1C252E]">Item</h2>

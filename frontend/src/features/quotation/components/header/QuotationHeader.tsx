@@ -110,7 +110,7 @@ export function QuotationHeader({
           {canCreate && (
             <Link
               href={newHref}
-              className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#E3E6EA] px-4 text-sm text-[#6B7480] hover:bg-[#F6F7F8]"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#E3E6EA] px-4 text-sm text-[#6B7480] hover:bg-[#F6F7F8]"
             >
               <Plus className="size-4" /> Create New
             </Link>

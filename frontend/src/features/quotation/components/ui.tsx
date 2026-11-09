@@ -42,7 +42,7 @@ export function Button({
       type="button"
       className={cx(
         "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors disabled:cursor-not-allowed",
-        size === "md" ? "h-10 px-5 text-sm" : "h-8 px-3 text-[13px]",
+        size === "md" ? "h-9 px-5 text-sm" : "h-8 px-3 text-[13px]",
         buttonVariants[variant],
         className,
       )}

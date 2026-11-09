@@ -152,7 +152,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
       >
         {showRail ? (
           <div className="flex h-full">
-            <SidebarRail pathname={pathname} controlsId={sidebarContainerId} takeFocusRequest={takeFocusRequest} onExpand={(request) => switchSidebar(false, request)} />
+            <SidebarRail pathname={pathname} takeFocusRequest={takeFocusRequest} onExpand={(request) => switchSidebar(false, request)} />
             {contextNav && <SidebarContextPanel nav={contextNav} pathname={pathname} />}
           </div>
         ) : (
@@ -258,7 +258,7 @@ function MobileNavigation({ pathname, contextNav, onClose }: Readonly<{ pathname
       >
         {contextNav && !showFullSidebar ? (
           <div className="flex h-full bg-gms-surface-muted">
-            <SidebarRail pathname={pathname} controlsId="mobile-navigation" takeFocusRequest={noFocusRequest} onExpand={() => setShowFullSidebar(true)} />
+            <SidebarRail pathname={pathname} takeFocusRequest={noFocusRequest} onExpand={() => setShowFullSidebar(true)} />
             <SidebarContextPanel nav={contextNav} pathname={pathname} onNavigate={() => onClose(false)} />
           </div>
         ) : (

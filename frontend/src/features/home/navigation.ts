@@ -79,7 +79,7 @@ export const navigationGroups: NavigationGroup[] = [
   { title: "Partner Master", items: [{ label: "Vendor", slug: "vendor", href: "/setup/vendor" }, { label: "Customer", slug: "customer", href: "/setup/customer" }] },
   // stone-master FE-SM-002: real pages under /setup/stone-master (the old `stone` slug is Stone Name).
   { title: "Stone Master", items: STONE_PAGES.map((page) => ({ label: page.navLabel, slug: page.slug, href: stonePageHref(page.slug) })) },
-  { title: "Purchase Order", items: [{ label: "Purchase Order", slug: "purchase-order" }, { label: "Purchase (PU)", slug: "purchase" }] },
+  { title: "Purchase Order", items: [{ label: "Purchase Order", slug: "purchase-order" }, { label: "Purchase", slug: "purchase" }] },
   { title: "Memo", items: ["Memo In", "Memo Return", "Memo Out", "Memo Out Return"].map((label) => ({ label, slug: label.toLowerCase().replaceAll(" ", "-") })) },
   { title: "Inventory", items: ["Load", "Primary", "Consignment", "Movement", "Memo Outstanding"].map((label) => ({ label, slug: label.toLowerCase().replaceAll(" ", "-") })) },
   { title: "Finance", items: [{ label: "Receivable", slug: "receivable" }, { label: "Payable", slug: "payable" }] },
@@ -241,7 +241,7 @@ export const sidebarSections: NavSection[] = [
     items: [
       // purchase-order UI rev 1: real page; stays active on /purchase/purchase-order/[id].
       { ...link("purchase-order", "Purchase Order (PO)", PurchaseOrderIcon, REAL_PAGE_HREFS["purchase-order"]), activePrefix: REAL_PAGE_HREFS["purchase-order"] },
-      { ...link("purchase", "Purchase (PU)", PurchaseIcon, REAL_PAGE_HREFS.purchase), activePrefix: REAL_PAGE_HREFS.purchase },
+      { ...link("purchase", "Purchase", PurchaseIcon, REAL_PAGE_HREFS.purchase), activePrefix: REAL_PAGE_HREFS.purchase },
       link("purchase-outstanding", "Purchase Outstanding", PurchaseOutstandingIcon, REAL_PAGE_HREFS["purchase-outstanding"]),
     ],
   },

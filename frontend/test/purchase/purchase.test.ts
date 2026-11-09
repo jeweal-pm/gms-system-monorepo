@@ -54,7 +54,7 @@ describe("UT-PU-03 routes, page settings and access", () => {
   it("routes; the sidebar opens the page and stays active on a saved purchase (FE-PU-006)", () => {
     expect(PURCHASE_HREF).toBe("/purchase-order/purchase");
     expect(purchaseHref(ID)).toBe(`/purchase-order/purchase/${ID}`);
-    expect(navigationHref({ label: "Purchase (PU)", slug: "purchase" })).toBe(PURCHASE_HREF);
+    expect(navigationHref({ label: "Purchase", slug: "purchase" })).toBe(PURCHASE_HREF);
     const link = sidebarSections.flatMap((section) => section.items).find((item) => "href" in item && item.id === "purchase");
     expect(link && "href" in link ? link.href : undefined).toBe(PURCHASE_HREF);
     expect(link && "href" in link && isNavItemActive(link, purchaseHref(ID))).toBe(true);

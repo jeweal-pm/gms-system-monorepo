@@ -254,3 +254,38 @@ describe("App Shell routes (ADR-0037)", () => {
     expect(html).toBe("<p>content</p>");
   });
 });
+
+describe("UT-TAB-09 Approve sub-pages share one tab (owner 2026-11-09)", () => {
+  let id = 0;
+  const next = () => `t${++id}`;
+
+  it("every /approve/{menu} keys to the Approve tab; other paths are unchanged", () => {
+    expect(tabPath("/approve")).toBe("/approve");
+    expect(tabPath("/approve/memo-receive?q=1")).toBe("/approve");
+    expect(tabPath("/approve/memo-out-return/")).toBe("/approve");
+    expect(tabPath("/approver")).toBe("/approver");
+    expect(tabPath("/memo/memo-receive")).toBe("/memo/memo-receive");
+    expect(fallbackTitle(tabPath("/approve/memo-out"))).toBe("Approve");
+  });
+
+  it("moving between Approve menus switches inside the one tab and remembers the menu", () => {
+    let state = openUrl(emptyTabs, "/approve/memo-receive", "Approve", next()).state;
+    const result = openUrl(state, "/approve/memo-out-return", "Approve", next());
+    state = result.state;
+    expect(result.outcome).toBe("switched");
+    expect(state.tabs).toHaveLength(1);
+    expect(state.tabs[0]).toMatchObject({ path: "/approve", url: "/approve/memo-out-return" });
+  });
+
+  it("stored Approve tabs from before collapse into one", () => {
+    const raw = JSON.stringify({ tabs: [{ url: "/approve/memo-receive", title: "Memo Receive" }, { url: "/approve/memo-out", title: "Memo Out" }], active: 1 });
+    const state = parseStoredTabs(raw, next);
+    expect(state?.tabs.map((tab) => tab.url)).toEqual(["/approve/memo-receive"]);
+  });
+
+  it("TabPage names a grouped tab after its section", () => {
+    const source = readFileSync("src/features/home/tabs/tab-host.tsx", "utf8");
+    expect(source).toContain("const title = group?.title ?? breadcrumbs[breadcrumbs.length - 1]?.label");
+    expect(source).toContain("<Fragment key={pathname}>{children}</Fragment>");
+  });
+});
