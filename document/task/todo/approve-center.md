@@ -1,9 +1,10 @@
 # TODO: approve-center
 
 - feature-id: `approve-center`
-- revision: 1 (UI rev 1; no SA revision)
-- status: **approved** 2026-11-07; phase 1 (FE-AP-001…008) **implemented** 2026-11-07, security reviews and manual-tester pending (FE-AP-012); phase 2 (FE-AP-009…011) blocked on SA
+- revision: 2 (UI rev 2 draft 2026-11-10: document preview modal; rev 1 approved; no SA revision)
+- status: **approved** 2026-11-07; phase 1 (FE-AP-001…008) **implemented** 2026-11-07, security reviews and manual-tester pending (FE-AP-012); phase 2 (FE-AP-009…011) blocked on SA; **rev 2 (FE-AP-013…016) approved 2026-11-10** (owner "Approve and start"); FE-AP-013…015 **implemented** 2026-11-10, FE-AP-016 security reviews pending
 - request: owner 2026-11-07, "uxui ช่วยเขียนสเปค … ของ Approve … หน้า Approve นี้จะเป็นหน้าที่ Approve แต่ละ transaction โดยจะมี Quotation, Reserve, Purchase Order (PO), Purchase, Load to Stock, Merge/Split Stock, Transfer Location และพวก memo (ยกเว้น memo outstanding)"; the owner wants frontend to build a first UI right after this spec.
+- source (rev 2): [source/03-document-modal.png](../../apps/frontend/approve-center/source/03-document-modal.png), [source/04-document-modal-on-page.png](../../apps/frontend/approve-center/source/04-document-modal-on-page.png); owner text 2026-11-10 "ตอนนี้หน้า approve เมื่อกดหมายเลข transaction จะขึ้น modal มาเป็นข้อมูลของ ใบ transaction นั้นๆ"
 - source: [source/01-approve-quotation-empty.png](../../apps/frontend/approve-center/source/01-approve-quotation-empty.png), [source/02-approve-reserve-pending.png](../../apps/frontend/approve-center/source/02-approve-reserve-pending.png)
 - ui-spec: [ui-spec.md](../../apps/frontend/approve-center/ui-spec.md)
 - dependencies: [dependencies.md](../../apps/frontend/approve-center/dependencies.md) — no new package; infra: none
@@ -33,6 +34,10 @@ Phase 1 (FE-AP-001…008) is independent UI on existing APIs and may start once 
 | [ ] | FE-AP-010 | frontend | Reject… / Revise… dialogs and calls | same | **requires-sa** SA-AP-04 (Q-AP-01/02 answered 2026-11-07: Reject = final REJECTED with a required reason; Revise = back to the creator with a note, then resubmitted) | per approved SA bundle | new UT/IT |
 | [ ] | FE-AP-011 | frontend | Inventory menus wired to their documents | same | **requires-sa** SA-AP-05 + those features | per their specs | new UT/IT |
 | [ ] | FE-AP-012 | frontend + parent | Tests, typecheck, lint; both security reviews on the same final diff; manual-tester | — | all phase 1 items | all suites pass; reviews recorded in [testing](../../apps/frontend/approve-center/testing.md) | full frontend suite |
+| [x] | FE-AP-013 | frontend | Document number opens the preview modal (no navigation, Q-AP-19); row error "Open {docNo}" opens it too; focus returns to the number | `frontend/src/features/approve-center/**`, `frontend/test/approve-center/**` | rev 2 approval | As in [ui-spec › Revision 2 › Trigger](../../apps/frontend/approve-center/ui-spec.md#trigger) | new UT-AP-15 |
+| [x] | FE-AP-014 | frontend | `DocumentPreviewModal`: header (badge, title, submitted/waiting line), fields (Customer/Vendor, currency · rate), lines table (stone code/Stock ID, stone + "Ordered by" customer on customer documents (Q-AP-20), pcs, weight, value in the company currency = amount × rate, location), total row, grand-total line when different, note; states loading / failed / no longer pending; dialog a11y | same | FE-AP-013 | Matches source 04 at 1920 px; data from the existing per-document `get`, refetched on open; Value per Q-AP-17 | new UT-AP-16/17, IT-AP-06 |
+| [x] | FE-AP-015 | frontend | Modal footer: Close; Reject…/Revise… disabled with the table's tooltips (Q-AP-18); Approve = the row's confirm flow using the **version the modal loaded**; success closes the modal and removes the row; failure stays open with the message | same | FE-AP-014, FE-AP-005 | No second `get` before approve; changed document → existing "changed" message | new UT-AP-18, IT-AP-07 |
+| [ ] | FE-AP-016 | frontend + parent | Tests, typecheck, lint; both security reviews on the rev 2 diff | — | FE-AP-013…015 | all suites pass | full frontend suite |
 
 Backend items (BE-AP-*) come from SA rev 1 / ADR-0046 (accepted 2026-11-07, all defaults). **On hold:** the owner said "ยังไม่ต้องเริ่มทำ backend" (2026-11-07); do not dispatch until the owner says to start.
 
@@ -56,6 +61,7 @@ Backend items (BE-AP-*) come from SA rev 1 / ADR-0046 (accepted 2026-11-07, all 
 | Revision | Date | Change | Status |
 |---|---|---|---|
 | 1 | 2026-11-07 | Initial spec from sources 01/02 and owner text | **approved** 2026-11-07 (owner, chat) |
+| 2 | 2026-11-10 | Document preview modal from sources 03/04; Q-AP-17 THB, Q-AP-18 Reject/Revise disabled, Q-AP-19 modal only (owner answers); Q-AP-20/21 defaults | **approved** 2026-11-10 (owner, AskUserQuestion "Approve and start"; Q-AP-20 "Ordered by" + customer name, hidden on vendor documents; Q-AP-21 OK) |
 
 ## Owner answers (2026-11-07)
 
@@ -68,6 +74,7 @@ Backend items (BE-AP-*) come from SA rev 1 / ADR-0046 (accepted 2026-11-07, all 
 
 - SA: [approve-center-sa.md](../../coordination/handoffs/approve-center-sa.md) (SA designing phase 2 in parallel; frontend did not edit `document/adr/**` or `document/apps/backend/master/approve-center/**`).
 - Phase 1 evidence (2026-11-07): [changelog](../../changelog/2026-11-07-approve-center-frontend.md); coverage map and results in [testing](../../apps/frontend/approve-center/testing.md). `tsc --noEmit` exit 0; ESLint 0 errors (2 existing warnings in `auth/login-form.tsx`); `vitest run` 86 files / 822 tests passed (before: 765; +57 in `test/approve-center/**`); frontend container restarted, `repair-dev-networks` OK, `/` and the `/approve/*` routes return 200; signed-in smoke of the 7 count lists, a pending list and `get` (version + lines) passed. Not run: a live approve (would change dev data), browser visual comparison with source 02, manual-tester.
+- Rev 2 evidence (2026-11-10): [changelog](../../changelog/2026-11-10-approve-center-document-preview.md). `tsc --noEmit` exit 0; ESLint 0 errors on `src/features/approve-center` + `test/approve-center`; `vitest run` 94 files / 879 tests passed (approve-center 73: +11 UT-AP-15…18, +3 IT-AP-06/07); frontend restarted, `/approve/memo-receive` 200; signed-in smoke of `memoReceive.get` (MR-1008, USD rate 33.25, vendor, no line location) and `memoOut.get` (THB, no rate, empty stone code → Stock ID) and `currency.options` baseCode THB. Not run: browser comparison with source 04, a live approve from the modal (would change dev data). Open: FE-AP-016 both security reviews.
 - Open for FE-AP-012: `sec-auditor` + `security-auditor` on the final diff (parent), manual-tester.
 - Deviations: (1) 1024–1279 px keeps the user's sidebar preference instead of forcing the rail (that needs `app-shell.tsx`, outside the claimed paths); (2) test fixtures live in `frontend/test/approve-center/fixtures.ts`, not `src/features/approve-center/fixtures.ts`, so they cannot reach the bundle; (3) with a search, the footer shows "Showing {n}" only, because the list `total` counts every pending document and ignores `q`; (4) the confirm dialog reuses `confirm-dialog.tsx`, whose confirm button is the danger style, as on the document pages.
 

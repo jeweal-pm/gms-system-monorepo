@@ -1,11 +1,12 @@
 "use client";
 
-import { useInfiniteQuery, useQueries, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueries, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { authTrpc } from "@/lib/auth-trpc";
 import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
 import { APPROVE_MENUS, type ApprovalProc, type ApproveMenu, type AvailableMenu } from "./menus";
+import type { PreviewDetail } from "./preview";
 import { approvalTotal, COUNT_INPUT, countedMenus, pendingListInput, visibleMenus, type CountState, type PendingListInput, type Mine, type PendingPage } from "./model";
 
 /**
@@ -17,7 +18,8 @@ import { approvalTotal, COUNT_INPUT, countedMenus, pendingListInput, visibleMenu
 /** The three procedures phase 1 uses, typed to what it reads. */
 export type DocumentClient = {
   list: { query(input: PendingListInput): Promise<PendingPage> };
-  get: { query(input: { id: string }): Promise<{ version: number; lines?: readonly unknown[] }> };
+  /** The full detail; rev 2 reads it for the preview modal (`PreviewDetail`). */
+  get: { query(input: { id: string }): Promise<PreviewDetail> };
   approve: { mutate(input: { id: string; expectedVersion: number }): Promise<unknown> };
 };
 
@@ -116,6 +118,32 @@ export function useApproveCalls(menu: AvailableMenu) {
   const invalidate = useCallback(() => invalidateAfterApprove(queryClient, menu.proc), [menu.proc, queryClient]);
   const refetchAccess = useCallback(() => queryClient.invalidateQueries({ queryKey: [["permission", "mine"]] }), [queryClient]);
   return { prepare, approve, invalidate, refetchAccess };
+}
+
+/** The tRPC react-query key of `<proc>.get` (shares the cache with the document page). */
+export function detailQueryKey(proc: ApprovalProc, id: string) {
+  return [[proc, "get"], { input: { id }, type: "query" }] as const;
+}
+
+/** Rev 2 (FE-AP-014): the document behind the preview modal, fetched again every time the modal opens. */
+export function useDocumentPreview(menu: AvailableMenu, id: string | null) {
+  const utils = masterTrpc.useUtils();
+  const document = documentClients(utils.client)[menu.proc];
+  return useQuery({
+    queryKey: detailQueryKey(menu.proc, id ?? ""),
+    queryFn: () => document.get.query({ id: id ?? "" }),
+    enabled: id !== null,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: false,
+    retry: retryTransient,
+  });
+}
+
+/** The company currency (Value column, Q-AP-17); same query and cache as the document forms' rate pickers. */
+export function useBaseCurrency(): string | null {
+  const rates = masterTrpc.currency.options.useQuery(undefined, { staleTime: 60_000, retry: retryTransient });
+  return rates.data?.baseCode ?? null;
 }
 
 /** C-AP-01: the sidebar Approve total (sum of the visible menus' counts; null = no badge). */

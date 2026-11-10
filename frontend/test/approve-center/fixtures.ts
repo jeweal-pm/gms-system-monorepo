@@ -1,4 +1,5 @@
 import type { PendingListItem, PendingPage } from "@/features/approve-center/model";
+import type { PreviewDetail } from "@/features/approve-center/preview";
 
 /** Source 02 (Approve › Reserve, two pending rows), as the existing `reserve.list` returns them. Tests only. */
 export const RS1 = "11111111-1111-4111-8111-111111111111";
@@ -27,3 +28,23 @@ export const page = (items: PendingListItem[], patch: Partial<PendingPage> = {})
 
 export const SUPER = { isSuperAdmin: true, permissions: [] as string[] };
 export const mine = (permissions: string[]) => ({ isSuperAdmin: false, permissions });
+
+/** Rev 2: `reserve.get` of RS2611002 (source 03/04 shape), USD at rate 36.2. Tests only. */
+export const reserveDetail = (patch: Partial<PreviewDetail> = {}): PreviewDetail => ({
+  id: RS1,
+  docNo: "RS2611002",
+  status: "PENDING_APPROVAL",
+  version: 4,
+  docDate: "2026-11-01",
+  currency: "USD",
+  exchangeRate: "36.2",
+  documentNote: "Prices are valid for 30 days.\nStones are reserved until the due date.",
+  customer: { name: "Siam Gems Co., Ltd." },
+  lines: [
+    { stoneCode: "SA-RBLDEXVS1AAA", stone: "Sapphire", shape: "Oval", size: "5.0×7.0", pcs: 10, weightCt: "12.400", amount: "17980.00", location: "BKK-01" },
+    { stoneCode: "SA-LBUDVGVS2AA", stone: "Sapphire", shape: "Round", size: "2.5", pcs: 120, weightCt: "7.200", amount: "8618.78", location: "BKK-01" },
+  ],
+  totals: { grandTotal: "26598.78" },
+  deletedAt: null,
+  ...patch,
+});

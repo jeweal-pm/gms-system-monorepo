@@ -211,3 +211,65 @@ Opens the document page (`/…/[id]`) in the app-shell tab system; the document 
 - Packages: none ([dependencies.md](dependencies.md)).
 - Phase 1 (independent UI): FE-AP-001…008 in the [central TODO](../../../task/todo/approve-center.md), using the existing per-document `list` / `get` / `approve` procedures; cells the API cannot fill show "—".
 - Phase 2 (requires SA): SA-AP-01…05 in the [SA handoff](../../../coordination/handoffs/approve-center-sa.md) — one approval summary/count call, enriched pending-list rows (version, line count, stone names, Σ pcs/weight, submitter name/role, submitted time), stone/Stock ID search, Reject/Revise, and later the inventory documents.
+
+## Revision 2: document preview modal
+
+- Revision: UI 2 (TODO revision 2; no SA revision). Status: **approved** 2026-11-10 (owner, AskUserQuestion "Approve and start", after Q-AP-20/21 answers).
+- Owner request (2026-11-10, verbatim): "frontend backend ตอนนี้หน้า approve เมื่อกดหมายเลข transaction จะขึ้น modal มาเป็นข้อมูลของ ใบ transaction นั้นๆ".
+- Sources (owner design PNGs, 2026-11-10):
+  - [source/03-document-modal.png](source/03-document-modal.png), 1141×1010, SHA-256 prefix `7c519fc99cb46341`: the modal alone (Reserve RS2611002).
+  - [source/04-document-modal-on-page.png](source/04-document-modal-on-page.png), 2108×1192, SHA-256 prefix `60ba8e1d0bf097e2`: the modal over Approve › Reserve; the purple note "ตัวอย่างที่ 2 เลือกกดปุ่มในคอลัมน์ Action" is a design annotation, not UI.
+- Owner answers 2026-11-10: Q-AP-17 value in THB as designed; Q-AP-18 Reject…/Revise… disabled as in the table; Q-AP-19 modal only (no way to open the full page from Approve); Q-AP-20 "Ordered by" + customer name; Q-AP-21 line-sum total. See [open-questions](open-questions.md).
+- **No backend change.** Every field comes from the existing per-document `get` (shared document engine `toDetail`, verified 2026-11-10 in `backend-api-master/src/trade-document/document-engine.ts`); Purchase and Purchase Order use the same engine. Phase 2 (ADR-0046) stays on hold.
+
+### Trigger
+
+- The Document cell's number (C-AP-08) becomes a link-styled **button** that opens the modal for that row. It no longer navigates to `/…/[id]` (Q-AP-19, replaces [Document link](#document-link)).
+- A row error's "Open {docNo}" link (stock shortage) also opens the modal.
+- Keyboard: Enter/Space on the number opens it; focus returns to the number on close.
+
+### Layout (source 04 is the reference; source 03 differs only in where the badge sits)
+
+| Area | Content |
+|---|---|
+| Header | Badge "Pending approval" (C-AP-12 tones); title `{menu label}  {docNo}` (`gms-heading` semibold); sub line `Submitted by {name} ({role}) · {dd/MM/yy HH:mm} · waiting {n} day(s)`. Phase 1 has no submitter (Q-AP-14), so it reads `Last saved {dd/MM/yy HH:mm} · waiting {n} day(s)`; under one day "waiting {h} h", under one hour "waiting < 1 h". Close ✕ top right. |
+| Fields | Doc Date (`dd/MM/yy`); **Customer** or **Vendor** by menu (the design's "Supplier" on a Reserve is a placeholder; Reserve has a customer); Currency `USD · rate 36.20`, or only the code when the document is in the company currency. |
+| Lines table | `#`, Stone code, Stone, Pcs, Weight, Value ({company currency}), Location; one row per line in document order; light grey header (`gms-page`), white rows, 1 px row dividers, rounded border. |
+| Total row | Σ Pcs, Σ Weight (`cts`), Σ Value of the lines; grey background. |
+| Grand total | Only when the document grand total differs from the line sum (discount, tax, charges, labour): one right-aligned line under the table, `Grand total {value}` in the same currency. |
+| Document Note | Heading "Document Note"; the note with line breaks kept; empty → "No note". |
+| Footer | Close (secondary), Reject… and Revise… (disabled, info icon + the table's tooltips, Q-AP-18), Approve (primary). |
+
+- Size: width min(1086 px, 100vw − 32 px); height ≤ 90vh; the header and footer stay fixed and the body scrolls. Overlay `rgba(0,0,0,0.4)`.
+
+### Line cells
+
+| Column | Value |
+|---|---|
+| Stone code | `stoneCode`; memo lines without a stone code show the Stock ID; neither → "—". Semibold. |
+| Stone | `{stone} {shape} {size}` (empty parts skipped). Customer documents (Reserve, Memo Out, Memo Out Return): column sub-header **"Ordered by"** and, under each stone, the document's customer name (Q-AP-20, owner 2026-11-10). Vendor documents (Memo Receive, Memo Return, PO, Purchase): no sub-header and no sub line. |
+| Pcs | integer, right-aligned. |
+| Weight | decimal-setup weight places + " cts", right-aligned. |
+| Value | line `amount` × document `exchangeRate`, rounded half-up to the price places; no rate (document in the company currency) → `amount`. Header names the company currency (THB today). Semibold, right-aligned (Q-AP-17). |
+| Location | `location`; memo receive lines have none → "—". |
+
+### States
+
+| State | Behaviour |
+|---|---|
+| Loading | Header shows the row's docNo at once; body shows 5 skeleton rows; Approve disabled. |
+| Loaded | As above. Data is the `get` result, refetched each time the modal opens (no stale document). |
+| Load failed | "Couldn't load {docNo}." + Try again; Approve disabled. |
+| No longer pending | `get` returns another status, or NOT_FOUND / `_DELETED`: "{docNo} is no longer waiting for approval." Approve hidden; closing refreshes the list. |
+| Approving | Approve opens the same confirm as the row (Approve one); on success the modal closes, the row leaves, counts drop, toast "{docNo} approved". On failure the modal stays open and shows the message above the footer. |
+
+- Approve from the modal sends the **version the modal loaded**, so the approver approves exactly what they saw. An edit made meanwhile fails with the existing "changed" message and Try again reloads it. (This closes [INV-20261107-001](../../../task/investigation/INV-20261107-001-approve-center-approves-unreviewed-version.md) for the modal path; the row's Approve button is unchanged.)
+- Approve shows only with `<leaf>:APPROVE` (same as the row). The modal itself needs the list's `<leaf>:VIEW`, which the row already implies.
+
+### Accessibility
+
+`role="dialog"`, `aria-modal="true"`, labelled by the title, described by the sub line; focus starts on Close; Tab stays inside; Esc closes; the background is inert. The lines table is a real `<table>` with a caption ("{docNo} lines", visually hidden).
+
+### Revision 2 TODO
+
+FE-AP-013…016 in the [central TODO](../../../task/todo/approve-center.md).
