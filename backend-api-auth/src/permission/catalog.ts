@@ -1,9 +1,11 @@
 /**
  * Permission catalog v2 (ADR-0020 §3, user-permission SA revision 2).
- * 42 grantable leaves: Dashboard has VIEW/APPROVE/PRICE/PRINT/EXCEL, Document Setup has VIEW/EDIT
+ * 43 grantable leaves: Dashboard has VIEW/APPROVE/PRICE/PRINT/EXCEL, Document Setup has VIEW/EDIT
  * (document-setup SA rev 1, 2026-10-23), Decimal Setup has VIEW/EDIT (decimal-setup SA rev 1 / ADR-0040,
- * 2026-11-03), every other leaf has all nine actions, so 5 + 2 + 2 + 39 x 9 = 360 applicable cells
- * (Currency added by currency SA rev 1, 2026-10-26). Sections and groups are UI structure only
+ * 2026-11-03), Approval has VIEW/EDIT (owner 2026-11-10), every other leaf has all nine actions, so
+ * 5 + 2 + 2 + 2 + 39 x 9 = 362 applicable cells (Currency added by currency SA rev 1, 2026-10-26).
+ * Owner 2026-11-10: menus follow the current modules — Setup rows in the Setup tile order, Approval added, and
+ * labels renamed to what the app shows (keys, and so stored grants, unchanged). Sections and groups are UI structure only
  * and are never stored as grants. Changing the catalog is a code change; stored grants for
  * removed cells are ignored (filtered on read).
  */
@@ -34,32 +36,34 @@ export const PERMISSION_CATALOG: readonly CatalogNode[] = [
     leaf("company-profile", "Company Profile"),
     leaf("user-and-permission", "User and Permission"),
     leaf("notifications", "Notifications"),
-    leaf("document-setup", "Document Setup", ["VIEW", "EDIT"]),
-    // Grants copied once from Document Setup by migration 20261103090000_decimal_setup_grants (owner Q-DEC-14).
-    leaf("decimal-setup", "Decimal Setup", ["VIEW", "EDIT"]),
     group("master-code", "Master Code", [
       leaf("vendor", "Vendor"),
       leaf("customer", "Customer"),
       leaf("currency", "Currency"),
       leaf("stone-master", "Stone Master"),
       leaf("location-master", "Location Master"),
-      leaf("certificate-type", "Certificate Type"),
-      leaf("labor-name", "Labor Name"),
+      leaf("certificate-type", "Certificate Master"),
+      leaf("labor-name", "Service Fee"),
       leaf("sale-person", "Sale Person"),
     ]),
+    leaf("document-setup", "Document Setup", ["VIEW", "EDIT"]),
+    // Setup › Approval (approval-setup, owner 2026-11-10): a settings page, VIEW and EDIT only; no grants copied.
+    leaf("approval-setup", "Approval", ["VIEW", "EDIT"]),
+    // Grants copied once from Document Setup by migration 20261103090000_decimal_setup_grants (owner Q-DEC-14).
+    leaf("decimal-setup", "Decimal Setup", ["VIEW", "EDIT"]),
   ]),
   section("pre-sale", "PRE-SALE", [leaf("quotation", "Quotation"), leaf("reserve", "Reserve")]),
   section("memo", "Memo", [
     leaf("memo-receive", "Memo Receive"),
     leaf("memo-return", "Memo Return"),
     leaf("memo-out", "Memo Out"),
-    leaf("memo-out-return", "Memo Out-Return"),
+    leaf("memo-out-return", "Memo Out Return"),
     group("memo-outstanding", "Memo Outstanding", [
       leaf("memo-outstanding-vendor", "Vendor"),
       leaf("memo-outstanding-customer", "Customer"),
     ]),
   ]),
-  section("purchase", "PURCHASE", [
+  section("purchase", "PURCHASE ORDER", [
     leaf("purchase-order", "Purchase Order (PO)"),
     leaf("purchase", "Purchase"),
     leaf("purchase-outstanding", "Purchase Outstanding"),
@@ -69,15 +73,15 @@ export const PERMISSION_CATALOG: readonly CatalogNode[] = [
     leaf("merge-split", "Merge/Split"),
     leaf("stock-transfer-location", "Stock Transfer Location"),
     leaf("stock-adjustment", "Stock Adjustment"),
-    leaf("barcode", "Barcode"),
+    leaf("barcode", "Barcode Printing"),
   ]),
   section("sale-section", "SALE", [leaf("sale", "Sale")]),
   section("account", "ACCOUNT", [
     leaf("payable", "Payable"),
     leaf("receivable", "Receivable"),
     group("account-outstanding", "Account Outstanding", [
-      leaf("outstanding-payable", "Outstanding Payable"),
-      leaf("outstanding-receivable", "Outstanding Receivable"),
+      leaf("outstanding-payable", "O/S Payable"),
+      leaf("outstanding-receivable", "O/S Receivable"),
     ]),
   ]),
   section("report", "REPORT", [
@@ -90,7 +94,7 @@ export const PERMISSION_CATALOG: readonly CatalogNode[] = [
       leaf("closing-stock-consignment", "Consignment Stock"),
     ]),
     group("sale-report", "Sale Report", [
-      leaf("sale-report-costing", "Compare with costing"),
+      leaf("sale-report-costing", "Compare With Costing"),
       leaf("sale-report-shareholder", "Shareholder Report"),
       leaf("sale-report-commission", "Commission Report"),
     ]),

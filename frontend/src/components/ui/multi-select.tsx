@@ -13,6 +13,9 @@ type MultiSelectProps = {
   options: readonly MultiSelectOption[];
   /** Trigger text while nothing is selected (user-permission: "Select location"; stone-master Shape: "+ Add size"). */
   placeholder?: string;
+  /** List text when the options failed to load / are empty (defaults: the Location wording). */
+  loadErrorText?: string;
+  emptyText?: string;
   value: string[];
   onChange: (value: string[]) => void;
   onBlur: () => void;
@@ -29,7 +32,7 @@ type MultiSelectProps = {
  * Backspace removes the last chip. Chips outside the combobox have their own
  * remove buttons.
  */
-export function MultiSelect({ id, label, options, value, onChange, onBlur, error, required, readOnly, status = "ready", comboboxRef, placeholder = "Select location" }: MultiSelectProps) {
+export function MultiSelect({ id, label, options, value, onChange, onBlur, error, required, readOnly, status = "ready", comboboxRef, placeholder = "Select location", loadErrorText = "Couldn't load locations.", emptyText = "No locations" }: MultiSelectProps) {
   const listId = useId();
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -86,8 +89,10 @@ export function MultiSelect({ id, label, options, value, onChange, onBlur, error
     <FieldShell id={id} label={label} required={required} error={error} labelAsText readOnly={readOnly}>
       <div
         className={cx(
-          fieldBoxClass({ invalid: Boolean(error), readOnly }),
-          "relative flex items-center gap-2 pl-4 pr-3",
+          // Grows downward as chips wrap (owner 2026-11-10): 52 px minimum (one chip row: 28 + 2 × 11 + 2 border),
+          // never a fixed height, so a second row can't overflow up into the notch label.
+          fieldBoxClass({ invalid: Boolean(error), readOnly }).replace("h-[52px]", "min-h-[52px]"),
+          "relative flex items-center gap-2 py-[11px] pl-4 pr-3",
           !readOnly && "cursor-pointer focus-within:border-gms-primary focus-within:ring-2 focus-within:ring-gms-primary/20",
         )}
         onClick={() => {
@@ -153,8 +158,8 @@ export function MultiSelect({ id, label, options, value, onChange, onBlur, error
           className="absolute left-0 right-0 top-full z-30 mt-1 max-h-60 overflow-auto rounded-gms-md border border-gms-border bg-gms-surface py-1 shadow-gms-overlay"
         >
           {status === "loading" && <li className="px-4 py-2 text-gms-body text-gms-text-secondary">Loading…</li>}
-          {status === "error" && <li className="px-4 py-2 text-gms-body text-gms-danger">Couldn&apos;t load locations.</li>}
-          {status === "ready" && options.length === 0 && <li className="px-4 py-2 text-gms-body text-gms-text-secondary">No locations</li>}
+          {status === "error" && <li className="px-4 py-2 text-gms-body text-gms-danger">{loadErrorText}</li>}
+          {status === "ready" && options.length === 0 && <li className="px-4 py-2 text-gms-body text-gms-text-secondary">{emptyText}</li>}
           {hasOptions &&
             options.map((option, index) => {
               const isSelected = value.includes(option.id);

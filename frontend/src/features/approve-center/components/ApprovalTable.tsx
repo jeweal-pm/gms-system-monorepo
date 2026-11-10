@@ -140,7 +140,7 @@ export function ApprovalTable({ menu, rows, sort, onSort, selected, onToggleRow,
               </td>
               <td className={cx(td, "tabular-nums")}>{index + 1}</td>
               <td className={td}>
-                <button type="button" data-preview-id={row.id} aria-haspopup="dialog" onClick={() => onOpen(row)} className={cx("rounded-gms-sm font-medium text-gms-primary underline", focusRing)}>
+                <button type="button" data-preview-id={row.id} aria-haspopup="dialog" onClick={() => onOpen(row)} className={cx("rounded-gms-sm font-medium text-gms-text underline", focusRing)}>
                   {row.docNo}
                 </button>
                 <span className="block text-gms-label text-gms-text-secondary">{shortDate(row.docDate)}</span>

@@ -62,13 +62,21 @@ function labelBackground({ invalid, readOnly, disabled }: { invalid: boolean; re
 }
 
 /**
+ * Owner 2026-11-10: on focus the field draws a 2 px ring outside its border (`ring-2`), which crossed the label's
+ * transparent top half. While the field has focus the label's fill starts 3 px higher (5 px), so the ring stops at
+ * the label like the border does. Only editable fields take focus, so the fill is the surface (or the error fill).
+ */
+export const LABEL_FOCUS_SURFACE = "group-focus-within/field:bg-[linear-gradient(to_bottom,transparent_5px,var(--color-gms-surface)_5px)]";
+export const LABEL_FOCUS_DANGER = "group-focus-within/field:bg-[linear-gradient(to_bottom,transparent_5px,var(--color-gms-danger-subtle)_5px)]";
+
+/**
  * C-09 notched outline: the label sits on the top border. The required "*"
  * is visual; controls also set aria-required. Errors render below in italics.
  */
 export function FieldShell({ id, label, required, error, labelAsText, readOnly, disabled, labelPosition = "notch", children, className }: FieldShellProps) {
   const labelClass = cx(
     "absolute z-[1] text-gms-label font-medium leading-4",
-    labelPosition === "above" ? "top-0 left-1" : cx("-top-2 left-3 px-1", labelBackground({ invalid: Boolean(error), readOnly, disabled })),
+    labelPosition === "above" ? "top-0 left-1" : cx("-top-2 left-3 px-1", labelBackground({ invalid: Boolean(error), readOnly, disabled }), error ? LABEL_FOCUS_DANGER : LABEL_FOCUS_SURFACE),
     error ? "text-gms-danger" : "text-gms-text",
   );
   const labelContent = (
@@ -78,7 +86,7 @@ export function FieldShell({ id, label, required, error, labelAsText, readOnly, 
     </>
   );
   return (
-    <div className={cx("relative", labelPosition === "above" && "pt-[22px]", className)}>
+    <div className={cx("group/field relative", labelPosition === "above" && "pt-[22px]", className)}>
       {labelAsText ? (
         <span id={`${id}-label`} className={labelClass}>{labelContent}</span>
       ) : (

@@ -163,3 +163,14 @@ describe("UT-AS-12 ConfirmDialog additions (FE-AS-006)", () => {
     expect(html(createElement(ConfirmDialog, { ...base, body: "Plain" }))).toContain("bg-gms-danger-button");
   });
 });
+
+describe("UT-AS-13 Approval permission leaf (catalog 2026-11-10)", () => {
+  it("the tile follows approval-setup:VIEW; the key is a Setup catalog key", async () => {
+    const { canViewWith, menuKeyFor, SETUP_MENU_KEYS } = await import("@/features/home/navigation");
+    expect(menuKeyFor("approval-setup")).toBe("approval-setup");
+    expect(SETUP_MENU_KEYS).toContain("approval-setup");
+    const tile = setupLandingTiles.find((entry) => entry.id === "approval-setup");
+    expect(canViewWith({ isSuperAdmin: false, permissions: ["approval-setup:VIEW"] }, tile?.permission)).toBe(true);
+    expect(canViewWith({ isSuperAdmin: false, permissions: ["document-setup:VIEW"] }, tile?.permission)).toBe(false);
+  });
+});

@@ -75,7 +75,7 @@ export function QuotationHeader({
       <div>
         <p className="text-xs text-[#6B7480]">{noLabel}</p>
         <div className="mt-1 flex flex-wrap items-center gap-3">
-          <h1 className={cx("text-[28px] leading-none font-medium", isPreview ? "text-[#6B7480]" : "text-[#1C252E]")}>
+          <h1 className={cx("text-[28px] leading-none font-medium", isPreview ? "text-[#1C252E]" : "text-[#1C252E]")}>
             {docNo}
           </h1>
           {badge && <span className={cx("rounded-full px-3 py-1 text-xs font-medium", badge.tone)}>{badge.label}</span>}

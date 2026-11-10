@@ -8,6 +8,7 @@ import {
   DEFAULT_SUBTASK_VIEW,
   collapsedGroupIds,
   countEnabled,
+  matrixApplicableCount,
   filterCatalog,
   groupIds,
   sectionOptions,
@@ -96,7 +97,7 @@ export function PermissionsCard({ catalog, catalogStatus, errorMessage, onRetry,
           {catalog && enabled !== null && (
             <p className="text-gms-label text-gms-text-secondary" aria-live="polite">
               <strong className="font-semibold text-gms-text">{enabled}</strong>
-              {` of ${catalog.applicableCount} permissions on`}
+              {` of ${matrixApplicableCount(catalog.nodes)} permissions on`}
             </p>
           )}
         </div>
