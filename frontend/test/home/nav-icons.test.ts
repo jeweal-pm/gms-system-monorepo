@@ -46,7 +46,7 @@ describe("design nav icons", () => {
       "Memo Out Return": "memo-out-return",
       "Memo Outstanding": "file-outstanding",
       "Purchase Order (PO)": "purchase-order",
-      "Purchase (PU)": "purchase",
+      Purchase: "purchase",
       "Purchase Outstanding": "purchase-outstanding",
       "Load to Stock": "box-clock",
       "Merge/Split": "split-vertical",

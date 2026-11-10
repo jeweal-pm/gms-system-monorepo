@@ -17,10 +17,21 @@ export type OpenOutcome = "opened" | "switched" | "home" | "limit";
 
 export const emptyTabs: TabsState = { tabs: [], activeId: "" };
 
-/** The tab key of a URL: its path without query, hash or trailing slash. */
+/**
+ * Sections whose sub-pages share one tab (owner 2026-11-09): Approve › {Menu} moves inside the Approve tab
+ * instead of opening a tab per menu. The tab keeps the sub-page it was left on in its `url`.
+ */
+export const TAB_GROUPS: readonly { path: string; title: string }[] = [{ path: "/approve", title: "Approve" }];
+
+export function tabGroup(path: string): { path: string; title: string } | undefined {
+  return TAB_GROUPS.find((group) => path === group.path || path.startsWith(`${group.path}/`));
+}
+
+/** The tab key of a URL: its path without query, hash or trailing slash; a grouped sub-page keys to its section. */
 export function tabPath(url: string): string {
-  const path = url.split(/[?#]/, 1)[0] || HOME_PATH;
-  return path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
+  const raw = url.split(/[?#]/, 1)[0] || HOME_PATH;
+  const path = raw.length > 1 && raw.endsWith("/") ? raw.slice(0, -1) : raw;
+  return tabGroup(path)?.path ?? path;
 }
 
 export function activeTab(state: TabsState): Tab | undefined {
@@ -93,6 +104,8 @@ export function tabTitle(pageTitle: string, docNo: string | null | undefined): s
 /** Until a page tells its own title (or after a reload), the last path segment in words. */
 export function fallbackTitle(path: string): string {
   if (path === HOME_PATH) return HOME_TITLE;
+  const group = tabGroup(path);
+  if (group) return group.title;
   const segment = decodeURIComponentSafe(path.slice(path.lastIndexOf("/") + 1));
   return segment.replace(/-/g, " ").replace(/^\w/, (letter) => letter.toUpperCase()) || HOME_TITLE;
 }

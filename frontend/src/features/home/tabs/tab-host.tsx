@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Activity, createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import type { Breadcrumb } from "../navigation";
@@ -20,6 +20,7 @@ import {
   serializeTabs,
   TAB_LIMIT_MESSAGE,
   tabPath,
+  tabGroup,
   tabsStorageKey,
   tabTitle,
   updateTab,
@@ -333,9 +334,13 @@ export function TabPage({ breadcrumbs, children }: Readonly<{ breadcrumbs: Bread
   const pathname = usePathname();
   const path = tabPath(pathname ?? HOME_PATH);
   const tabbed = registry !== null && path !== HOME_PATH;
-  const title = breadcrumbs[breadcrumbs.length - 1]?.label ?? fallbackTitle(path);
+  // A grouped section (Approve) keeps its section name on the tab; the breadcrumbs still name the sub-page.
+  const group = tabGroup(path);
+  const title = group?.title ?? breadcrumbs[breadcrumbs.length - 1]?.label ?? fallbackTitle(path);
+  // Keyed by the real pathname so moving to another sub-page of a group starts that page fresh.
+  const element = useMemo(() => (group ? <Fragment key={pathname}>{children}</Fragment> : children), [children, group, pathname]);
   useLayoutEffect(() => {
-    if (tabbed) registry.register(path, { element: children, breadcrumbs, title });
+    if (tabbed) registry.register(path, { element, breadcrumbs, title });
   });
   return tabbed ? null : <>{children}</>;
 }

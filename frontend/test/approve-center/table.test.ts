@@ -153,3 +153,17 @@ describe("UT-AP-09 Reject… / Revise… disabled", () => {
     expect(html).toContain("group-focus-within:block");
   });
 });
+
+describe("UT-AP-14 header colour (owner 2026-11-09)", () => {
+  it("every header cell, Action included, uses the gray header background and nothing overrides it", async () => {
+    const { TableHead } = await import("@/features/approve-center/components/ApprovalTable");
+    const markup = renderToStaticMarkup(createElement("table", null, createElement(TableHead)));
+    const headers = markup.match(/<th [^>]*>/g) ?? [];
+    expect(headers).toHaveLength(9);
+    for (const header of headers) {
+      expect(header).toContain("bg-gms-page");
+      expect(header).not.toContain("bg-inherit");
+    }
+    expect(headers[8]).toContain("sticky right-0");
+  });
+});

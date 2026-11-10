@@ -23,10 +23,10 @@ describe("navigationHref", () => {
 });
 
 describe("Home without shortcuts (user-permission SA rev 3 D3-02)", () => {
-  it("UT-HOME-03 the message shows only after the gateway answered with no shortcuts", () => {
+  it("UT-HOME-03 the message shows only after the access check answered with no shortcuts", () => {
     expect(hasNoShortcuts(true, [])).toBe(true);
     expect(hasNoShortcuts(false, undefined)).toBe(false);
-    expect(hasNoShortcuts(true, [{ title: "Setup", items: [{ label: "Company Profile", slug: "company-profile" }] }])).toBe(false);
+    expect(hasNoShortcuts(true, [{ id: "main", title: "Main Menu", blocks: [{ links: [{ kind: "link", id: "dashboard", label: "Dashboard", href: "/modules/dashboard" }] }] }])).toBe(false);
     expect(NO_SHORTCUTS_MESSAGE).toContain("Ask your administrator");
   });
 });

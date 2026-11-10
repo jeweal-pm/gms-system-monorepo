@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef } from "react";
 import type { NavIcon } from "./nav-icons";
 import { GmsMark } from "./gms-mark";
-import { isNavItemActive, isNavSectionActive, railModules, sidebarSections, sidebarToggleIcon, visibleRailModules, visibleSections, type NavLink, type NavSection } from "./navigation";
+import { isNavItemActive, isNavSectionActive, railModules, sidebarSections, visibleRailModules, visibleSections, type NavLink, type NavSection } from "./navigation";
 import { useMenuAccess } from "./use-menu-access";
 
 /** What should receive focus right after the layout switches (keeps keyboard users in place). */
@@ -270,17 +270,17 @@ export function RailActionButton({ label, icon, onClick, active = false, srSuffi
   );
 }
 
-/* ---------- SidebarRail (N-05, S1): 55 + 1 px, logo mark, 11 modules, ⇆ Expand sidebar ---------- */
+/*
+ * ---------- SidebarRail (N-05, S1): 55 + 1 px, logo mark, 11 modules ----------
+ * The ⇆ Expand sidebar button was removed (owner 2026-11-09); a module group button still opens the sidebar.
+ */
 
 export function SidebarRail({
   pathname,
-  controlsId,
   takeFocusRequest,
   onExpand,
 }: Readonly<{
   pathname: string;
-  /** Id of the sidebar container, referenced by the toggle's `aria-controls`. */
-  controlsId: string;
   takeFocusRequest: TakeSidebarFocusRequest;
   onExpand: (request: SidebarFocusRequest) => void;
 }>) {
@@ -291,7 +291,8 @@ export function SidebarRail({
   const modules = visibleRailModules(railModules, sections, canView);
 
   useEffect(() => {
-    if (takeFocusRequest()?.target === "toggle") railRef.current?.querySelector<HTMLElement>("[data-sidebar-toggle]")?.focus();
+    // After Collapse sidebar, focus lands on the first module (the rail has no toggle of its own any more).
+    if (takeFocusRequest()?.target === "toggle") railRef.current?.querySelector<HTMLElement>("nav a, nav button")?.focus();
   }, [takeFocusRequest]);
 
   return (
@@ -325,9 +326,6 @@ export function SidebarRail({
               </li>
             );
           })}
-          <li>
-            <RailActionButton label="Expand sidebar" icon={sidebarToggleIcon} ariaControls={controlsId} isSidebarToggle onClick={() => onExpand({ target: "toggle" })} />
-          </li>
         </ul>
       </nav>
     </div>

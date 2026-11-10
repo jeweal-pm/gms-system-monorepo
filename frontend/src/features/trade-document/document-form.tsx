@@ -425,7 +425,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
     <LineOptionsContext.Provider value={api.options}>
       <LinePhotoContext.Provider value={NO_PHOTOS}>
         <FormProvider {...form}>
-          <div className="relative flex h-full bg-white">
+          <div className="relative flex h-full bg-gms-page">
             <div className="min-w-0 flex-1 overflow-y-auto">
               {isDeleted && deleted && <DocumentDeletedBanner info={deleted} canRestore={canDelete} busy={api.busy} onRestore={() => void onRestore()} />}
               <QuotationHeader
@@ -460,14 +460,13 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
               />
 
               {readOnly && config.viewHeader ? (
-                config.viewHeader({ values: values as unknown as V, options: api.options })
+                <div className="mx-6 rounded-gms-md bg-gms-surface">{config.viewHeader({ values: values as unknown as V, options: api.options })}</div>
               ) : (
-                <fieldset disabled={readOnly}>{config.header({ readOnly, options: api.options })}</fieldset>
+                <fieldset disabled={readOnly} className="mx-6 rounded-gms-md bg-gms-surface">{config.header({ readOnly, options: api.options })}</fieldset>
               )}
 
-              <hr className="border-[#E3E6EA]" />
 
-              <div className="flex gap-4 px-6 py-6">
+              <div className="mx-6 rounded-gms-md bg-gms-surface mt-4 mb-6 flex gap-4 px-6 py-6">
                 <div className="min-w-0 flex-1">
                   <div className="mb-4 flex items-center gap-3">
                     <h2 className="text-lg font-medium text-[#1C252E]">Item</h2>

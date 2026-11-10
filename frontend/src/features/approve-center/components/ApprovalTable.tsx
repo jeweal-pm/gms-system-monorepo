@@ -33,7 +33,7 @@ const COLUMNS: { key: string; label: string; sort?: SortKey; className: string; 
   { key: "value", label: "Value", sort: "value", className: "min-w-[200px]", align: "right" },
   { key: "submitted", label: "Submitted", sort: "submitted", className: "min-w-[145px]" },
   { key: "status", label: "Status", className: "min-w-[130px]" },
-  { key: "action", label: "Action", className: "min-w-[320px] sticky right-0 bg-inherit" },
+  { key: "action", label: "Action", className: "min-w-[320px] sticky right-0" },
 ];
 
 const th = "h-[55px] border-b-2 border-gms-border bg-gms-page px-3 text-left text-gms-body font-semibold whitespace-nowrap text-gms-text";
@@ -49,7 +49,7 @@ export function TableHead({ sort, onSort, selectAll }: { sort?: SortState; onSor
               key={column.key}
               scope="col"
               aria-sort={sortable && column.sort && sort ? ariaSort(sort, column.sort) : undefined}
-              className={cx(th, column.className, column.align === "right" && "text-right", column.key === "action" && "bg-gms-page")}
+              className={cx(th, column.className, column.align === "right" && "text-right")}
             >
               {column.key === "select" ? (
                 selectAll

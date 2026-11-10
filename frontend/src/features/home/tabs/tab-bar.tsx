@@ -114,7 +114,7 @@ function TabStrip({ tabs, activeId, onSelect, onClose }: Readonly<Pick<TabBarPro
                 title={tab.title}
                 onClick={() => onSelect(tab.id)}
                 onKeyDown={(event) => handleKeyDown(event, index)}
-                className={`min-w-0 truncate rounded-gms-sm py-1 text-gms-body ${active ? "font-bold" : ""} ${focusRing}`}
+                className={`min-w-0 truncate rounded-gms-sm py-1 text-gms-body font-medium tracking-normal ${focusRing}`}
               >
                {tab.title}
               </button>
