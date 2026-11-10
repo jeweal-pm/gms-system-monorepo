@@ -27,6 +27,18 @@ Not covered by automation: the component event handlers in `ApproveCenterPage.ts
 
 Runtime smoke (2026-11-07): frontend container restarted, `repair-dev-networks` OK; `/`, `/approve`, `/approve/reserve`, `/approve/quotation`, `/approve/load-to-stock` and an unknown slug return 200. Signed in as the dev Super Admin: the 7 count lists `{status: PENDING_APPROVAL, limit: 1}` answered (Memo Receive 1, Memo Out 1, others 0); a pending list returned the fields the adapter reads; `memoOut.get` / `memoReceive.get` returned `version` and `lines`. No live approve was sent, because it would change dev data.
 
+## Automated coverage (rev 2 document preview, run 2026-11-10)
+
+| ID | File | Covers |
+|---|---|---|
+| UT-AP-15 | `test/approve-center/preview.test.ts` | The document number is a dialog button (no href); the row error's "Open" opens the modal (Q-AP-19) |
+| UT-AP-16 | same | Exact half-up decimal maths; conversion only for a foreign currency with a rate (Q-AP-17); Reserve view (Customer, "Ordered by" customer Q-AP-20, THB values, totals); grand-total line only when different (Q-AP-21); Memo Receive view (Vendor, Stock ID fallback, "—" location) |
+| UT-AP-17 | same | Waiting text; "Last saved …" / "Submitted by …" header line; approved/deleted = no longer pending |
+| UT-AP-18 | same | Modal body markup (fields, Ordered by, Value (THB), totals, caption, note / "No note"); Approve uses the loaded version without `prepare`; Reject…/Revise… disabled |
+| IT-AP-06 | `test/approve-center/approve.integration.test.ts` | The modal's `get` key equals tRPC's `reserve.get` key; GET with CSRF through the real link |
+| IT-AP-07 | same | Modal through the providers with seeded `get` + `currency.options`: loaded document; no-longer-pending hides Approve; a failed approve shows its alert |
+
+Result: `vitest run` 94 files / 879 tests passed; approve-center 73.
 ## Security review before handoff
 
 | Reviewer | Source revision / changed scope | Status | Evidence / ticket IDs |
