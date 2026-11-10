@@ -42,6 +42,7 @@ function render(patch: Partial<Parameters<typeof ApprovalTable>[0]> = {}) {
         locked: false,
         errors: new Map(),
         onApprove: noop,
+        onOpen: noop,
         ...patch,
       }),
     ),
@@ -102,9 +103,10 @@ describe("UT-AP-05 table markup (source 02)", () => {
     expect(html).toMatch(/<th scope="col"[^>]*>Action<\/th>/);
   });
 
-  it("renders the design cells: doc link + date, party + sub line, value with currency, last-saved time, Pending, '—' for Qty and submitter", () => {
+  it("renders the design cells: doc number (opens the preview, rev 2) + date, party + sub line, value with currency, last-saved time, Pending, '—' for Qty and submitter", () => {
     const html = render();
-    expect(html).toContain('href="/pre-sale/reserve/11111111-1111-4111-8111-111111111111"');
+    expect(html).toContain(`data-preview-id="${RS1}"`);
+    expect(html).not.toContain("href=");
     expect(html).toContain("01/11/26");
     expect(html).toContain("Siam Gems Co., Ltd.");
     expect(html).toContain("Hold until 05/11/26");

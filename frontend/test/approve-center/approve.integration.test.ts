@@ -5,14 +5,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ApproveRoutePage from "@/app/(app)/approve/page";
 import { ToastProvider } from "@/components/ui/toast";
-import { documentClients, listQueryKey, useApproveCalls } from "@/features/approve-center/api";
+import { documentClients, detailQueryKey as previewKey, listQueryKey, useApproveCalls } from "@/features/approve-center/api";
 import { ApproveMenuPage } from "@/features/approve-center/components/ApproveCenterPage";
+import { DocumentPreviewModal } from "@/features/approve-center/components/DocumentPreviewModal";
 import { approveMenuFor, type AvailableMenu } from "@/features/approve-center/menus";
 import { approveFailure, COUNT_INPUT, pendingListInput, rowsOf, runBulkApprove } from "@/features/approve-center/model";
 import { Sidebar } from "@/features/home/sidebar";
 import { authTrpc, createAuthTrpcClient } from "@/lib/auth-trpc";
 import { createMasterTrpcClient, masterTrpc } from "@/lib/master-trpc";
-import { listItem, page, RS1, RS2, sourceTwoItems } from "./fixtures";
+import { listItem, page, reserveDetail, RS1, RS2, sourceTwoItems } from "./fixtures";
 
 /**
  * IT-AP-01…05 (approve-center FE-AP-001…006): the Approve pages, the sidebar badge and the approve calls through the
@@ -245,5 +246,50 @@ describe("IT-AP-05 approve selected", () => {
     expect(fetches).toBe(4);
     expect(outcome.ok).toBe(1);
     expect(outcome.failed.get(RS2)?.toast).toBe("RS2611003 is no longer pending.");
+  });
+});
+
+describe("IT-AP-06 preview data (rev 2, FE-AP-014)", () => {
+  it("the modal's get shares the tRPC cache key and goes through the real link with CSRF", async () => {
+    expect(previewKey("reserve", RS1)).toEqual(getQueryKey(masterTrpc.reserve.get, { id: RS1 }, "query"));
+    respond = () => ok(reserveDetail());
+    const { utils } = probe(seeded(ALL_GRANTS));
+    const detail = await documentClients(utils.client).reserve.get.query({ id: RS1 });
+    expect(detail.version).toBe(4);
+    expect(calls.map(({ path, method, input, csrf }) => ({ path, method, input, csrf }))).toEqual([{ path: "reserve.get", method: "GET", input: { id: RS1 }, csrf: "1" }]);
+  });
+});
+
+describe("IT-AP-07 preview modal through the providers (rev 2, FE-AP-014/015)", () => {
+  const row = () => rowsOf([page(sourceTwoItems())]).find((entry) => entry.id === RS1)!;
+  const modal = (queryClient: QueryClient) =>
+    render(queryClient, createElement(DocumentPreviewModal, { menu: reserve, row: row(), busy: false, error: null, onClose: () => undefined, onApprove: () => undefined }));
+
+  it("renders the loaded document: title, Customer, THB values, footer actions", () => {
+    const queryClient = seeded(ALL_GRANTS);
+    queryClient.setQueryData(previewKey("reserve", RS1), reserveDetail());
+    queryClient.setQueryData(getQueryKey(masterTrpc.currency.options, undefined, "query"), { items: [], baseCode: "THB" });
+    const html = modal(queryClient);
+    expect(html).toContain("Pending approval");
+    expect(html).toMatch(/Reserve<span class="ml-2">RS2611002<\/span>/);
+    expect(html).toContain("Last saved 01/11/26 11:20");
+    expect(html).toContain("Value (THB)");
+    expect(html).toContain("962,875.84");
+    expect(html).toMatch(/>Approve<\/button>/);
+    expect(html).toContain("Reject is coming soon");
+  });
+
+  it("a document that stopped waiting hides Approve and says so; a failed approve shows its message", () => {
+    const queryClient = seeded(ALL_GRANTS);
+    queryClient.setQueryData(previewKey("reserve", RS1), reserveDetail({ status: "APPROVED" }));
+    const html = modal(queryClient);
+    expect(html).toContain("RS2611002 is no longer waiting for approval.");
+    expect(html).not.toMatch(/>Approve<\/button>/);
+    const withError = render(
+      queryClient,
+      createElement(DocumentPreviewModal, { menu: reserve, row: row(), busy: false, error: "RS2611002 was changed by someone else.", onClose: () => undefined, onApprove: () => undefined }),
+    );
+    expect(withError).toContain('role="alert"');
+    expect(withError).toContain("RS2611002 was changed by someone else.");
   });
 });

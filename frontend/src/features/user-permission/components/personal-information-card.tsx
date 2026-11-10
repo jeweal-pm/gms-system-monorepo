@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { Controller, useWatch, type UseFormReturn } from "react-hook-form";
 import type { LocationOption } from "../api";
+import { approveSelection, withApproveSelection, type ApproveOption } from "../permission-utils";
 import { USERNAME_MAX, type UserFormValues } from "../schema";
 import { Card } from "@/components/ui/card";
 import { MultiSelect } from "@/components/ui/multi-select";
@@ -11,6 +12,8 @@ import { PhoneField } from "@/components/ui/phone-field";
 import { Switch } from "@/components/ui/switch";
 
 type LocationsState = { options: readonly LocationOption[]; status: "loading" | "error" | "ready" };
+/** The Approve field (owner 2026-11-10): documents from the permission catalog; DA-02 limits what may change. */
+type ApproveState = { options: readonly ApproveOption[]; status: "loading" | "error" | "ready"; grantable?: ReadonlySet<string> | null };
 
 /** `create`: new draft; `view`: saved user, read-only; `edit`: saved user after Edit. */
 export type PersonalMode = "create" | "view" | "edit";
@@ -25,11 +28,14 @@ type PersonalInformationCardProps = {
   isSelf: boolean;
   /** C-08 photo tile (FE-UP-013), owned by the page because it uploads after Save. */
   photo: ReactNode;
+  approve: ApproveState;
 };
 
 const noop = () => {};
 
-const grid = "grid min-w-0 flex-1 grid-cols-1 items-start gap-x-4 gap-y-5 md:grid-cols-2 xl:grid-cols-3";
+/** Owner 2026-11-10: row 1 Username, Password, Name, Phone No.; row 2 Location (2 columns) and Approve (2 columns). */
+const grid = "grid min-w-0 flex-1 grid-cols-1 items-start gap-x-4 gap-y-5 md:grid-cols-2 xl:grid-cols-4";
+const wide = "md:col-span-2";
 
 /**
  * The Active switch, shared by the card and the compact sticky summary. It cannot be turned off for a
@@ -70,7 +76,7 @@ export function ActiveSwitch({ id, form, readOnly, superAdmin, isSelf, showHint 
  * Admin (changed only on the Profile page, ADR-0011). Active cannot be turned
  * off for a Super Admin or the signed-in user.
  */
-export function PersonalInformationCard({ mode, form, locations, superAdmin, isSelf, photo }: PersonalInformationCardProps) {
+export function PersonalInformationCard({ mode, form, locations, superAdmin, isSelf, photo, approve }: PersonalInformationCardProps) {
   const {
     control,
     register,
@@ -127,8 +133,6 @@ export function PersonalInformationCard({ mode, form, locations, superAdmin, isS
               {...register("password")}
             />
           )}
-          <div className="hidden xl:block" aria-hidden />
-
           {readOnly ? (
             <TextField id="user-name" label="Name" required disabled readOnly value={name} />
           ) : (
@@ -150,25 +154,52 @@ export function PersonalInformationCard({ mode, form, locations, superAdmin, isS
               />
             )}
           />
-          <Controller
-            control={control}
-            name="locationIds"
-            render={({ field }) => (
-              <MultiSelect
-                id="user-location"
-                label="Location"
-                required
-                readOnly={readOnly}
-                options={locations.options}
-                status={locations.status}
-                value={field.value}
-                onChange={readOnly ? noop : field.onChange}
-                onBlur={readOnly ? noop : field.onBlur}
-                comboboxRef={field.ref}
-                error={errors.locationIds?.message}
-              />
-            )}
-          />
+          <div className={wide}>
+            <Controller
+              control={control}
+              name="locationIds"
+              render={({ field }) => (
+                <MultiSelect
+                  id="user-location"
+                  label="Location"
+                  required
+                  readOnly={readOnly}
+                  options={locations.options}
+                  status={locations.status}
+                  value={field.value}
+                  onChange={readOnly ? noop : field.onChange}
+                  onBlur={readOnly ? noop : field.onBlur}
+                  comboboxRef={field.ref}
+                  error={errors.locationIds?.message}
+                />
+              )}
+            />
+          </div>
+          <div className={wide}>
+            <Controller
+              control={control}
+              name="permissions"
+              render={({ field }) => {
+                // A Super Admin target holds every permission and stays locked (same as the matrix).
+                const locked = readOnly || superAdmin;
+                return (
+                  <MultiSelect
+                    id="user-approve"
+                    label="Approve"
+                    placeholder="Select documents"
+                    loadErrorText="Couldn't load the documents."
+                    emptyText="No documents to approve"
+                    readOnly={locked}
+                    options={approve.options}
+                    status={approve.status}
+                    value={superAdmin ? approve.options.map((option) => option.id) : approveSelection(field.value, approve.options)}
+                    onChange={locked ? noop : (chosen) => field.onChange(withApproveSelection(field.value, chosen, approve.options, approve.grantable))}
+                    onBlur={locked ? noop : field.onBlur}
+                  />
+                );
+              }}
+            />
+          </div>
         </div>
       </div>
     </Card>

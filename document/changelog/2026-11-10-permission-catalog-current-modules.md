@@ -1,0 +1,8 @@
+# 2026-11-10 Permission catalog follows the current modules
+
+- Owner request: "frontend backend User and Permission ให้เพิ่มหน้า menu ให้สอดคล้องกับ module ปัจจุบัน"; answers and approval 2026-11-10 (see [decisions](../apps/backend/auth/user-permission/decisions.md#catalog-follows-the-current-modules-owner-2026-11-10)).
+- Backend (`backend-api-auth/src/permission/catalog.ts`): new leaf `approval-setup` "Approval" (VIEW/EDIT); Setup rows in the Setup tile order; app labels (Memo Out Return, Certificate Master, Service Fee, Barcode Printing, Purchase Order section, O/S Payable/Receivable, Compare With Costing). 43 leaves / 362 cells. Keys unchanged; no migration.
+- Frontend (`frontend/src/features/home/navigation.ts`, `features/setup/setup-destinations.ts`): `approval-setup` is a Setup catalog key, so the Setup › Approval tile is shown with `approval-setup:VIEW` (before: Super Admin only).
+- Tests: backend `test/permission/catalog.test.ts` UT-CAT-01/03 updated, UT-CAT-04/05 new; frontend `test/approval-setup/approval-setup.test.ts` UT-AS-13 new.
+- Verification: backend-api-auth `tsc --noEmit` exit 0, `vitest run` 18 files / 99 tests passed (5 DB integration files skipped: no test database configured); frontend `tsc` exit 0, ESLint 0 errors, `vitest run` 95 files / 888 tests passed. Auth and frontend containers restarted; live `permission.catalog` returns applicableCount 362, Setup = Company Profile | User and Permission | Notifications | Master Code | Document Setup | Approval[VIEW/EDIT] | Decimal Setup; `/setup/user-permission` 200. Not checked in a browser.
+- The local-only LAN files in backend-api-auth (`src/trpc/auth-trpc.csrf.ts`, its test) were not touched.

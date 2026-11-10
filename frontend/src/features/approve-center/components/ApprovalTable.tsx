@@ -1,7 +1,6 @@
 "use client";
 
 import { Inbox, Info, LoaderCircle } from "lucide-react";
-import Link from "next/link";
 import { useId, type ReactNode } from "react";
 import { cx, focusRing } from "@/components/ui/button";
 import { TriStateCheckbox } from "@/components/ui/checkbox";
@@ -118,10 +117,12 @@ type TableProps = {
   locked: boolean;
   errors: ReadonlyMap<string, RowError>;
   onApprove: (row: ApprovalRow, index: number) => void;
+  /** Rev 2 (FE-AP-013, Q-AP-19): the document number opens the preview modal; it no longer navigates. */
+  onOpen: (row: ApprovalRow) => void;
 };
 
 /** C-AP-06: semantic table of the loaded pending rows (FE-AP-004…007). */
-export function ApprovalTable({ menu, rows, sort, onSort, selected, onToggleRow, onToggleAll, busyIds, locked, errors, onApprove }: TableProps) {
+export function ApprovalTable({ menu, rows, sort, onSort, selected, onToggleRow, onToggleAll, busyIds, locked, errors, onApprove, onOpen }: TableProps) {
   const format = useNumberFormat();
   return (
     <table className="w-full border-separate border-spacing-0 text-gms-body text-gms-text">
@@ -131,7 +132,6 @@ export function ApprovalTable({ menu, rows, sort, onSort, selected, onToggleRow,
           const busy = busyIds.has(row.id);
           const error = errors.get(row.id);
           const errorId = `approve-error-${row.id}`;
-          const href = `${menu.documentBase}/${row.id}`;
           const td = "border-b border-gms-border px-3 py-2 align-middle";
           return (
             <tr key={row.id} className="h-14 bg-gms-surface" data-row-id={row.id}>
@@ -140,9 +140,9 @@ export function ApprovalTable({ menu, rows, sort, onSort, selected, onToggleRow,
               </td>
               <td className={cx(td, "tabular-nums")}>{index + 1}</td>
               <td className={td}>
-                <Link href={href} className={cx("font-medium text-gms-primary underline", focusRing)}>
+                <button type="button" data-preview-id={row.id} aria-haspopup="dialog" onClick={() => onOpen(row)} className={cx("rounded-gms-sm font-medium text-gms-text underline", focusRing)}>
                   {row.docNo}
-                </Link>
+                </button>
                 <span className="block text-gms-label text-gms-text-secondary">{shortDate(row.docDate)}</span>
               </td>
               <td className={td}>
@@ -192,9 +192,9 @@ export function ApprovalTable({ menu, rows, sort, onSort, selected, onToggleRow,
                     {error.link && (
                       <>
                         {" "}
-                        <Link href={href} className={cx("underline", focusRing)}>
+                        <button type="button" aria-haspopup="dialog" onClick={() => onOpen(row)} className={cx("underline", focusRing)}>
                           Open {row.docNo}
-                        </Link>
+                        </button>
                       </>
                     )}
                   </p>

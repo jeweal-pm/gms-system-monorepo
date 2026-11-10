@@ -94,6 +94,11 @@ export function Field({
           "group-has-[:disabled]/field:bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-field-disabled)_8px)]",
           "group-has-[input:read-only]/field:bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-field-disabled)_8px)]",
           "group-has-[[aria-readonly=true]]/field:bg-[linear-gradient(to_bottom,transparent_8px,var(--color-gms-field-disabled)_8px)]",
+          // Owner 2026-11-10: on focus the 2 px ring would cross the label; the fill starts at 5 px while focused.
+          "group-focus-within/field:bg-[linear-gradient(to_bottom,transparent_5px,var(--color-gms-surface)_5px)]",
+          "group-focus-within/field:group-has-[[aria-invalid=true]]/field:bg-[linear-gradient(to_bottom,transparent_5px,var(--color-gms-danger-subtle)_5px)]",
+          "group-focus-within/field:group-has-[input:read-only]/field:bg-[linear-gradient(to_bottom,transparent_5px,var(--color-gms-field-disabled)_5px)]",
+          "group-focus-within/field:group-has-[[aria-readonly=true]]/field:bg-[linear-gradient(to_bottom,transparent_5px,var(--color-gms-field-disabled)_5px)]",
         )}
       >
         {label}

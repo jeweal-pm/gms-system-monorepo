@@ -22,7 +22,8 @@ import { ToastProvider, useToast } from "@/components/ui/toast";
 import { USERS_DRAWER_ID, UsersDrawer } from "./components/users-drawer";
 import { DRAWER_PUSH_CLASS, useDrawerState } from "@/lib/drawer-layout";
 import { useLocationOptions, usePermissionCatalog, usePermissionMine, useRemovePhoto, useSaveUser, useUserDetail, useUserList } from "./hooks";
-import { countEnabled, grantsFromValues, valuesFromGrants } from "./permission-utils";
+import { APPROVE_MENUS } from "@/features/approve-center/menus";
+import { approveOptions, countEnabled, grantsFromValues, matrixApplicableCount, valuesFromGrants } from "./permission-utils";
 import { emptyUserForm, userFormSchema, type UserFormValues } from "./schema";
 import { useScrolledPast } from "./use-scrolled-past";
 
@@ -354,7 +355,7 @@ function UserPermissionWorkspace({ access }: { access: UserAdminAccess }) {
   const compact = useScrolledPast(personalRef, scrollRef, SUMMARY_COVER, showForm);
   const permissionValues = useWatch({ control: form.control, name: "permissions" });
   const permissionCount = catalog.data
-    ? { enabled: superAdminTarget ? catalog.data.applicableCount : countEnabled(catalog.data.nodes, permissionValues ?? {}), applicable: catalog.data.applicableCount }
+    ? { enabled: superAdminTarget ? matrixApplicableCount(catalog.data.nodes) : countEnabled(catalog.data.nodes, permissionValues ?? {}), applicable: matrixApplicableCount(catalog.data.nodes) }
     : null;
   const savedPhotoUrl = target ? photoUrl(target.id, target.photoVersion) : null;
   const shownPhoto = photoChange.kind === "new" ? photoChange.previewUrl : photoChange.kind === "removed" ? null : savedPhotoUrl;
@@ -443,6 +444,11 @@ function UserPermissionWorkspace({ access }: { access: UserAdminAccess }) {
                   locations={locationsState}
                   superAdmin={superAdminTarget}
                   isSelf={isSelf}
+                  approve={{
+                    options: catalog.data ? approveOptions(catalog.data.nodes, APPROVE_MENUS) : [],
+                    status: catalog.isError ? "error" : catalog.data ? "ready" : "loading",
+                    grantable: access.grantable,
+                  }}
                   photo={
                     <PhotoTile
                       value={photoChange}

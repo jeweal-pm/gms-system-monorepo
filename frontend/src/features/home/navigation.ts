@@ -157,7 +157,8 @@ const CATALOG_KEY_ALIASES: Readonly<Record<string, string>> = {
 /** Master Code sub-menus in the catalog (Setup › Master Code). */
 export const MASTER_CODE_MENU_KEYS = ["vendor", "customer", "currency", "stone-master", "location-master", "certificate-type", "labor-name", "sale-person"] as const;
 /** Every Setup leaf in the catalog; Setup is visible when any of them is. */
-export const SETUP_MENU_KEYS = ["company-profile", "user-and-permission", "notifications", "document-setup", "decimal-setup", ...MASTER_CODE_MENU_KEYS] as const;
+// approval-setup: catalog leaf added 2026-11-10 (owner, VIEW/EDIT), so the Setup › Approval tile follows its VIEW grant.
+export const SETUP_MENU_KEYS = ["company-profile", "user-and-permission", "notifications", "document-setup", "approval-setup", "decimal-setup", ...MASTER_CODE_MENU_KEYS] as const;
 
 const CATALOG_LEAF_KEYS: ReadonlySet<string> = new Set([
   "dashboard", ...SETUP_MENU_KEYS, "quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return",

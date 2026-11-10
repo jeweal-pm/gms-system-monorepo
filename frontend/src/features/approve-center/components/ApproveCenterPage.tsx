@@ -44,6 +44,8 @@ import {
 } from "../model";
 import { ApprovalEmptyState, ApprovalTable, ProvisionalTable, SkeletonRows, type RowError } from "./ApprovalTable";
 import { ApproveMenuSelect, ApprovePanel } from "./ApprovePanel";
+import { DocumentPreviewModal } from "./DocumentPreviewModal";
+import type { PreviewDetail } from "../preview";
 
 /** `/approve` (Q-AP-04): opens the first visible menu with pending documents, else the first visible menu, in this tab. */
 export function ApproveLanding() {
@@ -121,7 +123,7 @@ export function ApproveMenuPage({ slug }: { slug: string }) {
 }
 
 type Confirm =
-  | { kind: "one"; row: ApprovalRow; index: number; version: number; title: string; body: string }
+  | { kind: "one"; row: ApprovalRow; index: number; version: number; title: string; body: string; fromPreview?: boolean }
   | { kind: "bulk"; rows: ApprovalRow[]; title: string; body: string };
 
 /** FE-AP-004…007: search, pending rows, sort, selection, Approve and Approve selected for one available menu. */
@@ -143,6 +145,8 @@ export function PendingApprovals({ menu }: { menu: AvailableMenu }) {
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [confirmPending, setConfirmPending] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
+  // Rev 2 (FE-AP-013): the row whose document preview modal is open.
+  const [previewRow, setPreviewRow] = useState<ApprovalRow | null>(null);
   const cancelRef = useRef(false);
   const list = usePendingList(menu, q, true);
   const calls = useApproveCalls(menu);
@@ -204,6 +208,20 @@ export function PendingApprovals({ menu }: { menu: AvailableMenu }) {
     }
   }
 
+  /** FE-AP-015: Approve from the modal confirms with the version the modal loaded (no second `get`). */
+  function onPreviewApprove(row: ApprovalRow, detail: PreviewDetail) {
+    if (busyIds.has(row.id) || running) return;
+    setRowError(row.id, null);
+    const index = Math.max(0, rows.findIndex((candidate) => candidate.id === row.id));
+    setConfirm({ kind: "one", row, index, version: detail.version, fromPreview: true, ...approveConfirm(menu, row.docNo, detail.lines.length) });
+  }
+
+  function closePreview(changed: boolean) {
+    setPreviewRow(null);
+    // The document stopped waiting meanwhile (approved elsewhere, deleted): refresh the list and counts.
+    if (changed) void calls.invalidate();
+  }
+
   async function approveOne(target: Extract<Confirm, { kind: "one" }>) {
     setConfirmPending(true);
     setBusy(target.row.id, true);
@@ -212,6 +230,7 @@ export function PendingApprovals({ menu }: { menu: AvailableMenu }) {
       setRowError(target.row.id, null);
       toast.show("success", `${target.row.docNo} approved`);
       setConfirm(null);
+      if (target.fromPreview) setPreviewRow(null);
       await calls.invalidate();
       focusAfterRemoval(target.index);
     } catch (error) {
@@ -298,6 +317,7 @@ export function PendingApprovals({ menu }: { menu: AvailableMenu }) {
             locked={running}
             errors={errors}
             onApprove={(row, index) => void onApprove(row, index)}
+            onOpen={setPreviewRow}
           />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 pt-3 text-gms-label text-gms-text-secondary">
@@ -359,6 +379,14 @@ export function PendingApprovals({ menu }: { menu: AvailableMenu }) {
         </label>
       </div>
       {content}
+      <DocumentPreviewModal
+        menu={menu}
+        row={previewRow}
+        busy={previewRow !== null && (busyIds.has(previewRow.id) || (confirm?.kind === "one" && confirm.row.id === previewRow.id))}
+        error={previewRow ? (errors.get(previewRow.id)?.message ?? null) : null}
+        onClose={closePreview}
+        onApprove={(detail) => previewRow && onPreviewApprove(previewRow, detail)}
+      />
       <ConfirmDialog
         open={confirm !== null}
         title={confirm?.title ?? ""}

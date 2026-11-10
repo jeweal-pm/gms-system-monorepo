@@ -22,3 +22,13 @@ Owner request 2026-11-07 with sources 01/02. Items marked **requires SA** need a
 | Q-AP-14 | "Submitted" shows "Mint (Sales)". Is "Sales" the user's role/position from User and Permission, and is "submitted" the time the document was saved as pending (create or last edit)? | Name + role from the auth service; submitted = last save that put it in Pending. Phase 1 shows "—" and the last-saved time. **requires SA** | Default. |
 | Q-AP-15 | Search "stone, Stock ID": search inside the lines? | Yes, phase 2. Phase 1 searches no., party name and Ref. only. **requires SA** | Default. |
 | Q-AP-16 | Should Approve show documents the approver created themselves? (Today the creator may approve their own document.) | Yes, same as the document pages. | Default. |
+
+## Revision 2 (document preview modal, 2026-11-10)
+
+| ID | Question | Default | Status |
+|---|---|---|---|
+| Q-AP-17 | Value column currency: THB as designed (line amount × rate) or the document currency? | THB as designed | **Answered** 2026-11-10 (owner): THB as designed; a document already in the company currency shows its own amounts. |
+| Q-AP-18 | Do Reject… / Revise… work in the modal? | Disabled like the table (backend phase 2 on hold) | **Answered** 2026-11-10 (owner): disabled like the table. |
+| Q-AP-19 | Does clicking the number still open the full page, or only the modal? | Modal + an "Open document" link | **Answered** 2026-11-10 (owner): **modal only**; no way to open the full page from Approve. |
+| Q-AP-20 | The design's "Ordered" / "New from vendor" texts under Stone have no matching data. What should the sub line show? | `{color} · {clarity}`; no sub-header | **Answered** 2026-11-10 (owner): the customer name, under a sub-header "Ordered by"; vendor documents show neither (owner chose "Hide it on vendor docs"). |
+| Q-AP-21 | The total row: sum of the lines, or the document grand total (after discount, tax, charges)? | Sum of the lines; a "Grand total" line under the table only when it differs | **Answered** 2026-11-10 (owner): OK (the default). |
