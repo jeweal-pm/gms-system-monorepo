@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="ภาพรวม flow notification แบบ real time ด้วย SSE ใน NestJS และ Hono แยกตามเจ้าของโดเมน พร้อมประเด็นที่ทีมต้องออกแบบต่อ">
+  <title>GMS Notifications — ภาพรวมสำหรับทีม</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172b3a;
+      --muted: #5c7180;
+      --line: #d9e4e9;
+      --paper: #f4f8f9;
+      --card: #fff;
+      --teal: #087e82;
+      --teal-soft: #e2f5f3;
+      --blue: #2d64a8;
+      --blue-soft: #eaf2fc;
+      --amber: #98620c;
+      --amber-soft: #fff5dc;
+      --purple: #684aa0;
+      --purple-soft: #f1ebfb;
+      --red: #9b3d35;
+      --red-soft: #fff0ed;
+      --shadow: 0 12px 32px rgba(27, 55, 69, .07);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 16px/1.65 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    main { width: min(1080px, calc(100% - 32px)); margin: 40px auto 64px; }
+    .hero {
+      padding: clamp(24px, 5vw, 48px);
+      border: 1px solid #dce9eb;
+      border-radius: 24px;
+      background: linear-gradient(130deg, #e8f8f5, #f3f7ff 70%, #fff);
+      box-shadow: var(--shadow);
+    }
+    .eyebrow { margin: 0 0 8px; color: var(--teal); font-size: .82rem; font-weight: 750; letter-spacing: .08em; }
+    h1 { max-width: 760px; margin: 0; font-size: clamp(2rem, 5vw, 3.1rem); line-height: 1.15; letter-spacing: -.035em; }
+    .intro { max-width: 760px; margin: 18px 0 0; color: var(--muted); font-size: 1.08rem; }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+    .pill { padding: 5px 11px; border: 1px solid #cce5e2; border-radius: 999px; background: #fff; color: #275b60; font-size: .85rem; font-weight: 650; }
+    section { margin-top: 34px; }
+    h2 { margin: 0 0 14px; font-size: clamp(1.3rem, 3vw, 1.7rem); letter-spacing: -.02em; }
+    h3 { margin: 0 0 6px; font-size: 1.04rem; }
+    p { margin: 7px 0; }
+    .sub { margin: -7px 0 18px; color: var(--muted); }
+    .flow { display: grid; gap: 10px; }
+    .step {
+      display: grid;
+      grid-template-columns: 54px minmax(0, 1fr) 180px;
+      align-items: center;
+      gap: 16px;
+      padding: 17px 19px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--card);
+      box-shadow: 0 5px 18px rgba(27, 55, 69, .035);
+    }
+    .num { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 13px; background: var(--teal-soft); color: var(--teal); font-weight: 800; }
+    .step p { color: var(--muted); font-size: .94rem; }
+    .tag { justify-self: end; padding: 5px 10px; border-radius: 999px; background: var(--blue-soft); color: var(--blue); font-size: .8rem; font-weight: 700; text-align: center; }
+    .arrow { height: 15px; margin: -4px 0 -4px 20px; border-left: 2px solid #9db9bd; }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .panel { padding: 21px; border: 1px solid var(--line); border-radius: 17px; background: var(--card); box-shadow: var(--shadow); }
+    .panel h3 { display: flex; align-items: center; gap: 9px; }
+    .icon { display: grid; width: 31px; height: 31px; place-items: center; border-radius: 10px; background: var(--teal-soft); color: var(--teal); font-size: .85rem; font-weight: 800; }
+    ul { margin: 10px 0 0; padding-left: 21px; }
+    li { margin: 6px 0; }
+    .event { overflow-wrap: anywhere; padding: 2px 7px; border-radius: 6px; background: #edf2f4; color: #304a58; font: .87rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .notice { padding: 17px 20px; border: 1px solid #ead9aa; border-radius: 15px; background: var(--amber-soft); color: #674a16; }
+    .notice strong { color: #624109; }
+    .security { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .security article { padding: 15px 17px; border: 1px solid #d8e8e1; border-radius: 14px; background: #f4fbf7; }
+    .security strong { display: block; margin-bottom: 3px; color: #24634c; }
+    .security span { color: #49655a; font-size: .93rem; }
+    .legend { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 14px; }
+    .legend span { padding: 5px 10px; border-radius: 8px; font-size: .83rem; font-weight: 700; }
+    .db { background: var(--purple-soft); color: var(--purple); }
+    .push { background: var(--teal-soft); color: var(--teal); }
+    .read { background: var(--blue-soft); color: var(--blue); }
+    .status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .status { padding: 17px; border: 1px solid var(--line); border-radius: 15px; background: var(--card); }
+    .status b { display: block; margin-bottom: 5px; }
+    .status p { color: var(--muted); font-size: .93rem; }
+    .now { border-top: 4px solid var(--blue); }
+    .target { border-top: 4px solid var(--teal); }
+    .open { border-top: 4px solid var(--amber); }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 15px; background: white; }
+    table { width: 100%; border-collapse: collapse; min-width: 680px; }
+    th, td { padding: 12px 15px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: #eff5f6; font-size: .9rem; }
+    td { font-size: .93rem; }
+    tr:last-child td { border-bottom: 0; }
+    .decision { padding: 17px 20px; border: 1px solid #efcbc6; border-radius: 15px; background: var(--red-soft); color: #71352f; }
+    footer { margin-top: 28px; padding-top: 17px; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem; }
+    @media (max-width: 720px) {
+      main { width: min(100% - 20px, 600px); margin-top: 14px; }
+      .step { grid-template-columns: 42px minmax(0, 1fr); gap: 11px; padding: 14px; }
+      .tag { grid-column: 2; justify-self: start; }
+      .split, .security, .status-grid { grid-template-columns: 1fr; }
+      .arrow { margin-left: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <p class="eyebrow">GMS · NOTIFICATION FLOW · TEAM BRIEF · DRAFT</p>
+      <h1>แจ้งเตือนสถานะ<br>ให้ผู้ใช้อื่นเห็นแบบ Real Time</h1>
+      <p class="intro">เอกสารนี้อธิบายแนวทางที่ทีมใช้คุยต่อได้: เมื่อรายการเปลี่ยนสถานะ เช่น Revise หรือ Reject ผู้ใช้ที่เกี่ยวข้องจะเห็นแจ้งเตือนเร็ว โดยระบบยังเก็บรายการไว้ให้เปิดดูย้อนหลังและตามทันหลังกลับมา online</p>
+      <div class="pill-row" aria-label="เทคโนโลยีที่เสนอ">
+        <span class="pill">หน้าเว็บ: TanStack Query + tRPC</span>
+        <span class="pill">NestJS · @Sse + RxJS</span>
+        <span class="pill">Hono · streamSSE (ทุก module ใน api-inventory)</span>
+        <span class="pill">เก็บรายการ: PostgreSQL</span>
+        <span class="pill">ไม่เพิ่ม client library สำหรับ EventSource</span>
+      </div>
+    </header>
+
+    <section aria-labelledby="status">
+      <h2 id="status">สถานะของแนวทางนี้</h2>
+      <div class="status-grid">
+        <article class="status now"><b>มีอยู่ในระบบ/สถาปัตยกรรมปัจจุบัน</b><p>Nginx route ตรงไปยัง domain API; api-master ใช้ NestJS และ domain tRPC สำหรับ master/เอกสารที่อยู่ใน service นี้. PostgreSQL เป็นฐานข้อมูลหลักของข้อมูลธุรกิจ.</p></article>
+        <article class="status target"><b>เป้าหมายที่วางไว้</b><p>Hono · api-inventory ใช้ร่วมกันกับ Inventory, Sale, Account Outstanding และรายงานในภาพ; stream เดียวของ service นี้รองรับ notification จาก module เหล่านี้เมื่อเปิดใช้งาน. ตามทิศทางที่เลือก workspace/runtime ใช้ชื่อ backend-api-inventory; SA ต้องปรับชื่อ DNS/Compose ให้ตรงกับ API route api-inventory ก่อน implement.</p></article>
+        <article class="status open"><b>ยังไม่ได้ติดตั้ง/ยังต้องออกแบบ</b><p>Notification feature, ตาราง/endpoint, SSE stream, วิธีรวม feed ข้าม service และการยืนยันตัวตนบน SSE ยังไม่มี contract หรือ implementation ที่อนุมัติ.</p></article>
+      </div>
+    </section>
+
+    <section aria-labelledby="ownership">
+      <h2 id="ownership">ใครเป็นเจ้าของ notification?</h2>
+      <p class="sub">หลักที่เสนอ: service ที่เปลี่ยนสถานะของรายการเป็นผู้บันทึก notification และเป็นแหล่งข้อมูลจริงของ notification นั้น ไม่มี notification gateway/service กลางเพิ่มเข้ามาใน flow นี้</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>กลุ่มงาน</th><th>เจ้าของข้อมูลตามแนวทางปัจจุบัน</th><th>การแจ้งเตือนที่คาดว่าจะเป็นเจ้าของ</th><th>สถานะ</th></tr></thead>
+        <tbody>
+          <tr><td>Master และเอกสารที่อยู่ใน api-master<br>เช่น Quotation, Purchase Order, Purchase ตาม ADR ที่เกี่ยวข้อง</td><td>NestJS · api-master</td><td>เหตุการณ์และ notification ของเอกสารเหล่านี้</td><td>Service มี; notification ยังไม่มี contract</td></tr>
+          <tr><td>Inventory<br>Load to Stock, Merge/Split, Stock Transfer Location, Stock Adjustment, Barcode Printing</td><td>Hono · api-inventory</td><td>module ภายใน service เดียวกัน บันทึก notification และส่ง SSE ผ่าน stream ของ api-inventory</td><td>เป้าหมาย; ยังไม่มี service ใน runtime</td></tr>
+          <tr><td>Sale, Account Outstanding และ Reports<br>Stock Movement, Closing Stock, Sale Report</td><td>Hono · api-inventory</td><td>module ภายใน service เดียวกัน ใช้ notification storage/API และ SSE stream ของ api-inventory; สิทธิ์และข้อมูลยังแยกตาม module</td><td>ทิศทางที่กำหนดสำหรับเอกสารนี้; contract/schema ต้องออกแบบใน SA</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section aria-labelledby="main-flow">
+      <h2 id="main-flow">Flow ตั้งแต่กดเปลี่ยนสถานะจนผู้รับเห็น</h2>
+      <p class="sub">SSE เป็นช่องทางส่งสัญญาณทางเดียวจาก server มาที่ browser. การโหลดรายการและบันทึก read state ใช้ API ของเจ้าของ notification; protocol/route ที่แน่นอนต้องระบุใน SA contract.</p>
+      <div class="flow">
+        <article class="step">
+          <div class="num">1</div>
+          <div><h3>ผู้ใช้ A กด Revise / Reject / เปลี่ยนสถานะ</h3><p>หน้าเว็บส่งคำสั่งไปยัง API ที่เป็นเจ้าของรายการ ผ่าน contract ของโดเมนนั้น</p></div>
+          <span class="tag">Frontend → Domain API</span>
+        </article>
+        <div class="arrow" aria-hidden="true"></div>
+        <article class="step">
+          <div class="num">2</div>
+          <div><h3>Nginx ส่ง request ตรงไป API เจ้าของโดเมน</h3><p>ไม่มี Node gateway: เอกสารที่อยู่ใน master ไป NestJS api-master; Inventory, Sale, Account Outstanding และรายงานไป Hono api-inventory เมื่อ service นี้พร้อมใช้งาน</p></div>
+          <span class="tag">Nginx → Domain API</span>
+        </article>
+        <div class="arrow" aria-hidden="true"></div>
+        <article class="step">
+          <div class="num">3</div>
+          <div><h3>API เจ้าของรายการยืนยันตัวตนและตรวจ business rule</h3><p>Quotation, Purchase Order, Purchase และเอกสารอื่นที่อยู่ใน master ใช้ NestJS; Inventory, Sale, Account Outstanding และรายงานในภาพใช้ Hono api-inventory. แต่ละ module ตรวจสิทธิ์และข้อมูลตาม contract ของตัวเอง</p></div>
+          <span class="tag">NestJS / Hono</span>
+        </article>
+        <div class="arrow" aria-hidden="true"></div>
+        <article class="step">
+          <div class="num">4</div>
+          <div><h3>บันทึกผลและผู้รับแจ้งเตือน</h3><p>เปลี่ยนสถานะและบันทึก notification สำหรับผู้ใช้ที่เกี่ยวข้องให้ทนต่อการ refresh/offline แล้ว commit ก่อนส่งสัญญาณออกไป</p></div>
+          <span class="tag">PostgreSQL</span>
+        </article>
+        <div class="arrow" aria-hidden="true"></div>
+        <article class="step">
+          <div class="num">5</div>
+          <div><h3>API โดเมนนั้นส่ง SSE ไปยังผู้รับ</h3><p>NestJS api-master ส่ง notification ของเอกสารฝั่ง master; Hono api-inventory ส่ง notification ของ Inventory, Sale, Account และรายงานผ่าน SSE stream เดียวของ service โดยส่งเฉพาะผู้ใช้ที่มีสิทธิ์</p></div>
+          <span class="tag">Domain API → Browser</span>
+        </article>
+        <div class="arrow" aria-hidden="true"></div>
+        <article class="step">
+          <div class="num">6</div>
+          <div><h3>Browser ของผู้ใช้ B โหลดข้อมูลล่าสุด</h3><p>รับ event แล้ว invalidate/refetch unread count และรายการผ่าน API เจ้าของ notification จากนั้นอัปเดตกระดิ่งและรายการบนหน้าจอ</p></div>
+          <span class="tag">SSE + API query</span>
+        </article>
+      </div>
+    </section>
+
+    <section aria-labelledby="libraries">
+      <h2 id="libraries">แต่ละ backend ใช้อะไรส่ง notification?</h2>
+      <p class="sub">ใช้ SSE ซึ่งเป็น HTTP stream ทางเดียวจาก backend ไป browser. ไม่จำเป็นต้องเพิ่ม Socket.IO หรือ notification server แยกสำหรับ flow นี้.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>ฝั่งระบบ</th><th>เครื่องมือ SSE</th><th>แพ็กเกจ/สถานะในโปรเจกต์</th><th>หน้าที่</th></tr></thead>
+        <tbody>
+          <tr><td>NestJS · api-master</td><td><span class="event">@Sse()</span> และ <span class="event">MessageEvent</span> จาก <span class="event">@nestjs/common</span> พร้อม <span class="event">Observable</span> จาก <span class="event">rxjs</span></td><td><span class="event">@nestjs/common</span> และ <span class="event">rxjs</span> ติดตั้งอยู่แล้วใน api-master</td><td>เปิด endpoint SSE และปล่อย event จาก stream ของ NestJS</td></tr>
+          <tr><td>Hono · api-inventory</td><td><span class="event">streamSSE()</span> จาก <span class="event">hono/streaming</span></td><td>เป็น helper ที่มากับแพ็กเกจ <span class="event">hono</span>; ตัว Hono service ยังเป็นเป้าหมายและยังไม่ได้ติดตั้งใน workspace</td><td>เปิด SSE stream ให้ module Inventory, Sale, Account และ Reports ภายใน service เดียวกัน</td></tr>
+          <tr><td>Browser · frontend</td><td>Web API <span class="event">EventSource</span></td><td>มีใน browser; ไม่ต้องติดตั้ง client library เพิ่มสำหรับ SSE</td><td>เชื่อมต่อและรับ event แล้ว refetch รายการจาก API</td></tr>
+        </tbody>
+      </table></div>
+      <div class="notice" style="margin-top:14px"><strong>เครื่องมือเหล่านี้ทำหน้าที่ส่ง stream เท่านั้น</strong><br>ยังต้องออกแบบที่เก็บ notification แบบถาวร, การผูก event กับ transaction, recipient rules และการกระจาย event เมื่อมีหลาย instance. RxJS stream หรือ Hono <span class="event">streamSSE()</span> ไม่ใช่ message broker และไม่ทดแทน database/outbox.</div>
+    </section>
+
+    <section aria-labelledby="client-flow">
+      <h2 id="client-flow">แล้วหน้าบ้านต้องทำอะไรบ้าง?</h2>
+      <div class="split">
+        <article class="panel">
+          <h3><span class="icon">โหลด</span>เมื่อเข้าแอป</h3>
+          <ul>
+            <li>โหลด unread count และรายการล่าสุดของผู้ใช้ปัจจุบันจาก API เจ้าของ notification</li>
+            <li>เปิด <span class="event">EventSource</span> แบบ same-origin ผ่าน Nginx ไปยัง api-master และ api-inventory; Hono stream ครอบคลุม module ทั้งสี่กลุ่มตามตารางด้านบน</li>
+            <li>ใช้ credential ที่ผ่านการอนุมัติใน auth contract; server ระบุตัวผู้ใช้จาก credential และไม่รับ user ID ที่ client เลือกเอง</li>
+          </ul>
+        </article>
+        <article class="panel">
+          <h3><span class="icon">รับ</span>เมื่อมี event</h3>
+          <ul>
+            <li>รับ event เช่น <span class="event">notification.created</span></li>
+            <li>ใช้ ID เป็นสัญญาณ แล้ว refetch จาก API; ไม่ใช้รายละเอียดจาก push เป็นแหล่งข้อมูลจริง</li>
+            <li>อัปเดต unread badge / toast / notification list ตามหน้าที่เปิดอยู่</li>
+          </ul>
+        </article>
+        <article class="panel">
+          <h3><span class="icon">เปิด</span>เมื่อกดแจ้งเตือน</h3>
+          <ul>
+            <li>นำทางไปยังหน้ารายการที่เกี่ยวข้อง</li>
+            <li>โหลดรายละเอียดจาก API เจ้าของรายการ ซึ่งตรวจสิทธิ์ซ้ำทุกครั้ง</li>
+            <li>เมื่อทำเครื่องหมายอ่าน ให้บันทึก read state ของผู้ใช้นั้นผ่าน API เจ้าของ notification</li>
+          </ul>
+        </article>
+        <article class="panel">
+          <h3><span class="icon">หลุด</span>เมื่อ offline / reconnect</h3>
+          <ul>
+            <li>ถ้าหลุด SSE, browser พยายามเชื่อมต่อใหม่ตามกลไก EventSource</li>
+            <li>เมื่อกลับมา online ให้โหลด unread/list ล่าสุดจาก API เพื่อเก็บ event ที่พลาด</li>
+            <li>ใช้ notification ID ป้องกันแสดงรายการซ้ำ</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section aria-labelledby="combined">
+      <h2 id="combined">ถ้าหน้ากระดิ่งต้องรวมหลาย service</h2>
+      <div class="panel">
+        <ol>
+          <li><b>การเชื่อมต่อ:</b> browser เปิด stream แยกสอง API ผ่าน same-origin Nginx: NestJS api-master สำหรับเอกสารฝั่ง master และ Hono api-inventory สำหรับ Inventory, Sale, Account Outstanding และรายงาน.</li>
+          <li><b>ข้อมูลในกล่อง:</b> แต่ละ API คืนรายการและ unread count ของตัวเอง; frontend รวมเพื่อแสดงผลชั่วคราวได้ แต่ต้องกำหนดการเรียงเวลา, pagination และ read state แยกเจ้าของ.</li>
+          <li><b>เมื่อกดรายการ:</b> ใช้ deep link ไปหน้ารายการ แล้วโหลดข้อมูลจาก API เจ้าของรายการพร้อมตรวจสิทธิ์ใหม่.</li>
+          <li><b>ข้อจำกัด:</b> cursor/pagination แบบรวมข้าม service และ unread total เดียวที่แม่นยำต้องมี contract เพิ่ม; อย่าให้ frontend เขียนฐานข้อมูลหรือส่งคำสั่งข้าม service โดยตรง.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section aria-labelledby="delivery">
+      <h2 id="delivery">ข้อมูลอะไรวิ่งทางไหน?</h2>
+      <div class="split">
+        <article class="panel">
+          <h3><span class="icon">DB</span>ข้อมูลถาวรในฐานข้อมูล</h3>
+          <p>รายการแจ้งเตือน, ผู้รับ, เวลา, read state และ reference ไปยังรายการงาน เก็บในขอบเขตข้อมูลของ API เจ้าของ notification ตาม contract ที่ออกแบบ</p>
+          <div class="legend"><span class="db">เป็นแหล่งข้อมูลจริง</span></div>
+        </article>
+        <article class="panel">
+          <h3><span class="icon">SSE</span>ข้อมูล push แบบ real time</h3>
+          <p>ส่งสัญญาณขนาดเล็ก เช่น <span class="event">type</span> และ <span class="event">notificationId</span> ให้ browser รู้ว่าควรโหลดข้อมูลใหม่</p>
+          <div class="legend"><span class="push">ส่งเร็ว ไม่ใช้แทน database</span></div>
+        </article>
+      </div>
+    </section>
+
+    <section aria-labelledby="security">
+      <h2 id="security">จุดความปลอดภัยที่ต้องมี</h2>
+      <div class="security">
+        <article><strong>ตรวจสิทธิ์ตอนเชื่อมต่อ</strong><span>กำหนด credential/cookie, origin, หมดอายุ และ logout behavior สำหรับ SSE; รายละเอียดนี้ยังต้องอยู่ใน contract</span></article>
+        <article><strong>ส่งเฉพาะผู้รับที่ถูกต้อง</strong><span>backend คำนวณกลุ่มผู้รับจากกติกางาน ไม่รับ recipient list ที่ client กำหนดเอง</span></article>
+        <article><strong>ไม่ส่งข้อมูลลับผ่าน event</strong><span>push ID/ชนิดเหตุการณ์ แล้วให้ API เจ้าของข้อมูลโหลดรายละเอียดพร้อมตรวจสิทธิ์</span></article>
+        <article><strong>ป้องกันการเชื่อมต่อเกินขอบเขต</strong><span>จำกัด origin, จำนวน connection และข้อมูลค้าง พร้อม log โดยไม่บันทึก session token</span></article>
+      </div>
+    </section>
+
+    <section aria-labelledby="notes">
+      <h2 id="notes">สิ่งที่ทีมต้องตัดสินใจใน SA contract</h2>
+      <div class="decision"><strong>เอกสารนี้เป็น team brief สำหรับแนวทาง ยังไม่ใช่ข้อกำหนดที่อนุมัติให้ implement</strong><br>การเลือก SSE และรูปแบบ notification store, endpoints, event names, recipient rules, retention และ feed ข้าม service ยังต้องออกแบบ/อนุมัติ. แนวทางนี้เพิ่ม notification ใน domain API เจ้าของงาน และไม่เพิ่ม gateway หรือ notification service แยกในตอนเริ่มต้น.</div>
+      <ul>
+        <li>กติกาผู้รับ: ใครควรเห็น revise/reject/status change ในแต่ละชนิดเอกสาร และการเปลี่ยนสถานะแบบใดควรส่ง notification</li>
+        <li>ความทนทาน: สถานะธุรกิจและ notification ต้อง commit อย่างสอดคล้องกัน; ถ้าแยก transaction/storage ต้องออกแบบ outbox หรือกลไกเทียบเท่า</li>
+        <li>การ scale: หลาย API instance ต้องกระจาย event ได้ครบ; ยังไม่ควรเพิ่ม Redis/broker จนมีเหตุผลและ capacity design ที่อนุมัติ</li>
+        <li>พฤติกรรม reconnect, heartbeat, retry, retention, การลบ/ซ่อน และ pagination ต้องกำหนดให้ชัด</li>
+        <li>ทำชื่อ service ให้ตรงกันใน ADR/spec/Nginx/Compose: API route <span class="event">api-inventory</span>; workspace/runtime target <span class="event">backend-api-inventory</span></li>
+        <li>ยืนยันต้นทุน connection/DB pool และ resource limits บน host 4 GB / 2 vCPU ก่อนเปิดใช้จริง</li>
+      </ul>
+    </section>
+
+    <footer>GMS notification team brief · สถานะ: draft / proposal · ไม่มีการอ้างว่า notification feature หรือ Hono service ติดตั้งแล้ว<br>อ้างอิงโครงการ: <a href="../adr/0025-gms-domain-routing-and-trpc.md">ADR-0025: domain routing</a> · <a href="../adr/0027-gms-master-inventory-data-and-operations.md">ADR-0027: master/inventory boundaries</a> · <a href="../adr/0032-quotation-backend-in-master-service.md">ADR-0032: Quotation in master</a> · <a href="../adr/0041-purchase-order-document.md">ADR-0041: Purchase Order in master</a> · <a href="../adr/0042-purchase-document-and-stock-deduction.md">ADR-0042: Purchase in master</a><br>อ้างอิงเทคโนโลยี: <a href="https://docs.nestjs.com/techniques/server-sent-events">NestJS SSE (@Sse + RxJS)</a> · <a href="https://hono.dev/docs/helpers/streaming">Hono streamSSE</a> · <a href="https://developer.mozilla.org/en-US/docs/Web/API/EventSource">Browser EventSource API</a></footer>
+  </main>
+</body>
+</html>

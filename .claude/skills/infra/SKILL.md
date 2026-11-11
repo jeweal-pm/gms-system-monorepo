@@ -112,6 +112,37 @@ approved bundle:
   behind Nginx, has `replication_factor = 1` and therefore needs backups; include
   its license review and host-capacity decision. Do not publish its data/API port.
 
+## Owner-selected Hono operations container target
+
+For approved backend features from the GMS sidebar, plan one Hono runtime/container named
+`backend-api-inventory` (workspace/package of the same name), not a container per menu group.
+It hosts Inventory (Load to Stock, Merge/Split, Stock Transfer Location, Stock Adjustment,
+Barcode Printing), Sale, Account Outstanding, and Reports (Stock Movement, Closing Stock,
+Sale Report) as internal modules. Do not add a gateway. This is a target boundary; no such
+container is currently implied to exist.
+
+Research and configure that single container only against the exact approved SA/infra bundle.
+Before implementation, reconcile ADR-0027/GMS spec's existing `api-inventory` DNS/name, and
+verify the single-container memory, CPU, DB-pool and network budget against the 4 GB / 2 vCPU
+host. Keep module data ownership and cross-service routes explicit; one process does not grant
+permission for cross-schema writes or direct reads. Parent remains the sole writer for shared
+Compose, Dockerfile and service-index files.
+
+## Long-lived SSE notification routes
+
+For approved notification streams, preserve HTTP streaming end to end. Research the exact Nginx
+and adapter versions, then configure only the SSE locations to disable response buffering and
+caching, avoid compression that delays chunks, allow the approved idle/read timeout, and pass
+heartbeats without buffering. Keep ordinary API proxy behavior unchanged. Ensure request IDs
+and auth cookies/headers are forwarded only as approved, and do not log event payloads or
+credentials.
+
+Bound concurrent streams and per-connection memory, verify graceful close/reconnect behavior,
+and account for open connections/file descriptors and DB pool use on the 4 GB / 2 vCPU host.
+Keep health/readiness probes separate from a long-lived stream. If more than one API instance
+is introduced, require an approved event-distribution/outbox design; do not add Redis/broker
+from an infra assumption. Include positive/negative stream checks in the exact infra bundle.
+
 ## Implement through the parent
 
 The parent serializes shared Docker/Compose/environment/manifest changes and delegates

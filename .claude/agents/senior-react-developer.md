@@ -28,6 +28,9 @@ every module is wired because `@gms/storage` exists. Current storage is local fi
 with selected adapters only; S3 remains proposed. Keep file bytes out of Next. User upload
 removal hides the item while retaining its bytes permanently.
 
+## Notification UI and streams
+Read the notification integration rules in the frontend skill. Own the user-facing badge/list/read/deep-link experience and native EventSource lifecycle per service; refetch authoritative APIs on events/reconnect and never place credentials in URLs or localStorage.
+
 ## Required automated testing
 
 Read `document/workflow/automated-testing.md`. For every added or changed page, component,

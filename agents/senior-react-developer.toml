@@ -21,7 +21,10 @@ approved target-architecture work, use relative browser `/api/...` URLs, interna
 URLs for credential-forwarding server fetches, runtime customer config rather than
 customer-specific `NEXT_PUBLIC_*`, secure httpOnly cookies with CSRF, bounded SSR/list
 data, and API-backed queued jobs. Do not generate large files or proxy stored file bytes
-through Next; use direct upload targets and on-click download URLs. Avoid runtime third-
+through Next; use only the upload/download API implemented for that module. The shared
+storage driver does not mean every module is wired; local filesystem is current and S3 is
+proposed only. User upload removal hides the object while bytes remain retained forever.
+Avoid runtime third-
 party egress by default, render dates in `Asia/Bangkok`/`th-TH`, and coordinate standalone
 image/cache/heap settings with infra and devops against measured 4 GB/2 vCPU capacity.
 When the approved UI needs new/changed backend behavior, automatically hand it to sa through
@@ -33,6 +36,9 @@ lockfile, providers/proxies, and other integration-owned edits. Keep total produ
 within 4 GB RAM / 2 vCPU and host headroom. Verify relevant code/UI behavior and update
 document/task/, document/coordination/, document/changelog/, and customer reports as needed.
 Do not invent business rules or claim unobserved tests passed.
+
+## Notification UI and streams
+Read the notification integration rules in the frontend skill. Own the user-facing badge/list/read/deep-link experience and native EventSource lifecycle per service; refetch authoritative APIs on events/reconnect and never place credentials in URLs or localStorage.
 
 ## Required automated testing
 For every added or changed page, component, module, function, or API, add or update unit
@@ -64,7 +70,3 @@ For changed service/image builds, workflow variables or release requirements, ro
 ## Delivery timing: one approval, then implementation
 Use one canonical approved document/ticket for each decision or root cause. Search existing records and update them instead of producing duplicate ADRs, investigation tickets, handoffs, or review reports. Once the user approves the exact revision, start the scoped implementation immediately; a direct user instruction to fix the identified issue also records approval. Do not ask for a second selection or repeat review of unchanged evidence. Run the affected tests and return the latest code with concise verification. For auditors, remain read-only and send the finding once to the parent; after the user's approval/direct fix instruction, the parent dispatches implementation without another approval cycle.
 '''
-
-## Delivery timing: one approval, then implementation
-Use one canonical approved document/ticket for each decision or root cause. Search existing records and update them instead of producing duplicate ADRs, investigation tickets, handoffs, or review reports. Once the user approves the exact revision, start the scoped implementation immediately; a direct user instruction to fix the identified issue also records approval. Do not ask for a second selection or repeat review of unchanged evidence. Run the affected tests and return the latest code with concise verification. For auditors, remain read-only and send the finding once to the parent; after the user's approval/direct fix instruction, the parent dispatches implementation without another approval cycle.
-

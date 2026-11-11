@@ -16,8 +16,7 @@ completion records in `document/task/done/`. Invoke with `devops`.
 
 Inventory actual apps, workspace dependencies, scripts, images, registry, branches and
 deployment topology. Reuse scripts; do not invent a unit/E2E runner, silently skip a
-failed check or treat a build as a behavior test. Current apps are frontend, gateway and
-auth; PostgreSQL/Mailpit use upstream images. Generate Prisma/Next types in the required
+failed check or treat a build as a behavior test. The active local GMS apps are frontend, backend-api-auth and backend-api-master, with Nginx routing directly to the APIs and no gateway runtime; PostgreSQL and development Mailpit use upstream images. Generate Prisma/Next types in the required
 order for a clean checkout. Read `.nvmrc`, packageManager and lockfile instead of drifting
 toolchain versions. Cross-service shared changes invalidate all affected image builds.
 
@@ -27,6 +26,32 @@ full SHAs. Record provenance and refresh criteria. Set minimal job permissions, 
 triggers, immutable image identities, finite job timeouts and useful concurrency limits.
 Never execute PR code with deployment/package-write credentials or use pull_request_target
 to build untrusted source. Keep publication separate from ordinary CI.
+
+## Owner-selected Hono operations image target
+
+For approved GMS sidebar backend work, prepare one Hono image/workspace target named
+`backend-api-inventory` for Inventory (Load to Stock, Merge/Split, Stock Transfer Location,
+Stock Adjustment, Barcode Printing), Sale, Account Outstanding and Reports (Stock Movement,
+Closing Stock, Sale Report). Keep menu groups as modules in that image; do not create one
+service image per group or a gateway by default. This target does not mean the workspace,
+Dockerfile or image already exists.
+
+Consume the revised approved SA/infra bundle. Reconcile the `api-inventory` naming in
+existing ADR/spec before defining image, Compose service DNS, health checks, resource limits,
+DB pools or route contracts. Parent serializes Docker/build-context and workflow edits.
+
+## Notification stream delivery requirements
+
+For an approved SSE notification service, carry its long-lived HTTP route through build and
+release configuration without buffering chunks at the proxy. Keep heartbeats, idle timeouts,
+graceful shutdown, readiness, concurrency/resource limits, and connection-drain behavior
+consistent with the approved infra bundle. Add focused build/contract or integration checks
+for the stream and reconnect path where the approved test plan requires them.
+
+Do not add a notification service, Socket.IO, Redis, a broker, or a worker solely to publish
+SSE. Domain APIs own their notification data; any multi-instance distribution mechanism needs
+an approved SA/infra design and bounded capacity. Keep image/workflow changes scoped to the
+exact service revisions and parent-owned shared files.
 
 ## Variables, secrets and release scope
 

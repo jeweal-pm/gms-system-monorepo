@@ -15,8 +15,34 @@ proposed only. Specify permanent retention for user-uploaded bytes, including UI
 After approval, return the precise backend handoff to the parent for automatic backend
 implementation and frontend continuation. Save planning/handoffs under document/.
 
+## Notification design handoff
+Read the notification requirements in the SA skill: keep notification ownership in each domain service, define recipient/auth/persistence/reconnect contracts, include frontend and SSE proxy implications, and do not add a central notification service or broker by default.
+
 ## Corrective-work stop conditions
 Read document/workflow/remediation.md. Inherit the parent's persistent root-cause ledger and active pass across roles/revisions/sessions: three corrective passes total by default, initial fix included. Retry only with diagnosed failure and new evidence/hypothesis. Stop on success, no-progress, unavailable verification, exhausted passes, or cyclic unchanged handoffs. Return evidence and next required fact; new independent issues return to review. Only explicit user authorization extends the existing limit. Do not automatically restart a full audit or weaken its safeguards.
+
+## Owner-selected inventory and operations service boundary
+
+For backend features selected from the supplied GMS sidebar, use one Hono service boundary:
+workspace/package `backend-api-inventory`, exposed as the `backend-api-inventory` runtime
+container. Keep these modules together in that service rather than creating a separate Hono
+container per menu group:
+
+- Inventory: Load to Stock, Merge/Split, Stock Transfer Location, Stock Adjustment, Barcode Printing
+- Sale: Sale
+- Account: Account Outstanding
+- Reports: Stock Movement, Closing Stock, Sale Report
+
+Treat this as a modular service with internal module boundaries. Do not add a gateway or
+split these modules into another service by default. When preparing the next SA bundle,
+update the existing GMS service map, ADR-0027 and affected diagrams/contracts to record this
+owner-selected scope and the exact runtime/DNS name. Map each module's data/schema ownership,
+transaction boundaries, report reads and cross-domain APIs explicitly; grouping modules in
+one process does not authorize cross-schema writes, direct reads of another service's tables,
+or a shared transaction across independent owners. Include the single service's bounded
+resource/DB-pool budget and infra/devops handoffs. Do not start dependent implementation
+until the revised service/API/schema bundle is approved.
+
 
 ## Container infrastructure handoff
 For selected work adding/changing containers, images, networks or storage, read document/workflow/infra-delivery.md and have the parent route official version-specific research to infra. Include its exact bundle in required SA review; implement accepted scope in prerequisite order. Shared Docker/Compose/config edits remain parent-serialized and single-writer; frontend/backend own adapters in their respective source; backend owns DB migrations. The parent also serializes service-index writes. Container review findings first enter investigation with owner infra and never auto-trigger fixes. Compare manual ADR changes against document/infra/service-index.md; no background watcher is implied.
@@ -26,7 +52,3 @@ For changed service/image builds, workflow variables or release requirements, ro
 ## Delivery timing: one approval, then implementation
 Use one canonical approved document/ticket for each decision or root cause. Search existing records and update them instead of producing duplicate ADRs, investigation tickets, handoffs, or review reports. Once the user approves the exact revision, start the scoped implementation immediately; a direct user instruction to fix the identified issue also records approval. Do not ask for a second selection or repeat review of unchanged evidence. Run the affected tests and return the latest code with concise verification. For auditors, remain read-only and send the finding once to the parent; after the user's approval/direct fix instruction, the parent dispatches implementation without another approval cycle.
 '''
-
-## Delivery timing: one approval, then implementation
-Use one canonical approved document/ticket for each decision or root cause. Search existing records and update them instead of producing duplicate ADRs, investigation tickets, handoffs, or review reports. Once the user approves the exact revision, start the scoped implementation immediately; a direct user instruction to fix the identified issue also records approval. Do not ask for a second selection or repeat review of unchanged evidence. Run the affected tests and return the latest code with concise verification. For auditors, remain read-only and send the finding once to the parent; after the user's approval/direct fix instruction, the parent dispatches implementation without another approval cycle.
-
