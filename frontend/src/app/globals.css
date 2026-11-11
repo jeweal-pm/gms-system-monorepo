@@ -247,3 +247,15 @@ select:-webkit-autofill {
     animation: none;
   }
 }
+
+/*
+ * Owner 2026-11-11 ("content scrolls into empty space"): an `sr-only` text is `position: absolute` at its own place in
+ * the flow. Inside a list that scrolls by itself but isn't positioned (e.g. the Stone Code list drawer), it is placed
+ * against an outer container instead and stretches that container's scroll area far below the content. Pinning it to
+ * the corner of its containing block keeps it out of every scroll area; while focused (skip links, keyboard-only
+ * buttons that show on focus) it keeps its normal place.
+ */
+.sr-only:not(:focus):not(:focus-within) {
+  top: 0;
+  left: 0;
+}

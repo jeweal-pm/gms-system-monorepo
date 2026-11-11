@@ -34,6 +34,13 @@ export function tabPath(url: string): string {
   return tabGroup(path)?.path ?? path;
 }
 
+/** Pages outside the signed-in app; they never open a tab (owner 2026-11-11: a "Login" tab stayed after sign-out). */
+const NON_TAB_PATHS = ["/login"];
+
+export function isTabPath(path: string): boolean {
+  return !NON_TAB_PATHS.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
 export function activeTab(state: TabsState): Tab | undefined {
   return state.tabs.find((tab) => tab.id === state.activeId);
 }
@@ -45,6 +52,7 @@ export function activeTab(state: TabsState): Tab | undefined {
  */
 export function openUrl(state: TabsState, url: string, title: string, newId: string): { state: TabsState; outcome: OpenOutcome } {
   const path = tabPath(url);
+  if (!isTabPath(path)) return { state, outcome: "home" };
   if (path === HOME_PATH) return { state: state.activeId === "" ? state : { ...state, activeId: "" }, outcome: "home" };
   const existing = state.tabs.find((tab) => tab.path === path);
   if (existing) {
@@ -158,7 +166,7 @@ export function parseStoredTabs(raw: string | null, newId: () => string): TabsSt
     if (!isAppUrl(url)) continue;
     const path = tabPath(url);
     // A Home tab stored before 2026-11-03 is dropped: Home has no tab now.
-    if (path === HOME_PATH || tabs.some((tab) => tab.path === path)) continue;
+    if (path === HOME_PATH || !isTabPath(path) || tabs.some((tab) => tab.path === path)) continue;
     const name = typeof title === "string" && title.trim() ? title.slice(0, MAX_TITLE_LENGTH) : fallbackTitle(path);
     const tab = { id: newId(), path, url, title: name };
     if (index === active) activeId = tab.id;

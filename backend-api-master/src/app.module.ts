@@ -15,6 +15,7 @@ import { QuotationPhotoPublicController } from "./quotation/quotation-photo.publ
 import { MemoReceivePhotoPublicController } from "./trade-document/memo-receive-photo.public.controller";
 import { PurchaseOrderPhotoPublicController } from "./purchase-order/purchase-order-photo.public.controller";
 import { LINE_PHOTO_CONTROLLERS } from "./trade-document/line-photo.public.controllers";
+import { NotificationRetention, NotificationStreamController } from "./notification/notification-stream";
 import { PurchaseOrderService } from "./purchase-order/purchase-order.service";
 import { PurchaseService } from "./purchase/purchase.service";
 import { QuotationService } from "./quotation/quotation.service";
@@ -53,9 +54,10 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
       },
     }),
   ],
-  controllers: [HealthController, CustomerController, VendorController, CompanyProfileController, CompanyLogoPublicController, StoneMasterController, QuotationPhotoPublicController, MemoReceivePhotoPublicController, PurchaseOrderPhotoPublicController, ...LINE_PHOTO_CONTROLLERS],
+  controllers: [HealthController, CustomerController, VendorController, CompanyProfileController, CompanyLogoPublicController, StoneMasterController, QuotationPhotoPublicController, MemoReceivePhotoPublicController, PurchaseOrderPhotoPublicController, ...LINE_PHOTO_CONTROLLERS, NotificationStreamController],
   providers: [
     PrismaLifecycleService,
+    NotificationRetention,
     CustomerService,
     VendorService,
     CompanyProfileService,

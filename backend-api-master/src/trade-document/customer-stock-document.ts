@@ -14,6 +14,7 @@ import type { MemoOutInput, MemoReceiveListInput, MemoReceiveStatus } from "./me
 import { takeFromMemoStock } from "./memo-stock.service";
 import { completeFromMemoStock } from "./stock-lines";
 import { withLinePhotos, type LinePhotoDocument } from "./line-photos";
+import { emitNotificationSignals } from "../notification/notification-hub";
 
 /**
  * A customer document whose lines may come From Stock (memo-out SA rev 2 SA-MO-11…15; reserve SA rev 1 SA-RS-04…08):
@@ -223,8 +224,11 @@ export class CustomerStockDocument {
         });
         const takes = document.lines.flatMap((line, index) => (line.memoStockId ? [{ memoStockId: line.memoStockId, pcs: line.pcs, weightCt: line.weightCt, index }] : []));
         await takeFromMemoStock(tx, takes, "reserved", this.pendingShort, now);
-        return { docNo: document.docNo, stockLineCount: takes.length };
+        // ADR-0049: the creator hears about the approval once this transaction commits.
+        const signals = await this.engine.notifyApproved(tx, id, actorId);
+        return { signals, docNo: document.docNo, stockLineCount: takes.length };
       }, WRITE_TX);
+      emitNotificationSignals(approved.signals);
       this.logger.log({ event: `${this.config.event}.approved`, actorId, id, docNo: approved.docNo, stockLineCount: approved.stockLineCount });
       return { id, version: expectedVersion + 1, status: APPROVED as "APPROVED", stockLineCount: approved.stockLineCount };
     } catch (error) {

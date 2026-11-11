@@ -7,6 +7,7 @@ import { explainMiss, MISS_SELECT, TradeDocumentEngine, type LineHook, type Miss
 import { documentErrors } from "../trade-document/document-errors";
 import { vendorDocumentOptions, vendorParty, type VendorOut } from "../trade-document/memo-out-return.service";
 import type { PurchaseOrderInput, PurchaseOrderListInput, PurchaseOrderStatus } from "./purchase-order.schemas";
+import { emitNotificationSignals } from "../notification/notification-hub";
 
 export const purchaseOrderErrors = documentErrors("PURCHASE_ORDER", "PurchaseOrder", "purchase_order");
 /** SA-PO-11: an upload that isn't a JPEG/PNG ≤ 5 MB, or a saved photo id that isn't a ready Purchase Order photo. */
@@ -134,8 +135,11 @@ export class PurchaseOrderService {
           explainMiss(errors, (await tx.purchaseOrder.findUnique({ where: { id }, select: MISS_SELECT })) as MissRow, [PENDING]);
         }
         const document = await tx.purchaseOrder.findUniqueOrThrow({ where: { id }, select: { docNo: true, _count: { select: { lines: true } } } });
-        return { docNo: document.docNo, lineCount: document._count.lines };
+        // ADR-0049: the creator hears about the approval once this transaction commits.
+        const signals = await this.engine.notifyApproved(tx, id, actorId);
+        return { signals, docNo: document.docNo, lineCount: document._count.lines };
       }, WRITE_TX);
+      emitNotificationSignals(approved.signals);
       this.logger.log({ event: "purchase_order.approved", actorId, id, docNo: approved.docNo, lineCount: approved.lineCount });
       return { id, version: expectedVersion + 1, status: APPROVED as "APPROVED", lineCount: approved.lineCount };
     } catch (error) {

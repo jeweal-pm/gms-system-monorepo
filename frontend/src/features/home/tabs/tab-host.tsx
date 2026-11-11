@@ -55,6 +55,21 @@ const TabControlsContext = createContext<TabControls | null>(null);
 
 const HOME_BREADCRUMBS: Breadcrumb[] = [{ label: HOME_TITLE }];
 
+/**
+ * Owner 2026-11-11: signing out clears the tab bar. The stored list is removed and, until the shell unmounts, the
+ * provider neither saves its (old) tabs back nor opens the page it is leaving to. A new sign-in mounts a new provider.
+ */
+let signingOut = false;
+
+export function forgetTabsOnSignOut(userId: string) {
+  signingOut = true;
+  try {
+    window.localStorage.removeItem(tabsStorageKey(userId));
+  } catch {
+    // Nothing stored.
+  }
+}
+
 let tabCounter = 0;
 const newTabId = () => `tab-${++tabCounter}`;
 
@@ -85,6 +100,7 @@ export function TabsProvider({ userId, children }: Readonly<{ userId: string; ch
   // T-07: the shell mounts this only on the client after the session check, so the stored list and the
   // URL are read once here: the URL's page opens in (or switches to) its tab within the stored list.
   const [initial] = useState(() => {
+    signingOut = false;
     const stored = readStoredTabs(userId) ?? emptyTabs;
     const url = currentUrl();
     const result = openUrl(stored, url, fallbackTitle(tabPath(url)), newTabId());
@@ -118,7 +134,7 @@ export function TabsProvider({ userId, children }: Readonly<{ userId: string; ch
 
   // T-01 / T-08: every later navigation shows the page at the URL in its tab.
   useEffect(() => {
-    if (syncedPath.current === pathname) return;
+    if (signingOut || syncedPath.current === pathname) return;
     syncedPath.current = pathname;
     const url = currentUrl();
     const result = openUrl(stateRef.current, url, fallbackTitle(tabPath(url)), newTabId());
@@ -128,6 +144,7 @@ export function TabsProvider({ userId, children }: Readonly<{ userId: string; ch
 
   // An empty list is stored too, so tabs closed with Close all don't come back after a reload.
   useEffect(() => {
+    if (signingOut) return;
     try {
       window.localStorage.setItem(tabsStorageKey(userId), serializeTabs(state));
     } catch {
@@ -303,7 +320,7 @@ export function TabPanels({ children }: Readonly<{ children: ReactNode }>) {
           </Activity>
         );
       })}
-      <div className={showRoute ? "h-full overflow-auto" : "hidden"}>{children}</div>
+      <div className={showRoute ? "relative h-full overflow-auto" : "hidden"}>{children}</div>
     </>
   );
 }
@@ -318,7 +335,7 @@ function TabPane({ tabId, controls, children }: Readonly<{ tabId: string; contro
     if (ref.current) ref.current.scrollTop = scrollTop.current;
   }, []);
   return (
-    <div ref={ref} onScroll={(event) => (scrollTop.current = event.currentTarget.scrollTop)} className="h-full overflow-auto">
+    <div ref={ref} onScroll={(event) => (scrollTop.current = event.currentTarget.scrollTop)} className="relative h-full overflow-auto">
       <TabControlsContext.Provider value={value}>{children}</TabControlsContext.Provider>
     </div>
   );

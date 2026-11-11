@@ -9,6 +9,7 @@ import { vendorDocumentOptions, vendorParty, type VendorOut } from "./memo-out-r
 import type { MemoReceiveListInput, MemoReceiveStatus, MemoReturnInput } from "./memo-schemas";
 import { takeFromMemoStock } from "./memo-stock.service";
 import { LINE_PHOTO_DOCUMENTS, withLinePhotos } from "./line-photos";
+import { emitNotificationSignals } from "../notification/notification-hub";
 
 export const memoReturnErrors = documentErrors("MEMO_RETURN", "MemoReturn", "memo_return");
 /** Approval found a Memo Stock item with less pending than the line returns (another return took it first). */
@@ -170,8 +171,11 @@ export class MemoReturnService {
         });
         const takes = document.lines.map((line, index) => ({ memoStockId: line.memoStockId, pcs: line.pcs, weightCt: line.weightCt, index }));
         await takeFromMemoStock(tx, takes, "returned", memoReturnPendingShort, now);
-        return { docNo: document.docNo, lineCount: document.lines.length };
+        // ADR-0049: the creator hears about the approval once this transaction commits.
+        const signals = await this.engine.notifyApproved(tx, id, actorId);
+        return { signals, docNo: document.docNo, lineCount: document.lines.length };
       }, WRITE_TX);
+      emitNotificationSignals(approved.signals);
       this.logger.log({ event: "memo_return.approved", actorId, id, docNo: approved.docNo, lineCount: approved.lineCount });
       return { id, version: expectedVersion + 1, status: APPROVED as "APPROVED" };
     } catch (error) {

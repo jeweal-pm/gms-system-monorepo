@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import type { NavIcon } from "./nav-icons";
 import { GmsMark } from "./gms-mark";
+import { RAIL_ICON_SIZE } from "./rail-icons";
 import { isNavItemActive, isNavSectionActive, railModules, sidebarSections, visibleRailModules, visibleSections, type NavLink, type NavSection } from "./navigation";
 import { useMenuAccess } from "./use-menu-access";
 
@@ -13,7 +14,8 @@ export type SidebarFocusRequest = { target: "toggle" } | { target: "section"; se
 export type TakeSidebarFocusRequest = () => SidebarFocusRequest | null;
 
 const railFocusRing = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gms-primary";
-const railButtonBase = `relative flex size-10 shrink-0 items-center justify-center rounded-gms-lg text-gms-text transition-colors hover:bg-gms-nav-active ${railFocusRing}`;
+// Owner 2026-11-11 rail states: default no fill, hover = tooltip only, active = #F3F3F3 (40 px, radius 12).
+const railButtonBase = `relative flex size-10 shrink-0 items-center justify-center rounded-gms-lg text-gms-text transition-colors ${railFocusRing}`;
 
 /* ---------- RailTooltip (N-06): hover ≈150 ms, focus immediate, Escape/blur/leave hide ---------- */
 
@@ -201,7 +203,8 @@ function RailSectionMenu({ section, pathname }: Readonly<{ section: NavSection; 
 /* ---------- RailButton (N-06) ---------- */
 
 function RailIcon({ icon: Icon }: Readonly<{ icon: NavIcon }>) {
-  return <Icon aria-hidden size={24} strokeWidth={1.5} className="shrink-0" />;
+  // Owner 2026-11-11: rail icons are 20 × 20 px.
+  return <Icon aria-hidden size={RAIL_ICON_SIZE} strokeWidth={1.5} className="shrink-0" />;
 }
 
 function RailLink({ href, label, icon, active }: Readonly<{ href: string; label: string; icon: NavIcon; active: boolean }>) {
@@ -215,7 +218,7 @@ function RailLink({ href, label, icon, active }: Readonly<{ href: string; label:
         href={href}
         aria-current={active ? "page" : undefined}
         onClick={hide}
-        className={`${railButtonBase} ${active ? "bg-gms-nav-active" : "bg-gms-rail-button"}`}
+        className={`${railButtonBase} ${active ? "bg-gms-nav-active" : ""}`}
         {...triggerProps}
       >
         <RailIcon icon={icon} />
@@ -252,7 +255,7 @@ export function RailActionButton({ label, icon, onClick, active = false, srSuffi
         type="button"
         aria-controls={ariaControls}
         data-sidebar-toggle={isSidebarToggle ? "" : undefined}
-        className={`${railButtonBase} ${active ? "bg-gms-nav-active" : "bg-gms-rail-button"}`}
+        className={`${railButtonBase} ${active ? "bg-gms-nav-active" : ""}`}
         {...triggerProps}
         onClick={() => {
           hide();
@@ -279,10 +282,13 @@ export function SidebarRail({
   pathname,
   takeFocusRequest,
   onExpand,
+  toggle,
 }: Readonly<{
   pathname: string;
   takeFocusRequest: TakeSidebarFocusRequest;
   onExpand: (request: SidebarFocusRequest) => void;
+  /** Owner design 2026-11-11: the expand toggle at the top of the rail, above a short divider and the logo. */
+  toggle?: ReactNode;
 }>) {
   const railRef = useRef<HTMLDivElement>(null);
   // Same visibility as the expanded sidebar: no VIEW, no button (owner 2026-10-17).
@@ -296,11 +302,17 @@ export function SidebarRail({
   }, [takeFocusRequest]);
 
   return (
-    <div ref={railRef} className="flex h-full w-gms-rail shrink-0 flex-col border-r border-gms-border bg-gms-surface-muted">
-      <Link href="/" className={`mx-auto mt-5 flex size-[31px] shrink-0 rounded-gms-sm ${railFocusRing}`}>
+    <div ref={railRef} className="flex h-full w-gms-rail shrink-0 flex-col border-r border-gms-border bg-gms-surface">
+      {toggle && (
+        <>
+          <div className="flex h-8 shrink-0 items-center justify-center">{toggle}</div>
+          <span aria-hidden className="mx-auto mt-1 h-px w-7 shrink-0 bg-gms-border" />
+        </>
+      )}
+      <Link href="/" className={`mx-auto flex size-[31px] shrink-0 rounded-gms-sm ${toggle ? "mt-[15px]" : "mt-5"} ${railFocusRing}`}>
         <GmsMark variant="mark" />
       </Link>
-      <nav aria-label="Main menu" className="scrollbar-none min-h-0 flex-1 overflow-y-auto px-2 pt-[26px] pb-4">
+      <nav aria-label="Main menu" className={`scrollbar-none min-h-0 flex-1 overflow-y-auto px-2 pb-4 ${toggle ? "pt-[15px]" : "pt-[26px]"}`}>
         <ul className="flex flex-col gap-1.5">
           {modules.map((module) => {
             if (module.kind === "link") {

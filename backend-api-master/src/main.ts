@@ -14,6 +14,7 @@ import { PHOTO_MAX_BYTES, PHOTO_TYPES } from "./quotation/quotation-photo.storag
 import { MEMO_RECEIVE_PHOTO_ROUTE } from "./trade-document/memo-receive-photo.public.controller";
 import { PURCHASE_ORDER_PHOTO_ROUTE } from "./purchase-order/purchase-order-photo.public.controller";
 import { LINE_PHOTO_DOCUMENTS } from "./trade-document/line-photos";
+import { createNotificationStreamGate, NOTIFICATION_STREAM_ROUTE } from "./notification/notification-stream";
 import type { MasterMenu } from "./master/authorization";
 
 /** Maps body-parser failures to the partner envelope (413 over 256 KB, 400 malformed JSON). */
@@ -71,6 +72,8 @@ async function bootstrap() {
   for (const document of Object.values(LINE_PHOTO_DOCUMENTS)) {
     expressApp.use(document.route, photoMethodCheck, createPhotoAccessCheck(masterTrpc, document.menu as MasterMenu, sharedPhotoLimiters), photoBody, bodyErrorHandler);
   }
+  // ADR-0049 D6: the notification stream is refused here (403/401/503) before Nest opens the event stream.
+  expressApp.use(NOTIFICATION_STREAM_ROUTE, createNotificationStreamGate(masterTrpc));
   expressApp.use(express.json({ limit: "256kb" }));
   expressApp.use(bodyErrorHandler);
   expressApp.use("/api/master/trpc", masterTrpc.handle.bind(masterTrpc));

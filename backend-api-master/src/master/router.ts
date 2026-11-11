@@ -78,6 +78,8 @@ import {
 import { LIST_LIMIT_MAX } from "../common/partner-schemas";
 import { validationException, zodFieldErrors } from "../common/errors";
 import { requireAnyMasterGrant, requireMasterGrant, requireMasterSession, type MasterAction, type MasterContext, type MasterMenu } from "./authorization";
+import { listForTypes, listForUser, markAllRead, markRead, NOTIFICATION_PAGE_MAX, unreadCount } from "../notification/notification-store";
+import { NOTIFICATION_DOCUMENT_TYPES, type NotificationDocumentType } from "../notification/notification-types";
 
 // Staged router: do not mount until the auth-owned JWT/view/license context adapter is verified.
 const t = initTRPC.context<MasterContext>().create({
@@ -153,6 +155,33 @@ function signedIn() {
     const { userId } = requireMasterSession(ctx);
     return next({ ctx: { ...ctx, userId } });
   });
+}
+
+/** ADR-0049: a write to the caller's own notifications: live session plus CSRF, no menu grant. */
+function signedInMutation() {
+  return t.procedure.use(({ ctx, next }) => {
+    const { userId } = requireMasterSession(ctx);
+    if (!ctx.csrfVerified) throw new TRPCError({ code: "FORBIDDEN", message: "CSRF_INVALID" });
+    return next({ ctx: { ...ctx, userId } });
+  });
+}
+
+const notificationListInput = z.object({
+  scope: z.enum(["for-me", "all"]),
+  cursor: z.string().max(200).nullish(),
+  // Sent by tRPC's useInfiniteQuery; the list only pages forward.
+  direction: z.enum(["forward", "backward"]).optional(),
+  limit: z.number().int().min(1).max(NOTIFICATION_PAGE_MAX).optional(),
+}).strict();
+const markReadInput = z.object({
+  ids: z.array(z.uuid()).min(1).max(50).refine((ids) => new Set(ids).size === ids.length, "duplicate"),
+}).strict();
+
+/** The notification document types whose menu the caller may VIEW (Super Admin: all). */
+export function viewableNotificationTypes(ctx: MasterContext): NotificationDocumentType[] {
+  const principal = ctx.principal;
+  if (!principal) return [];
+  return NOTIFICATION_DOCUMENT_TYPES.filter((type) => principal.isSuperAdmin || principal.grants.includes(`${type}:VIEW`));
 }
 
 /** Read allowed with `action` on any of `menus` (currency SA-CUR-07: Quotation reads currency options). */
@@ -469,6 +498,17 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
         .query(({ input }) => domainCall(() => memoOutstanding.customerItems(input))),
       customerOptions: permitted("memo-outstanding-customer", "VIEW").use(withFieldErrors(memoOutstandingOptionsSchema)).input(memoOutstandingOptionsSchema)
         .query(() => domainCall(() => memoOutstanding.customerOptions())),
+    }),
+    // ADR-0049: one's own notifications need a live session, no menu grant; "all" shows only types the caller may VIEW.
+    notification: t.router({
+      unreadCount: signedIn().query(({ ctx }) => domainCall(() => unreadCount(ctx.userId))),
+      list: signedIn().input(notificationListInput).query(({ ctx, input }) => domainCall(() => (
+        input.scope === "for-me"
+          ? listForUser(ctx.userId, input.cursor, input.limit)
+          : listForTypes(viewableNotificationTypes(ctx), input.cursor, input.limit)
+      ))),
+      markRead: signedInMutation().input(markReadInput).mutation(({ ctx, input }) => domainCall(() => markRead(ctx.userId, input.ids))),
+      markAllRead: signedInMutation().mutation(({ ctx }) => domainCall(() => markAllRead(ctx.userId))),
     }),
   });
 }

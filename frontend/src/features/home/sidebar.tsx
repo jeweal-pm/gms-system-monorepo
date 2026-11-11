@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useApprovalTotal } from "@/features/approve-center/api";
 import { capCount } from "@/features/approve-center/model";
 import { GmsMark } from "./gms-mark";
-import { activeDisclosureIds, isNavItemActive, sidebarSections, sidebarToggleIcon, visibleSections, type NavLink } from "./navigation";
+import { activeDisclosureIds, isNavItemActive, sidebarSections, visibleSections, type NavLink } from "./navigation";
 import { SIDEBAR_ICON_SIZE, SidebarDisclosure, sidebarFocusRing, sidebarRow } from "./sidebar-disclosure";
-import { RailActionButton, type SidebarFocusRequest, type TakeSidebarFocusRequest } from "./sidebar-rail";
+import { type SidebarFocusRequest, type TakeSidebarFocusRequest } from "./sidebar-rail";
 import { useMenuAccess } from "./use-menu-access";
 
 /** C-AP-01: the Approve total pill (26 × 20, #E2F0F0 / #1C7B80), capped at 99+. */
@@ -40,7 +40,8 @@ function SidebarLink({ item, pathname, onNavigate, badge }: Readonly<{ item: Nav
  */
 const rememberedOpenIds = new Set<string>();
 
-type CollapseControl = { controlsId: string; onCollapse: () => void; takeFocusRequest: TakeSidebarFocusRequest };
+/** The desktop sidebar's focus request after a rail group opens it (the toggle itself now sits above, in app-shell). */
+type CollapseControl = { takeFocusRequest: TakeSidebarFocusRequest };
 
 /**
  * Expanded sidebar (C-01 / N-03; S3, S2): 236 px, #FCFCFC, 1 px #EDEDED right border, padding 16/14,
@@ -51,8 +52,16 @@ export function Sidebar({
   pathname,
   onNavigate,
   collapse,
+  headerAction,
   className = "",
-}: Readonly<{ pathname: string; onNavigate?: () => void; collapse?: CollapseControl; className?: string }>) {
+}: Readonly<{
+  pathname: string;
+  onNavigate?: () => void;
+  collapse?: CollapseControl;
+  /** Owner design 2026-11-11: the expand / collapse toggle, at the right of the logo row. */
+  headerAction?: ReactNode;
+  className?: string;
+}>) {
   const idPrefix = useId();
   const listRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -105,9 +114,12 @@ export function Sidebar({
 
   return (
     <div ref={rootRef} className={`flex h-full w-gms-sidebar shrink-0 flex-col gap-[15px] border-r border-gms-border bg-gms-surface-muted px-[14px] py-4 ${className}`}>
-      <Link href="/" onNavigate={onNavigate} aria-label="GMS home" className={`flex h-[52px] shrink-0 items-start self-start rounded-gms-sm pt-0.5 ${sidebarFocusRing}`}>
-        <GmsMark />
-      </Link>
+      <div className="flex shrink-0 items-start justify-between gap-2">
+        <Link href="/" onNavigate={onNavigate} aria-label="GMS home" className={`flex h-[52px] shrink-0 items-start self-start rounded-gms-sm pt-0.5 ${sidebarFocusRing}`}>
+          <GmsMark />
+        </Link>
+        {headerAction}
+      </div>
       <nav aria-label="Main menu" className="flex min-h-0 flex-1 flex-col">
         <div ref={listRef} className="scrollbar-none flex min-h-0 flex-1 flex-col gap-[15px] overflow-y-auto">
           {sections.map((section) => {
@@ -142,11 +154,6 @@ export function Sidebar({
           })}
         </div>
       </nav>
-      {collapse && (
-        <div className="shrink-0">
-          <RailActionButton label="Collapse sidebar" icon={sidebarToggleIcon} ariaControls={collapse.controlsId} isSidebarToggle onClick={collapse.onCollapse} />
-        </div>
-      )}
     </div>
   );
 }

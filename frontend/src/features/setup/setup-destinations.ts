@@ -10,7 +10,6 @@ import {
   DocumentSetupIcon,
   LocationMasterIcon,
   MasterCodeIcon,
-  NotificationsIcon,
   PartnerMasterIcon,
   SalePersonIcon,
   ServiceFeeIcon,
@@ -50,7 +49,7 @@ const placeholder = (slug: Parameters<typeof setupPlaceholderLink>[0], icon: Ico
 export const setupLandingTiles: (SetupLinkDestination | SetupMasterCodeEntry | SetupUnavailableEntry)[] = [
   { kind: "link", id: "company-profile", label: "Company Profile", href: "/setup/company-profile", icon: CompanyProfileIcon, color: "indigo", permission: ["company-profile"] },
   { kind: "link", id: "user-permission", label: "User and Permission", href: "/setup/user-permission", icon: UserPermissionIcon, color: "green", permission: ["user-and-permission"] },
-  placeholder("notifications", NotificationsIcon, "red"),
+  // Notifications removed from the Setup page (owner 2026-11-11).
   { kind: "master-code", id: "master-code", label: "Master Code", icon: MasterCodeIcon, color: "neutral", permission: MASTER_CODE_MENU_KEYS },
   // document-setup UI rev 1 (owner 2026-10-23): real page, gated by the new `document-setup` leaf.
   { kind: "link", id: "document-setup", label: "Document Setup", href: "/setup/document-setup", icon: DocumentSetupIcon, color: "blue", permission: ["document-setup"] },

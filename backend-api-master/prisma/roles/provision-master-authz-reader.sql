@@ -37,6 +37,8 @@ CREATE ROLE gms_master_authz_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NO
 GRANT CONNECT ON DATABASE :"authz_database" TO gms_master_authz_reader;
 GRANT USAGE ON SCHEMA auth TO gms_master_authz_reader;
 GRANT SELECT ON TABLE auth.current_authorization TO gms_master_authz_reader;
+-- ADR-0049 D4: notification recipients (one row per user: active flag, role, menu:action keys only).
+GRANT SELECT ON TABLE auth.permission_holders TO gms_master_authz_reader;
 
 -- Fail if role membership unexpectedly exists; role is newly created above.
 SELECT NOT EXISTS (

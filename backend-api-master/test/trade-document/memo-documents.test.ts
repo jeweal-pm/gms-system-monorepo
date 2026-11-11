@@ -97,6 +97,9 @@ vi.mock("../../src/database/prisma-client", () => {
     memoOutReturn: document("memoOutReturn"),
     memoOutReturnLine: children("memoOutReturnLine"),
     memoOutReturnCharge: children("memoOutReturnCharge"),
+    // ADR-0049: a document created for approval records its notification in the same transaction.
+    notificationEvent: { create: vi.fn(async () => ({})) },
+    notificationRecipient: { createMany: vi.fn(async () => ({ count: 0 })) },
   };
   return { prisma: { ...tx, $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) } };
 });
