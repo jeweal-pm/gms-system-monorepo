@@ -28,6 +28,24 @@ direct `fs` writes. Local filesystem is implemented; S3 is proposed only. User-u
 bytes are retained forever when hidden/replaced; do not add TTL, purge, or physical deletion.
 The shared driver does not mean every module adapter is already wired.
 
+## Hono inventory and operations implementation target
+
+When an approved backend TODO is selected from the GMS sidebar, its runtime target is the
+single Hono service in workspace/package `backend-api-inventory` and runtime container
+`backend-api-inventory`. Keep Inventory (Load to Stock, Merge/Split, Stock Transfer Location,
+Stock Adjustment, Barcode Printing), Sale, Account Outstanding, and Reports (Stock Movement,
+Closing Stock, Sale Report) as internal modules of this service. Do not create a second Hono
+container per menu group or a gateway. The service is a target and is not evidence that its
+workspace/container already exists.
+
+Implement only the exact approved SA contracts. The SA bundle must first reconcile the
+existing `api-inventory` naming in ADR-0027/GMS spec and specify service DNS, module/schema
+ownership, report read paths, authorization, cross-domain contracts, and the aggregate
+4 GB RAM / 2 vCPU budget. Grouping these modules in one process does not permit direct
+cross-service table access, cross-schema writes/FKs, or unapproved shared transactions.
+Route Compose/image changes through the parent integration owner, infra and devops.
+
+
 ## Required automated testing
 
 Read `document/workflow/automated-testing.md`. For every added or changed module,

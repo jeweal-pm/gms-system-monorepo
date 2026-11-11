@@ -16,8 +16,7 @@ completion records in `document/task/done/`. Invoke with `devops`.
 
 Inventory actual apps, workspace dependencies, scripts, images, registry, branches and
 deployment topology. Reuse scripts; do not invent a unit/E2E runner, silently skip a
-failed check or treat a build as a behavior test. Current apps are frontend, gateway and
-auth; PostgreSQL/Mailpit use upstream images. Generate Prisma/Next types in the required
+failed check or treat a build as a behavior test. The active local GMS apps are frontend, backend-api-auth and backend-api-master, with Nginx routing directly to the APIs and no gateway runtime; PostgreSQL and development Mailpit use upstream images. Generate Prisma/Next types in the required
 order for a clean checkout. Read `.nvmrc`, packageManager and lockfile instead of drifting
 toolchain versions. Cross-service shared changes invalidate all affected image builds.
 
@@ -27,6 +26,19 @@ full SHAs. Record provenance and refresh criteria. Set minimal job permissions, 
 triggers, immutable image identities, finite job timeouts and useful concurrency limits.
 Never execute PR code with deployment/package-write credentials or use pull_request_target
 to build untrusted source. Keep publication separate from ordinary CI.
+
+## Owner-selected Hono operations image target
+
+For approved GMS sidebar backend work, prepare one Hono image/workspace target named
+`backend-api-inventory` for Inventory (Load to Stock, Merge/Split, Stock Transfer Location,
+Stock Adjustment, Barcode Printing), Sale, Account Outstanding and Reports (Stock Movement,
+Closing Stock, Sale Report). Keep menu groups as modules in that image; do not create one
+service image per group or a gateway by default. This target does not mean the workspace,
+Dockerfile or image already exists.
+
+Consume the revised approved SA/infra bundle. Reconcile the `api-inventory` naming in
+existing ADR/spec before defining image, Compose service DNS, health checks, resource limits,
+DB pools or route contracts. Parent serializes Docker/build-context and workflow edits.
 
 ## Variables, secrets and release scope
 

@@ -112,6 +112,22 @@ approved bundle:
   behind Nginx, has `replication_factor = 1` and therefore needs backups; include
   its license review and host-capacity decision. Do not publish its data/API port.
 
+## Owner-selected Hono operations container target
+
+For approved backend features from the GMS sidebar, plan one Hono runtime/container named
+`backend-api-inventory` (workspace/package of the same name), not a container per menu group.
+It hosts Inventory (Load to Stock, Merge/Split, Stock Transfer Location, Stock Adjustment,
+Barcode Printing), Sale, Account Outstanding, and Reports (Stock Movement, Closing Stock,
+Sale Report) as internal modules. Do not add a gateway. This is a target boundary; no such
+container is currently implied to exist.
+
+Research and configure that single container only against the exact approved SA/infra bundle.
+Before implementation, reconcile ADR-0027/GMS spec's existing `api-inventory` DNS/name, and
+verify the single-container memory, CPU, DB-pool and network budget against the 4 GB / 2 vCPU
+host. Keep module data ownership and cross-service routes explicit; one process does not grant
+permission for cross-schema writes or direct reads. Parent remains the sole writer for shared
+Compose, Dockerfile and service-index files.
+
 ## Implement through the parent
 
 The parent serializes shared Docker/Compose/environment/manifest changes and delegates

@@ -1,5 +1,5 @@
 ﻿name = "senior-nestjs-developer"
-description = "Backend implementation from approved SA contracts, diagrams, ADRs, and TODOs; return verified capabilities to frontend. Invoke as backend."
+description = "Implement GMS NestJS and Hono domain backends from approved SA contracts, diagrams, ADRs, and TODOs; return verified capabilities to frontend. Invoke as backend."
 developer_instructions = '''
 Read and apply `.codex/skills/senior-nestjs-developer/SKILL.md`,
 `document/apps/backend/architecture.md`, `document/workflow/ui-delivery.md`,
@@ -27,6 +27,24 @@ Respect the shared 4 GB RAM / 2 vCPU host budget. Verify affected services/contr
 then send the precise completion handoff to parent/frontend for automatic UI continuation.
 Save task records, handoffs, completion evidence, and changelog under document/.
 
+## Hono inventory and operations implementation target
+
+When an approved backend TODO is selected from the GMS sidebar, its runtime target is the
+single Hono service in workspace/package `backend-api-inventory` and runtime container
+`backend-api-inventory`. Keep Inventory (Load to Stock, Merge/Split, Stock Transfer Location,
+Stock Adjustment, Barcode Printing), Sale, Account Outstanding, and Reports (Stock Movement,
+Closing Stock, Sale Report) as internal modules of this service. Do not create a second Hono
+container per menu group or a gateway. The service is a target and is not evidence that its
+workspace/container already exists.
+
+Implement only the exact approved SA contracts. The SA bundle must first reconcile the
+existing `api-inventory` naming in ADR-0027/GMS spec and specify service DNS, module/schema
+ownership, report read paths, authorization, cross-domain contracts, and the aggregate
+4 GB RAM / 2 vCPU budget. Grouping these modules in one process does not permit direct
+cross-service table access, cross-schema writes/FKs, or unapproved shared transactions.
+Route Compose/image changes through the parent integration owner, infra and devops.
+
+
 ## GMS platform backend rules
 For an approved spec-target feature, enforce service-owned schemas and DB roles, API/read-only-view
 cross-service reads and no cross-schema writes/FKs. Use bounded pagination (max 200),
@@ -41,9 +59,10 @@ roles and URLs, DB_POOL_MAX, explicit TLS verify-full and CA for managed, pooler
 transaction-only state, bounded startup retry, /healthz and /readyz. Migrations are
 versioned, backward compatible and run as approved one-off jobs, never on app startup.
 Heavy jobs move to an approved bounded worker queue; stream imports/exports and stored
-files. Use @gms/storage contract, own service prefix and stored_files metadata when the
-storage design is approved; authorize expiring URLs, keep issued documents immutable,
-soft-delete stored files and preserve existing approved company-logo behavior until revised.
+files. Every new upload module must use @gms/storage, its own `files/{module}/` prefix,
+service-owned `stored_files` metadata, and protected delivery; never persist files through
+direct `fs` writes. Local filesystem is the implemented profile; S3 remains proposed.
+User-uploaded bytes are retained forever when hidden or replaced; no TTL/purge/delete.
 Keep current Better Auth/license/permission enforcement until an approved JWT transition.
 Produce structured sanitized request-ID logs and slow-query timing. Route container/env
 requirements to infra and image/release requirements to devops through the parent.
@@ -81,8 +100,3 @@ For changed service/image builds, workflow variables or release requirements, ro
 ## Delivery timing: one approval, then implementation
 Use one canonical approved document/ticket for each decision or root cause. Search existing records and update them instead of producing duplicate ADRs, investigation tickets, handoffs, or review reports. Once the user approves the exact revision, start the scoped implementation immediately; a direct user instruction to fix the identified issue also records approval. Do not ask for a second selection or repeat review of unchanged evidence. Run the affected tests and return the latest code with concise verification. For auditors, remain read-only and send the finding once to the parent; after the user's approval/direct fix instruction, the parent dispatches implementation without another approval cycle.
 '''
-
-## Delivery timing: one approval, then implementation
-Use one canonical approved document/ticket for each decision or root cause. Search existing records and update them instead of producing duplicate ADRs, investigation tickets, handoffs, or review reports. Once the user approves the exact revision, start the scoped implementation immediately; a direct user instruction to fix the identified issue also records approval. Do not ask for a second selection or repeat review of unchanged evidence. Run the affected tests and return the latest code with concise verification. For auditors, remain read-only and send the finding once to the parent; after the user's approval/direct fix instruction, the parent dispatches implementation without another approval cycle.
-
-
