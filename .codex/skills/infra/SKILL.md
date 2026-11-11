@@ -128,6 +128,21 @@ host. Keep module data ownership and cross-service routes explicit; one process 
 permission for cross-schema writes or direct reads. Parent remains the sole writer for shared
 Compose, Dockerfile and service-index files.
 
+## Long-lived SSE notification routes
+
+For approved notification streams, preserve HTTP streaming end to end. Research the exact Nginx
+and adapter versions, then configure only the SSE locations to disable response buffering and
+caching, avoid compression that delays chunks, allow the approved idle/read timeout, and pass
+heartbeats without buffering. Keep ordinary API proxy behavior unchanged. Ensure request IDs
+and auth cookies/headers are forwarded only as approved, and do not log event payloads or
+credentials.
+
+Bound concurrent streams and per-connection memory, verify graceful close/reconnect behavior,
+and account for open connections/file descriptors and DB pool use on the 4 GB / 2 vCPU host.
+Keep health/readiness probes separate from a long-lived stream. If more than one API instance
+is introduced, require an approved event-distribution/outbox design; do not add Redis/broker
+from an infra assumption. Include positive/negative stream checks in the exact infra bundle.
+
 ## Implement through the parent
 
 The parent serializes shared Docker/Compose/environment/manifest changes and delegates

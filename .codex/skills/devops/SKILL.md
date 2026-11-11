@@ -40,6 +40,19 @@ Consume the revised approved SA/infra bundle. Reconcile the `api-inventory` nami
 existing ADR/spec before defining image, Compose service DNS, health checks, resource limits,
 DB pools or route contracts. Parent serializes Docker/build-context and workflow edits.
 
+## Notification stream delivery requirements
+
+For an approved SSE notification service, carry its long-lived HTTP route through build and
+release configuration without buffering chunks at the proxy. Keep heartbeats, idle timeouts,
+graceful shutdown, readiness, concurrency/resource limits, and connection-drain behavior
+consistent with the approved infra bundle. Add focused build/contract or integration checks
+for the stream and reconnect path where the approved test plan requires them.
+
+Do not add a notification service, Socket.IO, Redis, a broker, or a worker solely to publish
+SSE. Domain APIs own their notification data; any multi-instance distribution mechanism needs
+an approved SA/infra design and bounded capacity. Keep image/workflow changes scoped to the
+exact service revisions and parent-owned shared files.
+
 ## Variables, secrets and release scope
 
 Prepare names, purpose, scope, required/optional status and non-sensitive examples in

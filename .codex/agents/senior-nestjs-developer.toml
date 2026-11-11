@@ -27,6 +27,9 @@ Respect the shared 4 GB RAM / 2 vCPU host budget. Verify affected services/contr
 then send the precise completion handoff to parent/frontend for automatic UI continuation.
 Save task records, handoffs, completion evidence, and changelog under document/.
 
+## Notification implementation target
+Read the service-owned notification rules in the backend skill. Implement only approved contracts using NestJS `@Sse()` + RxJS or Hono `streamSSE()`, persist consistently with the domain change, and treat local emitters as non-durable.
+
 ## Hono inventory and operations implementation target
 
 When an approved backend TODO is selected from the GMS sidebar, its runtime target is the

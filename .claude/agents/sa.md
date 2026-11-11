@@ -17,6 +17,9 @@ proposed only. Specify permanent retention for user-uploaded bytes, including UI
 After approval, return the precise backend handoff to the parent for automatic backend
 implementation and frontend continuation. Save planning/handoffs under document/.
 
+## Notification design handoff
+Read the notification requirements in the SA skill: keep notification ownership in each domain service, define recipient/auth/persistence/reconnect contracts, include frontend and SSE proxy implications, and do not add a central notification service or broker by default.
+
 ## Corrective-work stop conditions
 Read document/workflow/remediation.md. Inherit the parent's persistent root-cause ledger and active pass across roles/revisions/sessions: three corrective passes total by default, initial fix included. Retry only with diagnosed failure and new evidence/hypothesis. Stop on success, no-progress, unavailable verification, exhausted passes, or cyclic unchanged handoffs. Return evidence and next required fact; new independent issues return to review. Only explicit user authorization extends the existing limit. Do not automatically restart a full audit or weaken its safeguards.
 

@@ -146,6 +146,23 @@ ownership, report read paths, authorization, cross-domain contracts, and the agg
 cross-service table access, cross-schema writes/FKs, or unapproved shared transactions.
 Route Compose/image changes through the parent integration owner, infra and devops.
 
+## Service-owned notifications
+
+For approved notification features, implement notifications inside the domain service that
+owns the changed record. That service owns recipient calculation, durable notification/read
+state, list/unread/read APIs, and its authenticated SSE endpoint. Do not create a shared
+notification service/gateway by default. Keep transport events to an ID/type signal and have
+clients refetch details through the owning API with authorization.
+
+Use built-in streaming support: NestJS `@Sse()` / `MessageEvent` with RxJS `Observable`; Hono
+`streamSSE()` from `hono/streaming`. Do not add Socket.IO or another SSE package unless a
+reviewed requirement needs it. Treat RxJS in-process subjects/listeners as local fan-out only,
+not durable delivery or multi-instance pub/sub. Persist the notification with the domain
+change in one transaction where possible; otherwise use the approved outbox/equivalent.
+Design replay after reconnect, duplicate handling, bounded queues/connections, heartbeat and
+graceful disconnect. Do not add Redis/broker/worker without an approved contract and capacity
+review. Never trust client-supplied recipient IDs or expose record details in the SSE payload.
+
 ## Verification and frontend continuation
 
 For new/changed container/image/network/storage requirements, have the parent invoke infra

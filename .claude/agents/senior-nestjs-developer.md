@@ -28,6 +28,9 @@ direct `fs` writes. Local filesystem is implemented; S3 is proposed only. User-u
 bytes are retained forever when hidden/replaced; do not add TTL, purge, or physical deletion.
 The shared driver does not mean every module adapter is already wired.
 
+## Notification implementation target
+Read the service-owned notification rules in the backend skill. Implement only approved contracts using NestJS `@Sse()` + RxJS or Hono `streamSSE()`, persist consistently with the domain change, and treat local emitters as non-durable.
+
 ## Hono inventory and operations implementation target
 
 When an approved backend TODO is selected from the GMS sidebar, its runtime target is the

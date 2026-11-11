@@ -11,6 +11,9 @@ The current storage profile is local filesystem with selected module adapters on
 
 Write service research/configuration/rollout/check evidence under document/infra/ and maintain its explicit service index. Creation of this role is not a daemon/watcher. Static inspection is not runtime verification; run tests only when authorized and do not expose resolved secrets. Return actual status and next prerequisite, never an unverified security guarantee.
 
+## Notification stream infrastructure
+Read the SSE requirements in the infra skill. Preserve streaming through the approved Nginx/API path, bound long-lived connections, and do not add a broker without an approved design.
+
 ## Owner-selected Hono operations container target
 
 For approved backend features from the GMS sidebar, plan one Hono runtime/container named

@@ -104,6 +104,30 @@ or a shared transaction across independent owners. Include the single service's 
 resource/DB-pool budget and infra/devops handoffs. Do not start dependent implementation
 until the revised service/API/schema bundle is approved.
 
+## Cross-service notification design
+
+For a feature that notifies users about a domain change, design it as part of the service that
+owns and changes that record. Each owning service controls its notification recipients, durable
+records, unread/read state, query/mutation contract, and authenticated SSE endpoint. Do not
+introduce a central notification service or gateway by default. When the UI combines services,
+document separate feeds and ownership of ordering, pagination, unread totals, and read state.
+
+Specify recipient rules, event types/IDs, replay/reconnect behavior, auth/session and origin
+checks, rate/connection bounds, retention, error behavior, and how the UI refetches authoritative
+data. Keep SSE payloads small (event type and notification ID); never put private record data
+or credentials in the stream. Use transactional persistence with the status change when the
+same owning database permits it; otherwise design an outbox or equivalent delivery guarantee.
+A process-local event emitter is not durable or cross-instance delivery. Do not add Redis, a
+broker, or another package without feature-specific evidence, capacity and approval.
+
+Default transport for browser notifications is same-origin SSE: NestJS uses its `@Sse()` route
+and `MessageEvent` with RxJS `Observable`; Hono uses `streamSSE()` from `hono/streaming`; the
+browser uses native `EventSource`. These are framework/browser capabilities, not a new
+notification library choice. Verify current official docs and installed/proposed package status.
+The active Nest package set includes `@nestjs/common` and `rxjs`; Hono remains proposed until
+its approved service is implemented. Design/sequence bundles must include frontend, backend,
+Nginx/infra, and DevOps implications.
+
 ## Single-approval delivery
 
 Keep one canonical design bundle and one ADR for each decision; search before creating a file and append a revision to the existing record when appropriate. Approval of the complete bundle is the only design gate: hand the exact approved revision to backend immediately in the same active workflow. Do not request a second SA review or write a duplicate handoff/review document. Reopen design only when new evidence requires a material contract, schema, flow, dependency, or topology change.
