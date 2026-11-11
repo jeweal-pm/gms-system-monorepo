@@ -28,7 +28,8 @@ const purchaseLineSchema = lineInputSchema.extend({
   memoGroup: z.enum(LINE_MEMO_GROUPS).nullish(),
   purchaseOrderLineId: uuid.nullish(),
   // Q-PU-11: no photos in revision 1.
-  photoIds: z.array(uuid).max(0),
+  // ADR-0048 (owner 2026-11-11): up to 5 photos per line, as Quotation / Purchase Order.
+  photoIds: lineInputSchema.shape.photoIds,
 }).strict();
 const createLineSchema = purchaseLineSchema.omit({ id: true }).strict();
 

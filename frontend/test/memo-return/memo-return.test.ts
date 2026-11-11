@@ -151,6 +151,11 @@ describe("mapping and errors (UT-MRT-05/06)", () => {
       totals: { subtotal: "40320.00", discountAmount: "0.00", priceBeforeTax: "40320.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "40320.00" },
       approvedAt: null, approvedBy: null, createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null,
     } satisfies MemoReturnDetail;
+    // ADR-0048 (owner 2026-11-11): saved photos load back in order, read from this document's own photo route.
+    expect(fromMemoReturn({ ...detail, lines: detail.lines.map((line) => ({ ...line, photoIds: ["p1", "p2"] })) } as typeof detail).lines[0]?.photos).toEqual([
+      { id: "p1", name: "Photo 1", url: "/api/v1/memo-return/photos/p1" },
+      { id: "p2", name: "Photo 2", url: "/api/v1/memo-return/photos/p2" },
+    ]);
     expect(fromMemoReturn(detail)).toMatchObject({
       docNo: "MRT-1", version: 2, status: "PENDING_APPROVAL", vendorId: ID,
       lines: [{ pcs: "7", memoStockId: SOURCE, stockId: "260001", outstandingPcs: "10", outstandingWeightCt: "3.200" }],

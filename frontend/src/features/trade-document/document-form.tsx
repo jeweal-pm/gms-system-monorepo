@@ -23,6 +23,7 @@ import { DocumentKindContext, QUOTATION_KIND, type DocumentKind } from "@/featur
 import { LineOptionsContext, LinePhotoContext, type LineOptions } from "@/features/quotation/options-context";
 import { isFilledLine, type QuotationFormValues, type QuotationLine, type QuotationStatus } from "@/features/quotation/schema";
 import { clearNotice, DocumentDeletedBanner, handOverNotice, peekNotice, restoredStatusLabel, type DeletedInfo, type RestoreOutcome } from "./document-api";
+import type { DocumentPhotos } from "./document-photos";
 
 /** Everything the form needs from a document's API, read through the document's own hooks. */
 export type DocumentApi<Input, Options extends LineOptions = LineOptions> = {
@@ -109,6 +110,8 @@ export type DocumentFormConfig<V extends FieldValues & Saved, Input, Options ext
   };
   /** What the shared item table / row panel do differently (memo out: From Stock quantities); default Quotation. */
   kind?: DocumentKind;
+  /** Line photos (ADR-0048): upload / read routes of this document; without it the row panel says photos come later. */
+  photos?: DocumentPhotos;
   noteMax?: number;
   notePlaceholder: string;
   noteHint: string;
@@ -184,7 +187,7 @@ export function ItemToolButtons({ primary, secondary, readOnly }: {
   );
 }
 
-/** Photos aren't available on the memo documents yet (ADR-0033 rev 1). */
+/** A document without its own photo routes: the row panel says photos come in a later update. */
 const NO_PHOTOS = { upload: null, url: (id: string) => id };
 
 /**
@@ -419,11 +422,16 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
 
   const editorIndex = editorOpen && selectedIndex !== null && selectedIndex < lines.length ? selectedIndex : null;
   const Table = config.itemTable ?? ItemTable;
+  // ADR-0048: rows upload to this document's own photo route.
+  const kind = useMemo<DocumentKind>(() => {
+    const base = config.kind ?? QUOTATION_KIND;
+    return config.photos ? { ...base, uploadPhoto: config.photos.uploadPhoto } : base;
+  }, [config.kind, config.photos]);
 
   return (
-    <DocumentKindContext.Provider value={config.kind ?? QUOTATION_KIND}>
+    <DocumentKindContext.Provider value={kind}>
     <LineOptionsContext.Provider value={api.options}>
-      <LinePhotoContext.Provider value={NO_PHOTOS}>
+      <LinePhotoContext.Provider value={config.photos?.target ?? NO_PHOTOS}>
         <FormProvider {...form}>
           <div className="relative flex h-full bg-gms-page">
             <div className="min-w-0 flex-1 overflow-y-auto">
@@ -433,7 +441,8 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
                 newHref={config.newHref}
                 docNo={docNo}
                 isPreview={!saved?.docNo}
-                status={status}
+                // The header shows the saved document's own status (owner 2026-11-10); a new document reads Draft.
+                status={saved?.docNo ? (saved.status as QuotationStatus | undefined) : undefined}
                 statusLabels={approval?.statusLabels}
                 hideEditDelete={locked || isDeleted}
                 extraActions={

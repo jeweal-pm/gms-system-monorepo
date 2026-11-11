@@ -41,6 +41,7 @@ import {
   type PurchaseOptions,
 } from "../api";
 import { MergeDialog } from "./merge-dialog";
+import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 export { PURCHASE_HREF };
 
@@ -233,6 +234,7 @@ export const PURCHASE_CONFIG: DocumentFormConfig<PurchaseFormValues, PurchaseInp
   emptyRowText: PURCHASE_EMPTY_ROW_TEXT,
   itemTable: PurchaseItemTable,
   kind: PURCHASE_KIND,
+  photos: DOCUMENT_PHOTOS.purchase,
   approval: {
     statusLabels: APPROVAL_STATUS_LABELS,
     pendingStatus: "PENDING_APPROVAL",

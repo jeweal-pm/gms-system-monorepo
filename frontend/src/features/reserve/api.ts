@@ -7,6 +7,7 @@ import { documentLoadError, daybookInput, daybookQueryOptions, mapDocumentRestor
 import type { DocumentApi } from "@/features/trade-document/document-form";
 import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
+import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 /**
  * Reserve data access (reserve SA rev 1 / ADR-0036, owner 2026-11-02): `reserve.*`, numbers from Document Setup
@@ -20,7 +21,7 @@ export type ReserveInput = ReturnType<typeof toCustomerStockInput>;
 export const RESERVE_HREF = "/pre-sale/reserve";
 export const reserveHref = (id: string) => `${RESERVE_HREF}/${id}`;
 
-export const fromReserve = (detail: ReserveDetail) => fromCustomerStock(detail);
+export const fromReserve = (detail: ReserveDetail) => fromCustomerStock(detail, DOCUMENT_PHOTOS.reserve.url);
 export const mapReserveSaveError = customerStockSaveError("RESERVE", "reserve");
 export const reserveLoadError = (error: unknown) => documentLoadError(error, "RESERVE", "reserve", "reserves");
 

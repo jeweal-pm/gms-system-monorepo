@@ -10,6 +10,7 @@ import { documentLoadError, mapDocumentSaveError, daybookInput, daybookQueryOpti
 import type { DocumentApi } from "@/features/trade-document/document-form";
 import { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError, retryTransient } from "@/lib/trpc-error";
+import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 /**
  * Memo Out Return data access (memo-out-return UI rev 4 + SA rev 2 / ADR-0033 rev 3, owner 2026-10-31): the customer
@@ -126,7 +127,6 @@ export function toMemoOutReturnInput(values: MemoOutReturnFormValues) {
     ...shared,
     lines: shared.lines.map((line, index) => ({
       ...line,
-      photoIds: [] as string[],
       memoOutLineId: filled[index]?.memoOutLineId ?? "",
       outstandingPcs: Number.parseInt(filled[index]?.outstandingPcs || "0", 10),
       outstandingWeightCt: filled[index]?.outstandingWeightCt || "0",
@@ -139,7 +139,7 @@ export function toMemoOutReturnInput(values: MemoOutReturnFormValues) {
 
 export function fromMemoOutReturn(detail: MemoOutReturnDetail): MemoOutReturnFormValues {
   // Memo Out lines picked From Stock have no stone code.
-  const shared = fromTradeDocument({ ...detail, lines: detail.lines.map((line) => ({ ...line, source: "MANUAL" as const, stoneCodeId: null })) }, (id) => id);
+  const shared = fromTradeDocument({ ...detail, lines: detail.lines.map((line) => ({ ...line, source: "MANUAL" as const, stoneCodeId: null })) }, DOCUMENT_PHOTOS.memoOutReturn.url);
   return {
     ...shared,
     lines: shared.lines.map((line, index) => {

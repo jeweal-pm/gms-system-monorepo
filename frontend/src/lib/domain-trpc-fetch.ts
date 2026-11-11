@@ -32,3 +32,11 @@ function refreshAccess(baseFetch: typeof fetch, requestHeaders: Headers): Promis
   }
   return refreshInFlight;
 }
+
+/**
+ * Renews the access cookie once (shared with any renewal already running). For raw uploads (line photos): their POST
+ * is refused before anything is stored when access has expired, so the caller may send it again after a renewal.
+ */
+export function renewAccess(baseFetch: typeof fetch = fetch): Promise<boolean> {
+  return refreshAccess(baseFetch, new Headers({ "x-gms-csrf": "1" }));
+}

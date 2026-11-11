@@ -69,10 +69,13 @@ describe("purchase input (UT-PU-B01)", () => {
     expect(createPurchaseSchema.safeParse(input([manual({ itemNote: "x".repeat(501) })])).success).toBe(false);
   });
 
-  it("strict: unknown keys, photos, line ids on create, 0 or 201 lines and bad dates are refused", () => {
+  it("strict: unknown keys, more than 5 / duplicate photos, line ids on create, 0 or 201 lines and bad dates are refused", () => {
     expect(createPurchaseSchema.safeParse(input([manual({ pendingPcs: 3 })])).success).toBe(false);
     expect(createPurchaseSchema.safeParse(input([manual()], { customerId: ID(3) })).success).toBe(false);
-    expect(createPurchaseSchema.safeParse(input([manual({ photoIds: [ID(9)] })])).success).toBe(false);
+    // ADR-0048 (owner 2026-11-11): up to 5 distinct photos per line.
+    expect(createPurchaseSchema.safeParse(input([manual({ photoIds: [ID(9)] })])).success).toBe(true);
+    expect(createPurchaseSchema.safeParse(input([manual({ photoIds: [ID(9), ID(9)] })])).success).toBe(false);
+    expect(createPurchaseSchema.safeParse(input([manual({ photoIds: [1, 2, 3, 4, 5, 6].map((n) => ID(n)) })])).success).toBe(false);
     expect(paths(createPurchaseSchema.safeParse(input([manual({ id: ID(9) })])))).toEqual(["lines.0:unrecognized_keys"]);
     expect(createPurchaseSchema.safeParse(input([])).success).toBe(false);
     expect(createPurchaseSchema.safeParse(input(Array.from({ length: 200 }, () => manual()))).success).toBe(true);

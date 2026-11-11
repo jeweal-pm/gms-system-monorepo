@@ -12,6 +12,7 @@ import { explainMiss, MISS_SELECT, TradeDocumentEngine, type LineHook, type Part
 import { customerDocumentOptions, customerParty, type CustomerOut } from "./memo-out.service";
 import type { MemoOutOutstandingInput, MemoOutReturnInput, MemoReceiveListInput, MemoReceiveStatus } from "./memo-schemas";
 import { releaseToMemoStock, type MemoStockTake } from "./memo-stock.service";
+import { LINE_PHOTO_DOCUMENTS, withLinePhotos } from "./line-photos";
 
 const Decimal = Prisma.Decimal;
 type Dec = Prisma.Decimal;
@@ -251,7 +252,7 @@ export class MemoOutReturnService {
     editableStatuses: [PENDING],
     outstanding: true,
     prepare: completeReturnLines,
-    lineHook: memoOutLines,
+    lineHook: withLinePhotos(LINE_PHOTO_DOCUMENTS.memoOutReturn, memoOutLines),
     detailExtra: (row) => ({
       approvedAt: row.approvedAt ? (row.approvedAt as Date).toISOString() : null,
       approvedBy: (row.approvedBy as string | null) ?? null,

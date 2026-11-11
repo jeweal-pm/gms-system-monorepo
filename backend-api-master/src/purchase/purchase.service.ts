@@ -10,6 +10,7 @@ import { purchaseMemoStock, purchaseOrderLines } from "./purchase-pickers";
 import { completeSourceLines, memoLineRange, purchaseOrderAvailable, takeForPurchase, type PreparedInput, type SoldPart } from "./purchase-stock";
 import { purchaseErrors, purchasePendingShort, purchaseStockIdExhausted } from "./purchase.errors";
 import type { LineMemoGroup, PurchaseInput, PurchaseLineSource, PurchaseListInput, PurchaseMemoStockInput, PurchaseOrderLinesInput, PurchaseStatus } from "./purchase.schemas";
+import { LINE_PHOTO_DOCUMENTS, withLinePhotos } from "../trade-document/line-photos";
 
 const PENDING: PurchaseStatus = "PENDING_APPROVAL";
 const APPROVED: PurchaseStatus = "APPROVED";
@@ -117,7 +118,7 @@ export class PurchaseService {
     createStatus: PENDING,
     editableStatuses: [PENDING],
     prepare: async (tx, input) => (await completeSourceLines(tx, input as unknown as PurchaseInput)) as unknown as EngineInput,
-    lineHook: this.lines,
+    lineHook: withLinePhotos(LINE_PHOTO_DOCUMENTS.purchase, this.lines),
     detailExtra: (row: Row) => ({
       approvedAt: row.approvedAt ? (row.approvedAt as Date).toISOString() : null,
       approvedBy: (row.approvedBy as string | null) ?? null,
@@ -233,7 +234,8 @@ export type PurchaseLineOut = EngineLineOut & {
   memoGroup: LineMemoGroup | null;
   purchaseOrderLineId: string | null;
   stockId: string;
-  photoIds: [];
+  /** ADR-0048: the line's photos in order (the photo hook replaces the `[]` this hook writes). */
+  photoIds: string[];
   memoReceive: { docNo: string } | null;
   purchaseOrder: { id: string; docNo: string; position: number } | null;
   limitPcs: number | null;

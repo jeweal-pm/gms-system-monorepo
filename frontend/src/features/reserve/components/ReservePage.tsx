@@ -4,6 +4,7 @@ import { customerStockConfig } from "@/features/trade-document/customer-stock-co
 import { daybookLoadError, daybookState, deletedInfo, DocumentDaybook, documentAccess, useDocumentAccess } from "@/features/trade-document/document-api";
 import { DocumentForm } from "@/features/trade-document/document-form";
 import { fromReserve, mapReserveSaveError, RESERVE_HREF, reserveHref, reserveLoadError, reserveRestoreError, useReserveApi, useReserveDaybook, useReserveDetail } from "../api";
+import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 export { RESERVE_HREF };
 
@@ -30,6 +31,7 @@ function ReserveDaybook() {
  * Approval.
  */
 const CONFIG = customerStockConfig({
+  photos: DOCUMENT_PHOTOS.reserve,
   noun: "reserve",
   title: "Reserve",
   newHref: RESERVE_HREF,

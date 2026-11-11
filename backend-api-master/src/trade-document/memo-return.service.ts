@@ -8,6 +8,7 @@ import { explainMiss, MISS_SELECT, TradeDocumentEngine, type LineHook, type Miss
 import { vendorDocumentOptions, vendorParty, type VendorOut } from "./memo-out-return.service";
 import type { MemoReceiveListInput, MemoReceiveStatus, MemoReturnInput } from "./memo-schemas";
 import { takeFromMemoStock } from "./memo-stock.service";
+import { LINE_PHOTO_DOCUMENTS, withLinePhotos } from "./line-photos";
 
 export const memoReturnErrors = documentErrors("MEMO_RETURN", "MemoReturn", "memo_return");
 /** Approval found a Memo Stock item with less pending than the line returns (another return took it first). */
@@ -105,7 +106,7 @@ export class MemoReturnService {
     outstanding: true,
     lineOmit: ["stoneCodeId"],
     prepare: completeReturnLines,
-    lineHook: memoStockLines,
+    lineHook: withLinePhotos(LINE_PHOTO_DOCUMENTS.memoReturn, memoStockLines),
     detailExtra: (row) => ({
       approvedAt: row.approvedAt ? (row.approvedAt as Date).toISOString() : null,
       approvedBy: (row.approvedBy as string | null) ?? null,

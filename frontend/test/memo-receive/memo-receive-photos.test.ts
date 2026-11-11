@@ -84,8 +84,11 @@ describe("upload target (UT-MR-F3)", () => {
       expect(error.message).toBe("This file isn't a supported photo (JPEG or PNG, up to 5 MB).");
     }
     expect((await answer(new Response("{}", { status: 403 }))).message).toBe("You don't have permission to add photos.");
-    expect((await answer(new Response("{}", { status: 401 }))).message).toBe("Couldn't upload the photo. Try again.");
-    expect((await answer(new Response("{}", { status: 503, headers: { "retry-after": "1" } }))).message).toBe("Couldn't upload the photo. Try again.");
+    // Owner 2026-11-11: an expired session is renewed and a busy route retried once (UT-PH-R01…R04); when that still
+    // fails the message says why instead of "Try again".
+    expect((await answer(new Response("{}", { status: 401 }))).message).toBe("Your session has ended. Sign in again, then add the photo.");
+    expect((await answer(new Response("{}", { status: 503, headers: { "retry-after": "0.3" } }))).message).toBe("The server is busy. Wait a moment and add the photo again.");
+    expect((await answer(new Response("{}", { status: 500 }))).message).toBe("Couldn't upload the photo. Try again.");
     expect((await answer(new Response("{}", { status: 201 }))).message).toBe("Couldn't upload the photo. Try again.");
     expect((await answer(new TypeError("offline"))).message).toContain("Check the connection");
   });
@@ -146,6 +149,38 @@ describe("row-panel photos and item card (UT-MR-F3)", () => {
     expect(empty).toContain("Up to 5 photos per item (JPEG/PNG, 5 MB)");
   });
 
+  it("owner 2026-11-10: the crown is on the first photo only, the others show a drag handle; columns can't overflow", () => {
+    const html = render(createElement(LinePhotosField, { index: 0, readOnly: false }), [line([P1, P2, P1 + "-3"])]);
+    // Owner 2026-11-10: the main photo has a "Default" badge (crown + text) at the top left, always visible.
+    expect(html.match(/data-crown="true" title="Default photo"/g)).toHaveLength(1);
+    expect(html).toMatch(/data-crown="true" title="Default photo" class="pointer-events-none absolute top-1\.5 left-1\.5[^"]*"><svg[^>]*>[\s\S]*?<\/svg>Default<\/span>/);
+    expect(html).not.toContain("Set as default");
+    // Hover design (owner 2026-11-10): every photo darkens and shows its drag handle only while hovered.
+    expect(html.match(/lucide-grip-vertical/g)).toHaveLength(3);
+    expect(html.match(/opacity-0 transition-opacity group-hover:opacity-100"><svg[^>]*lucide-grip-vertical/g)).toHaveLength(3);
+    expect(html.match(/bg-\[#1C252E\]\/35 opacity-0 transition-opacity group-hover:opacity-100/g)).toHaveLength(3);
+    expect(html).not.toMatch(/data-crown="true"[^>]*group-hover:opacity-0/);
+    // The badge keeps the main photo's top-left corner: its remove button is bottom-right, the others' top-left.
+    expect(html.match(/aria-label="Remove photo" class="[^"]*right-1\.5 bottom-1\.5"/g)).toHaveLength(1);
+    expect(html.match(/aria-label="Remove photo" class="[^"]*top-1\.5 left-1\.5"/g)).toHaveLength(2);
+    expect(html.match(/aria-label="Set as main photo"[^>]*class="sr-only/g)).toHaveLength(2);
+    // Design 2026-11-10: 3:1:1 columns, dotted white tiles, photos out of flow (they can't size a tile); owner
+    // 2026-11-11: every photo fills its frame (object-cover, no padding).
+    expect(html).toContain("grid-cols-[minmax(0,3fr)_minmax(0,1fr)_minmax(0,1fr)]");
+    expect(html.match(/<img [^>]*class="absolute inset-0 size-full object-cover /g)).toHaveLength(3);
+    expect(html).not.toMatch(/<img [^>]*object-contain/);
+    expect(html).not.toMatch(/<img [^>]*class="[^"]*\bp-(6|2)\b/);
+    expect(html).toContain("border-dotted");
+    // The main tile fills its two-row area (absolute, no aspect-square), so the column gap stays visible.
+    const mainTile = /<div data-photo-id="[^"]*" draggable="true"[^>]*class="([^"]*)"/.exec(html)?.[1] ?? "";
+    expect(mainTile).toContain("absolute inset-0");
+    expect(mainTile).not.toMatch(/\brelative\b|aspect-square/);
+    const smallTile = [...html.matchAll(/<div data-photo-id="[^"]*" draggable="true"[^>]*class="([^"]*)"/g)][1]?.[1] ?? "";
+    expect(smallTile).toContain("relative aspect-square w-full");
+    const readOnly = render(createElement(LinePhotosField, { index: 0, readOnly: true }), [line([P1, P2])]);
+    expect(readOnly).not.toContain("lucide-grip-vertical");
+  });
+
   it("an Approved (read-only) document shows its photos but can't add, remove or change the main photo", () => {
     const html = render(createElement(LinePhotosField, { index: 0, readOnly: true }), [line([P1, P2])]);
     expect(html).toContain(`src="/api/v1/memo-receive/photos/${P2}"`);
@@ -166,6 +201,8 @@ describe("row-panel photos and item card (UT-MR-F3)", () => {
     expect(html).toContain(`src="/api/v1/memo-receive/photos/${P2}"`);
     expect(html).not.toContain(`/api/v1/memo-receive/photos/${P1}`);
     expect(html).toContain('aria-label="Main photo"');
+    // Owner 2026-11-11: the card photo fills its 4:3 frame.
+    expect(html).toMatch(/<img [^>]*class="absolute inset-0 size-full object-cover"/);
     // Design (owner 2026-10-31): no title / "Photo · n / N" row on the card; a zoom button; Item Note below.
     expect(html).not.toContain("Photo · ");
     expect(html).not.toContain("<header");

@@ -96,22 +96,22 @@ export function memoStockToStockLine(item: MemoStockItem): CustomerStockLine {
   };
 }
 
-/** Form values → contract input: a From Stock row names its Memo Stock item; manual rows don't; no photos yet. */
+/** Form values → contract input: a From Stock row names its Memo Stock item; manual rows don't; photos in order (ADR-0048). */
 export function toCustomerStockInput(values: CustomerStockFormValues) {
   const shared = toTradeDocumentInput(values);
   const filled = values.lines.filter(isFilledLine);
   return {
     ...shared,
-    lines: shared.lines.map((line, index) => ({ ...line, photoIds: [] as string[], memoStockId: filled[index]?.memoStockId || null })),
+    lines: shared.lines.map((line, index) => ({ ...line, memoStockId: filled[index]?.memoStockId || null })),
     customerId: values.customerId,
     shippingAddressId: values.shippingAddressId,
     invoiceAddressId: values.invoiceAddressId,
   };
 }
 
-export function fromCustomerStock(detail: CustomerStockDetail): CustomerStockFormValues {
+export function fromCustomerStock(detail: CustomerStockDetail, photoUrl: (id: string) => string): CustomerStockFormValues {
   // The shared mapping reads manual lines; the stock fields are added back per line below.
-  const shared = fromTradeDocument({ ...detail, lines: detail.lines.map((line) => ({ ...line, source: "MANUAL" as const })) }, (id) => id);
+  const shared = fromTradeDocument({ ...detail, lines: detail.lines.map((line) => ({ ...line, source: "MANUAL" as const })) }, photoUrl);
   return {
     ...shared,
     lines: shared.lines.map((line, index) => {

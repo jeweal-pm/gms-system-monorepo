@@ -24,6 +24,41 @@ const STATUS_LABEL: StatusLabels = {
   CANCELLED: { label: "Cancelled", tone: "bg-[#EEF0F2] text-[#6B7480] line-through" },
 };
 
+/**
+ * Owner 2026-11-10 (design "Status: ● Draft"): every transaction header shows its status beside the number. A new,
+ * unsaved document is a Draft. The page's `statusLabels` may rename a status; the dot color is per status.
+ */
+const DEFAULT_STATUS_TEXT: Record<QuotationStatus, string> = {
+  DRAFT: "Draft",
+  PENDING_APPROVAL: "Pending Approval",
+  APPROVED: "Approved",
+  REJECTED: "Rejected",
+  CANCELLED: "Cancelled",
+};
+const STATUS_DOT: Record<QuotationStatus, string> = {
+  DRAFT: "bg-[#ADB1B4]",
+  PENDING_APPROVAL: "bg-[#FFAB00]",
+  APPROVED: "bg-[#22C55E]",
+  REJECTED: "bg-[#DF1016]",
+  CANCELLED: "bg-[#6B7480]",
+};
+
+export function statusChipText(status: QuotationStatus | undefined, labels: StatusLabels): { label: string; dot: string } {
+  const shown = status ?? "DRAFT";
+  return { label: labels[shown]?.label ?? DEFAULT_STATUS_TEXT[shown], dot: STATUS_DOT[shown] };
+}
+
+export function StatusChip({ status, labels }: { status: QuotationStatus | undefined; labels: StatusLabels }) {
+  const chip = statusChipText(status, labels);
+  return (
+    <span data-status={status ?? "DRAFT"} className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#F2F3F4] px-3 text-sm text-[#1C252E]">
+      Status:
+      <span aria-hidden className={cx("size-2.5 rounded-full", chip.dot)} />
+      {chip.label}
+    </span>
+  );
+}
+
 export function QuotationHeader({
   docNo,
   isPreview,
@@ -69,20 +104,18 @@ export function QuotationHeader({
   hideDelete?: boolean;
 }) {
   const editing = mode === "edit";
-  const badge = status ? statusLabels[status] : undefined;
   return (
     <div className="flex flex-wrap items-start justify-between gap-4 px-6 pt-6 pb-2">
       <div>
         <p className="text-xs text-[#6B7480]">{noLabel}</p>
         <div className="mt-1 flex flex-wrap items-center gap-3">
-          <h1 className={cx("text-[28px] leading-none font-medium", isPreview ? "text-[#1C252E]" : "text-[#1C252E]")}>
-            {docNo}
-          </h1>
-          {badge && <span className={cx("rounded-full px-3 py-1 text-xs font-medium", badge.tone)}>{badge.label}</span>}
+          {/* Owner 2026-11-10: the transaction number is 24 px, #1C252E, on every transaction page. */}
+          <h1 className="text-[24px] leading-8 font-semibold text-[#1C252E]">{docNo}</h1>
           {/* TODO: scan barcode / เปิดเอกสารจากเลข */}
           <IconButton label="Scan" className="bg-[#F6F7F8]">
             <ScanIcon />
           </IconButton>
+          <StatusChip status={status} labels={statusLabels} />
         </div>
         {isPreview && <p className="mt-1 text-xs text-[#6B7480]">{previewNote}</p>}
         {statusReason && (status === "REJECTED" || status === "CANCELLED") && (

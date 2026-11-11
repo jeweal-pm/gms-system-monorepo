@@ -13,6 +13,7 @@ import { explainMiss, MISS_SELECT, TradeDocumentEngine, type LineHook, type Part
 import type { MemoOutInput, MemoReceiveListInput, MemoReceiveStatus } from "./memo-schemas";
 import { takeFromMemoStock } from "./memo-stock.service";
 import { completeFromMemoStock } from "./stock-lines";
+import { withLinePhotos, type LinePhotoDocument } from "./line-photos";
 
 /**
  * A customer document whose lines may come From Stock (memo-out SA rev 2 SA-MO-11…15; reserve SA rev 1 SA-RS-04…08):
@@ -131,6 +132,8 @@ export type CustomerStockConfig = {
   lineModel: string;
   chargeModel: string;
   parentKey: string;
+  /** Line photos (ADR-0048, owner 2026-11-11). */
+  photos: LinePhotoDocument;
 };
 
 type ApprovalDelegate = {
@@ -163,7 +166,7 @@ export class CustomerStockDocument {
       createStatus: PENDING,
       editableStatuses: [PENDING],
       prepare: completeStockLines(this.errors),
-      lineHook: stockLines,
+      lineHook: withLinePhotos(config.photos, stockLines),
       detailExtra: (row) => ({
         approvedAt: row.approvedAt ? (row.approvedAt as Date).toISOString() : null,
         approvedBy: (row.approvedBy as string | null) ?? null,

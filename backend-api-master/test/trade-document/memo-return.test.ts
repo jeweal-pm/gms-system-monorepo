@@ -24,13 +24,14 @@ const paths = (result: { success: boolean; error?: { issues: { path: PropertyKey
   (result.error?.issues ?? []).map((issue) => `${issue.path.join(".")}:${(issue.params as { code?: string } | undefined)?.code ?? ""}`);
 
 describe("memo return input (memo-return SA rev 2)", () => {
-  it("UT-MRT-B01 every line names a Memo Stock item; Return ≤ Outstanding; no photos", () => {
+  it("UT-MRT-B01 every line names a Memo Stock item; Return ≤ Outstanding; ≤ 5 distinct photos (ADR-0048)", () => {
     expect(createMemoReturnSchema.safeParse(input()).success).toBe(true);
     const { memoStockId: _memoStockId, ...unsourced } = line();
     expect(createMemoReturnSchema.safeParse(input({ lines: [unsourced] })).success).toBe(false);
     expect(createMemoReturnSchema.safeParse(input({ lines: [line({ memoStockId: "x" })] })).success).toBe(false);
     expect(paths(createMemoReturnSchema.safeParse(input({ lines: [line({ pcs: 4, weightCt: "2.26" })] })))).toEqual(["lines.0.pcs:exceeds_outstanding", "lines.0.weightCt:exceeds_outstanding"]);
-    expect(createMemoReturnSchema.safeParse(input({ lines: [line({ photoIds: [ID(9)] })] })).success).toBe(false);
+    expect(createMemoReturnSchema.safeParse(input({ lines: [line({ photoIds: [ID(9)] })] })).success).toBe(true);
+    expect(createMemoReturnSchema.safeParse(input({ lines: [line({ photoIds: [ID(9), ID(9)] })] })).success).toBe(false);
     expect(updateMemoReturnSchema.safeParse({ ...input(), id: ID(9), expectedVersion: 1 }).success).toBe(true);
   });
 

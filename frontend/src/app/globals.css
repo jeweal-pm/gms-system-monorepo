@@ -227,3 +227,23 @@ select:-webkit-autofill {
   caret-color: var(--color-gms-text);
   transition: background-color 600000s 0s, color 600000s 0s;
 }
+
+/*
+ * Photo grid (owner 2026-11-10, "PhotoGrid" sample): the drop target pulses its outline. Reduced motion keeps the
+ * outline, without movement.
+ */
+@keyframes gms-photo-pulse {
+  50% {
+    outline-offset: 5px;
+  }
+}
+.gms-photo-over {
+  outline: 2px solid #0e5e63;
+  outline-offset: 2px;
+  animation: gms-photo-pulse 1s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gms-photo-over {
+    animation: none;
+  }
+}

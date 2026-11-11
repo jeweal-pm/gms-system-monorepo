@@ -50,7 +50,7 @@ export function ItemPhotoBox({ index }: { index: number | null }) {
               className="absolute inset-0 z-0 flex cursor-none items-center justify-center px-10 py-6"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={photo.url} alt={photo.name} className="max-h-full max-w-full object-contain" />
+              <img src={photo.url} alt={photo.name} className="absolute inset-0 size-full object-cover" />
               {lens && (
                 <span
                   aria-hidden

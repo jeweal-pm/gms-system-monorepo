@@ -26,6 +26,7 @@ import {
 } from "../api";
 import { MemoOutstandingModal } from "./MemoOutstandingModal";
 import { ReturnItemTable } from "./ReturnItemTable";
+import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 export { MEMO_OUT_RETURN_HREF, MEMO_OUT_RETURN_NOTE_MAX };
 
@@ -47,6 +48,7 @@ function MemoOutReturnDaybook() {
  * edited. Saved returns wait as Pending Approval; Approve brings the stones back to Memo Stock (Q-MOR-14/16).
  */
 const CONFIG: DocumentFormConfig<MemoOutReturnFormValues, MemoOutReturnInput, MemoOutReturnOptions> = {
+  photos: DOCUMENT_PHOTOS.memoOutReturn,
   noun: "memo out return",
   noLabel: "Memo Out Return No.:",
   newHref: MEMO_OUT_RETURN_HREF,

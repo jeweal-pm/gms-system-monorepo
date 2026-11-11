@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { CustomerStockDocument, type CustomerStockInput } from "./customer-stock-document";
 import type { MemoReceiveListInput } from "./memo-schemas";
+import { LINE_PHOTO_DOCUMENTS } from "./line-photos";
 
 /**
  * memo-out SA rev 2 / ADR-0033 rev 2 (owner 2026-10-31): Document Setup key `memo-out`, PENDING_APPROVAL → APPROVED.
@@ -19,6 +20,7 @@ const memoOut = new CustomerStockDocument({
   lineModel: "memoOutLine",
   chargeModel: "memoOutCharge",
   parentKey: "memoOutId",
+  photos: LINE_PHOTO_DOCUMENTS.memoOut,
 });
 
 export const memoOutErrors = memoOut.errors;
