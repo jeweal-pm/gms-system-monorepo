@@ -10,7 +10,8 @@ import { documentListFields } from "./document-engine";
  * can't carry photo ids.
  */
 const uuid = z.uuid();
-const memoLineSchema = lineInputSchema.extend({ photoIds: z.array(uuid).max(0) });
+// ADR-0048 (owner 2026-11-11): Reserve, Memo Out, Memo Return and Memo Out Return lines take up to 5 photos, as Quotation.
+const memoLineSchema = lineInputSchema.extend({ photoIds: lineInputSchema.shape.photoIds });
 const memoFields = { ...tradeDocumentFields, lines: z.array(memoLineSchema).min(1).max(LINES_MAX) };
 const versioned = { id: uuid, expectedVersion: z.number().int().min(1) };
 

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { HomeIcon, SaleReportIcon } from "@/features/home/nav-icons";
 import { railModules, sidebarSections, type NavEntry } from "@/features/home/navigation";
+import { RAIL_ICON_SIZE, RailHomeIcon } from "@/features/home/rail-icons";
 import { SIDEBAR_ICON_SIZE } from "@/features/home/sidebar-disclosure";
 
 /** UT-NAV-ICON-01…04: sidebar icons from the owner's design SVGs (2026-10-20). */
@@ -59,7 +60,30 @@ describe("design nav icons", () => {
       "Closing Stock": "closing-stock",
       "Sale Report": "sale-report",
     });
-    expect(railModules.filter((module) => module.kind === "link").map((module) => iconName(module.icon))).toEqual(["home", "dashboard", "setup", "approve"]);
+    expect(railModules.filter((module) => module.kind === "link").map((module) => iconName(module.icon))).toEqual(["rail-home", "rail-dashboard", "rail-setup", "approve"]);
+  });
+
+  it("UT-NAV-ICON-05 the collapsed rail uses the owner's 20 px module icons (2026-11-11), drawn 20 × 20 with a 1.25 px stroke", () => {
+    expect(railModules.map((module) => [module.label, iconName(module.icon)])).toEqual([
+      ["Home", "rail-home"],
+      ["Dashboard", "rail-dashboard"],
+      ["Setup", "rail-setup"],
+      ["Approve", "approve"],
+      ["Pre-Sale", "rail-pre-sale"],
+      ["Memo", "rail-memo"],
+      ["Purchase Order", "rail-purchase-order"],
+      ["Inventory", "rail-inventory"],
+      ["Sale", "sale"],
+      ["Account", "rail-account"],
+      ["Report", "rail-report"],
+    ]);
+    expect(RAIL_ICON_SIZE).toBe(20);
+    const html = renderToStaticMarkup(createElement(RailHomeIcon, { size: RAIL_ICON_SIZE, strokeWidth: 1.5 }));
+    expect(html).toContain('viewBox="0 0 20 20"');
+    expect(html).toContain('width="20"');
+    expect(html).toContain('stroke-width="1.25"');
+    expect(html).toContain('stroke="currentColor"');
+    expect(html).not.toContain("#1C252E");
   });
 
   it("UT-NAV-ICON-04 sidebar rows render the icons at 16 × 16 px (owner 2026-10-20)", () => {

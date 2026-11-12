@@ -44,11 +44,10 @@ describe("masterCodeDestinations", () => {
 });
 
 describe("setupLandingTiles", () => {
-  it("UT-NAV-F01 lists the tiles in the design order with their colors (Decimal Setup added 2026-10-27)", () => {
+  it("UT-NAV-F01 lists the tiles in the design order with their colors (Decimal Setup added 2026-10-27; Notifications removed 2026-11-11)", () => {
     expect(setupLandingTiles.map((tile) => [tile.label, tile.kind, tile.color])).toEqual([
       ["Company Profile", "link", "indigo"],
       ["User and Permission", "link", "green"],
-      ["Notifications", "link", "red"],
       ["Master Code", "master-code", "neutral"],
       ["Document Setup", "link", "blue"],
       ["Approval", "link", "emerald"],
@@ -82,7 +81,7 @@ describe("setupLandingTiles", () => {
       const tile = setupLandingTiles.find((entry) => entry.id === id);
       return tile ? renderToStaticMarkup(createElement(tile.icon, { size: 32, strokeWidth: 1.5 })) : "";
     };
-    for (const id of ["company-profile", "user-permission", "notifications", "master-code", "document-setup"]) {
+    for (const id of ["company-profile", "user-permission", "master-code", "document-setup"]) {
       const html = render(id);
       expect(html).toContain(`data-icon="${id}"`);
       expect(html).toContain('viewBox="0 0 32 32"');

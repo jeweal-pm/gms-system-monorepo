@@ -97,6 +97,9 @@ vi.mock("../../src/database/prisma-client", () => {
     memoOutReturn: document("memoOutReturn"),
     memoOutReturnLine: children("memoOutReturnLine"),
     memoOutReturnCharge: children("memoOutReturnCharge"),
+    // ADR-0049: a document created for approval records its notification in the same transaction.
+    notificationEvent: { create: vi.fn(async () => ({})) },
+    notificationRecipient: { createMany: vi.fn(async () => ({ count: 0 })) },
   };
   return { prisma: { ...tx, $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) } };
 });
@@ -155,8 +158,9 @@ beforeEach(() => {
 });
 
 describe("schemas", () => {
-  it("UT-MO-B01 memo lines can't carry photos; each document takes only its own party fields", () => {
-    expect(createMemoOutSchema.safeParse({ ...outInput(), lines: [{ ...outInput().lines[0], photoIds: [STONE] }] }).success).toBe(false);
+  it("UT-MO-B01 memo lines take up to 5 distinct photos (ADR-0048); each document takes only its own party fields", () => {
+    expect(createMemoOutSchema.safeParse({ ...outInput(), lines: [{ ...outInput().lines[0], photoIds: [STONE] }] }).success).toBe(true);
+    expect(createMemoOutSchema.safeParse({ ...outInput(), lines: [{ ...outInput().lines[0], photoIds: [STONE, STONE] }] }).success).toBe(false);
     expect(createMemoOutSchema.safeParse({ ...outInput(), vendorId: VENDOR }).success).toBe(false);
     expect(createMemoOutReturnSchema.safeParse({ ...returnInput(), vendorId: VENDOR }).success).toBe(false);
     expect(createMemoOutReturnSchema.safeParse({ ...returnInput(), dueDate: "2026-10-01" }).success).toBe(false);

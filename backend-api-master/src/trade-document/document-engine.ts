@@ -12,6 +12,10 @@ import type { Prisma } from "../generated/prisma/client";
 import { calculateTotals, oversizeAmounts } from "../quotation/quotation.calculate";
 import { CHARGE_TYPES, type LineInput } from "../quotation/quotation.schemas";
 import type { DocumentErrors } from "./document-errors";
+import { emitNotificationSignals } from "../notification/notification-hub";
+import { approverRecipients, creatorRecipient } from "../notification/notification-recipients";
+import { recordNotification } from "../notification/notification-store";
+import { isNotificationDocumentType, type NotificationDocumentType, type NotificationSignal } from "../notification/notification-types";
 
 /**
  * Shared document engine for memo out, memo out return (ADR-0033), memo receive (ADR-0034) and memo return
@@ -179,6 +183,39 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
     return (client as unknown as Record<string, DocDelegate>)[this.config.model];
   }
 
+  /** ADR-0049: the documents with an approval step notify; their Document Setup key is also their menu leaf. */
+  private get notificationType(): NotificationDocumentType | null {
+    return isNotificationDocumentType(this.config.transactionKey) ? this.config.transactionKey : null;
+  }
+
+  /** Display-only summary of a document (party, grand total, currency) for its notification. */
+  private async notificationSummary(tx: Tx, id: string) {
+    const row = await this.doc(tx).findUnique({ where: { id }, select: { [this.config.party.nameColumn]: true, grandTotal: true, currencyCode: true } });
+    if (!row) return {};
+    return { partyName: row[this.config.party.nameColumn] as string, amount: row.grandTotal == null ? undefined : money(row.grandTotal), currency: row.currencyCode as string };
+  }
+
+  /**
+   * ADR-0049 D3/D4: inside an approve transaction, records "document.approved" for the document's creator. Returns the
+   * signals to emit after commit (`emitNotificationSignals`).
+   */
+  async notifyApproved(tx: Tx, id: string, actorId: string): Promise<NotificationSignal[]> {
+    const documentType = this.notificationType;
+    if (!documentType) return [];
+    const row = await this.doc(tx).findUnique({ where: { id }, select: { docNo: true, createdBy: true } });
+    if (!row) return [];
+    const signal = await recordNotification(tx, {
+      type: "document.approved",
+      documentType,
+      documentId: id,
+      docNo: row.docNo as string,
+      actorId,
+      recipients: creatorRecipient(row.createdBy as string | null, actorId),
+      summary: await this.notificationSummary(tx, id),
+    });
+    return [signal];
+  }
+
   private child(client: Client, model: string): ChildDelegate {
     return (client as unknown as Record<string, ChildDelegate>)[model];
   }
@@ -260,6 +297,10 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
 
   async create(actorId: string, rawInput: Input) {
     const { errors, event, lineHook } = this.config;
+    // ADR-0049: a document created waiting for approval tells its approvers (looked up before the transaction).
+    const documentType = (this.config.createStatus ?? "DRAFT") === "PENDING_APPROVAL" ? this.notificationType : null;
+    const approvers = documentType ? await approverRecipients(documentType, actorId) : [];
+    let signal: NotificationSignal | null = null;
     try {
       const created = await prisma.$transaction(async (tx) => {
         const input = this.config.prepare ? await this.config.prepare(tx, rawInput, null) : rawInput;
@@ -274,8 +315,20 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
           data: { id, numberingId, runningNo, docNo, status: this.config.createStatus ?? "DRAFT", ...header, ...partyColumns, createdAt: now, createdBy: actorId, updatedAt: now, updatedBy: actorId },
         });
         await this.writeChildren(tx, id, input, assigned);
+        if (documentType) {
+          signal = await recordNotification(tx, {
+            type: "approval.pending",
+            documentType,
+            documentId: id,
+            docNo,
+            actorId,
+            recipients: approvers,
+            summary: await this.notificationSummary(tx, id),
+          });
+        }
         return { id, docNo, version: 1, ...(assigned && lineHook ? lineHook.result(assigned) : {}) };
       }, WRITE_TX);
+      emitNotificationSignals([signal]);
       this.logger.log({ event: `${event}.created`, actorId, id: created.id, docNo: created.docNo });
       return created;
     } catch (error) {

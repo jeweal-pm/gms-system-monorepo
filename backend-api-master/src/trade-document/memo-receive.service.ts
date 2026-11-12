@@ -8,6 +8,7 @@ import { documentErrors } from "./document-errors";
 import { explainMiss, MISS_SELECT, TradeDocumentEngine, type LineHook, type MissRow } from "./document-engine";
 import { vendorDocumentOptions, vendorParty, type VendorOut } from "./memo-out-return.service";
 import type { MemoReceiveInput, MemoReceiveListInput, MemoReceiveStatus } from "./memo-schemas";
+import { emitNotificationSignals } from "../notification/notification-hub";
 
 export const memoReceiveErrors = documentErrors("MEMO_RECEIVE", "MemoReceive", "memo_receive");
 /** SA-MR-16: an upload that isn't a JPEG/PNG ≤ 5 MB, or a saved photo id that isn't a ready Memo Receive photo. */
@@ -247,8 +248,11 @@ export class MemoReceiveService {
           updatedAt: now,
         }));
         if (rows.length > 0) await tx.memoStock.createMany({ data: rows });
-        return { docNo: document.docNo, memoStockCount: rows.length };
+        // ADR-0049: the creator hears about the approval once this transaction commits.
+        const signals = await this.engine.notifyApproved(tx, id, actorId);
+        return { signals, docNo: document.docNo, memoStockCount: rows.length };
       }, WRITE_TX);
+      emitNotificationSignals(approved.signals);
       this.logger.log({ event: "memo_receive.approved", actorId, id, docNo: approved.docNo, lineCount: approved.memoStockCount });
       return { id, version: expectedVersion + 1, status: APPROVED as "APPROVED", memoStockCount: approved.memoStockCount };
     } catch (error) {

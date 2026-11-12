@@ -12,6 +12,8 @@ import { explainMiss, MISS_SELECT, TradeDocumentEngine, type LineHook, type Part
 import { customerDocumentOptions, customerParty, type CustomerOut } from "./memo-out.service";
 import type { MemoOutOutstandingInput, MemoOutReturnInput, MemoReceiveListInput, MemoReceiveStatus } from "./memo-schemas";
 import { releaseToMemoStock, type MemoStockTake } from "./memo-stock.service";
+import { LINE_PHOTO_DOCUMENTS, withLinePhotos } from "./line-photos";
+import { emitNotificationSignals } from "../notification/notification-hub";
 
 const Decimal = Prisma.Decimal;
 type Dec = Prisma.Decimal;
@@ -251,7 +253,7 @@ export class MemoOutReturnService {
     editableStatuses: [PENDING],
     outstanding: true,
     prepare: completeReturnLines,
-    lineHook: memoOutLines,
+    lineHook: withLinePhotos(LINE_PHOTO_DOCUMENTS.memoOutReturn, memoOutLines),
     detailExtra: (row) => ({
       approvedAt: row.approvedAt ? (row.approvedAt as Date).toISOString() : null,
       approvedBy: (row.approvedBy as string | null) ?? null,
@@ -382,8 +384,11 @@ export class MemoOutReturnService {
             WHERE l.id = r.id`);
         }
         await releaseToMemoStock(tx, puts, memoOutReturnOutstandingShort, now);
-        return { docNo: document.docNo, lineCount: document.lines.length };
+        // ADR-0049: the creator hears about the approval once this transaction commits.
+        const signals = await this.engine.notifyApproved(tx, id, actorId);
+        return { signals, docNo: document.docNo, lineCount: document.lines.length };
       }, WRITE_TX);
+      emitNotificationSignals(approved.signals);
       this.logger.log({ event: "memo_out_return.approved", actorId, id, docNo: approved.docNo, lineCount: approved.lineCount });
       return { id, version: expectedVersion + 1, status: APPROVED as "APPROVED" };
     } catch (error) {

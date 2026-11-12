@@ -12,6 +12,7 @@ import type { DocumentApi } from "@/features/trade-document/document-form";
 import type { MemoStockItem } from "@/features/trade-document/memo-stock-api";
 import { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError, retryTransient } from "@/lib/trpc-error";
+import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 /**
  * Memo Return data access (memo-return SA rev 2, owner 2026-10-29): `memoReturn.*` with a vendor and one address,
@@ -122,7 +123,7 @@ export function memoStockToLine(item: MemoStockItem): MemoReturnLine {
   };
 }
 
-/** Form values → contract input: each filled row names its Memo Stock item; no photos yet. */
+/** Form values → contract input: each filled row names its Memo Stock item; photos in order (ADR-0048). */
 export function toMemoReturnInput(values: MemoReturnFormValues) {
   const shared = toTradeDocumentInput(values);
   const filled = values.lines.filter(isFilledLine);
@@ -130,7 +131,6 @@ export function toMemoReturnInput(values: MemoReturnFormValues) {
     ...shared,
     lines: shared.lines.map((line, index) => ({
       ...line,
-      photoIds: [] as string[],
       memoStockId: filled[index]?.memoStockId ?? "",
       outstandingPcs: Number.parseInt(filled[index]?.outstandingPcs || "0", 10),
       outstandingWeightCt: filled[index]?.outstandingWeightCt || "0",
@@ -142,7 +142,7 @@ export function toMemoReturnInput(values: MemoReturnFormValues) {
 
 export function fromMemoReturn(detail: MemoReturnDetail): MemoReturnFormValues {
   // Memo Stock items have no stone code (memo-receive rev 2).
-  const shared = fromTradeDocument({ ...detail, lines: detail.lines.map((line) => ({ ...line, stoneCodeId: null })) }, (id) => id);
+  const shared = fromTradeDocument({ ...detail, lines: detail.lines.map((line) => ({ ...line, stoneCodeId: null })) }, DOCUMENT_PHOTOS.memoReturn.url);
   return {
     ...shared,
     lines: shared.lines.map((line, index) => ({

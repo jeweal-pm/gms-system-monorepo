@@ -308,7 +308,7 @@ describe("staged master domain tRPC boundary", () => {
     await expect(as(["ADD"]).quotation.create(body)).rejects.toMatchObject({ code: "UNPROCESSABLE_CONTENT", message: "QUOTATION_REFERENCE_INVALID" });
   });
 
-  it("GP-MT-MO memo out / memo out return: exact grants, CSRF on writes, strict party fields, no photos", async () => {
+  it("GP-MT-MO memo out / memo out return: exact grants, CSRF on writes, strict party fields, ≤ 5 distinct photos", async () => {
     const ID2 = "0b9f3c4e-1d2a-4b3c-8d4e-5f6a7b8c9d0f";
     const line = { source: "MANUAL" as const, stoneCodeId: null, stoneCode: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "",
       lot: "", location: "", cerType: "", cerNo: "", pcs: 1, weightCt: "1", priceUnit: "PER_CT" as const, unitPrice: "100", discount: { type: "NONE" as const, value: "0" }, itemNote: "", photoIds: [] as string[] };
@@ -328,7 +328,9 @@ describe("staged master domain tRPC boundary", () => {
     expect(memoOut.list).toHaveBeenCalledWith(expect.objectContaining({ q: "gem", partyId: ID, limit: 50 }));
     expect(memoOut.options).toHaveBeenCalledWith(ID);
     expect(memoOut.update).toHaveBeenCalledWith("user-1", ID, 1, expect.objectContaining({ customerId: ID }));
-    await expect(outCaller.memoOut.create({ ...out, lines: [{ ...line, photoIds: [ID] }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // ADR-0048: up to 5 distinct photo ids per line.
+    await expect(outCaller.memoOut.create({ ...out, lines: [{ ...line, photoIds: [ID, ID] }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(outCaller.memoOut.create({ ...out, lines: [{ ...line, photoIds: Array.from({ length: 6 }, (_, n) => `00000000-0000-4000-8000-00000000010${n}`) }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(outCaller.memoOut.create({ ...back } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(router.createCaller(context(["memo-out:VIEW"])).memoOut.create(out)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(router.createCaller(context(["memo-out:ADD"], { csrfVerified: false })).memoOut.create(out)).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -658,7 +660,10 @@ describe("staged master domain tRPC boundary", () => {
     await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: null }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2, unitPrice: "0" }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2 }, { ...line, memoStockId: ID2 }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2, photoIds: [ID] }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // ADR-0048 (owner 2026-11-11): up to 5 distinct photo ids per line; a 6th or a duplicate is refused.
+    await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2, photoIds: [ID] }] })).resolves.toBeDefined();
+    await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2, photoIds: [ID, ID] }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2, photoIds: Array.from({ length: 6 }, (_, n) => `00000000-0000-4000-8000-00000000010${n}`) }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.reserve.list({ status: "DRAFT" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     // From Stock and the currency list read with reserve VIEW.

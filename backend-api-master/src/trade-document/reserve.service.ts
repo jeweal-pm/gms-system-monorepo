@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { CustomerStockDocument, type CustomerStockInput } from "./customer-stock-document";
+import { LINE_PHOTO_DOCUMENTS } from "./line-photos";
 import type { MemoReceiveListInput } from "./memo-schemas";
 
 /**
@@ -18,6 +19,7 @@ const reserve = new CustomerStockDocument({
   lineModel: "reserveLine",
   chargeModel: "reserveCharge",
   parentKey: "reserveId",
+  photos: LINE_PHOTO_DOCUMENTS.reserve,
 });
 
 export const reserveErrors = reserve.errors;

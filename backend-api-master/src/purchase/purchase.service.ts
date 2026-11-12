@@ -10,6 +10,8 @@ import { purchaseMemoStock, purchaseOrderLines } from "./purchase-pickers";
 import { completeSourceLines, memoLineRange, purchaseOrderAvailable, takeForPurchase, type PreparedInput, type SoldPart } from "./purchase-stock";
 import { purchaseErrors, purchasePendingShort, purchaseStockIdExhausted } from "./purchase.errors";
 import type { LineMemoGroup, PurchaseInput, PurchaseLineSource, PurchaseListInput, PurchaseMemoStockInput, PurchaseOrderLinesInput, PurchaseStatus } from "./purchase.schemas";
+import { LINE_PHOTO_DOCUMENTS, withLinePhotos } from "../trade-document/line-photos";
+import { emitNotificationSignals } from "../notification/notification-hub";
 
 const PENDING: PurchaseStatus = "PENDING_APPROVAL";
 const APPROVED: PurchaseStatus = "APPROVED";
@@ -117,7 +119,7 @@ export class PurchaseService {
     createStatus: PENDING,
     editableStatuses: [PENDING],
     prepare: async (tx, input) => (await completeSourceLines(tx, input as unknown as PurchaseInput)) as unknown as EngineInput,
-    lineHook: this.lines,
+    lineHook: withLinePhotos(LINE_PHOTO_DOCUMENTS.purchase, this.lines),
     detailExtra: (row: Row) => ({
       approvedAt: row.approvedAt ? (row.approvedAt as Date).toISOString() : null,
       approvedBy: (row.approvedBy as string | null) ?? null,
@@ -200,8 +202,11 @@ export class PurchaseService {
         const takes = document.lines.map((line, index) => ({ ...line, index }));
         const { soldParts, ...moved } = await takeForPurchase(tx, { vendorId: document.vendorId, currency: document.currencyCode }, takes, purchasePendingShort, now);
         await writeSoldParts(tx, document.lines.map((line) => line.id), soldParts);
-        return { docNo: document.docNo, lineCount: document.lines.length, ...moved };
+        // ADR-0049: the creator hears about the approval once this transaction commits.
+        const signals = await this.engine.notifyApproved(tx, id, actorId);
+        return { signals, docNo: document.docNo, lineCount: document.lines.length, ...moved };
       }, WRITE_TX);
+      emitNotificationSignals(approved.signals);
       this.logger.log({ event: "purchase.approved", actorId, id, docNo: approved.docNo, lineCount: approved.lineCount, memoStockKeys: approved.memoStockKeys, purchaseOrderKeys: approved.purchaseOrderKeys });
       return { id, version: expectedVersion + 1, status: APPROVED as "APPROVED", lineCount: approved.lineCount };
     } catch (error) {
@@ -233,7 +238,8 @@ export type PurchaseLineOut = EngineLineOut & {
   memoGroup: LineMemoGroup | null;
   purchaseOrderLineId: string | null;
   stockId: string;
-  photoIds: [];
+  /** ADR-0048: the line's photos in order (the photo hook replaces the `[]` this hook writes). */
+  photoIds: string[];
   memoReceive: { docNo: string } | null;
   purchaseOrder: { id: string; docNo: string; position: number } | null;
   limitPcs: number | null;

@@ -48,9 +48,9 @@ describe("line photo reorder", () => {
 
   it("UT-PH-04 an editable row's photo tiles are draggable; the crown stays on the first photo", () => {
     const html = render([A, B], false);
-    expect(html.match(/<div draggable="true"/g)).toHaveLength(2);
+    expect(html.match(/<div data-photo-id="[^"]*" draggable="true"/g)).toHaveLength(2);
     expect(html).toContain("Drag to reorder. The first photo is the main photo.");
-    expect(html).toContain('aria-label="Main photo"');
+    expect(html).toContain('title="Default photo"');
     expect(html).toMatch(/<img src="\/photos\/a"[^>]*draggable="false"/);
     expect(PHOTO_DRAG_TYPE).toBe("application/x-gms-line-photo");
   });

@@ -1,7 +1,8 @@
 "use client";
 
-import { Bell, Menu, Minimize, Scan } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Menu, Minimize, Scan } from "lucide-react";
+import { useSyncExternalStore } from "react";
+import { NotificationsBell } from "@/features/notifications/components/NotificationsBell";
 import { AccountMenu, type AccountMenuUser } from "./account-menu";
 
 export const topbarIconButton =
@@ -83,35 +84,6 @@ function FullscreenButton() {
   );
 }
 
-/* ---------- Notifications placeholder (no notification feature yet) ---------- */
-
-function NotificationsButton() {
-  const [notice, setNotice] = useState<string | null>(null);
-  const timeoutRef = useRef(0);
-  useEffect(() => () => window.clearTimeout(timeoutRef.current), []);
-
-  function showNotice() {
-    window.clearTimeout(timeoutRef.current);
-    setNotice("Notifications aren't available yet.");
-    timeoutRef.current = window.setTimeout(() => setNotice(null), 3000);
-  }
-
-  return (
-    <div className="relative">
-      <button type="button" onClick={showNotice} aria-label="Notifications" title="Notifications" className={topbarIconButton}>
-        <Bell aria-hidden size={20} strokeWidth={1.5} />
-        {/* Decorative dot from the source image; there is no unread-count contract yet. */}
-        <span aria-hidden className="absolute right-1 top-[5px] size-[5px] rounded-full bg-gms-info-dot" />
-      </button>
-      <div role="status" aria-live="polite" className="absolute right-0 top-10 z-50">
-        {notice && (
-          <p className="rounded-gms-md border border-gms-border bg-gms-surface px-3 py-2 text-gms-label whitespace-nowrap text-gms-text shadow-gms-overlay">{notice}</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
 /* ---------- Topbar ---------- */
 
 /**
@@ -151,7 +123,7 @@ export function Topbar({
       <div className="flex shrink-0 items-center gap-2 border-l border-gms-border-header pl-3">
         <HeaderClock />
         <FullscreenButton />
-        <NotificationsButton />
+        <NotificationsBell />
         <AccountMenu user={user} onSignOut={onSignOut} />
       </div>
     </header>

@@ -173,6 +173,8 @@ export class MasterAuthContextAdapter {
       authorization: "CURRENT",
       license,
       csrfVerified: true,
+      // ADR-0049 D6: the notification stream asks for a renewal shortly before this.
+      accessExpiresAt: typeof payload.exp === "number" ? payload.exp * 1000 : null,
     };
   }
 }

@@ -37,6 +37,9 @@ export function mapDocumentSaveError(error: unknown, code: string, noun: string,
       return { fieldErrors: onFields("Choose an active option"), message: "A selected party, address, currency or stone code is no longer available." };
     case `${code}_DELETED`:
       return { fieldErrors: [], message: deletedMessage(noun), deleted: true };
+    // ADR-0048: a photo that isn't a ready photo of this document (e.g. removed meanwhile).
+    case `${code}_PHOTO_INVALID`:
+      return { fieldErrors: onFields("Check the photos"), message: "A photo couldn't be used. Remove it and add it again." };
     case `${code}_CHANGED`:
       return { fieldErrors: [], message: `Someone else changed this ${noun}. Refresh to see the latest.` };
     case `${code}_STATUS_INVALID`:

@@ -91,6 +91,9 @@ vi.mock("../../src/database/prisma-client", () => {
       deleteMany: track("purchaseLine.deleteMany", { count: 1 }),
     },
     purchaseCharge: { createMany: track("purchaseCharge.createMany", {}), deleteMany: track("purchaseCharge.deleteMany", {}) },
+    // ADR-0049: create (pending approval) and approve record a notification in the same transaction.
+    notificationEvent: { create: vi.fn(async () => ({})) },
+    notificationRecipient: { createMany: vi.fn(async () => ({ count: 0 })) },
   };
   return { prisma: { ...tx, $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) } };
 });

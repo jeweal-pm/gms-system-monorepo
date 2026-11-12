@@ -65,6 +65,12 @@ const messages: Record<string, string> = {
   PURCHASE_ORDER_STATUS_INVALID: "The purchase order can't be changed in its current status",
   PURCHASE_ORDER_REFERENCE_INVALID: "A selected item is missing or inactive",
   PURCHASE_ORDER_PHOTO_INVALID: "A photo is missing or is not a JPEG or PNG image up to 5 MB",
+  // ADR-0048 (owner 2026-11-11): line photos on five more documents.
+  RESERVE_PHOTO_INVALID: "A photo is missing or is not a JPEG or PNG image up to 5 MB",
+  MEMO_RETURN_PHOTO_INVALID: "A photo is missing or is not a JPEG or PNG image up to 5 MB",
+  MEMO_OUT_PHOTO_INVALID: "A photo is missing or is not a JPEG or PNG image up to 5 MB",
+  MEMO_OUT_RETURN_PHOTO_INVALID: "A photo is missing or is not a JPEG or PNG image up to 5 MB",
+  PURCHASE_PHOTO_INVALID: "A photo is missing or is not a JPEG or PNG image up to 5 MB",
   PURCHASE_NOT_FOUND: "The purchase was not found",
   PURCHASE_CHANGED: "The purchase was changed by someone else",
   PURCHASE_STATUS_INVALID: "The purchase can't be changed in its current status",

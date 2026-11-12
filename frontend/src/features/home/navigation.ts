@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Boxes, ClipboardList, FileText, Receipt, ShoppingCart, StickyNotes, Wallet, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, Receipt, type LucideIcon } from "lucide-react";
 import {
   ApproveIcon,
   BarcodeIcon,
@@ -24,6 +24,7 @@ import {
   type NavIcon,
 } from "./nav-icons";
 import { APPROVE_HREF, APPROVE_PERMISSIONS } from "@/features/approve-center/menus";
+import { RailAccountIcon, RailDashboardIcon, RailHomeIcon, RailInventoryIcon, RailMemoIcon, RailPreSaleIcon, RailPurchaseOrderIcon, RailReportIcon, RailSetupIcon } from "./rail-icons";
 import { DEFAULT_STONE_SLUG, STONE_MENU_KEY, STONE_PAGES, stonePageHref } from "@/features/stone-master/kinds";
 
 /**
@@ -318,19 +319,19 @@ export function visibleHomeCards(cards: readonly HomeCard[], canView: CanView): 
     .filter((card) => card.blocks.length > 0);
 }
 
-/** Collapsed rail (S1) in the expanded order; Report's clipboard-list glyph moves to the end (DV-04). */
+/** Collapsed rail (S1) in the expanded order; module icons from the owner's 20 px rail SVGs (2026-11-11). */
 export const railModules: RailModule[] = [
-  { id: "home", label: "Home", icon: HomeIcon, kind: "link", link: homeLink },
-  { id: "dashboard", label: "Dashboard", icon: DashboardIcon, kind: "link", link: dashboardLink },
-  { id: "setup", label: "Setup", icon: SetupIcon, kind: "link", link: setupLink },
+  { id: "home", label: "Home", icon: RailHomeIcon, kind: "link", link: homeLink },
+  { id: "dashboard", label: "Dashboard", icon: RailDashboardIcon, kind: "link", link: dashboardLink },
+  { id: "setup", label: "Setup", icon: RailSetupIcon, kind: "link", link: setupLink },
   { id: "approve", label: "Approve", icon: ApproveIcon, kind: "link", link: approveLink },
-  { id: "pre-sale", label: "Pre-Sale", icon: ShoppingCart, kind: "section", sectionId: "pre-sale" },
-  { id: "memo", label: "Memo", icon: StickyNotes, kind: "section", sectionId: "memo" },
-  { id: "purchase-order", label: "Purchase Order", icon: FileText, kind: "section", sectionId: "purchase-order" },
-  { id: "inventory", label: "Inventory", icon: Boxes, kind: "section", sectionId: "inventory" },
+  { id: "pre-sale", label: "Pre-Sale", icon: RailPreSaleIcon, kind: "section", sectionId: "pre-sale" },
+  { id: "memo", label: "Memo", icon: RailMemoIcon, kind: "section", sectionId: "memo" },
+  { id: "purchase-order", label: "Purchase Order", icon: RailPurchaseOrderIcon, kind: "section", sectionId: "purchase-order" },
+  { id: "inventory", label: "Inventory", icon: RailInventoryIcon, kind: "section", sectionId: "inventory" },
   { id: "sale", label: "Sale", icon: SaleIcon, kind: "section", sectionId: "sale" },
-  { id: "account", label: "Account", icon: Wallet, kind: "section", sectionId: "account" },
-  { id: "report", label: "Report", icon: ClipboardList, kind: "section", sectionId: "report" },
+  { id: "account", label: "Account", icon: RailAccountIcon, kind: "section", sectionId: "account" },
+  { id: "report", label: "Report", icon: RailReportIcon, kind: "section", sectionId: "report" },
 ];
 
 /** A context-panel group: a link row (`href`) with its child pages listed below it. */

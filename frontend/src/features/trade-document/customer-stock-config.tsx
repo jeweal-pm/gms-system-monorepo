@@ -17,6 +17,7 @@ import {
 import { APPROVAL_STATUS_LABELS, type DocumentApi, type DocumentFormConfig, type SaveOutcome } from "./document-form";
 import type { RestoreOutcome } from "./document-api";
 import { MemoStockModal } from "./memo-stock-modal";
+import type { DocumentPhotos } from "./document-photos";
 
 type CustomerStockInput = ReturnType<typeof toCustomerStockInput>;
 
@@ -41,6 +42,8 @@ export type CustomerStockPageOptions = {
   notePlaceholder: string;
   noteHint: string;
   daybook: ReactNode;
+  /** Line photo routes (ADR-0048). */
+  photos: DocumentPhotos;
 };
 
 /**
@@ -68,6 +71,7 @@ export function customerStockConfig(options: CustomerStockPageOptions): Document
     schema: customerStockSchema,
     empty: emptyCustomerStock,
     toInput: toCustomerStockInput,
+    photos: options.photos,
     useApi: options.useApi,
     partyId: (values) => values?.customerId,
     // These documents' options have the quotation options shape, so the quotation header fields read them as is.
