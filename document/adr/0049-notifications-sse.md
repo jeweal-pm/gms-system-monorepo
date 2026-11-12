@@ -71,3 +71,13 @@ Facts (verified 2026-11-11):
 
 - Owner approves ADR-0049 + ui-spec revision 1 (and Q-NT-01…09) → auth view (backend auth) → api-master migration, router, stream, emitters → nginx (infra) → frontend → both security reviews.
 - Tasks: [task/todo/notifications.md](../task/todo/notifications.md).
+
+## Implementation note 2026-11-12 (BE-NT-007)
+
+This note records no new decision; it applies D3 and D4 to the flow that PR #90 merged (ADR-0050).
+
+- Reject and Revise record `document.rejected` and `document.revision_requested` for the creator, with the reason or note, in the review transaction.
+- Quotation is a notifying document type. It now has the approval step that D4 assumes; ui-spec revision 1 left it out only because it had none.
+- The display summary is held to the 1 KB CHECK by shortening the reason, then the party name.
+
+Owner instruction: "frontend backend ทำ notification ให้ครบ flow ทั้งต่อ api และ ui" (2026-11-12).

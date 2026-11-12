@@ -27,7 +27,7 @@
 | [x] | FE-NT-002 | frontend | Items, grouping, lazy pages, mark read / all, row and chevron navigation | FE-NT-001 | Q-NT-02/03 |
 | [x] | FE-NT-003 | frontend | EventSource lifecycle: refetch on event / focus, reauth + renew, close on sign-out | BE-NT-005, INF-NT-001 | no duplicate items; max 3 retries |
 | [x] | FE-NT-004 | frontend + parent | Tests, both security reviews | all | suites pass |
-| [ ] | BE-NT-007 | backend (master) | Reject / revise events | ADR-0046 phase 2 | creator notified with reason / note |
+| [x] | BE-NT-007 | backend (master) + frontend | Reject / revise events (and Quotation, which gained the approval flow) | ADR-0046 phase 2 (merged in PR #90) | creator notified with reason / note |
 
 ## Verification (2026-11-11)
 
@@ -39,6 +39,20 @@
 - FE-NT-001…003: `frontend/src/features/notifications/` (model, api, stream, `NotificationsBell`, `NotificationItemRow`); top-bar placeholder replaced; sign-out calls `stopNotificationStreams()`. Tests `test/notifications/` (model, stream, panel integration); full suite 931 passed; tsc clean.
 - Owner bell SVG saved as `source/bell-icon.svg` and used for the item avatar (sources 01/03); the top-bar bell keeps the outline icon shown in source 01.
 - FE-NT-004: tests done. Both security reviews ran on the same revision: no vulnerability; one availability defect, [INV-20261111-001](../investigation/INV-20261111-001-notification-stream-reconnect-renew-storm.md) (multi-tab refresh reuse / reconnect loop): fixed 2026-11-11 on the owner's instruction. One stream per browser (Web Lock or localStorage lease), renewal shared across tabs, bounded reconnects; 4-tab live check over LAN and localhost: 1 stream.
+
+## Verification BE-NT-007 (2026-11-12)
+
+- Owner instruction 2026-11-12: "frontend backend ทำ notification ให้ครบ flow ทั้งต่อ api และ ui".
+- Flow after the PR #90 merge (ADR-0050): Send to approve → `approval.pending` to the approvers; Approve → `document.approved`; Reject → `document.rejected` with the reason; Revise → `document.revision_requested` with the note. Every event goes to the creator (never the actor), commits with the status change, and is emitted after commit.
+- Backend:
+  - `document-engine.ts`: `review()` now runs in a transaction and calls `notifyCreator`.
+  - `quotation.service.ts`: submit, approve, `approveWithin`, reject and revise record events. Quotation joins `NOTIFICATION_DOCUMENT_TYPES`; the ui-spec excluded it only because it had no approval step.
+  - `cleanSummary` keeps the summary within the 1 KB column CHECK. Without that, a Thai reason plus a Thai party name could exceed it and roll back the review.
+- Frontend: the reason or note is shown on its own labelled line ("Reason: …" / "Note: …"), clamped to 2 lines with the full text on hover.
+- Tests:
+  - api-master: UT-NT-14, UT-QT-NT-01, UT-MO-NT-01, IT-AS-B02 (event order with reason and recipient). Full suite with a disposable PostgreSQL: 713 passed / 17 skipped; tsc and eslint clean.
+  - frontend: UT-NT-FE-01 (reasonText, Quotation), IT-NT-FE-05. Full suite 1002 passed; tsc and eslint clean.
+- Live: api-master and frontend restarted; `notification.list` and `approvalSetting.list` return 200.
 
 ## Approval and revisions
 

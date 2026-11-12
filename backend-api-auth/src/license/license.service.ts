@@ -138,7 +138,21 @@ export class LicenseService {
       WHERE "LicenseCurrentDecision"."last_check_order" < EXCLUDED."last_check_order"
       RETURNING "last_check_order"
     `.catch(() => { throw new LicenseDomainError("LICENSE_UNVERIFIABLE", 503); });
-    if (rows.length !== 1) throw new LicenseDomainError("LICENSE_UNVERIFIABLE", 503);
+    if (rows.length === 1) return;
+    // ADR-0028 amendment 1 (INV-20261112-001): a lost compare-and-set fails closed, except an ACTIVE answer whose
+    // newer stored decision is also ACTIVE. Two of the same user's requests overlapping both found the license
+    // valid, so neither is stale. A newer DENIED (or any losing DENIED answer) still fails closed.
+    if (state === "ACTIVE" && await this.newerDecisionIsActive(userId, order)) return;
+    throw new LicenseDomainError("LICENSE_UNVERIFIABLE", 503);
+  }
+
+  /** A separate statement, so it sees the decision committed by the request that won the order check. */
+  private async newerDecisionIsActive(userId: string, order: bigint): Promise<boolean> {
+    const rows = await prisma.$queryRaw<Array<{ last_check_order: bigint; state: string }>>`
+      SELECT "last_check_order", "state" FROM "auth"."LicenseCurrentDecision" WHERE "user_id" = ${userId}
+    `.catch(() => { throw new LicenseDomainError("LICENSE_UNVERIFIABLE", 503); });
+    const stored = rows[0];
+    return stored?.state === "ACTIVE" && typeof stored.last_check_order === "bigint" && stored.last_check_order > order;
   }
 
   private async currentOfflineStatus(userId: string, subject: string): Promise<LicensePublicStatus> {

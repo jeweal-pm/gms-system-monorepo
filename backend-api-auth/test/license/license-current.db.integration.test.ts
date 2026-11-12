@@ -173,4 +173,27 @@ describe.runIf(canRun)("GP-LIC-05 isolated PostgreSQL and local HTTP integration
     }
     expect((await prisma.licenseCurrentDecision.findUniqueOrThrow({ where: { userId } })).state).toBe("DENIED");
   });
+
+  it("IT-LIC-ORDER-01 (INV-20261112-001) overlapping ACTIVE answers finishing out of order are both eligible", async () => {
+    const { LicenseService } = await import("../../src/license/license.service");
+    const secondInstance = new LicenseService();
+    deferred = true;
+    let newerToken = "";
+    try {
+      const olderActive = license.resolveCurrentStatus(userId);
+      await waitForPending(1);
+      const newerActive = secondInstance.resolveCurrentStatus(userId);
+      await waitForPending(2);
+      newerToken = await signed("active");
+      respond(pending.pop()!, { status: 200, token: newerToken });
+      expect((await newerActive).state).toBe("VALID");
+      respond(pending.pop()!, { status: 200, token: await signed("active") });
+      expect((await olderActive).state).toBe("VALID");
+    } finally {
+      deferred = false;
+    }
+    const final = await prisma.licenseCurrentDecision.findUniqueOrThrow({ where: { userId } });
+    expect(final.state).toBe("ACTIVE");
+    expect(final.signedToken).toBe(newerToken);
+  });
 });

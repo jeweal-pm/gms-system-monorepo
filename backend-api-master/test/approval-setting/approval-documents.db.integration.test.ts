@@ -189,15 +189,26 @@ describe.runIf(canRun)("approval documents (ADR-0050 stage 2) on PostgreSQL", ()
     await expect(s.reserve.reject(APPROVER, saved.id, 6, "Customer cancelled")).resolves.toEqual({ id: saved.id, version: 7, status: "REJECTED" });
     expect(await buckets(item.id)).toEqual(before);
     expect(await s.reserve.get(saved.id)).toMatchObject({ status: "REJECTED", review: { action: "REJECT", note: "Customer cancelled" }, canEdit: false, canDelete: false, canSubmit: false });
+    // BE-NT-007: Revise and Reject tell the creator, with the note / reason, in the review's own transaction.
+    const reviewed = await prisma.notificationEvent.findMany({
+      where: { documentId: saved.id }, orderBy: { createdAt: "asc" }, select: { type: true, summary: true, actorUserId: true, recipients: { select: { userId: true } } },
+    });
+    expect(reviewed.map((event) => event.type)).toEqual(["approval.pending", "document.revision_requested", "approval.pending", "document.rejected"]);
+    expect(reviewed[1]).toMatchObject({ actorUserId: APPROVER.id, summary: { reason: "Only 1 pcs" }, recipients: [{ userId: ACTOR }] });
+    expect(reviewed[3]).toMatchObject({ actorUserId: APPROVER.id, summary: { reason: "Customer cancelled" }, recipients: [{ userId: ACTOR }] });
     for (const call of [
       () => s.reserve.update(ACTOR, saved.id, 7, outInput([stockLine(item.id, 1, "0.5")])), () => s.reserve.delete(ACTOR, saved.id, 7),
       () => s.reserve.approve(ACTOR, saved.id, 7), () => s.reserve.submit({ id: ACTOR, name: null }, saved.id, 7),
     ]) expect(await failure(call())).toMatchObject({ code: "RESERVE_STATUS_INVALID" });
     // Approve after a revise moves stock exactly as a never-revised document (IT-AP-B04).
     const second = await submitted(s.reserve, ACTOR, await s.reserve.create(ACTOR, outInput([stockLine(item.id, 2, "1")])));
-    await s.reserve.requestRevision(APPROVER, second.id, 2, "x");
+    // INV-20261112-002: an emoji across UTF-16 unit 200 of the note still commits the revise and its notification.
+    const oddNote = `${"a".repeat(199)}😀${"b".repeat(20)}`;
+    await s.reserve.requestRevision(APPROVER, second.id, 2, oddNote);
+    const [revised] = await prisma.notificationEvent.findMany({ where: { documentId: second.id, type: "document.revision_requested" }, select: { summary: true } });
+    expect((revised.summary as { reason: string }).reason).toBe(`${"a".repeat(199)}😀`);
     await sendAndApprove(s.reserve, ACTOR, second.id, 3);
-    expect((await events(second.id)).map((event) => event.type)).toEqual(["approval.pending", "approval.pending", "document.approved"]);
+    expect((await events(second.id)).map((event) => event.type)).toEqual(["approval.pending", "document.revision_requested", "approval.pending", "document.approved"]);
     expect(await buckets(item.id)).toMatchObject({ pending: [8, "4.000"], reserved: [2, "1.000"] });
     // Send to approve while OFF (stale page) → APPROVAL_OFF; nothing changes.
     const draft = await s.reserve.create(ACTOR, outInput([stockLine(item.id, 1, "0.5")]));

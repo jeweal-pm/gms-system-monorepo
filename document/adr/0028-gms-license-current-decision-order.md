@@ -34,3 +34,17 @@ At most one current-decision row per user plus one sequence value per online req
 Unit and isolated PostgreSQL integration tests must force active→404 and active→revoked responses to complete out of order across two service instances; the final row remains denied, and a subsequent outage cannot enter grace. Test a later valid reactivation, identity mismatch, invalid proof, 429, no initial row, 0/1/2-day deadlines and database failure. Run the auth suite, typecheck/build/lint, then both scoped security reviews against one final source revision. GP-AUTH-05 remains open until mock private-route authorization and external capacity/cutover prerequisites are separately resolved.
 
 The owner approved this ADR and the exact [SA revision 3 bundle](../reviews/sa/2026-10-20-gms-license-ordering-rev3.md) on 2026-10-20 for scoped backend code and migration. This approval does not activate the private route or authorize deployment.
+
+## Amendment 1 (2026-11-12): overlapping ACTIVE answers
+
+- Approval evidence: the owner instructed "backend แก้ investigation INV-20261112-001" on 2026-11-12. [INV-20261112-001](../task/investigation/INV-20261112-001-license-check-order-race-503.md) revision 1 proposed this amendment as option 1 and stated that this instruction approves it.
+- Problem: every master request checks the license, and a page load sends several requests at once. When two ACTIVE answers for one user finished out of order, the older one lost the compare-and-set and returned 503. On the dev stack, 20–35% of concurrent checks failed even though the license was valid. Mutations are not retried, so a save could fail outright.
+- Decision change: when the compare-and-set returns no row, an **ACTIVE** answer stays eligible only if a separate statement, run after the upsert, finds a stored decision that is `ACTIVE` with a `last_check_order` strictly greater than this request's order.
+  - Using a separate statement means it sees the winner's committed row under READ COMMITTED.
+  - Every other loss still fails closed with 503: a newer `DENIED`, a stored row that isn't newer or is missing, a read error, or any losing `DENIED` answer.
+  - An older ACTIVE answer still never writes over, or bypasses, a newer denial. A denial that lands after the re-read orders after this request, the same as a denial that lands after a winning write.
+- Unchanged: there is no schema, contract or dependency change. No in-memory queue, no lock held across the remote call, and no extra license-server calls.
+- Verification:
+  - Unit tests UT-LIC-ORDER-01…03.
+  - Isolated PostgreSQL test IT-LIC-ORDER-01, run alongside the existing active→404 and active→revoked out-of-order tests: 7/7 passed.
+  - Dev-stack probe: 96/96 concurrent checks returned ELIGIBLE (before the fix, 17 of 64 failed).

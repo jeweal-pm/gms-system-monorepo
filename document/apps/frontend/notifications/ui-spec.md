@@ -19,7 +19,7 @@
 
 The top-bar bell (today a placeholder that says "Notifications aren't available yet.") opens a **notifications panel**: what happened to documents the user is involved in, newest first, with an unread count on the bell. New notifications appear without reloading the page (server-sent events). Notifications are stored, so they are still there after a refresh or after being offline.
 
-Revision 1 covers the documents in **api-master** (Reserve, Memo Receive, Memo Return, Memo Out, Memo Out Return, Purchase Order, Purchase; Quotation has no approval step today). Inventory, Sale, Account Outstanding and Reports belong to the future `api-inventory` service and join later through the same contract (ADR-0049 D10).
+Revision 1 covers the documents in **api-master** (Reserve, Memo Receive, Memo Return, Memo Out, Memo Out Return, Purchase Order, Purchase; Quotation has no approval step today; **2026-11-12:** Quotation joined once approval-setup gave it the approval flow). Inventory, Sale, Account Outstanding and Reports belong to the future `api-inventory` service and join later through the same contract (ADR-0049 D10).
 
 ## Trigger: the bell (top bar)
 
@@ -36,7 +36,7 @@ Click or Enter/Space toggles the panel; Esc and a click outside close it; focus 
 
 - Floating panel under the bell, right-aligned to it: **440 × 650 px**, radius **8 px**, 1 px border `#E3E6EA`, shadow (`shadow-gms-overlay`), white body. On screens narrower than 472 px it becomes full width (16 px gutters) and up to the viewport height minus the top bar.
 - **Header** (source 04): background `#FBFBFB`, height ≈ 56 px (estimated); "Notifications" (`text-gms-heading`, medium, `#1C252E`) on the left; "Mark all as read" text button (`text-gms-label` medium, `#637381`, hover `#1C252E`) on the right, disabled when nothing is unread.
-- **Tabs** (sources 05–06): background `#FBFBFB`, bottom border `#E3E6EA`. "For me" with a red count badge (white number on `#DF1016`, ≥ 18 px round, `99+` cap) and "All".
+- **Tabs** (sources 05–06): background `#FBFBFB`, bottom border `#E3E6EA`. "For me" with a red count badge (white number on `#DF1016`, ≥ 18 px round, `99+` cap) and "Overview" (owner design 2026-11-12; was "All"; same `all` scope).
   - default: `#637381`; hover: `#1C252E`; keyboard focus: 1 px rounded outline `#E3E6EA` (source 06 third state); active: `#1C252E` + 3 px underline `#006A70`, full tab width.
   - The badge shows the user's unread count in **For me** only.
 - **Body**: scrolls inside the panel; groups "Today", "Yesterday", then dates (`dd MMM yyyy`) as section labels (`text-gms-body`, `#637381`, ≈ 16 px left padding, 12 px top).
@@ -76,13 +76,13 @@ Click or Enter/Space toggles the panel; Esc and a click outside close it; focus 
 
 | Event | Title | Recipients | Opens |
 |---|---|---|---|
-| A document enters **Pending approval** (saved, or resubmitted) | "**{docNo}** waits for your approval" | users with `<document>:APPROVE` (and VIEW), not the actor | row: the document; chevron: Approve › {type} |
+| A document is **sent to approve** | "**{docNo}** waits for your approval" | users with `<document>:APPROVE` (and VIEW), not the actor | row and chevron: Approve › {type} (owner 2026-11-12) |
 | **Approved** | "**{docNo}** was approved" | the document's creator, not the actor | row: the document |
-| **Rejected** (needs ADR-0046 phase 2) | "**{docNo}** was rejected" + the reason | creator | row: the document |
-| **Sent back for revision** (needs ADR-0046 phase 2) | "**{docNo}** was sent back for revision" + the note | creator | row: the document |
+| **Rejected** | "**{docNo}** was rejected" + "Reason: …" on its own line (2 lines, full text on hover) | creator | row: the document |
+| **Sent back for revision** | "**{docNo}** was sent back for revision" + "Note: …" on its own line | creator | row: the document |
 
 - The "Security Update: Token Management" rows in the design are placeholder text; system announcements are **not** in revision 1 (Q-NT-04).
-- **For me** lists the notifications addressed to the user. **All** lists every notification event of the document types the user may VIEW, read-only (no unread mark), newest first (Q-NT-02).
+- **For me** lists the notifications addressed to the user. **Overview** lists every notification event of the document types the user may VIEW, read-only (no unread mark), newest first (Q-NT-02).
 
 ## Real-time behaviour (frontend side of ADR-0049)
 

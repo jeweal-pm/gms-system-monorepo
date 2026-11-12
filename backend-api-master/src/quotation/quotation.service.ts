@@ -29,6 +29,17 @@ import { CHARGE_TYPES, type QuotationInput, type QuotationListInput, type Quotat
 import { assertEditable, saveStatus, type FlowPrincipal } from "../approval-setting/approval-flow";
 import { peekApprovalSetting, readApprovalSetting } from "../approval-setting/approval-setting.service";
 import { documentFlow, explainReviewMiss, MISS_SELECT, planData, restoreData, reviewOfRow, reviewUpdate, saveFlow, storedInput, type DocumentActor, type MissRow } from "../trade-document/document-engine";
+import { emitNotificationSignals } from "../notification/notification-hub";
+import { approverRecipients, creatorRecipient } from "../notification/notification-recipients";
+import { recordNotification } from "../notification/notification-store";
+import type { CreatorNotificationType, NotificationSignal, NotificationSummary } from "../notification/notification-types";
+
+const QUOTATION_NOTICE_SELECT = { docNo: true, createdBy: true, customerNameSnapshot: true, grandTotal: true, currencyCode: true } as const;
+
+/** Display-only summary of a quotation for its notification (ADR-0049 D2). */
+function quotationSummary(row: { customerNameSnapshot: string; grandTotal: Prisma.Decimal | string | number | null; currencyCode: string }): NotificationSummary {
+  return { partyName: row.customerNameSnapshot, amount: row.grandTotal == null ? undefined : new Prisma.Decimal(row.grandTotal).toFixed(2), currency: row.currencyCode };
+}
 
 /**
  * Quotation follows the approval setting (approval-setup ADR-0050, Q-AS-28): OFF (seed default) → Save approves it
@@ -458,6 +469,9 @@ export class QuotationService {
    */
   async submit(actor: DocumentActor, id: string, expectedVersion: number) {
     const now = new Date();
+    // ADR-0049 (Quotation since 2026-11-12): the approvers hear about it when it is sent to approve.
+    const approvers = await approverRecipients("quotation", actor.id);
+    let signal: NotificationSignal | null = null;
     try {
       await prisma.$transaction(async (tx) => {
         const requireApproval = await readApprovalSetting(tx, "quotation");
@@ -477,32 +491,60 @@ export class QuotationService {
           stoneCodeIds: new Set(row.lines.flatMap((line) => (line.stoneCodeId ? [line.stoneCodeId] : []))),
         });
         this.headerData(await this.prepareStockLines(tx, stored, row.lines), { customerCode: "", customerName: "", shippingText: "", invoiceText: "" });
+        signal = await recordNotification(tx, {
+          type: "approval.pending", documentType: "quotation", documentId: id, docNo: row.docNo, actorId: actor.id, recipients: approvers, summary: quotationSummary(row),
+        });
       }, WRITE_TX);
     } catch (error) {
       throw mapQuotationError(error, "submitted");
     }
+    emitNotificationSignals([signal]);
     this.logger.log({ event: "quotation.submitted", actorId: actor.id, id });
     return { id, version: expectedVersion + 1, status: "PENDING_APPROVAL" as const, submittedAt: now.toISOString() };
   }
 
   /** Approve menu (ADR-0046/0048): PENDING_APPROVAL → APPROVED (reviewed, read-only); the creator may approve. */
-  approve(actorId: string, id: string, expectedVersion: number) {
-    return this.transition(actorId, id, expectedVersion, ["PENDING_APPROVAL"], "APPROVED", { approvedAt: new Date(), approvedBy: actorId, autoApproved: false }, "approved");
+  async approve(actorId: string, id: string, expectedVersion: number) {
+    let signals: NotificationSignal[];
+    try {
+      // ADR-0049: the creator's "approved" notification commits with the status change.
+      signals = await prisma.$transaction((tx) => this.approveBody(tx, actorId, id, expectedVersion), WRITE_TX);
+    } catch (error) {
+      throw mapQuotationError(error, "approved");
+    }
+    emitNotificationSignals(signals);
+    this.logger.log({ event: "quotation.approved", actorId, id });
+    return { id, status: "APPROVED" as const, version: expectedVersion + 1 };
   }
 
-  /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction (no stock effects). */
+  /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction (no stock effects; records only). */
   async approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
     try {
-      const now = new Date();
-      const result = await tx.quotation.updateMany({
-        where: { id, version: expectedVersion, status: { in: ["PENDING_APPROVAL"] }, deletedAt: null },
-        data: { approvedAt: now, approvedBy: actorId, autoApproved: false, status: "APPROVED", version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
-      });
-      if (result.count === 0) await this.explainMiss(tx, id, expectedVersion);
+      await this.approveBody(tx, actorId, id, expectedVersion);
     } catch (error) {
       throw mapQuotationError(error, "approved");
     }
     return { id, status: "APPROVED" as const, version: expectedVersion + 1 };
+  }
+
+  private async approveBody(tx: Tx, actorId: string, id: string, expectedVersion: number): Promise<NotificationSignal[]> {
+    const now = new Date();
+    const result = await tx.quotation.updateMany({
+      where: { id, version: expectedVersion, status: { in: ["PENDING_APPROVAL"] }, deletedAt: null },
+      data: { approvedAt: now, approvedBy: actorId, autoApproved: false, status: "APPROVED", version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
+    });
+    if (result.count === 0) await this.explainMiss(tx, id, expectedVersion);
+    return this.notifyCreator(tx, id, actorId, "document.approved");
+  }
+
+  /** ADR-0049 D4 (BE-NT-007): approved / rejected / sent back → the quotation's creator (not the actor), with the reason. */
+  private async notifyCreator(tx: Tx, id: string, actorId: string, type: CreatorNotificationType, reason?: string): Promise<NotificationSignal[]> {
+    const row = await tx.quotation.findUnique({ where: { id }, select: QUOTATION_NOTICE_SELECT });
+    if (!row) return [];
+    return [await recordNotification(tx, {
+      type, documentType: "quotation", documentId: id, docNo: row.docNo, actorId, recipients: creatorRecipient(row.createdBy, actorId),
+      summary: { ...quotationSummary(row), ...(reason ? { reason } : {}) },
+    })];
   }
 
   /** ADR-0046 D3: PENDING_APPROVAL → REJECTED (final) with the reason (also kept in `status_reason` for older readers). */
@@ -517,13 +559,19 @@ export class QuotationService {
 
   private async review(actor: DocumentActor, id: string, expectedVersion: number, action: "REJECT" | "REVISE", note: string) {
     const status = action === "REJECT" ? "REJECTED" : "REVISION_REQUESTED";
+    let signals: NotificationSignal[];
     try {
-      const update = reviewUpdate(actor, id, expectedVersion, action, note, new Date());
-      const updated = await prisma.quotation.updateMany({ where: update.where, data: { ...update.data, ...(action === "REJECT" ? { statusReason: note } : {}) } as Prisma.QuotationUpdateManyMutationInput });
-      if (updated.count === 0) explainReviewMiss(quotationFlowErrors, (await prisma.quotation.findUnique({ where: { id }, select: MISS_SELECT })) as MissRow, action);
+      // ADR-0049 D3 (BE-NT-007): the creator's notification commits with the status change.
+      signals = await prisma.$transaction(async (tx) => {
+        const update = reviewUpdate(actor, id, expectedVersion, action, note, new Date());
+        const updated = await tx.quotation.updateMany({ where: update.where, data: { ...update.data, ...(action === "REJECT" ? { statusReason: note } : {}) } as Prisma.QuotationUpdateManyMutationInput });
+        if (updated.count === 0) explainReviewMiss(quotationFlowErrors, (await tx.quotation.findUnique({ where: { id }, select: MISS_SELECT })) as MissRow, action);
+        return this.notifyCreator(tx, id, actor.id, action === "REJECT" ? "document.rejected" : "document.revision_requested", note);
+      }, WRITE_TX);
     } catch (error) {
       throw mapQuotationError(error, action === "REJECT" ? "rejected" : "revision_requested");
     }
+    emitNotificationSignals(signals);
     this.logger.log({ event: `quotation.${action === "REJECT" ? "rejected" : "revision_requested"}`, actorId: actor.id, id, noteLength: note.length });
     return { id, version: expectedVersion + 1, status: status as "REJECTED" | "REVISION_REQUESTED" };
   }

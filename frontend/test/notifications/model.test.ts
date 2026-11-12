@@ -8,6 +8,8 @@ import {
   groupByDay,
   groupDigits,
   listHref,
+  openHref,
+  reasonText,
   timeLabel,
   titleParts,
   typeLabel,
@@ -29,7 +31,20 @@ describe("notification view model", () => {
     expect(groupDigits("-1234567")).toBe("-1,234,567");
     expect(groupDigits("abc")).toBe("abc");
     expect(bodyText({ summary: { partyName: "Siam Gems Trading Co., Ltd.", amount: "172020.00", currency: "THB" } })).toBe("Siam Gems Trading Co., Ltd. · 172,020.00 THB");
-    expect(bodyText({ summary: { reason: "Price too high" } })).toBe("Price too high");
+    // BE-NT-007: the reason is not part of the body; it has its own labelled line.
+    expect(bodyText({ summary: { partyName: "Siam Gems", reason: "Price too high" } })).toBe("Siam Gems");
+    expect(reasonText({ type: "document.rejected", summary: { reason: " Price too high " } })).toBe("Reason: Price too high");
+    expect(reasonText({ type: "document.revision_requested", summary: { reason: "Only 1 pcs" } })).toBe("Note: Only 1 pcs");
+    expect(reasonText({ type: "document.approved", summary: { reason: "x" } })).toBeNull();
+    expect(reasonText({ type: "document.rejected", summary: { reason: "  " } })).toBeNull();
+    expect(reasonText({ type: "document.rejected", summary: {} })).toBeNull();
+    expect(typeLabel("quotation")).toBe("Quotation");
+    expect(documentHref({ documentType: "quotation", documentId: "q-1" })).toBe("/pre-sale/quotation/q-1");
+    // Owner 2026-11-12: a pending approval opens Approve › {type}; the other events open the document.
+    expect(openHref({ type: "approval.pending", documentType: "memo-receive", documentId: "m-1" })).toBe("/approve/memo-receive");
+    expect(openHref({ type: "approval.pending", documentType: "quotation", documentId: "q-1" })).toBe("/approve/quotation");
+    expect(openHref({ type: "document.approved", documentType: "memo-receive", documentId: "m-1" })).toBe("/memo/memo-receive/m-1");
+    expect(openHref({ type: "approval.pending", documentType: "unknown", documentId: "x" })).toBeNull();
     expect(bodyText({ summary: {} })).toBe("");
   });
 

@@ -1,9 +1,10 @@
 "use client";
 
-import { Menu, Minimize, Scan } from "lucide-react";
+import { Minimize, Scan } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { NotificationsBell } from "@/features/notifications/components/NotificationsBell";
 import { AccountMenu, type AccountMenuUser } from "./account-menu";
+import { LanguageMenu } from "./language-menu";
 
 export const topbarIconButton =
   "relative flex size-8 shrink-0 items-center justify-center rounded-gms-md text-gms-text transition-colors hover:bg-gms-nav-active focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-gms-primary";
@@ -95,35 +96,21 @@ export function Topbar({
   tabs,
   user,
   onSignOut,
-  menuButtonRef,
-  isNavigationOpen,
-  onOpenNavigation,
 }: Readonly<{
   tabs: React.ReactNode;
   user: AccountMenuUser;
   onSignOut: () => void | Promise<void>;
-  menuButtonRef: React.RefObject<HTMLButtonElement | null>;
-  isNavigationOpen: boolean;
-  onOpenNavigation: () => void;
 }>) {
   return (
-    <header className="flex h-gms-topbar shrink-0 items-stretch gap-3 border-b border-gms-border-header bg-gms-page pl-4 pr-4 md:pl-2 md:pr-6">
-      <button
-        ref={menuButtonRef}
-        type="button"
-        onClick={onOpenNavigation}
-        aria-label="Open main menu"
-        aria-expanded={isNavigationOpen}
-        aria-controls="mobile-navigation"
-        className={`${topbarIconButton} -ml-1.5 self-center lg:hidden`}
-      >
-        <Menu aria-hidden size={20} strokeWidth={1.5} />
-      </button>
+    // Owner 2026-11-12: no hamburger; on every width the sidebar's own expand / collapse toggle opens the menu.
+    <header className="flex h-gms-topbar shrink-0 items-stretch gap-3 border-b border-gms-border-header bg-gms-page pl-2 pr-4 md:pr-6">
       {tabs}
       <div className="flex shrink-0 items-center gap-2 border-l border-gms-border-header pl-3">
         <HeaderClock />
-        <FullscreenButton />
+        {/* Owner design 2026-11-12: language, notifications, full screen, account. */}
+        <LanguageMenu topbarIconButton={topbarIconButton} />
         <NotificationsBell />
+        <FullscreenButton />
         <AccountMenu user={user} onSignOut={onSignOut} />
       </div>
     </header>
