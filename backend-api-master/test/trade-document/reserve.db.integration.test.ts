@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { HttpException } from "@nestjs/common";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { sendAndApprove, setApproval, submitted } from "../partner-shared/approval";
 
 /**
  * IT-RS-01…04 (reserve SA rev 1 / ADR-0036, owner 2026-11-02) against real PostgreSQL:
@@ -92,7 +93,7 @@ async function approvedStock(vendor: Vendor, lines: ReturnType<typeof receiveLin
   const saved = await receive.create(ACTOR, {
     docDate: "2026-10-29", dueDate: "2026-11-29", currency: "THB", exchangeRate: null, ref: "", documentNote: "", ...money, lines, vendorId: vendor.id, addressId: vendor.addressId,
   });
-  await receive.approve(ACTOR, saved.id, saved.version);
+  await sendAndApprove(receive, ACTOR, saved.id, saved.version);
   return prisma.memoStock.findMany({ where: { memoReceiveId: saved.id }, orderBy: { stockId: "asc" } });
 }
 
@@ -130,6 +131,7 @@ describe.runIf(canRun)("IT-RS reserve From Stock on PostgreSQL", () => {
       addresses: { create: [{ ...address, id: customer.shipping, type: "SHIPPING" }, { ...address, id: customer.invoice, type: "INVOICE" }] },
     } });
     customerCreated = true;
+    for (const type of ["memo-receive", "memo-out", "reserve"] as const) await setApproval(prisma, type, true);
   });
 
   afterAll(async () => {
@@ -154,7 +156,7 @@ describe.runIf(canRun)("IT-RS reserve From Stock on PostgreSQL", () => {
     const saved = await reserve.create(ACTOR, outInput([stockLine(item.id, 4, "2")]));
     expect(saved).toMatchObject({ docNo: expect.any(String), version: 1 });
     const detail = await reserve.get(saved.id);
-    expect(detail).toMatchObject({ status: "PENDING_APPROVAL", approvedAt: null, customerId: customer.id });
+    expect(detail).toMatchObject({ status: "DRAFT", approvedAt: null, customerId: customer.id });
     expect(detail.lines[0]).toMatchObject({
       source: "STOCK", memoStockId: item.id, stockId: item.stockId, stoneCode: "", stone: "Ruby", lot: "LOT-A", location: "Memo",
       pcs: 4, weightCt: "2.000", unitPrice: "2500.00", amount: "5000.00", stockPendingPcs: 10, stockPendingWeightCt: "5.000",
@@ -163,7 +165,7 @@ describe.runIf(canRun)("IT-RS reserve From Stock on PostgreSQL", () => {
     // Saving holds nothing, so From Stock still offers the item.
     expect((await stock.list({ limit: 50 })).items.map((row) => row.id)).toContain(item.id);
     expect((await reserve.nextNumber("2026-11-02")).docNo).toEqual(expect.any(String));
-    expect((await reserve.list({ partyId: customer.id, status: "PENDING_APPROVAL", limit: 50, deleted: false })).items.map((row) => row.id)).toContain(saved.id);
+    expect((await reserve.list({ partyId: customer.id, status: "DRAFT", limit: 50, deleted: false })).items.map((row) => row.id)).toContain(saved.id);
   });
 
   it("IT-RS-02 save rejects a missing item and more than pending with RESERVE_* / field errors", async () => {
@@ -178,15 +180,15 @@ describe.runIf(canRun)("IT-RS reserve From Stock on PostgreSQL", () => {
 
   it("IT-RS-03 approve moves pending into Reserve; the reserve is then read-only; a pending reserve can be deleted", async () => {
     const [item] = await approvedStock(vendorA, [receiveLine()]);
-    const saved = await reserve.create(ACTOR, outInput([stockLine(item.id, 6, "3")]));
-    expect(await failure(reserve.approve(ACTOR, saved.id, 2))).toMatchObject({ status: 409, code: "RESERVE_CHANGED" });
-    await expect(reserve.approve(ACTOR, saved.id, 1)).resolves.toEqual({ id: saved.id, version: 2, status: "APPROVED", stockLineCount: 1 });
+    const saved = await submitted(reserve, ACTOR, await reserve.create(ACTOR, outInput([stockLine(item.id, 6, "3")])));
+    expect(await failure(reserve.approve(ACTOR, saved.id, 3))).toMatchObject({ status: 409, code: "RESERVE_CHANGED" });
+    await expect(reserve.approve(ACTOR, saved.id, 2)).resolves.toEqual({ id: saved.id, version: 3, status: "APPROVED", stockLineCount: 1 });
     expect(await bucketsOf(item.id)).toEqual({ pending: [4, "2.000"], reserved: [6, "3.000"] });
     expect(await reserve.get(saved.id)).toMatchObject({ status: "APPROVED", approvedBy: ACTOR, approvedAt: expect.any(String) });
-    expect(await failure(reserve.approve(ACTOR, saved.id, 2))).toMatchObject({ status: 409, code: "RESERVE_STATUS_INVALID" });
-    expect(await failure(reserve.update(ACTOR, saved.id, 2, outInput([stockLine(item.id, 1, "0.5")])))).toMatchObject({ status: 409, code: "RESERVE_STATUS_INVALID" });
-    expect(await failure(reserve.delete(ACTOR, saved.id, 2))).toMatchObject({ status: 409, code: "RESERVE_STATUS_INVALID" });
-    // A pending reserve can still be deleted.
+    expect(await failure(reserve.approve(ACTOR, saved.id, 3))).toMatchObject({ status: 409, code: "RESERVE_STATUS_INVALID" });
+    expect(await failure(reserve.update(ACTOR, saved.id, 3, outInput([stockLine(item.id, 1, "0.5")])))).toMatchObject({ status: 409, code: "RESERVE_STATUS_INVALID" });
+    expect(await failure(reserve.delete(ACTOR, saved.id, 3))).toMatchObject({ status: 409, code: "RESERVE_STATUS_INVALID" });
+    // A draft reserve can still be deleted.
     const draft = await reserve.create(ACTOR, outInput([stockLine(item.id, 1, "0.5")]));
     await expect(reserve.delete(ACTOR, draft.id, 1)).resolves.toEqual({ ok: true, version: 2 });
     expect(await bucketsOf(item.id)).toEqual({ pending: [4, "2.000"], reserved: [6, "3.000"] });
@@ -194,21 +196,21 @@ describe.runIf(canRun)("IT-RS reserve From Stock on PostgreSQL", () => {
 
   it("IT-RS-04 Memo Out and Reserve share the bucket and the lock: the second document over the rest is short; parallel approvals never exceed pending", async () => {
     const [item] = await approvedStock(vendorA, [receiveLine({ pcs: 3, weightCt: "1.5" })]);
-    const out = await memoOut.create(ACTOR, outInput([stockLine(item.id, 2, "1")]));
-    const held = await reserve.create(ACTOR, outInput([stockLine(item.id, 2, "1")]));
-    await memoOut.approve(ACTOR, out.id, 1);
-    expect(await failure(reserve.approve(ACTOR, held.id, 1)))
+    const out = await submitted(memoOut, ACTOR, await memoOut.create(ACTOR, outInput([stockLine(item.id, 2, "1")])));
+    const held = await submitted(reserve, ACTOR, await reserve.create(ACTOR, outInput([stockLine(item.id, 2, "1")])));
+    await memoOut.approve(ACTOR, out.id, 2);
+    expect(await failure(reserve.approve(ACTOR, held.id, 2)))
       .toMatchObject({ status: 409, code: "RESERVE_PENDING_SHORT", fieldErrors: [{ path: "lines.0.pcs", code: "exceeds_pending" }, { path: "lines.0.weightCt", code: "exceeds_pending" }] });
     expect(await bucketsOf(item.id)).toEqual({ pending: [1, "0.500"], reserved: [2, "1.000"] });
-    expect(await reserve.get(held.id)).toMatchObject({ status: "PENDING_APPROVAL", version: 1 });
+    expect(await reserve.get(held.id)).toMatchObject({ status: "PENDING_APPROVAL", version: 2 });
 
     const [other] = await approvedStock(vendorA, [receiveLine({ pcs: 2, weightCt: "1" })]);
     const docs = await Promise.all([
-      memoOut.create(ACTOR, outInput([stockLine(other.id, 1, "0.6")])),
-      reserve.create(ACTOR, outInput([stockLine(other.id, 1, "0.6")])),
-      reserve.create(ACTOR, outInput([stockLine(other.id, 1, "0.6")])),
+      memoOut.create(ACTOR, outInput([stockLine(other.id, 1, "0.6")])).then((saved) => submitted(memoOut, ACTOR, saved)),
+      reserve.create(ACTOR, outInput([stockLine(other.id, 1, "0.6")])).then((saved) => submitted(reserve, ACTOR, saved)),
+      reserve.create(ACTOR, outInput([stockLine(other.id, 1, "0.6")])).then((saved) => submitted(reserve, ACTOR, saved)),
     ]);
-    const results = await Promise.allSettled([memoOut.approve(ACTOR, docs[0].id, 1), reserve.approve(ACTOR, docs[1].id, 1), reserve.approve(ACTOR, docs[2].id, 1)]);
+    const results = await Promise.allSettled([memoOut.approve(ACTOR, docs[0].id, 2), reserve.approve(ACTOR, docs[1].id, 2), reserve.approve(ACTOR, docs[2].id, 2)]);
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(await bucketsOf(other.id)).toEqual({ pending: [1, "0.400"], reserved: [1, "0.600"] });
   });

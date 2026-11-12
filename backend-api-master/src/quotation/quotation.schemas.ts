@@ -4,7 +4,8 @@ import { z } from "zod";
  * quotation api-contract.md (SA quotation rev 1, SA-QT-06/07/08): strict inputs; the server re-checks
  * every bound the browser checks. Money/weight travel as decimal strings, never JS numbers.
  */
-export const QUOTATION_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "CANCELLED"] as const;
+/** ADR-0050: Quotation joins the approval statuses (REVISION_REQUESTED added) and keeps CANCELLED. */
+export const QUOTATION_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "REVISION_REQUESTED", "CANCELLED"] as const;
 export type QuotationStatus = (typeof QUOTATION_STATUSES)[number];
 export const CHARGE_TYPES = ["SHIPPING", "HANDLING", "INSURANCE", "CERTIFICATE"] as const;
 export const LINES_MAX = 200;

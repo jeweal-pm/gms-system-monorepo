@@ -1,9 +1,12 @@
 import { HttpException } from "@nestjs/common";
+import type { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MasterContext } from "../../src/master/authorization";
 import { createMasterRouter } from "../../src/master/router";
 import type { DocumentSetupService } from "../../src/document-setup/document-setup.service";
 import type { DecimalSetupService } from "../../src/decimal-setup/decimal-setup.service";
+import type { ApprovalSettingService } from "../../src/approval-setting/approval-setting.service";
+import type { ApprovalService } from "../../src/approval/approval.service";
 import type { CustomerService } from "../../src/customer/customer.service";
 import type { VendorService } from "../../src/vendor/vendor.service";
 import type { CompanyProfileService } from "../../src/company-profile/company-profile.service";
@@ -34,23 +37,25 @@ const companyProfile = { get: vi.fn(), options: vi.fn(), save: vi.fn(), removeLo
 const stoneMaster = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
 const documentSetup = { list: vi.fn(), get: vi.fn(), save: vi.fn() };
 const decimalSetup = { get: vi.fn(), save: vi.fn() };
+const approvalSetting = { list: vi.fn(), update: vi.fn(), readForSave: vi.fn() };
 const currency = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
 const quotation = {
   list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(),
-  submit: vi.fn(), approve: vi.fn(), reject: vi.fn(), cancel: vi.fn(), delete: vi.fn(), restore: vi.fn(),
+  submit: vi.fn(), approve: vi.fn(), reject: vi.fn(), requestRevision: vi.fn(), cancel: vi.fn(), delete: vi.fn(), restore: vi.fn(),
 };
-const memoOut = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
-const memoOutReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), outstanding: vi.fn(), approve: vi.fn() };
-const memoReceive = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
+const memoOut = { submit: vi.fn(), reject: vi.fn(), requestRevision: vi.fn(), list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
+const memoOutReturn = { submit: vi.fn(), reject: vi.fn(), requestRevision: vi.fn(), list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), outstanding: vi.fn(), approve: vi.fn() };
+const memoReceive = { submit: vi.fn(), reject: vi.fn(), requestRevision: vi.fn(), list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
 const memoStock = { list: vi.fn() };
-const memoReturn = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
+const memoReturn = { submit: vi.fn(), reject: vi.fn(), requestRevision: vi.fn(), list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
 const memoOutstanding = { vendorSummary: vi.fn(), vendorList: vi.fn(), vendorItems: vi.fn(), vendorOptions: vi.fn(), customerSummary: vi.fn(), customerList: vi.fn(), customerItems: vi.fn(), customerOptions: vi.fn(), purchaseSummary: vi.fn(), purchaseList: vi.fn(), purchaseItems: vi.fn(), purchaseOptions: vi.fn() };
-const reserve = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
-const purchaseOrder = { list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
+const reserve = { submit: vi.fn(), reject: vi.fn(), requestRevision: vi.fn(), list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
+const purchaseOrder = { submit: vi.fn(), reject: vi.fn(), requestRevision: vi.fn(), list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
 const purchase = {
   list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), memoStock: vi.fn(), purchaseOrderLines: vi.fn(),
-  create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn(),
+  create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn(), submit: vi.fn(), reject: vi.fn(), requestRevision: vi.fn(),
 };
+const approval = { summary: vi.fn(), pending: vi.fn() };
 const router = createMasterRouter({
   customer: customer as unknown as CustomerService,
   vendor: vendor as unknown as VendorService,
@@ -58,6 +63,7 @@ const router = createMasterRouter({
   stoneMaster: stoneMaster as unknown as StoneMasterService,
   documentSetup: documentSetup as unknown as DocumentSetupService,
   decimalSetup: decimalSetup as unknown as DecimalSetupService,
+  approvalSetting: approvalSetting as unknown as ApprovalSettingService,
   currency: currency as unknown as CurrencyService,
   quotation: quotation as unknown as QuotationService,
   memoOut: memoOut as unknown as MemoOutService,
@@ -69,6 +75,7 @@ const router = createMasterRouter({
   reserve: reserve as unknown as ReserveService,
   purchaseOrder: purchaseOrder as unknown as PurchaseOrderService,
   purchase: purchase as unknown as PurchaseService,
+  approval: approval as unknown as ApprovalService,
 });
 
 function context(grants: string[], overrides: Partial<MasterContext> = {}): MasterContext {
@@ -79,10 +86,122 @@ function context(grants: string[], overrides: Partial<MasterContext> = {}): Mast
 }
 
 beforeEach(() => {
-  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(decimalSetup), ...Object.values(currency), ...Object.values(quotation), ...Object.values(memoOut), ...Object.values(memoOutReturn), ...Object.values(memoReceive), ...Object.values(memoStock), ...Object.values(memoReturn), ...Object.values(memoOutstanding), ...Object.values(reserve), ...Object.values(purchaseOrder), ...Object.values(purchase)]) fn.mockReset().mockResolvedValue({ ok: true });
+  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(decimalSetup), ...Object.values(approvalSetting), ...Object.values(currency), ...Object.values(quotation), ...Object.values(memoOut), ...Object.values(memoOutReturn), ...Object.values(memoReceive), ...Object.values(memoStock), ...Object.values(memoReturn), ...Object.values(memoOutstanding), ...Object.values(reserve), ...Object.values(purchaseOrder), ...Object.values(purchase), ...Object.values(approval)]) fn.mockReset().mockResolvedValue({ ok: true });
 });
 
 describe("staged master domain tRPC boundary", () => {
+  /**
+   * GP-AP-01 / GP-AP-04 / UT-AS-B03 (approval-setup authorization.md, ADR-0046 as amended by ADR-0050): on all eight
+   * document routers, `submit` needs ADD or EDIT + CSRF; `approve` / `reject` / `requestRevision` need APPROVE
+   * (`canApprove`) + CSRF; reason / note trimmed 1–500 with field errors; the actor id and name come from the context.
+   */
+  it.each([
+    ["quotation", "quotation", quotation], ["reserve", "reserve", reserve], ["memoReceive", "memo-receive", memoReceive], ["memoReturn", "memo-return", memoReturn],
+    ["memoOut", "memo-out", memoOut], ["memoOutReturn", "memo-out-return", memoOutReturn], ["purchaseOrder", "purchase-order", purchaseOrder], ["purchase", "purchase", purchase],
+  ] as const)("GP-AS-01 %s approval procedures: grants, CSRF, reason rules, actor from context", async (name, menu, service) => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    const versioned = { id, expectedVersion: 2 };
+    type Procs = Record<string, (input: unknown) => Promise<unknown>>;
+    const as = (actions: string[], overrides: Partial<MasterContext> = {}) => {
+      const ctx = context(actions.map((action) => `${menu}:${action}`), overrides);
+      ctx.principal = ctx.principal ? { ...ctx.principal, displayName: "Mint" } : null;
+      return (router.createCaller(ctx) as unknown as Record<string, Procs>)[name];
+    };
+    for (const action of ["ADD", "EDIT"]) await as([action]).submit(versioned);
+    expect(service.submit).toHaveBeenCalledWith({ id: "user-1", name: "Mint" }, id, 2);
+    await expect(as(["VIEW", "DELETE", "APPROVE"]).submit(versioned)).rejects.toMatchObject({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+    await expect(as(["ADD"], { csrfVerified: false }).submit(versioned)).rejects.toMatchObject({ code: "FORBIDDEN", message: "CSRF_INVALID" });
+    await expect(as(["ADD"]).submit({ ...versioned, actorId: "x" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    await as(["APPROVE"]).approve(versioned);
+    expect(service.approve).toHaveBeenCalledWith("user-1", id, 2);
+    await as(["APPROVE"]).reject({ ...versioned, reason: "  Wrong price  " });
+    expect(service.reject).toHaveBeenCalledWith({ id: "user-1", name: "Mint" }, id, 2, "Wrong price");
+    await as(["APPROVE"]).requestRevision({ ...versioned, note: "Fix the weight" });
+    expect(service.requestRevision).toHaveBeenCalledWith({ id: "user-1", name: "Mint" }, id, 2, "Fix the weight");
+    for (const proc of ["approve", "reject", "requestRevision"]) {
+      const input = proc === "reject" ? { ...versioned, reason: "x" } : proc === "requestRevision" ? { ...versioned, note: "x" } : versioned;
+      await expect(as(["VIEW", "ADD", "EDIT", "DELETE"])[proc](input)).rejects.toMatchObject({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+      await expect(as(["APPROVE"], { csrfVerified: false })[proc](input)).rejects.toMatchObject({ code: "FORBIDDEN", message: "CSRF_INVALID" });
+    }
+    // UT-AS-B05: a reason is required for both (blank after trim / over 500 → VALIDATION_ERROR on the field).
+    await expect(as(["APPROVE"]).reject({ ...versioned, reason: "   " })).rejects.toMatchObject({ code: "BAD_REQUEST", message: "VALIDATION_ERROR", cause: expect.anything() });
+    await expect(as(["APPROVE"]).requestRevision({ ...versioned, note: "x".repeat(501) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(as(["APPROVE"]).requestRevision(versioned)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(service.reject).toHaveBeenCalledTimes(1);
+    expect(service.requestRevision).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * G11 (approval-setup architecture clarification, authorization.md): `<doc>.get` accepts `<menu>:VIEW`, or
+   * `canApprove(type)` for a live PENDING_APPROVAL document; an approver without VIEW is refused any other status.
+   */
+  it.each([
+    ["quotation", "quotation", quotation], ["reserve", "reserve", reserve], ["memoReceive", "memo-receive", memoReceive], ["memoReturn", "memo-return", memoReturn],
+    ["memoOut", "memo-out", memoOut], ["memoOutReturn", "memo-out-return", memoOutReturn], ["purchaseOrder", "purchase-order", purchaseOrder], ["purchase", "purchase", purchase],
+  ] as const)("GP-AS-G11 %s.get: VIEW, or canApprove for a pending document only", async (name, menu, service) => {
+    const id = "11111111-1111-4111-8111-111111111111";
+    type Procs = Record<string, (input: unknown) => Promise<unknown>>;
+    const as = (actions: string[], overrides: Partial<MasterContext> = {}) => (router.createCaller(context(actions.map((action) => `${menu}:${action}`), overrides)) as unknown as Record<string, Procs>)[name];
+    const pending = { id, status: "PENDING_APPROVAL", deletedAt: null };
+    service.get.mockResolvedValue(pending);
+    await expect(as(["APPROVE"]).get({ id })).resolves.toEqual(pending);
+    expect(service.get).toHaveBeenCalledWith(id, expect.objectContaining({ userId: "user-1", grants: [`${menu}:APPROVE`] }));
+    for (const status of ["DRAFT", "APPROVED", "REJECTED", "REVISION_REQUESTED"]) {
+      service.get.mockResolvedValue({ id, status, deletedAt: null });
+      await expect(as(["APPROVE"]).get({ id })).rejects.toMatchObject({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+      await expect(as(["VIEW"]).get({ id })).resolves.toMatchObject({ status });
+    }
+    service.get.mockResolvedValue({ ...pending, deletedAt: "2026-11-10T00:00:00.000Z" });
+    await expect(as(["APPROVE"]).get({ id })).rejects.toMatchObject({ message: "PERMISSION_DENIED" });
+    service.get.mockClear();
+    // Neither VIEW nor APPROVE → refused before the read; no live session → UNAUTHORIZED.
+    await expect(as(["ADD", "EDIT", "DELETE"]).get({ id })).rejects.toMatchObject({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+    await expect(as(["APPROVE"], { principal: null }).get({ id })).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(as(["VIEW"], { license: "DENIED" }).get({ id })).rejects.toMatchObject({ code: "FORBIDDEN", message: "LICENSE_REQUIRED" });
+    expect(service.get).not.toHaveBeenCalled();
+  });
+
+  /**
+   * GP-AP-02 / GP-AP-03 (amended by approval-setup authorization.md: `canApprove` replaces APPROVE + VIEW):
+   * `approval.summary` needs only a live session (no CSRF, strict input) and passes the principal; `approval.pending`
+   * needs `canApprove(type)` before validation and before the service; unknown types are VALIDATION_ERROR.
+   */
+  it("GP-AP-02 / GP-AP-03 approval.summary and approval.pending", async () => {
+    const caller = (grants: string[], overrides: Partial<MasterContext> = {}) => router.createCaller(context(grants, overrides));
+    approval.summary.mockResolvedValue({ items: [], countCap: 100, types: [] });
+    await expect(caller([]).approval.summary()).resolves.toEqual({ items: [], countCap: 100, types: [] });
+    await caller(["reserve:APPROVE"], { csrfVerified: false }).approval.summary({});
+    expect(approval.summary).toHaveBeenLastCalledWith(expect.objectContaining({ userId: "user-1", grants: ["reserve:APPROVE"] }));
+    await expect(caller([]).approval.summary({ types: ["reserve"] } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller([], { principal: null }).approval.summary()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(caller([], { authorization: "UNAVAILABLE" }).approval.summary()).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE", message: "AUTHORIZATION_UNAVAILABLE" });
+    await expect(caller([], { license: "DENIED" }).approval.summary()).rejects.toMatchObject({ code: "FORBIDDEN", message: "LICENSE_REQUIRED" });
+    expect(approval.summary).toHaveBeenCalledTimes(2);
+
+    approval.pending.mockResolvedValue({ items: [], nextCursor: null });
+    // canApprove only (VIEW not required); defaults applied.
+    await caller(["reserve:APPROVE"]).approval.pending({ type: "reserve" });
+    expect(approval.pending).toHaveBeenLastCalledWith({ type: "reserve", sort: "submittedAt", dir: "asc", limit: 50 });
+    await caller([], { principal: { userId: "admin", sessionId: "s", isSuperAdmin: true, grants: [] } }).approval.pending({ type: "quotation", q: " RS ", sort: "value", dir: "desc", limit: 10 });
+    expect(approval.pending).toHaveBeenLastCalledWith({ type: "quotation", q: "RS", sort: "value", dir: "desc", limit: 10 });
+    approval.pending.mockClear();
+    // VIEW only, another type's APPROVE, nothing → refused before validation and the service.
+    await expect(caller(["reserve:VIEW"]).approval.pending({ type: "reserve" })).rejects.toMatchObject({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+    await expect(caller(["purchase:APPROVE"]).approval.pending({ type: "reserve" })).rejects.toMatchObject({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+    await expect(caller([]).approval.pending({ type: "load-to-stock" } as never)).rejects.toMatchObject({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+    await expect(caller(["reserve:VIEW"]).approval.pending({ type: "reserve", limit: 0 })).rejects.toMatchObject({ message: "PERMISSION_DENIED" });
+    // Validation after the grant: unknown type, bounds, strict keys.
+    for (const input of [{ type: "load-to-stock" }, { type: "reserve", limit: 51 }, { type: "reserve", q: "x".repeat(101) }, { type: "reserve", sort: "createdAt" },
+      { type: "reserve", dir: "up" }, { type: "reserve", cursor: "x".repeat(301) }, { type: "reserve", actorId: "x" }]) {
+      await expect(caller(["reserve:APPROVE"]).approval.pending(input as never)).rejects.toMatchObject({ code: "BAD_REQUEST", message: "VALIDATION_ERROR" });
+    }
+    expect(approval.pending).not.toHaveBeenCalled();
+    // Service domain errors keep their code (type OFF → 409).
+    approval.pending.mockRejectedValueOnce(new HttpException({ error: { code: "APPROVAL_TYPE_OFF", message: "off" } }, 409));
+    await expect(caller(["reserve:APPROVE"]).approval.pending({ type: "reserve" })).rejects.toMatchObject({ code: "CONFLICT", message: "APPROVAL_TYPE_OFF" });
+  });
+
   it("GP-MT-01/02 denies absent identity, stale authorization, unavailable/denied license before service calls", async () => {
     await expect(router.createCaller(context(["customer:VIEW"], { principal: null })).customer.list({})).rejects.toMatchObject({ code: "UNAUTHORIZED" });
     await expect(router.createCaller(context(["customer:VIEW"], { authorization: "UNAVAILABLE" })).customer.list({})).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
@@ -241,6 +360,57 @@ describe("staged master domain tRPC boundary", () => {
     await expect(editor.decimalSetup.get()).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE", message: "PARTNER_UNAVAILABLE" });
   });
 
+  it("IT-AS-B11 / UT-AS-B07 approvalSetting: list for any live licensed session (counts only with approval-setup:VIEW), update needs EDIT + CSRF, strict input", async () => {
+    // list: no grant needed; counts only with VIEW (or Super Admin). No CSRF on a query.
+    await router.createCaller(context([], { csrfVerified: false })).approvalSetting.list();
+    expect(approvalSetting.list).toHaveBeenLastCalledWith({ withCounts: false });
+    await router.createCaller(context(["approval-setup:VIEW"])).approvalSetting.list({});
+    expect(approvalSetting.list).toHaveBeenLastCalledWith({ withCounts: true });
+    await router.createCaller(context(["approval-setup:EDIT", "reserve:APPROVE"])).approvalSetting.list();
+    expect(approvalSetting.list).toHaveBeenLastCalledWith({ withCounts: false });
+    const admin = context([]);
+    await router.createCaller({ ...admin, principal: { ...admin.principal!, isSuperAdmin: true } }).approvalSetting.list();
+    expect(approvalSetting.list).toHaveBeenLastCalledWith({ withCounts: true });
+    await expect(router.createCaller(context([], { principal: null })).approvalSetting.list()).rejects.toMatchObject({ code: "UNAUTHORIZED", message: "UNAUTHENTICATED" });
+    await expect(router.createCaller(context([], { license: "DENIED" })).approvalSetting.list()).rejects.toMatchObject({ code: "FORBIDDEN", message: "LICENSE_REQUIRED" });
+    await expect(router.createCaller(context([], { authorization: "UNAVAILABLE" })).approvalSetting.list()).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
+    await expect(router.createCaller(context([])).approvalSetting.list({ withCounts: true } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(approvalSetting.list).toHaveBeenCalledTimes(4);
+
+    // update: exact approval-setup:EDIT (VIEW or a document APPROVE grant is not enough), CSRF, actor from the context.
+    const update = { type: "reserve", requireApproval: false, expectedVersion: 3 } as const;
+    await expect(router.createCaller(context(["approval-setup:VIEW", "reserve:APPROVE", "reserve:EDIT"])).approvalSetting.update(update)).rejects.toMatchObject({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+    await expect(router.createCaller(context(["approval-setup:EDIT"], { csrfVerified: false })).approvalSetting.update(update)).rejects.toMatchObject({ code: "FORBIDDEN", message: "CSRF_INVALID" });
+    expect(approvalSetting.update).not.toHaveBeenCalled();
+    const editorCtx = context(["approval-setup:EDIT"]);
+    const editor = router.createCaller({ ...editorCtx, principal: { ...editorCtx.principal!, displayName: "Mint" } });
+    await editor.approvalSetting.update(update);
+    expect(approvalSetting.update).toHaveBeenCalledWith({ userId: "user-1", userName: "Mint" }, update);
+    await router.createCaller(context(["approval-setup:EDIT"])).approvalSetting.update({ ...update, type: "load-to-stock", requireApproval: true });
+    expect(approvalSetting.update).toHaveBeenLastCalledWith({ userId: "user-1", userName: null }, { type: "load-to-stock", requireApproval: true, expectedVersion: 3 });
+    approvalSetting.update.mockClear();
+    // Validation after the grant check, with field errors; strict (an actor in the input is refused).
+    const invalid = await editor.approvalSetting.update({ ...update, type: "sale" } as never).then(() => null, (error: unknown) => error as { code: string; message: string; cause: HttpException });
+    expect(invalid).toMatchObject({ code: "BAD_REQUEST", message: "VALIDATION_ERROR" });
+    expect(invalid?.cause.getResponse()).toMatchObject({ error: { code: "VALIDATION_ERROR", fieldErrors: [expect.objectContaining({ path: "type" })] } });
+    await expect(editor.approvalSetting.update({ ...update, expectedVersion: 0 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(editor.approvalSetting.update({ ...update, requireApproval: "false" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(editor.approvalSetting.update({ ...update, userId: "someone-else" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(approvalSetting.update).not.toHaveBeenCalled();
+
+    // Domain errors keep their code; HAS_WAITING carries its counts to the client in data.details.
+    const waiting = new HttpException({ error: { code: "APPROVAL_SETTING_HAS_WAITING", message: "x", details: { pending: 3, revision: 1 } } }, 409);
+    approvalSetting.update.mockRejectedValueOnce(waiting);
+    const refused = await editor.approvalSetting.update(update).then(() => null, (error: unknown) => error as TRPCError);
+    expect(refused).toMatchObject({ code: "CONFLICT", message: "APPROVAL_SETTING_HAS_WAITING" });
+    const formatter = (router._def._config as unknown as { errorFormatter: (opts: { shape: { data: Record<string, unknown> }; error: TRPCError }) => { data: Record<string, unknown> } }).errorFormatter;
+    expect(formatter({ shape: { data: { code: "CONFLICT", httpStatus: 409 } }, error: refused! }).data).toMatchObject({ domainCode: "APPROVAL_SETTING_HAS_WAITING", details: { pending: 3, revision: 1 } });
+    approvalSetting.update.mockRejectedValueOnce(new HttpException({ error: { code: "APPROVAL_SETTING_CHANGED" } }, 409));
+    const changed = await editor.approvalSetting.update(update).then(() => null, (error: unknown) => error as TRPCError);
+    expect(changed).toMatchObject({ code: "CONFLICT", message: "APPROVAL_SETTING_CHANGED" });
+    expect(formatter({ shape: { data: {} }, error: changed! }).data.details).toBeUndefined();
+  });
+
   it("GP-MT-CUR currency: exact grants, CSRF on writes, no code on update, options also for quotation:VIEW", async () => {
     const body = { code: " usd ", name: "US Dollar", description: "Sales to the US", active: true, sellingRate: "33.25", buyingRate: "32.9" };
     const caller = router.createCaller(context(["currency:VIEW", "currency:ADD", "currency:EDIT", "currency:DELETE"]));
@@ -287,9 +457,9 @@ describe("staged master domain tRPC boundary", () => {
     await as(["VIEW"]).quotation.nextNumber({ docDate: "2026-10-26" });
     await as(["VIEW"]).quotation.options({});
     await as(["ADD"]).quotation.create(body);
-    expect(quotation.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ currency: "THB" }));
+    expect(quotation.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ currency: "THB" }), expect.objectContaining({ userId: "user-1" }));
     await as(["EDIT"]).quotation.update({ ...body, ...versioned });
-    expect(quotation.update).toHaveBeenCalledWith("user-1", id, 1, expect.not.objectContaining({ id }));
+    expect(quotation.update).toHaveBeenCalledWith("user-1", id, 1, expect.not.objectContaining({ id }), expect.objectContaining({ userId: "user-1" }));
     await as(["EDIT"]).quotation.submit(versioned);
     await as(["APPROVE"]).quotation.approve(versioned);
     await as(["APPROVE"]).quotation.reject({ ...versioned, reason: "No" });
@@ -298,7 +468,9 @@ describe("staged master domain tRPC boundary", () => {
     expect(quotation.delete).toHaveBeenCalledWith("user-1", id, 1);
 
     await expect(as(["ADD"]).quotation.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(as(["VIEW", "ADD"]).quotation.submit(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    // ADR-0050 Q-AS-25: Send to approve with ADD or EDIT; VIEW alone is refused.
+    await as(["VIEW", "ADD"]).quotation.submit(versioned);
+    await expect(as(["VIEW"]).quotation.submit(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(as(["EDIT"]).quotation.approve(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(as(["EDIT"]).quotation.cancel({ ...versioned, reason: "x" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(as(["EDIT"]).quotation.delete(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -327,7 +499,7 @@ describe("staged master domain tRPC boundary", () => {
     await outCaller.memoOut.delete({ id: ID, expectedVersion: 2 });
     expect(memoOut.list).toHaveBeenCalledWith(expect.objectContaining({ q: "gem", partyId: ID, limit: 50 }));
     expect(memoOut.options).toHaveBeenCalledWith(ID);
-    expect(memoOut.update).toHaveBeenCalledWith("user-1", ID, 1, expect.objectContaining({ customerId: ID }));
+    expect(memoOut.update).toHaveBeenCalledWith("user-1", ID, 1, expect.objectContaining({ customerId: ID }), expect.objectContaining({ userId: "user-1" }));
     // ADR-0048: up to 5 distinct photo ids per line.
     await expect(outCaller.memoOut.create({ ...out, lines: [{ ...line, photoIds: [ID, ID] }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(outCaller.memoOut.create({ ...out, lines: [{ ...line, photoIds: Array.from({ length: 6 }, (_, n) => `00000000-0000-4000-8000-00000000010${n}`) }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
@@ -339,7 +511,7 @@ describe("staged master domain tRPC boundary", () => {
     await backCaller.memoOutReturn.options({ customerId: ID });
     expect(memoOutReturn.options).toHaveBeenCalledWith(ID);
     await backCaller.memoOutReturn.create(back);
-    expect(memoOutReturn.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ customerId: ID, shippingAddressId: ID2, lines: [expect.objectContaining({ memoOutLineId: ID2 })] }));
+    expect(memoOutReturn.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ customerId: ID, shippingAddressId: ID2, lines: [expect.objectContaining({ memoOutLineId: ID2 })] }), expect.objectContaining({ userId: "user-1" }));
     // memo-out-return rev 4: the Memo Outstanding dialog with VIEW; approve needs APPROVE + CSRF.
     await backCaller.memoOutReturn.outstanding({ customerId: ID, currency: "THB", q: "26" });
     expect(memoOutReturn.outstanding).toHaveBeenCalledWith(expect.objectContaining({ customerId: ID, currency: "THB", q: "26", limit: 50 }));
@@ -376,8 +548,8 @@ describe("staged master domain tRPC boundary", () => {
     await caller.memoReceive.approve(versioned);
     expect(memoReceive.list).toHaveBeenCalledWith(expect.objectContaining({ status: "PENDING_APPROVAL", partyId: ID, limit: 50 }));
     expect(memoReceive.options).toHaveBeenCalledWith(ID);
-    expect(memoReceive.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ vendorId: ID, addressId: ID2 }));
-    expect(memoReceive.update).toHaveBeenCalledWith("user-1", ID, 1, expect.objectContaining({ lines: [expect.objectContaining({ id: ID2 }), expect.not.objectContaining({ id: expect.anything() })] }));
+    expect(memoReceive.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ vendorId: ID, addressId: ID2 }), expect.objectContaining({ userId: "user-1" }));
+    expect(memoReceive.update).toHaveBeenCalledWith("user-1", ID, 1, expect.objectContaining({ lines: [expect.objectContaining({ id: ID2 }), expect.not.objectContaining({ id: expect.anything() })] }), expect.objectContaining({ userId: "user-1" }));
     expect(memoReceive.approve).toHaveBeenCalledWith("user-1", ID, 1);
 
     // Exact grant per procedure.
@@ -403,7 +575,10 @@ describe("staged master domain tRPC boundary", () => {
     await expect(caller.memoReceive.create({ ...body, lines: [{ ...line, photoIds: [ID, ID] }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.memoReceive.create({ ...body, lines: [{ ...line, photoIds: Array.from({ length: 6 }, (_, n) => `00000000-0000-4000-8000-00000000010${n}`) }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.memoReceive.create({ ...body, lines: [{ ...line, id: ID2 }] } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await expect(caller.memoReceive.list({ status: "DRAFT" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // ADR-0050: DRAFT is a list status now (BE-AP-006); a status outside the approval set is still refused.
+    await caller.memoReceive.list({ status: "DRAFT" });
+    expect(memoReceive.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: "DRAFT" }));
+    await expect(caller.memoReceive.list({ status: "CANCELLED" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     // memoStock.list: memo-return VIEW or memo-receive VIEW; bounded input.
     await router.createCaller(context(["memo-return:VIEW"])).memoStock.list({ vendorId: ID });
@@ -452,7 +627,7 @@ describe("staged master domain tRPC boundary", () => {
     await caller.memoReturn.delete(versioned);
     await caller.memoReturn.approve(versioned);
     expect(memoReturn.list).toHaveBeenCalledWith(expect.objectContaining({ status: "APPROVED" }));
-    expect(memoReturn.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ lines: [expect.objectContaining({ memoStockId: ID2 })] }));
+    expect(memoReturn.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ lines: [expect.objectContaining({ memoStockId: ID2 })] }), expect.objectContaining({ userId: "user-1" }));
     expect(memoReturn.approve).toHaveBeenCalledWith("user-1", ID, 1);
 
     const only = (action: string) => router.createCaller(context([`memo-return:${action}`]));
@@ -594,9 +769,12 @@ describe("staged master domain tRPC boundary", () => {
 
     await caller.memoOut.list({ status: "PENDING_APPROVAL" });
     expect(memoOut.list).toHaveBeenCalledWith(expect.objectContaining({ status: "PENDING_APPROVAL" }));
-    await expect(caller.memoOut.list({ status: "DRAFT" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // ADR-0050: DRAFT is a list status now (BE-AP-006); a status outside the approval set is still refused.
+    await caller.memoOut.list({ status: "DRAFT" });
+    expect(memoOut.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: "DRAFT" }));
+    await expect(caller.memoOut.list({ status: "CANCELLED" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await caller.memoOut.create(out);
-    expect(memoOut.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ lines: [expect.objectContaining({ memoStockId: ID2 })] }));
+    expect(memoOut.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ lines: [expect.objectContaining({ memoStockId: ID2 })] }), expect.objectContaining({ userId: "user-1" }));
     // memo-out rev 3: rows can't be keyed in by hand.
     await expect(caller.memoOut.create({ ...out, lines: [{ ...line, memoStockId: ID2 }, { ...line, memoStockId: null }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.memoOut.create({ ...out, lines: [{ ...line, memoStockId: ID2, unitPrice: "0" }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
@@ -637,8 +815,8 @@ describe("staged master domain tRPC boundary", () => {
     await caller.reserve.approve(versioned);
     expect(reserve.list).toHaveBeenCalledWith(expect.objectContaining({ status: "APPROVED", partyId: ID, limit: 50 }));
     expect(reserve.options).toHaveBeenCalledWith(ID);
-    expect(reserve.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ lines: [expect.objectContaining({ memoStockId: ID2 })] }));
-    expect(reserve.update).toHaveBeenCalledWith("user-1", ID, 1, expect.objectContaining({ customerId: ID }));
+    expect(reserve.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ lines: [expect.objectContaining({ memoStockId: ID2 })] }), expect.objectContaining({ userId: "user-1" }));
+    expect(reserve.update).toHaveBeenCalledWith("user-1", ID, 1, expect.objectContaining({ customerId: ID }), expect.objectContaining({ userId: "user-1" }));
     expect(reserve.approve).toHaveBeenCalledWith("user-1", ID, 1);
 
     const only = (action: string) => router.createCaller(context([`reserve:${action}`]));
@@ -664,7 +842,10 @@ describe("staged master domain tRPC boundary", () => {
     await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2, photoIds: [ID] }] })).resolves.toBeDefined();
     await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2, photoIds: [ID, ID] }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2, photoIds: Array.from({ length: 6 }, (_, n) => `00000000-0000-4000-8000-00000000010${n}`) }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await expect(caller.reserve.list({ status: "DRAFT" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // ADR-0050: DRAFT is a list status now (BE-AP-006); a status outside the approval set is still refused.
+    await caller.reserve.list({ status: "DRAFT" });
+    expect(reserve.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: "DRAFT" }));
+    await expect(caller.reserve.list({ status: "CANCELLED" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     // From Stock and the currency list read with reserve VIEW.
     await router.createCaller(context(["reserve:VIEW"])).memoStock.list({ limit: 50 });
@@ -697,8 +878,8 @@ describe("staged master domain tRPC boundary", () => {
     await caller.purchaseOrder.approve(versioned);
     expect(purchaseOrder.list).toHaveBeenCalledWith(expect.objectContaining({ status: "APPROVED", partyId: ID, limit: 50 }));
     expect(purchaseOrder.options).toHaveBeenCalledWith(ID);
-    expect(purchaseOrder.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ vendorId: ID, addressId: ID2, lines: [expect.objectContaining({ location: "Safe A" })] }));
-    expect(purchaseOrder.update).toHaveBeenCalledWith("user-1", ID, 1, expect.objectContaining({ vendorId: ID }));
+    expect(purchaseOrder.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ vendorId: ID, addressId: ID2, lines: [expect.objectContaining({ location: "Safe A" })] }), expect.objectContaining({ userId: "user-1" }));
+    expect(purchaseOrder.update).toHaveBeenCalledWith("user-1", ID, 1, expect.objectContaining({ vendorId: ID }), expect.objectContaining({ userId: "user-1" }));
     expect(purchaseOrder.approve).toHaveBeenCalledWith("user-1", ID, 1);
 
     // Exact grant per procedure; other menus' grants are refused.
@@ -727,7 +908,10 @@ describe("staged master domain tRPC boundary", () => {
     await expect(caller.purchaseOrder.create({ ...body, lines: [{ ...line, photoIds: [ID, ID] }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.purchaseOrder.create({ ...body, lines: [{ ...line, photoIds: Array.from({ length: 6 }, (_, n) => `00000000-0000-4000-8000-00000000010${n}`) }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.purchaseOrder.create({ ...body, lines: [{ ...line, discount: { type: "AMOUNT", value: "101" } }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await expect(caller.purchaseOrder.list({ status: "DRAFT" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // ADR-0050: DRAFT is a list status now (BE-AP-006); a status outside the approval set is still refused.
+    await caller.purchaseOrder.list({ status: "DRAFT" });
+    expect(purchaseOrder.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: "DRAFT" }));
+    await expect(caller.purchaseOrder.list({ status: "CANCELLED" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(purchaseOrder.create).toHaveBeenCalledTimes(1);
 
     await router.createCaller(context(["purchase-order:VIEW"])).currency.options();
@@ -760,12 +944,12 @@ describe("staged master domain tRPC boundary", () => {
     await caller.purchase.delete(versioned);
     await caller.purchase.approve(versioned);
     expect(purchase.list).toHaveBeenCalledWith(expect.objectContaining({ status: "APPROVED", partyId: ID, limit: 50 }));
-    expect(purchase.get).toHaveBeenCalledWith(ID);
+    expect(purchase.get).toHaveBeenCalledWith(ID, expect.objectContaining({ userId: "user-1" }));
     expect(purchase.options).toHaveBeenCalledWith(ID);
     expect(purchase.memoStock).toHaveBeenCalledWith(expect.objectContaining({ vendorId: ID, currency: "THB", status: "SOLD", limit: 50 }));
     expect(purchase.purchaseOrderLines).toHaveBeenCalledWith(expect.objectContaining({ status: "ALL", limit: 50 }));
-    expect(purchase.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ vendorId: ID, lines: [expect.objectContaining({ source: "MANUAL" }), expect.objectContaining({ memoStockId: ID2, memoGroup: "IN_STOCK" }), expect.objectContaining({ purchaseOrderLineId: ID3 })] }));
-    expect(purchase.update).toHaveBeenCalledWith("user-1", ID, 1, expect.objectContaining({ lines: [expect.objectContaining({ id: ID3 }), expect.anything()] }));
+    expect(purchase.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ vendorId: ID, lines: [expect.objectContaining({ source: "MANUAL" }), expect.objectContaining({ memoStockId: ID2, memoGroup: "IN_STOCK" }), expect.objectContaining({ purchaseOrderLineId: ID3 })] }), expect.objectContaining({ userId: "user-1" }));
+    expect(purchase.update).toHaveBeenCalledWith("user-1", ID, 1, expect.objectContaining({ lines: [expect.objectContaining({ id: ID3 }), expect.anything()] }), expect.objectContaining({ userId: "user-1" }));
     expect(purchase.delete).toHaveBeenCalledWith("user-1", ID, 1);
     expect(purchase.approve).toHaveBeenCalledWith("user-1", ID, 1);
 

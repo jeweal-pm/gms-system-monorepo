@@ -1,3 +1,4 @@
+import { FLOW_DETAIL } from "../trade-document/flow-fixture";
 import { createElement, type ReactNode } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -128,7 +129,7 @@ describe("form and mapping (UT-MOR-04)", () => {
       discount: { type: "NONE", value: "0" },
       tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "0.00", discountAmount: "0.00", priceBeforeTax: "0.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "0.00" },
-      createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null,
+      createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, ...FLOW_DETAIL,
     } satisfies MemoOutReturnDetail;
     // ADR-0048 (owner 2026-11-11): saved photos load back in order, read from this document's own photo route.
     expect(fromMemoOutReturn({ ...detail, lines: detail.lines.map((line) => ({ ...line, photoIds: ["p1", "p2"] })) } as typeof detail).lines[0]?.photos).toEqual([

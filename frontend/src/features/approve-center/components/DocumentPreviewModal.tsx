@@ -1,14 +1,14 @@
 "use client";
 
-import { LoaderCircle, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { Button, cx, focusRing } from "@/components/ui/button";
 import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import { useBaseCurrency, useDocumentPreview } from "../api";
 import type { AvailableMenu } from "../menus";
-import { REJECT_UNAVAILABLE, REVISE_UNAVAILABLE, type ApprovalRow } from "../model";
+import type { ApprovalRow } from "../model";
 import { isStillPending, NO_LONGER_PENDING, PREVIEW_LOAD_ERROR, previewView, submittedLine, type PreviewDetail, type PreviewView } from "../preview";
-import { UnavailableAction } from "./ApprovalTable";
+import { ReviewActions } from "./ApprovalTable";
 
 type Props = {
   menu: AvailableMenu;
@@ -20,15 +20,18 @@ type Props = {
   error: string | null;
   /** `changed` = the document is no longer waiting, so the list should refresh. */
   onClose: (changed: boolean) => void;
-  /** Approve with the version this modal loaded (the approver approves what they saw). */
+  /** Approve / Reject / Revise with the version this modal loaded (the approver decides on what they saw). */
   onApprove: (detail: PreviewDetail) => void;
+  onReject: (detail: PreviewDetail) => void;
+  onRevise: (detail: PreviewDetail) => void;
 };
 
 /**
- * Approve Center UI rev 2 (FE-AP-013…015, owner 2026-11-10): the document behind a pending row, from the existing
- * `get`. Native modal `<dialog>` (focus trap, inert background, Esc); the Approve confirm opens above it.
+ * Approve Center UI rev 2 (FE-AP-013…015, owner 2026-11-10): the document behind a pending row, from `<doc>.get`.
+ * Native modal `<dialog>` (focus trap, inert background, Esc); the Approve confirm and the Reject… / Revise… dialogs
+ * (FE-AP-010) open above it.
  */
-export function DocumentPreviewModal({ menu, row, busy, error, onClose, onApprove }: Props) {
+export function DocumentPreviewModal({ menu, row, busy, error, onClose, onApprove, onReject, onRevise }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -120,22 +123,16 @@ export function DocumentPreviewModal({ menu, row, busy, error, onClose, onApprov
               <Button disabled={busy} onClick={() => onClose(stale)} className="min-w-[95px]">
                 Close
               </Button>
-              <UnavailableAction label="Reject…" reason={REJECT_UNAVAILABLE} />
-              <UnavailableAction label="Revise…" reason={REVISE_UNAVAILABLE} />
               {pending && (
-                <button
-                  type="button"
+                <ReviewActions
+                  docNo={row.docNo}
+                  revisionCount={detail?.revisionCount ?? row.revisionCount}
                   disabled={!canApprove}
-                  aria-busy={busy || undefined}
-                  onClick={() => detail && onApprove(detail)}
-                  className={cx(
-                    "inline-flex h-9 min-w-[95px] items-center justify-center gap-2 rounded-gms-md bg-gms-primary px-4 text-gms-body font-medium text-gms-on-primary transition-colors hover:bg-gms-primary-strong disabled:cursor-not-allowed disabled:opacity-60",
-                    focusRing,
-                  )}
-                >
-                  {busy && <LoaderCircle aria-hidden size={16} className="animate-spin" />}
-                  Approve
-                </button>
+                  busy={busy}
+                  onReject={() => detail && onReject(detail)}
+                  onRevise={() => detail && onRevise(detail)}
+                  onApprove={() => detail && onApprove(detail)}
+                />
               )}
             </div>
           </footer>

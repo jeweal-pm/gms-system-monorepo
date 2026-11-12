@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { APPROVE_MENUS } from "@/features/approve-center/menus";
-import { countedMenus, menuAccess, visibleMenus } from "@/features/approve-center/model";
+import { menuAccess, visibleMenus } from "@/features/approve-center/model";
 import { canViewWith, isNavItemActive, navigationHref, railModules, sidebarSections, visibleRailModules, visibleSections, type NavLink } from "@/features/home/navigation";
 import { mine, SUPER } from "./fixtures";
 
@@ -20,12 +20,10 @@ describe("UT-AP-02 Approve menu visibility", () => {
     expect(visibleMenus(undefined, APPROVE_MENUS)).toEqual([]);
   });
 
-  it("the list also needs VIEW; counts only for available menus with APPROVE + VIEW", () => {
+  it("APPROVE alone is enough to work the list (approval-setup authorization.md / G11: no VIEW needed)", () => {
     const reserve = APPROVE_MENUS[1];
     expect(menuAccess(mine(["reserve:APPROVE"]), reserve)).toEqual({ approve: true, view: false });
-    expect(slugs(countedMenus(mine(["reserve:APPROVE"]), APPROVE_MENUS))).toEqual([]);
-    expect(slugs(countedMenus(mine(["reserve:APPROVE", "reserve:VIEW", "quotation:APPROVE", "quotation:VIEW", "load-to-stock:APPROVE", "load-to-stock:VIEW"]), APPROVE_MENUS))).toEqual(["reserve"]);
-    expect(slugs(countedMenus(SUPER, APPROVE_MENUS))).toEqual(["reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase"]);
+    expect(slugs(visibleMenus(mine(["reserve:APPROVE", "quotation:APPROVE"]), APPROVE_MENUS))).toEqual(["quotation", "reserve"]);
   });
 });
 

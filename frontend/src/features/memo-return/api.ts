@@ -12,6 +12,7 @@ import type { DocumentApi } from "@/features/trade-document/document-form";
 import type { MemoStockItem } from "@/features/trade-document/memo-stock-api";
 import { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError, retryTransient } from "@/lib/trpc-error";
+import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
 import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 /**
@@ -41,7 +42,8 @@ const memoReturnLineSchema = lineSchema.extend({
 });
 export type MemoReturnLine = z.infer<typeof memoReturnLineSchema>;
 /** Saving sends it to approval; Approve makes it read-only and takes the items off Memo Stock (Q-MR-15). */
-export const MEMO_RETURN_STATUSES = ["PENDING_APPROVAL", "APPROVED"] as const;
+/** ADR-0050: Draft, Pending Approval, Approved, Revise, Rejected. */
+export const MEMO_RETURN_STATUSES = APPROVAL_DOC_STATUSES;
 
 export const memoReturnSchema = z
   .object({
@@ -69,7 +71,7 @@ export type MemoReturnFormValues = z.infer<typeof memoReturnSchema>;
 export function emptyMemoReturn(): MemoReturnFormValues {
   const q = emptyQuotation();
   return {
-    status: "PENDING_APPROVAL",
+    status: "DRAFT",
     docDate: q.docDate,
     dueDate: q.dueDate,
     vendorId: "",
@@ -164,7 +166,7 @@ export const pickedStockIds = (lines: QuotationLine[]) => new Set(lines.flatMap(
 export function mapMemoReturnSaveError(error: unknown) {
   // Approval found less pending than a row returns: another memo return took it first.
   if (readDomainError(error).domainCode === "MEMO_RETURN_PENDING_SHORT") {
-    return { fieldErrors: [], message: "Some items no longer have enough pending. Edit the Return quantity and approve again." };
+    return { fieldErrors: [], message: "Some items no longer have enough pending. Edit the Return quantity and save again. Nothing was saved." };
   }
   return mapDocumentSaveError(error, "MEMO_RETURN", "memo return", HEADER_FIELDS);
 }
@@ -190,7 +192,7 @@ export function useMemoReturnApi(vendorId: string | undefined, docDate: string, 
   const create = masterTrpc.memoReturn.create.useMutation(writes);
   const update = masterTrpc.memoReturn.update.useMutation(writes);
   const remove = masterTrpc.memoReturn.delete.useMutation(writes);
-  const approve = masterTrpc.memoReturn.approve.useMutation(writes);
+  const submit = masterTrpc.memoReturn.submit.useMutation(writes);
   const restore = masterTrpc.memoReturn.restore.useMutation(writes);
   return {
     options: options.data,
@@ -199,10 +201,10 @@ export function useMemoReturnApi(vendorId: string | undefined, docDate: string, 
     create: (input) => create.mutateAsync(input),
     update: (args) => update.mutateAsync(args),
     remove: (args) => remove.mutateAsync(args),
-    approve: (args) => approve.mutateAsync(args),
+    submit: (args) => submit.mutateAsync(args),
     restore: (args) => restore.mutateAsync(args),
     invalidate: () =>
       Promise.all([utils.memoReturn.list.invalidate(), utils.memoReturn.get.invalidate(), utils.memoReturn.nextNumber.invalidate(), utils.memoStock.list.invalidate()]),
-    busy: create.isPending || update.isPending || remove.isPending || approve.isPending || restore.isPending,
+    busy: create.isPending || update.isPending || remove.isPending || submit.isPending || restore.isPending,
   };
 }

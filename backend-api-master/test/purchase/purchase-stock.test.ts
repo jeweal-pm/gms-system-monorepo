@@ -18,6 +18,7 @@ const A = "00000000-0000-4000-8000-00000000000a";
 const B = "00000000-0000-4000-8000-00000000000b";
 const P = "00000000-0000-4000-8000-0000000000f1";
 const VENDOR = "00000000-0000-4000-8000-000000000001";
+const PO = "00000000-0000-4000-8000-0000000000e1";
 const take = (patch: Partial<PurchaseTake>): PurchaseTake => ({ source: "STOCK", memoStockId: A, memoGroup: "IN_STOCK", purchaseOrderLineId: null, pcs: 1, weightCt: D("1"), index: 0, ...patch });
 const item = (id: string, patch: Record<string, unknown> = {}) => ({
   id, pending_pcs: 5, pending_weight_ct: "5.000", sold_pcs: 4, sold_weight_ct: "4.000", purchased_pcs: 1, purchased_weight_ct: "1.000", ...patch,
@@ -32,6 +33,9 @@ function fakeTx(items: unknown[], poLines: unknown[] = []) {
   const tx = {
     $queryRaw: vi.fn(async (sql: Prisma.Sql) => {
       queries.push(sql);
+      // INV-20261111-002 F1: PO line → PO header, then the PO headers FOR SHARE.
+      if (sql.sql.includes("AS parent")) return poLines.map((line) => ({ id: (line as { id: string }).id, parent: PO }));
+      if (sql.sql.includes("FOR SHARE")) return [{ id: PO, live: true }];
       return sql.sql.includes("purchase_order_line") ? poLines : items;
     }),
     $executeRaw: vi.fn(async (sql: Prisma.Sql) => {
@@ -67,7 +71,7 @@ describe("takeForPurchase (UT-PU-B03)", () => {
     expect([...totals.po.values()].map((t) => [t.id, t.pcs, t.indexes])).toEqual([[P, 3, [3]]]);
   });
 
-  it("locks memo_stock then purchase_order_line in id order and runs one UPDATE per table with bound values only", async () => {
+  it("locks the source PO headers FOR SHARE, then memo_stock, then purchase_order_line in id order and runs one UPDATE per table with bound values only", async () => {
     const { tx, queries, updates } = fakeTx([item(A), item(B)], [poLine()]);
     const moved = await takeForPurchase(tx, scope, [
       take({ memoStockId: B, pcs: 2, weightCt: D("2"), index: 0 }),
@@ -76,10 +80,14 @@ describe("takeForPurchase (UT-PU-B03)", () => {
       take({ source: "PURCHASE_ORDER", memoStockId: null, memoGroup: null, purchaseOrderLineId: P, pcs: 8, weightCt: D("8"), index: 3 }),
     ], purchasePendingShort, now);
     expect(moved).toEqual({ memoStockKeys: 3, purchaseOrderKeys: 1, soldParts: [] });
-    expect(queries).toHaveLength(2);
-    expect(queries[0].sql).toMatch(/FROM "partner"\."memo_stock"[\s\S]*ORDER BY id FOR UPDATE/);
-    expect(queries[0].values).toEqual([[A, B]]);
-    expect(queries[1].sql).toMatch(/purchase_order_line[\s\S]*ORDER BY l\.id FOR UPDATE OF l/);
+    expect(queries).toHaveLength(4);
+    expect(queries[0].sql).toMatch(/SELECT id::text AS id, "purchase_order_id"::text AS parent FROM "partner"\."purchase_order_line" WHERE id = ANY/);
+    expect(queries[0].values).toEqual([[P]]);
+    expect(queries[1].sql).toMatch(/FROM "partner"\."purchase_order"\s+WHERE id = ANY\(\$?\??[^)]*\) ORDER BY id FOR SHARE/);
+    expect(queries[1].values).toEqual([[PO]]);
+    expect(queries[2].sql).toMatch(/FROM "partner"\."memo_stock"[\s\S]*ORDER BY id FOR UPDATE/);
+    expect(queries[2].values).toEqual([[A, B]]);
+    expect(queries[3].sql).toMatch(/purchase_order_line[\s\S]*ORDER BY l\.id FOR UPDATE OF l/);
     expect(updates).toHaveLength(2);
     expect(updates[0].sql).toMatch(/UPDATE "partner"\."memo_stock"[\s\S]*pending_pcs = s\.pending_pcs - r\.in_pcs[\s\S]*sold_pcs = s\.sold_pcs \+ r\.in_pcs[\s\S]*purchased_pcs = s\.purchased_pcs \+ r\.in_pcs \+ r\.sold_pcs/);
     // A: IN_STOCK 1 / 0.5 and SOLD 3 / 3 in one VALUES row; B: IN_STOCK 2 / 2.

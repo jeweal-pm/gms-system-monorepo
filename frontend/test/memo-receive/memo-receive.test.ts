@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FormProvider, useForm } from "react-hook-form";
@@ -16,9 +18,9 @@ import {
   type MemoReceiveDetail,
   type MemoReceiveOptions,
 } from "@/features/memo-receive/api";
-import { approveMessage, canApproveMemo, MEMO_RECEIVE_HREF, memoReceiveHref, STATUS_LABELS } from "@/features/memo-receive/components/MemoReceiveForm";
+import { MEMO_RECEIVE_HREF, memoReceiveHref, STATUS_LABELS } from "@/features/memo-receive/components/MemoReceiveForm";
 import { emptyMemoReceive, MEMO_RECEIVE_KIND } from "@/features/memo-receive/defaults";
-import { isEditableMemo, memoReceiveSchema, type MemoReceiveFormValues } from "@/features/memo-receive/schema";
+import { memoReceiveSchema, type MemoReceiveFormValues } from "@/features/memo-receive/schema";
 import { QuotationHeader } from "@/features/quotation/components/header/QuotationHeader";
 import { ItemTable, itemColumns } from "@/features/quotation/components/items/ItemTable";
 import { DocumentKindContext, QUOTATION_KIND, type DocumentKind } from "@/features/quotation/document-kind";
@@ -169,15 +171,10 @@ describe("Stock ID, Location and Approve (UT-MR-F2)", () => {
     expect(quotation).toContain("Vault");
   });
 
-  it("shows Approve only for a saved Pending Approval document with no unsaved changes and the grant", () => {
-    const base = { saved: true, status: "PENDING_APPROVAL" as const, editing: false, dirty: false, approve: true };
-    expect(canApproveMemo(base)).toBe(true);
-    expect(canApproveMemo({ ...base, saved: false })).toBe(false);
-    expect(canApproveMemo({ ...base, status: "APPROVED" })).toBe(false);
-    expect(canApproveMemo({ ...base, editing: true })).toBe(false);
-    expect(canApproveMemo({ ...base, dirty: true })).toBe(false);
-    expect(canApproveMemo({ ...base, approve: false })).toBe(false);
-    expect(approveMessage(3)).toBe("Approve this Memo Receive? Its 3 items move to Memo Stock and it can no longer be edited.");
+  it("the document page has no Approve button any more (ADR-0050 Q-AS-23: Approve menu only)", () => {
+    const src = readFileSync(join(process.cwd(), "src/features/memo-receive/components/MemoReceiveForm.tsx"), "utf8");
+    expect(src).not.toMatch(/writes\.approve|> Approve</);
+    expect(src).toContain("extraActions={approvalFlow.sendButton}");
   });
 
   it("an Approved document shows its badge and hides Edit and Delete; Quotation's header is unchanged", () => {
@@ -185,19 +182,16 @@ describe("Stock ID, Location and Approve (UT-MR-F2)", () => {
     expect(approved).toContain("Approved");
     expect(approved).not.toContain("Edit");
     expect(approved).not.toContain("Delete");
-    const pending = header({ statusLabels: STATUS_LABELS, status: "PENDING_APPROVAL", extraActions: createElement("button", null, "Approve") });
+    const pending = header({ statusLabels: STATUS_LABELS, status: "PENDING_APPROVAL", hideEditDelete: true, extraActions: createElement("button", null, "Send to approve") });
     expect(pending).toContain("Pending Approval");
-    expect(pending).toContain("Approve");
-    expect(pending).toContain("Edit");
+    expect(pending).not.toContain("Edit");
     const quotation = header();
     expect(quotation).toContain("Edit");
     expect(quotation).toContain("Delete");
     expect(quotation).not.toContain("Approve");
   });
 
-  it("an approved memo receive can't be edited; the loaded copy keeps APPROVED", () => {
-    expect(isEditableMemo("PENDING_APPROVAL")).toBe(true);
-    expect(isEditableMemo("APPROVED")).toBe(false);
+  it("the loaded copy keeps APPROVED", () => {
     expect(fromMemoReceive(detail("APPROVED")).status).toBe("APPROVED");
   });
 });

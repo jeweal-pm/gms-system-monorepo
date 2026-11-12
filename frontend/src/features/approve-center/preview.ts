@@ -2,8 +2,8 @@ import type { AvailableMenu } from "./menus";
 import { DASH, PENDING_STATUS, shortDate, submittedTime, submitterText, type ApprovalRow } from "./model";
 
 /**
- * Approve Center UI rev 2 (owner 2026-11-10): the document preview modal. Pure rules only; the data is the existing
- * per-document `get` (shared document engine `toDetail`), so no backend change.
+ * Approve Center UI rev 2 (owner 2026-11-10): the document preview modal. Pure rules only; the data is the per-document
+ * `get` (shared document engine `toDetail`; Quotation `toQuotation`), which approvers may read while PENDING (G11).
  */
 
 /** The `get` fields the modal reads; every approvable document's detail satisfies it (checked in `documentClients`). */
@@ -33,6 +33,8 @@ export type PreviewDetail = {
   lines: readonly PreviewLine[];
   totals: { grandTotal: string };
   deletedAt?: string | null;
+  /** ADR-0050 `Flow.revisionCount`: 1 = already sent back once (Revise is refused). */
+  revisionCount?: number;
 };
 
 // ---------- exact decimal maths (no floating point on money) ----------
@@ -162,11 +164,11 @@ export function waitingText(sinceIso: string, now: Date): string {
   return `waiting ${days} ${days === 1 ? "day" : "days"}`;
 }
 
-/** Header sub line: "Submitted by {name} ({role}) · {time} · waiting …"; phase 1 has no submitter, so "Last saved …". */
+/** Header sub line: "Submitted by {name} · {time} · waiting …" ("Submitted {time}" when the name is unknown). */
 export function submittedLine(row: ApprovalRow, now: Date): string {
   const who = submitterText(row);
   const time = submittedTime(row.submittedAt).replace(/\/(\d{2})(\d{2}) /, "/$2 ");
-  const lead = who === DASH ? `Last saved ${time}` : `Submitted by ${who} · ${time}`;
+  const lead = who === DASH ? `Submitted ${time}` : `Submitted by ${who} · ${time}`;
   const waiting = waitingText(row.submittedAt, now);
   return waiting ? `${lead} · ${waiting}` : lead;
 }

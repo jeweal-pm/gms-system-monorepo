@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { sendAndApprove, setApproval } from "../partner-shared/approval";
 
 /**
  * IT-MOV-01…05 (memo-outstanding-vendor SA rev 1 / ADR-0035, owner 2026-10-29) against real PostgreSQL: the
@@ -63,8 +64,9 @@ async function vendorFixture(name: string) {
 }
 
 async function approved(vendor: Vendor, lines: ReturnType<typeof line>[], patch: Record<string, unknown> = {}): Promise<Doc> {
+  await setApproval(prisma, "memo-receive", true);
   const doc = await receive.create(ACTOR, input(vendor, lines, patch));
-  await receive.approve(ACTOR, doc.id, 1);
+  await sendAndApprove(receive, ACTOR, doc.id, 1);
   return doc;
 }
 

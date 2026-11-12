@@ -1,8 +1,10 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CircleCheck, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useDocumentFlow } from "@/features/trade-document/approval-flow";
+import { flowOf, savedMessage, type DocFlow } from "@/features/trade-document/flow-status";
 import { deleteDocumentConfirm, restoreDocumentConfirm, useConfirm } from "@/features/quotation/components/use-confirm";
 import {
   daybookLoadError,
@@ -10,13 +12,14 @@ import {
   deletedInfo,
   DocumentDaybook,
   DocumentDeletedBanner,
-  restoredStatusLabel,
+  clearNotice,
+  handOverNotice,
+  peekNotice,
   type DeletedInfo,
 } from "@/features/trade-document/document-api";
 import { useTabDirty, useTabDocument, useTabReplace } from "@/features/home/tabs/tab-host";
 import { FormProvider, useFieldArray, useForm, useWatch } from "react-hook-form";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { QuotationHeader, type StatusLabels } from "@/features/quotation/components/header/QuotationHeader";
+import { QuotationHeader } from "@/features/quotation/components/header/QuotationHeader";
 import { ItemEditorPanel } from "@/features/quotation/components/items/ItemEditorPanel";
 import { ItemPhotoBox } from "@/features/quotation/components/items/ItemPhotoBox";
 import { ItemTable, type RowAction } from "@/features/quotation/components/items/ItemTable";
@@ -31,10 +34,8 @@ import { LinePhotoContext, type LinePhotoTarget } from "@/features/quotation/opt
 import { isFilledLine } from "@/features/quotation/schema";
 import { invalidSaveMessage, lineErrorMessages, type LineErrors } from "@/features/trade-document/document-form";
 import { VendorDocumentInfoForm } from "@/features/trade-document/vendor-info-form";
-import { readDomainError } from "@/lib/trpc-error";
 import {
   fromPurchaseOrder,
-  isPendingApproval,
   mapPurchaseOrderError,
   purchaseOrderLoadError,
   purchaseOrderRestoreError,
@@ -50,33 +51,21 @@ import {
   type PurchaseOrderDetail,
 } from "../api";
 import { emptyPurchaseOrder, PURCHASE_ORDER_KIND } from "../defaults";
-import { isEditablePurchaseOrder, MAX_PURCHASE_ORDER_LINES, purchaseOrderSchema, type PurchaseOrderFormValues } from "../schema";
+import { MAX_PURCHASE_ORDER_LINES, purchaseOrderSchema, type PurchaseOrderFormValues } from "../schema";
 
 export const PURCHASE_ORDER_HREF = "/purchase/purchase-order";
+const APPROVAL_TYPE = "purchase-order";
 export const purchaseOrderHref = (id: string) => `${PURCHASE_ORDER_HREF}/${encodeURIComponent(id)}`;
 
-/** Saving sends the PO to approval; Approve makes it read-only (Q-PO-02/12). */
-export const STATUS_LABELS: StatusLabels = {
-  PENDING_APPROVAL: { label: "Pending Approval", tone: "bg-[#FFF4E0] text-[#B45309]" },
-  APPROVED: { label: "Approved", tone: "bg-[#E7F7EE] text-[#15803D]" },
-};
+/** ADR-0050 status badges (Draft, Pending Approval, Revise, Approved, Rejected). */
+export { FLOW_STATUS_LABELS as STATUS_LABELS } from "@/features/trade-document/flow-status";
 
 /** Row photos (Q-PO-09): the row panel uploads to and reads from the Purchase Order photo route. */
 export const PURCHASE_ORDER_PHOTOS: LinePhotoTarget = { upload: uploadPurchaseOrderPhoto, url: purchaseOrderPhotoUrl };
 
-/**
- * Approve shows for a saved Pending Approval PO with no unsaved changes, to users with `purchase-order:APPROVE`, the
- * creator included (Q-PO-03; UX only, the server checks every call).
- */
-export function canApprovePurchaseOrder(args: { saved: boolean; status: PurchaseOrderFormValues["status"]; editing: boolean; dirty: boolean; approve: boolean }): boolean {
-  return args.saved && isPendingApproval(args.status) && !args.editing && !args.dirty && args.approve;
-}
-
-export const approveMessage = (count: number) =>
-  `Approve this Purchase Order? Its ${count} ${count === 1 ? "item is" : "items are"} sent to Purchase and it can no longer be edited.`;
 
 /** One Purchase Order (ADR-0041): Quotation's layout and components, a vendor header, keyed-in rows and Approve. */
-export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, access }: { initial?: PurchaseOrderFormValues; deleted?: DeletedInfo | null; access: PurchaseOrderAccess }) {
+export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, flow: initialFlow = null, access }: { initial?: PurchaseOrderFormValues; deleted?: DeletedInfo | null; flow?: DocFlow | null; access: PurchaseOrderAccess }) {
   const replaceTab = useTabReplace();
   const [saved, setSaved] = useState<PurchaseOrderFormValues | undefined>(initial);
   // transaction-soft-delete D10: a deleted purchase order is read-only with the banner.
@@ -87,8 +76,10 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
   const [editorOpen, setEditorOpen] = useState(false);
   const [railPanel, setRailPanel] = useState<RailPanel>(null);
   const [checkedKeys, setCheckedKeys] = useState<Set<string>>(new Set());
-  const [toast, setToast] = useState<string | null>(null);
-  const [approving, setApproving] = useState(false);
+  // A message handed over from a create (the new document opens on its own page).
+  const [toast, setToast] = useState<string | null>(() => peekNotice(initial?.id));
+  // FE-AS-010: the saved document's `Flow` (status, Edit / Delete / Send to approve flags), refreshed on every reload.
+  const [flow, setFlow] = useState<DocFlow | null>(initialFlow);
 
   const form = useForm<PurchaseOrderFormValues>({ resolver: zodResolver(purchaseOrderSchema), defaultValues: initial ?? emptyPurchaseOrder() });
   const { control, reset, trigger, resetField, getValues, handleSubmit, formState, setError } = form;
@@ -104,8 +95,7 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
   useEffect(() => {
     if (formState.isSubmitted && filledCount > 0) void trigger("lines");
   }, [filledCount, formState.isSubmitted, trigger]);
-  const status = saved?.status;
-  const editable = Boolean(saved?.id) && isEditablePurchaseOrder(status);
+  const status = (flow?.status ?? saved?.status) as PurchaseOrderFormValues["status"];
   const options = usePurchaseOrderOptions(saved?.vendorId);
   const next = useNextPurchaseOrderNo(values.docDate ?? "", !saved?.id);
   const writes = usePurchaseOrderWrites();
@@ -113,7 +103,6 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
   const kind = useMemo(() => ({ ...PURCHASE_ORDER_KIND, stone: stoneChoices(options.data) }), [options.data]);
   useTabDocument(saved?.docNo);
   useTabDirty(formState.isDirty && !readOnly);
-  const showApprove = !isDeleted && canApprovePurchaseOrder({ saved: Boolean(saved?.id), status, editing: !readOnly, dirty: formState.isDirty, approve: access.approve });
 
   // A new PO starts in the company currency (the shared header then fills its rate). INV-20261107-008: a value the page fills in by itself becomes the field's default too, so an untouched document isn't "unsaved".
   const companyCurrency = options.data?.companyCurrency ?? null;
@@ -132,6 +121,7 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
     const latest = fromPurchaseOrder(detail);
     setSaved(latest);
     setDeleted(deletedInfo(detail));
+    setFlow(flowOf(detail));
     reset(latest);
     setMode("view");
     setEditorOpen(false);
@@ -147,7 +137,9 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
     }
   };
 
-  const showError = async (error: unknown) => {
+  useEffect(() => clearNotice(initial?.id), [initial?.id]);
+
+  async function showError(error: unknown) {
     const outcome = mapPurchaseOrderError(error);
     for (const field of outcome.fieldErrors) setError(field.name as never, { type: "server", message: field.message });
     setToast(outcome.message);
@@ -158,6 +150,31 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
       await reloadSaved();
       setToast(outcome.message);
     }
+  }
+
+  // FE-AS-010 (ADR-0050): Save / Send to approve / Edit / Delete follow the approval setting and `Flow`.
+  const approvalFlow = useDocumentFlow({
+    type: APPROVAL_TYPE,
+    saved,
+    flow,
+    deleted: isDeleted,
+    access,
+    editing: !readOnly,
+    dirty: formState.isDirty,
+    busy: writes.busy,
+    submit: writes.submit,
+    confirm,
+    toast: setToast,
+    reload: async (message) => {
+      await reloadSaved();
+      setToast(message);
+    },
+    onError: (error) => void showError(error),
+  });
+
+  /** ADR-0050 codes first (in use, status, approval off), then the page's own mapping. */
+  const onWriteError = async (error: unknown, action: "save" | "delete") => {
+    if (!(await approvalFlow.handleError(error, action))) await showError(error);
   };
 
   /* ---------- document actions ---------- */
@@ -166,16 +183,17 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
     async (input) => {
       try {
         if (saved?.id && saved.version) {
-          await writes.update({ ...toPurchaseOrderInput(input), id: saved.id, expectedVersion: saved.version });
+          const result = await writes.update({ ...toPurchaseOrderInput(input), id: saved.id, expectedVersion: saved.version });
           show(await writes.reload(saved.id));
-          setToast(`Saved ${saved.docNo ?? ""}`.trim());
+          setToast(savedMessage(saved.docNo, result));
         } else {
           const created = await writes.create(toPurchaseOrderInput(input));
+          handOverNotice(created.id, savedMessage(created.docNo, created));
           await writes.invalidate();
           replaceTab(purchaseOrderHref(created.id));
         }
       } catch (error) {
-        await showError(error);
+        await onWriteError(error, "save");
       }
     },
     (errors) => setToast(invalidSaveMessage(lineErrorMessages(errors.lines as unknown as LineErrors, lines.length))),
@@ -197,32 +215,13 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
       await writes.invalidate();
       replaceTab(PURCHASE_ORDER_HREF);
     } catch (error) {
-      await showError(error);
-    }
-  };
-
-  const onApprove = async () => {
-    if (!saved?.id || !saved.version) return;
-    try {
-      await writes.approve({ id: saved.id, expectedVersion: saved.version });
-      show(await writes.reload(saved.id));
-      setApproving(false);
-      setToast("Approved");
-    } catch (error) {
-      setApproving(false);
-      const { domainCode } = readDomainError(error);
-      if (domainCode === "PURCHASE_ORDER_CHANGED") {
-        await reloadSaved();
-        setToast("This purchase order changed. Check it and approve again.");
-        return;
-      }
-      await showError(error);
+      await onWriteError(error, "delete");
     }
   };
 
   /** FE-SD-002: a deleted purchase order back to its status; the reloaded copy is editable again. */
   const onRestore = async () => {
-    if (!saved?.id || !saved.version || !(await confirm(restoreDocumentConfirm(saved.docNo, restoredStatusLabel(saved.status))))) return;
+    if (!saved?.id || !saved.version || !(await confirm(restoreDocumentConfirm(saved.docNo, approvalFlow.restoreLabel)))) return;
     try {
       await writes.restore({ id: saved.id, expectedVersion: saved.version });
       show(await writes.reload(saved.id));
@@ -298,7 +297,6 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
   };
 
   const editorIndex = editorOpen && selectedIndex !== null && selectedIndex < lines.length ? selectedIndex : null;
-  const itemCount = (saved?.lines ?? []).filter(isFilledLine).length;
 
   return (
     <DocumentKindContext.Provider value={kind}>
@@ -310,7 +308,8 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
               <QuotationHeader
                 noLabel="Purchase Order No.:"
                 newHref={PURCHASE_ORDER_HREF}
-                statusLabels={STATUS_LABELS}
+                statusLabels={approvalFlow.statusLabels}
+                statusNote={approvalFlow.statusNote}
                 docNo={docNo}
                 isPreview={!saved?.docNo}
                 status={status}
@@ -318,16 +317,10 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
                 saving={writes.busy}
                 canSave={!isDeleted && (saved?.id ? access.edit : access.add)}
                 canCreate={access.add}
-                canEdit={editable && access.edit && !isDeleted}
-                canDelete={editable && access.delete && !isDeleted}
-                hideEditDelete={status === "APPROVED" || isDeleted}
-                extraActions={
-                  showApprove && (
-                    <Button variant="primary" onClick={() => setApproving(true)} disabled={writes.busy} className="min-w-24">
-                      <CircleCheck className="size-4" /> Approve
-                    </Button>
-                  )
-                }
+                canEdit={approvalFlow.canEdit}
+                canDelete={approvalFlow.canDelete}
+                hideEditDelete={approvalFlow.hideEditDelete}
+                extraActions={approvalFlow.sendButton}
                 actions={{
                   onCancel,
                   onSave: () => void onSave(),
@@ -418,17 +411,6 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, acc
               </fieldset>
             )}
           </div>
-          <ConfirmDialog
-            open={approving}
-            title="Approve Purchase Order"
-            body={approveMessage(itemCount)}
-            cancelLabel="Cancel"
-            confirmLabel="Approve"
-            pendingLabel="Approving…"
-            pending={writes.busy}
-            onCancel={() => setApproving(false)}
-            onConfirm={() => void onApprove()}
-          />
           {confirmDialog}
           {toast && <Toast message={toast} onClose={() => setToast(null)} />}
         </FormProvider>

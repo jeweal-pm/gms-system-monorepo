@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { HttpException } from "@nestjs/common";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { sendAndApprove, setApproval, submitted } from "../partner-shared/approval";
 
 /**
  * IT-MOR-01…06 (memo-out-return SA rev 2 / ADR-0033 rev 3, owner 2026-10-31) against real PostgreSQL:
@@ -91,10 +92,10 @@ async function lentOut(customer: Customer, received: [number, string], out: [num
     docDate: "2026-10-29", dueDate: "2026-11-29", currency: "THB", exchangeRate: null, ref: "", documentNote: "", ...money,
     lines: [receiveLine(...received)], vendorId: vendor.id, addressId: vendor.addressId,
   });
-  await receive.approve(ACTOR, saved.id, saved.version);
+  await sendAndApprove(receive, ACTOR, saved.id, saved.version);
   const item = await prisma.memoStock.findFirstOrThrow({ where: { memoReceiveId: saved.id } });
   const memo = await memoOut.create(ACTOR, schemas.createMemoOutSchema.parse({ ...header(customer), lines: [outLine(item.id, ...out)] }));
-  await memoOut.approve(ACTOR, memo.id, 1);
+  await sendAndApprove(memoOut, ACTOR, memo.id, 1);
   const line = await prisma.memoOutLine.findFirstOrThrow({ where: { memoOutId: memo.id } });
   return { item, line, memoOutId: memo.id };
 }
@@ -138,6 +139,7 @@ describe.runIf(canRun)("IT-MOR memo out return on PostgreSQL", () => {
     vendorCreated = true;
     customerA = await customerFixture("MOR IT Customer A");
     customerB = await customerFixture("MOR IT Customer B");
+    for (const type of ["memo-receive", "memo-out", "memo-out-return"] as const) await setApproval(prisma, type, true);
   });
 
   afterAll(async () => {
@@ -175,7 +177,7 @@ describe.runIf(canRun)("IT-MOR memo out return on PostgreSQL", () => {
     const { item, line, memoOutId } = await lentOut(customerA, [6, "3"], [4, "2"]);
     const saved = await memoOutReturn.create(ACTOR, backInput(customerA, [backLine(line.id, 3, "1.5")]));
     const detail = await memoOutReturn.get(saved.id);
-    expect(detail).toMatchObject({ status: "PENDING_APPROVAL", customerId: customerA.id, approvedAt: null });
+    expect(detail).toMatchObject({ status: "DRAFT", customerId: customerA.id, approvedAt: null });
     expect(detail.lines[0]).toMatchObject({
       memoOutLineId: line.id, memoOut: { id: memoOutId }, memoStockId: item.id, stockId: item.stockId, source: "STOCK",
       stone: "Sapphire", priceUnit: "PER_CT", unitPrice: "2700.00", pcs: 3, weightCt: "1.500", outstandingPcs: 4, outstandingWeightCt: "2.000",
@@ -198,15 +200,15 @@ describe.runIf(canRun)("IT-MOR memo out return on PostgreSQL", () => {
   it("IT-MOR-03 approve adds to the Memo Out line's returned and moves Reserve back to pending; then read-only", async () => {
     const { item, line } = await lentOut(customerA, [10, "5"], [4, "2"]);
     const saved = await memoOutReturn.create(ACTOR, backInput(customerA, [backLine(line.id, 3, "1.5")]));
-    await expect(memoOutReturn.approve(ACTOR, saved.id, 1)).resolves.toEqual({ id: saved.id, version: 2, status: "APPROVED" });
+    await expect(sendAndApprove(memoOutReturn, ACTOR, saved.id, 1)).resolves.toEqual({ id: saved.id, version: 3, status: "APPROVED" });
     expect(await returnedOf(line.id)).toEqual([3, "1.500"]);
     expect(await bucketsOf(item.id)).toEqual({ pending: [9, "4.500"], reserved: [1, "0.500"] });
     expect(await memoOutReturn.get(saved.id)).toMatchObject({ status: "APPROVED", approvedBy: ACTOR });
-    expect(await failure(memoOutReturn.approve(ACTOR, saved.id, 2))).toMatchObject({ status: 409, code: "MEMO_OUT_RETURN_STATUS_INVALID" });
-    expect(await failure(memoOutReturn.delete(ACTOR, saved.id, 2))).toMatchObject({ status: 409, code: "MEMO_OUT_RETURN_STATUS_INVALID" });
+    expect(await failure(memoOutReturn.approve(ACTOR, saved.id, 3))).toMatchObject({ status: 409, code: "MEMO_OUT_RETURN_STATUS_INVALID" });
+    expect(await failure(memoOutReturn.delete(ACTOR, saved.id, 3))).toMatchObject({ status: 409, code: "MEMO_OUT_RETURN_STATUS_INVALID" });
     // The rest is still outstanding; after it comes back the line leaves the dialog.
     const rest = await memoOutReturn.create(ACTOR, backInput(customerA, [backLine(line.id, 1, "0.5")]));
-    await memoOutReturn.approve(ACTOR, rest.id, 1);
+    await sendAndApprove(memoOutReturn, ACTOR, rest.id, 1);
     expect(await bucketsOf(item.id)).toEqual({ pending: [10, "5.000"], reserved: [0, "0.000"] });
     const listed = await memoOutReturn.outstanding(schemas.memoOutOutstandingSchema.parse({ customerId: customerA.id, currency: "THB" }));
     expect(listed.items.map((entry) => entry.memoOutLineId)).not.toContain(line.id);
@@ -214,19 +216,19 @@ describe.runIf(canRun)("IT-MOR memo out return on PostgreSQL", () => {
 
   it("IT-MOR-04 over-return guard: of two returns that together exceed outstanding, only the first approval passes", async () => {
     const { item, line } = await lentOut(customerB, [5, "2.5"], [2, "1"]);
-    const first = await memoOutReturn.create(ACTOR, backInput(customerB, [backLine(line.id, 2, "1")]));
-    const second = await memoOutReturn.create(ACTOR, backInput(customerB, [backLine(line.id, 1, "0.5")]));
-    await memoOutReturn.approve(ACTOR, first.id, 1);
-    expect(await failure(memoOutReturn.approve(ACTOR, second.id, 1)))
+    const first = await submitted(memoOutReturn, ACTOR, await memoOutReturn.create(ACTOR, backInput(customerB, [backLine(line.id, 2, "1")])));
+    const second = await submitted(memoOutReturn, ACTOR, await memoOutReturn.create(ACTOR, backInput(customerB, [backLine(line.id, 1, "0.5")])));
+    await memoOutReturn.approve(ACTOR, first.id, 2);
+    expect(await failure(memoOutReturn.approve(ACTOR, second.id, 2)))
       .toMatchObject({ status: 409, code: "MEMO_OUT_RETURN_OUTSTANDING_SHORT", fieldErrors: [{ path: "lines.0.pcs", code: "exceeds_outstanding" }, { path: "lines.0.weightCt", code: "exceeds_outstanding" }] });
-    expect(await memoOutReturn.get(second.id)).toMatchObject({ status: "PENDING_APPROVAL", version: 1 });
+    expect(await memoOutReturn.get(second.id)).toMatchObject({ status: "PENDING_APPROVAL", version: 2 });
     expect(await bucketsOf(item.id)).toEqual({ pending: [5, "2.500"], reserved: [0, "0.000"] });
   });
 
   it("IT-MOR-05 parallel approvals of the same Memo Out line never return more than outstanding", async () => {
     const { item, line } = await lentOut(customerB, [4, "2"], [2, "1"]);
-    const backs = await Promise.all([1, 2, 3].map(() => memoOutReturn.create(ACTOR, backInput(customerB, [backLine(line.id, 1, "0.6")]))));
-    const results = await Promise.allSettled(backs.map((saved) => memoOutReturn.approve(ACTOR, saved.id, 1)));
+    const backs = await Promise.all([1, 2, 3].map(async () => submitted(memoOutReturn, ACTOR, await memoOutReturn.create(ACTOR, backInput(customerB, [backLine(line.id, 1, "0.6")])))));
+    const results = await Promise.allSettled(backs.map((saved) => memoOutReturn.approve(ACTOR, saved.id, 2)));
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(await returnedOf(line.id)).toEqual([1, "0.600"]);
     expect(await bucketsOf(item.id)).toEqual({ pending: [3, "1.600"], reserved: [1, "0.400"] });
@@ -236,11 +238,11 @@ describe.runIf(canRun)("IT-MOR memo out return on PostgreSQL", () => {
     const { item, line: first } = await lentOut(customerA, [10, "5"], [2, "1"]);
     // A second approved memo out of the same customer takes more of the same Memo Stock item.
     const second = await memoOut.create(ACTOR, schemas.createMemoOutSchema.parse({ ...header(customerA), lines: [outLine(item.id, 3, "1.5")] }));
-    await memoOut.approve(ACTOR, second.id, 1);
+    await sendAndApprove(memoOut, ACTOR, second.id, 1);
     const secondLine = await prisma.memoOutLine.findFirstOrThrow({ where: { memoOutId: second.id } });
     expect(await bucketsOf(item.id)).toEqual({ pending: [5, "2.500"], reserved: [5, "2.500"] });
     const saved = await memoOutReturn.create(ACTOR, backInput(customerA, [backLine(first.id, 2, "1"), backLine(secondLine.id, 3, "1.5")]));
-    await memoOutReturn.approve(ACTOR, saved.id, 1);
+    await sendAndApprove(memoOutReturn, ACTOR, saved.id, 1);
     expect(await returnedOf(first.id)).toEqual([2, "1.000"]);
     expect(await returnedOf(secondLine.id)).toEqual([3, "1.500"]);
     expect(await bucketsOf(item.id)).toEqual({ pending: [10, "5.000"], reserved: [0, "0.000"] });
@@ -249,7 +251,7 @@ describe.runIf(canRun)("IT-MOR memo out return on PostgreSQL", () => {
   it("IT-MOR-06 Memo Out lines with returns can't be deleted (RESTRICT) and the report still balances", async () => {
     const { item, line, memoOutId } = await lentOut(customerA, [3, "1.5"], [3, "1.5"]);
     const saved = await memoOutReturn.create(ACTOR, backInput(customerA, [backLine(line.id, 3, "1.5")]));
-    await memoOutReturn.approve(ACTOR, saved.id, 1);
+    await sendAndApprove(memoOutReturn, ACTOR, saved.id, 1);
     await expect(prisma.memoOutLine.delete({ where: { id: line.id } })).rejects.toThrow();
     const stored = await prisma.memoStock.findUniqueOrThrow({ where: { id: item.id } });
     expect(stored.receivedPcs - stored.returnedPcs - stored.soldPcs - stored.reservedPcs).toBe(stored.pendingPcs);

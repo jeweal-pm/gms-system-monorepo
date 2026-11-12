@@ -10,7 +10,8 @@
     "test": "prisma generate && vitest run",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
-    "db:migrate:dev": "prisma migrate dev"
+    "db:migrate:dev": "prisma migrate dev",
+    "go-live:approve-pending": "node dist/scripts/approve-pending.js"
   },
   "dependencies": {
     "@gms/storage": "workspace:*",

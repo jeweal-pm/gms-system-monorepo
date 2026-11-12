@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { ApprovalTable } from "@/features/approve-center/components/ApprovalTable";
 import { PreviewBody } from "@/features/approve-center/components/DocumentPreviewModal";
 import { approveMenuFor, type AvailableMenu } from "@/features/approve-center/menus";
-import { DEFAULT_SORT, rowsOf, sortRows } from "@/features/approve-center/model";
+import { DEFAULT_SORT, rowsOf } from "@/features/approve-center/model";
 import {
   converts,
   currencyText,
@@ -33,7 +33,7 @@ describe("UT-AP-15 the document number opens the preview (Q-AP-19 modal only)", 
     const html = renderToStaticMarkup(
       createElement(ApprovalTable, {
         menu: reserve,
-        rows: sortRows(rowsOf([page(sourceTwoItems())]), DEFAULT_SORT),
+        rows: rowsOf([page(sourceTwoItems())]),
         sort: DEFAULT_SORT,
         onSort: noop,
         selected: new Set<string>(),
@@ -43,6 +43,8 @@ describe("UT-AP-15 the document number opens the preview (Q-AP-19 modal only)", 
         locked: false,
         errors: new Map([[RS1, { message: "Short.", link: true }]]),
         onApprove: noop,
+        onReject: noop,
+        onRevise: noop,
         onOpen: noop,
       }),
     );
@@ -111,10 +113,10 @@ describe("UT-AP-17 header line and pending check", () => {
     expect(waitingText(since, new Date("2026-11-07T05:00:00Z"))).toBe("waiting 6 days");
   });
 
-  it("phase 1 has no submitter: 'Last saved dd/mm/yy HH:mm · waiting …'; with one: 'Submitted by …'", () => {
+  it("'Submitted by {name} · dd/mm/yy HH:mm · waiting …'; an unknown name reads 'Submitted …' (FE-AP-009)", () => {
     const now = new Date("2026-11-02T05:00:00Z");
-    expect(submittedLine(row, now)).toBe("Last saved 01/11/26 11:20 · waiting 1 day");
-    expect(submittedLine({ ...row, submittedBy: "Ann", submittedRole: "Purchasing" }, now)).toBe("Submitted by Ann (Purchasing) · 01/11/26 11:20 · waiting 1 day");
+    expect(submittedLine(row, now)).toBe("Submitted by Mint · 01/11/26 11:20 · waiting 1 day");
+    expect(submittedLine({ ...row, submittedBy: null }, now)).toBe("Submitted 01/11/26 11:20 · waiting 1 day");
   });
 
   it("an approved or deleted document is no longer pending", () => {
@@ -147,14 +149,17 @@ describe("UT-AP-18 modal body and footer", () => {
     expect(html).toContain("No note");
   });
 
-  it("Approve from the modal uses the loaded version (no second get); Reject…/Revise… stay disabled (Q-AP-18)", () => {
+  it("Approve / Reject / Revise from the modal use the loaded version (no second get); the footer shares the row actions (FE-AP-010)", () => {
     const source = readFileSync("src/features/approve-center/components/ApproveCenterPage.tsx", "utf8");
     const handler = source.slice(source.indexOf("function onPreviewApprove"), source.indexOf("function closePreview"));
     expect(handler).toContain("version: detail.version");
-    expect(handler).not.toContain("prepare");
+    expect(handler).not.toContain(".get");
+    const review = source.slice(source.indexOf("function previewReview"), source.indexOf("async function submitReview"));
+    expect(review).toContain("detail.version");
     const modal = readFileSync("src/features/approve-center/components/DocumentPreviewModal.tsx", "utf8");
-    expect(modal).toContain('<UnavailableAction label="Reject…" reason={REJECT_UNAVAILABLE} />');
-    expect(modal).toContain('<UnavailableAction label="Revise…" reason={REVISE_UNAVAILABLE} />');
+    expect(modal).toContain("<ReviewActions");
+    expect(modal).toContain("revisionCount={detail?.revisionCount ?? row.revisionCount}");
+    expect(modal).not.toContain("coming soon");
     expect(modal).toContain("dialog.showModal()");
   });
 });

@@ -24,6 +24,7 @@ const STATUS_LABEL: StatusLabels = {
   CANCELLED: { label: "Cancelled", tone: "bg-[#EEF0F2] text-[#6B7480] line-through" },
 };
 
+const NOTE_TONE = { warning: "text-[#B45309]", danger: "text-[#B42318]", muted: "text-[#6B7480]" } as const;
 /**
  * Owner 2026-11-10 (design "Status: ● Draft"): every transaction header shows its status beside the number. A new,
  * unsaved document is a Draft. The page's `statusLabels` may rename a status; the dot color is per status.
@@ -32,6 +33,7 @@ const DEFAULT_STATUS_TEXT: Record<QuotationStatus, string> = {
   DRAFT: "Draft",
   PENDING_APPROVAL: "Pending Approval",
   APPROVED: "Approved",
+  REVISION_REQUESTED: "Revise",
   REJECTED: "Rejected",
   CANCELLED: "Cancelled",
 };
@@ -39,6 +41,7 @@ const STATUS_DOT: Record<QuotationStatus, string> = {
   DRAFT: "bg-[#ADB1B4]",
   PENDING_APPROVAL: "bg-[#FFAB00]",
   APPROVED: "bg-[#22C55E]",
+  REVISION_REQUESTED: "bg-[#FFAB00]",
   REJECTED: "bg-[#DF1016]",
   CANCELLED: "bg-[#6B7480]",
 };
@@ -78,6 +81,7 @@ export function QuotationHeader({
   extraActions,
   hideEditDelete = false,
   hideDelete = false,
+  statusNote,
 }: {
   docNo: string;
   isPreview: boolean;
@@ -102,6 +106,8 @@ export function QuotationHeader({
   hideEditDelete?: boolean;
   /** Hides only Delete (a Quotation past approval can't be deleted, transaction-soft-delete OQ-1). */
   hideDelete?: boolean;
+  /** approval-setup FE-AS-010: the Revise / Reject reason or why the document is read-only, under the badge. */
+  statusNote?: { text: string; tone: "warning" | "danger" | "muted" } | null;
 }) {
   const editing = mode === "edit";
   return (
@@ -118,7 +124,10 @@ export function QuotationHeader({
           <StatusChip status={status} labels={statusLabels} />
         </div>
         {isPreview && <p className="mt-1 text-xs text-[#6B7480]">{previewNote}</p>}
-        {statusReason && (status === "REJECTED" || status === "CANCELLED") && (
+        {statusNote && (
+          <p className={cx("mt-1 max-w-xl text-xs break-words", NOTE_TONE[statusNote.tone])}>{statusNote.text}</p>
+        )}
+        {!statusNote && statusReason && (status === "REJECTED" || status === "CANCELLED") && (
           <p className="mt-1 max-w-xl text-xs break-words text-[#B42318]">Reason: {statusReason}</p>
         )}
       </div>

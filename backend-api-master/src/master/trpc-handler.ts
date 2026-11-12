@@ -7,6 +7,8 @@ import { CompanyProfileService } from "../company-profile/company-profile.servic
 import { StoneMasterService } from "../stone-master/stone-master.service";
 import { DocumentSetupService } from "../document-setup/document-setup.service";
 import { DecimalSetupService } from "../decimal-setup/decimal-setup.service";
+import { ApprovalSettingService } from "../approval-setting/approval-setting.service";
+import { ApprovalService } from "../approval/approval.service";
 import { CurrencyService } from "../currency/currency.service";
 import { MasterAuthContextAdapter, MasterJwksCache } from "./auth-context";
 import { MasterAuthzDatabase } from "./authz-database";
@@ -29,7 +31,7 @@ export class MasterTrpcHandler {
   private readonly handler: ReturnType<typeof createExpressMiddleware>;
   private readonly authContext: MasterAuthContextAdapter;
 
-  constructor(customer: CustomerService, vendor: VendorService, companyProfile: CompanyProfileService, stoneMaster: StoneMasterService, authz: MasterAuthzDatabase, license: MasterLicenseClient, documentSetup: DocumentSetupService, currency: CurrencyService, quotation: QuotationService, memoOut: MemoOutService, memoOutReturn: MemoOutReturnService, memoReceive: MemoReceiveService, memoStock: MemoStockService, memoReturn: MemoReturnService, memoOutstanding: MemoOutstandingService, reserve: ReserveService, decimalSetup: DecimalSetupService, purchaseOrder: PurchaseOrderService, purchase: PurchaseService) {
+  constructor(customer: CustomerService, vendor: VendorService, companyProfile: CompanyProfileService, stoneMaster: StoneMasterService, authz: MasterAuthzDatabase, license: MasterLicenseClient, documentSetup: DocumentSetupService, currency: CurrencyService, quotation: QuotationService, memoOut: MemoOutService, memoOutReturn: MemoOutReturnService, memoReceive: MemoReceiveService, memoStock: MemoStockService, memoReturn: MemoReturnService, memoOutstanding: MemoOutstandingService, reserve: ReserveService, decimalSetup: DecimalSetupService, purchaseOrder: PurchaseOrderService, purchase: PurchaseService, approvalSetting: ApprovalSettingService, approval: ApprovalService) {
     const issuer = process.env.AUTH_ACCESS_JWT_ISSUER;
     const trustedOrigin = process.env.FRONTEND_URL;
     const authService = process.env.AUTH_SERVICE_URL;
@@ -43,7 +45,7 @@ export class MasterTrpcHandler {
       authorizationReader: (userId, sessionId) => authz.read(userId, sessionId),
       checkLicense: (userId, sessionId) => license.check(userId, sessionId),
     });
-    const router = createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, decimalSetup, currency, quotation, memoOut, memoOutReturn, memoReceive, memoStock, memoReturn, memoOutstanding, reserve, purchaseOrder, purchase });
+    const router = createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, decimalSetup, approvalSetting, currency, quotation, memoOut, memoOutReturn, memoReceive, memoStock, memoReturn, memoOutstanding, reserve, purchaseOrder, purchase, approval });
     this.handler = createExpressMiddleware({ router, createContext: ({ req }) => this.authContext.create(req) });
   }
 

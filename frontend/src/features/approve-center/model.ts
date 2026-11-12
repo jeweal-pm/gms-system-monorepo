@@ -1,9 +1,11 @@
+import type { DocumentApprovalType } from "@/features/trade-document/flow-status";
 import { isCallerLicenseCode, readDomainError } from "@/lib/trpc-error";
 import type { ApproveMenu, AvailableMenu } from "./menus";
 
 /**
- * Approve Center pure rules (approve-center UI rev 1, phase 1): permissions, counts, row adapter, sort, selection,
- * landing menu and error messages. The hooks in `api.ts` and the components only wire these.
+ * Approve Center pure rules (approve-center UI rev 1; phase 2 FE-AP-009/010 and approval-setup FE-AS-009/013):
+ * permissions, counts, row adapter, sort, selection, landing menu, review dialogs and error messages. The hooks in
+ * `api.ts` and the components only wire these.
  */
 
 // ---------- permissions (FE-AP-002, Q-AP-13) ----------
@@ -11,7 +13,10 @@ import type { ApproveMenu, AvailableMenu } from "./menus";
 export type Mine = { isSuperAdmin: boolean; permissions: "ALL" | readonly string[] } | undefined;
 export type MenuAccess = { approve: boolean; view: boolean };
 
-/** UX only; the server checks APPROVE (+ CSRF) on every approve and VIEW on every list. */
+/**
+ * UX only; the server checks `canApprove` (`<leaf>:APPROVE`, + CSRF on writes) on every approve / reject / revise and on
+ * `approval.pending` (approval-setup authorization.md: VIEW is not needed to approve, G11).
+ */
 export function menuAccess(mine: Mine, menu: ApproveMenu): MenuAccess {
   const can = (action: string) => Boolean(mine && (mine.isSuperAdmin || mine.permissions === "ALL" || mine.permissions.includes(`${menu.leaf}:${action}`)));
   return { approve: can("APPROVE"), view: can("VIEW") };
@@ -21,27 +26,44 @@ export function visibleMenus(mine: Mine, menus: readonly ApproveMenu[]): Approve
   return menus.filter((menu) => menuAccess(mine, menu).approve);
 }
 
-/** Count queries are made only for menus with a document API that the user may approve and list. */
-export function countedMenus(mine: Mine, menus: readonly ApproveMenu[]): AvailableMenu[] {
-  return menus.filter((menu): menu is AvailableMenu => menu.availability === "available" && menuAccess(mine, menu).approve && menuAccess(mine, menu).view);
-}
-
-// ---------- counts (FE-AP-003) ----------
+// ---------- counts (FE-AP-003 → FE-AP-009 / FE-AS-009: `approval.summary`) ----------
 
 export const PENDING_STATUS = "PENDING_APPROVAL" as const;
-export const COUNT_INPUT = { status: PENDING_STATUS, limit: 1 } as const;
 export const COUNT_CAP = 99;
 
-export type CountState = { status: "pending" | "error" | "success"; total?: number };
+/** `approval.summary` (approve-center api-contract as amended by approval-setup G13). */
+export type ApprovalSummary = {
+  /** Types whose approval is ON and that the caller may approve; 0 ≤ count ≤ `countCap`. */
+  items: readonly { type: string; count: number }[];
+  countCap: number;
+  /** Every type the caller may approve with its setting (OFF types are shown "off"). */
+  types: readonly { type: string; requireApproval: boolean }[];
+};
+
+/** One menu's count: `off` = the type's approval is off (no count, "off" badge). */
+export type CountState = { status: "pending" | "error" | "success"; total?: number; off?: boolean };
 export type MenuBadge = { kind: "count"; text: string } | { kind: "off" } | { kind: "none" };
 
 export const capCount = (total: number) => (total > COUNT_CAP ? `${COUNT_CAP}+` : String(total));
 
-/** Panel badge: "off" for Quotation, the count when > 0, nothing while loading, on error, at 0 or without an API. */
+/**
+ * A menu's count from the summary query: undefined for a menu without a document type or one the summary does not
+ * return for the caller; `off` for a type whose setting is OFF; otherwise the capped pending count (0 when none).
+ */
+export function summaryCount(summary: { status: CountState["status"]; data?: ApprovalSummary }, menu: ApproveMenu): CountState | undefined {
+  if (menu.availability !== "available") return undefined;
+  if (summary.status !== "success" || !summary.data) return { status: summary.status === "error" ? "error" : "pending" };
+  const setting = summary.data.types.find((entry) => entry.type === menu.type);
+  if (!setting) return undefined;
+  if (!setting.requireApproval) return { status: "success", off: true };
+  return { status: "success", total: summary.data.items.find((entry) => entry.type === menu.type)?.count ?? 0 };
+}
+
+/** Panel badge: "off" for a type whose approval is off, the count when > 0, nothing while loading, on error or at 0. */
 export function menuBadge(menu: ApproveMenu, count: CountState | undefined): MenuBadge {
-  if (menu.availability === "off") return { kind: "off" };
-  if (menu.availability !== "available" || !count || count.status !== "success" || !count.total) return { kind: "none" };
-  return { kind: "count", text: capCount(count.total) };
+  if (menu.availability !== "available" || !count || count.status !== "success") return { kind: "none" };
+  if (count.off) return { kind: "off" };
+  return count.total ? { kind: "count", text: capCount(count.total) } : { kind: "none" };
 }
 
 /**
@@ -59,64 +81,97 @@ export function landingMenu(menus: readonly ApproveMenu[], countOf: (menu: Appro
   return menus.find((menu) => (countOf(menu)?.total ?? 0) > 0) ?? menus[0] ?? null;
 }
 
-// ---------- rows (FE-AP-004) ----------
+// ---------- rows (FE-AP-009: `approval.pending`) ----------
 
-/** One existing `<doc>.list` item (verified 2026-11-07, `document-engine.ts` list). */
-export type PendingListItem = {
+export type ApprovalReview = { action: "REVISE" | "REJECT"; note: string; at: string; byName: string | null };
+
+/** One `approval.pending` row (approve-center api-contract `ApprovalRow` + approval-setup `revisionCount`). */
+export type PendingApprovalItem = {
+  type: string;
   id: string;
   docNo: string;
-  status: string;
   docDate: string;
-  dueDate?: string | null;
-  customerName?: string | null;
-  vendorName?: string | null;
+  dueDate: string;
+  version: number;
+  status: string;
+  party: { id: string; code: string; name: string };
+  ref: string;
   currency: string;
   grandTotal: string;
+  lineCount: number;
+  totalPcs: number;
+  totalWeightCt: string;
+  stoneNames: readonly string[];
+  moreStoneCount: number;
+  submittedAt: string;
+  submittedBy: string;
+  submittedByName: string | null;
+  revisionCount: number;
+  lastReview: ApprovalReview | null;
   updatedAt: string;
-  deletedAt?: string | null;
 };
-export type PendingPage = { items: readonly PendingListItem[]; nextCursor: string | null; total: number };
+export type PendingPage = { items: readonly PendingApprovalItem[]; nextCursor: string | null };
 
-/** The single row shape of every menu; optional fields render "—" until SA-AP-02 supplies them. */
+/** The single row shape of every menu. */
 export type ApprovalRow = {
   id: string;
   docNo: string;
   docDate: string;
   dueDate: string | null;
   partyName: string;
-  lineCount?: number;
-  stoneNames?: readonly string[];
-  totalPcs?: number;
-  totalWeightCt?: string;
+  lineCount: number;
+  stoneNames: readonly string[];
+  moreStoneCount: number;
+  totalPcs: number;
+  totalWeightCt: string;
   grandTotal: string;
   currency: string;
-  submittedBy?: string;
-  submittedRole?: string;
-  /** Phase 1: `updatedAt` ("Last saved"), labelled as such. */
+  /** Submitter name snapshot; null = unknown ("—"). */
+  submittedBy: string | null;
   submittedAt: string;
-  submittedAtIsLastSaved: boolean;
-  version?: number;
+  /** Passed as `expectedVersion` to approve / reject / requestRevision (no `get` first). */
+  version: number;
+  /** 1 = already sent back once: Revise is refused (ADR-0050). */
+  revisionCount: number;
+  lastReview: ApprovalReview | null;
 };
 
 export const DASH = "—";
 
-export function toApprovalRow(item: PendingListItem): ApprovalRow {
+export function toApprovalRow(item: PendingApprovalItem): ApprovalRow {
   return {
     id: item.id,
     docNo: item.docNo,
     docDate: item.docDate,
-    dueDate: item.dueDate ?? null,
-    partyName: item.customerName ?? item.vendorName ?? DASH,
+    dueDate: item.dueDate || null,
+    partyName: item.party.name || DASH,
+    lineCount: item.lineCount,
+    stoneNames: item.stoneNames,
+    moreStoneCount: item.moreStoneCount,
+    totalPcs: item.totalPcs,
+    totalWeightCt: item.totalWeightCt,
     grandTotal: item.grandTotal,
     currency: item.currency,
-    submittedAt: item.updatedAt,
-    submittedAtIsLastSaved: true,
+    submittedBy: item.submittedByName,
+    submittedAt: item.submittedAt,
+    version: item.version,
+    revisionCount: item.revisionCount,
+    lastReview: item.lastReview,
   };
 }
 
-/** Pending rows of the loaded pages; deleted documents (never listed by default) are dropped defensively. */
+/** Rows of the loaded pages in server order; pending rows only, each id once. */
 export function rowsOf(pages: readonly PendingPage[] | undefined): ApprovalRow[] {
-  return (pages ?? []).flatMap((page) => page.items.filter((item) => !item.deletedAt && item.status === PENDING_STATUS).map(toApprovalRow));
+  const seen = new Set<string>();
+  const rows: ApprovalRow[] = [];
+  for (const page of pages ?? []) {
+    for (const item of page.items) {
+      if (item.status !== PENDING_STATUS || seen.has(item.id)) continue;
+      seen.add(item.id);
+      rows.push(toApprovalRow(item));
+    }
+  }
+  return rows;
 }
 
 /** yyyy-mm-dd → dd/mm/yy (design "01/11/26"). */
@@ -142,33 +197,31 @@ export function submittedTime(iso: string): string {
   return Number.isNaN(at.getTime()) ? iso : submittedFormatter.format(at).replace(",", "");
 }
 
-export const STONE_NAME_CAP = 3;
-
-/** Distinct stone names in line order, at most 3, then `+k`. */
-export function stoneSummary(names: readonly string[]): string {
-  const distinct = [...new Set(names.filter(Boolean))];
-  const shown = distinct.slice(0, STONE_NAME_CAP).join(", ");
-  const rest = distinct.length - STONE_NAME_CAP;
-  return rest > 0 ? `${shown} +${rest}` : shown;
+/** The server's ≤ 3 distinct stone names in line order, then `+k` for the rest. */
+export function stoneSummary(names: readonly string[], more: number): string {
+  const shown = names.filter(Boolean).join(", ");
+  return more > 0 ? `${shown} +${more}` : shown;
 }
 
 const lines = (count: number) => `${count} ${count === 1 ? "line" : "lines"}`;
 
-/** Detail sub line per menu (ui-spec "Per-menu variants"); parts phase 1 lacks are left out, "—" when none remain. */
+/** Detail sub line per menu (ui-spec "Per-menu variants"): due date, lines, stones. */
 export function detailSubLine(menu: AvailableMenu, row: ApprovalRow): string {
   const parts = [
     menu.dueLabel && row.dueDate ? `${menu.dueLabel} ${shortDate(row.dueDate)}` : null,
-    row.lineCount !== undefined ? lines(row.lineCount) : null,
-    row.stoneNames && row.stoneNames.length > 0 ? stoneSummary(row.stoneNames) : null,
+    lines(row.lineCount),
+    row.stoneNames.length > 0 ? stoneSummary(row.stoneNames, row.moreStoneCount) : null,
   ].filter((part): part is string => Boolean(part));
-  return parts.length > 0 ? parts.join(" · ") : DASH;
+  return parts.join(" · ");
 }
 
-/** "{user} ({role})" or "—" while the list has no submitter (phase 1). */
-export function submitterText(row: ApprovalRow): string {
-  if (!row.submittedBy) return DASH;
-  return row.submittedRole ? `${row.submittedBy} (${row.submittedRole})` : row.submittedBy;
+/** The submitter's name, or "—" when unknown. */
+export function submitterText(row: Pick<ApprovalRow, "submittedBy">): string {
+  return row.submittedBy?.trim() || DASH;
 }
+
+/** A document sent again after a Revise (Revise is then no longer offered). */
+export const RESUBMITTED_TEXT = "Sent again after Revise";
 
 // ---------- search ----------
 
@@ -182,12 +235,8 @@ export function searchQuery(text: string): string | undefined {
 }
 
 export const PAGE_SIZE = 50;
-export type PendingListInput = { status: typeof PENDING_STATUS; limit: number; q?: string; cursor?: string | null };
-export function pendingListInput(q: string | undefined): PendingListInput {
-  return q ? { status: PENDING_STATUS, limit: PAGE_SIZE, q } : { status: PENDING_STATUS, limit: PAGE_SIZE };
-}
 
-// ---------- sort (Q-AP-11) ----------
+// ---------- sort (Q-AP-11, server order) ----------
 
 export type SortKey = "document" | "detail" | "qty" | "value" | "submitted";
 export type SortDir = "asc" | "desc";
@@ -200,42 +249,15 @@ export function nextSort(current: SortState, key: SortKey): SortState {
   return current.key === key ? { key, dir: current.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" };
 }
 
-type SortValue = string | number | undefined;
-function sortValue(row: ApprovalRow, key: SortKey): SortValue | [string, number] {
-  switch (key) {
-    case "document":
-      return row.docNo;
-    case "detail":
-      return row.partyName.toLocaleLowerCase("en");
-    case "qty":
-      return row.totalWeightCt === undefined ? undefined : Number(row.totalWeightCt);
-    case "value":
-      return [row.currency, Number(row.grandTotal)];
-    case "submitted":
-      return row.submittedAt;
-  }
-}
+/** Column → `approval.pending` sort key. */
+export const SERVER_SORT = { document: "docNo", detail: "party", qty: "qty", value: "value", submitted: "submittedAt" } as const satisfies Record<SortKey, string>;
 
-function compareValues(a: SortValue | [string, number], b: SortValue | [string, number]): number {
-  if (Array.isArray(a) && Array.isArray(b)) return a[0] === b[0] ? a[1] - b[1] : a[0] < b[0] ? -1 : 1;
-  if (typeof a === "number" && typeof b === "number") return a - b;
-  return String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0;
-}
+export type PendingInput = { type: DocumentApprovalType; q?: string; sort: (typeof SERVER_SORT)[SortKey]; dir: SortDir; limit: number };
 
-/** Client sort of the loaded rows (phase 1; SA-AP-02 adds server order). Missing values go last; ties keep doc no. order. */
-export function sortRows(rows: readonly ApprovalRow[], sort: SortState): ApprovalRow[] {
-  const sign = sort.dir === "asc" ? 1 : -1;
-  return [...rows].sort((left, right) => {
-    const a = sortValue(left, sort.key);
-    const b = sortValue(right, sort.key);
-    if (a === undefined || b === undefined) {
-      if (a !== b) return a === undefined ? 1 : -1;
-    } else {
-      const order = compareValues(a, b) * sign;
-      if (order !== 0) return order;
-    }
-    return left.docNo < right.docNo ? -1 : left.docNo > right.docNo ? 1 : 0;
-  });
+/** The `approval.pending` input of one menu, search and sort (the cursor is added by the infinite query). */
+export function pendingInput(menu: AvailableMenu, q: string | undefined, sort: SortState): PendingInput {
+  const input: PendingInput = { type: menu.type, sort: SERVER_SORT[sort.key], dir: sort.dir, limit: PAGE_SIZE };
+  return q ? { ...input, q } : input;
 }
 
 export function ariaSort(sort: SortState, key: SortKey): "ascending" | "descending" | "none" {
@@ -291,46 +313,113 @@ export function bulkConfirm(count: number) {
 export const bulkProgress = (index: number, total: number) => `Approving ${index} of ${total}…`;
 export const bulkResult = (ok: number, total: number, stopped: boolean) => `Approved ${ok} of ${total}${stopped ? ". Stopped." : ""}`;
 
-/**
- * What happens to a row after a failed get / approve (error-handling.md):
- * `refetch` reloads the list; `inline` keeps the reason under the row's actions; `link` asks to open the document.
- */
-export type ApproveFailure = { toast: string; inline: string | null; refetch: boolean; link: boolean; refetchAccess: boolean };
+export type ReviewAction = "approve" | "reject" | "revise";
+const VERB: Record<ReviewAction, string> = { approve: "approve", reject: "reject", revise: "send back" };
+const DONE: Record<ReviewAction, string> = { approve: "approved", reject: "rejected", revise: "sent back" };
 
-export function approveFailure(error: unknown, menu: ApproveMenu, docNo: string): ApproveFailure {
+/**
+ * What happens to a row after a failed approve / reject / revise (approve-center error-handling, approval-setup
+ * error-handling): `refetch` reloads the list and counts (the row leaves when it is no longer pending); `inline` keeps
+ * the reason under the row's actions; `link` asks to open the document; `off` = the type's approval is off now.
+ */
+export type ApproveFailure = { toast: string; inline: string | null; refetch: boolean; link: boolean; refetchAccess: boolean; off: boolean };
+
+export function actionFailure(error: unknown, menu: ApproveMenu, docNo: string, action: ReviewAction): ApproveFailure {
   const { domainCode } = readDomainError(error);
   const code = domainCode ?? "";
-  const base = { inline: null, refetch: false, link: false, refetchAccess: false };
+  const verb = VERB[action];
+  const retryText = `Couldn't ${verb}. Try again.`;
+  const base = { inline: null, refetch: false, link: false, refetchAccess: false, off: false };
   if (code.endsWith("_PENDING_SHORT") || code.endsWith("_OUTSTANDING_SHORT")) {
     const inline = "Some stock items no longer have enough pending. Open the document to fix it.";
     return { ...base, toast: `Couldn't approve ${docNo}. ${inline}`, inline, link: true };
   }
+  if (code.endsWith("_REVISE_LIMIT")) return { ...base, toast: `${docNo} was already sent back once. Approve or reject it.`, refetch: true };
   if (code.endsWith("_CHANGED")) return { ...base, toast: `${docNo} was changed by someone else. The list was refreshed.`, refetch: true };
   if (code.endsWith("_STATUS_INVALID")) return { ...base, toast: `${docNo} is no longer pending.`, refetch: true };
   if (code.endsWith("_DELETED") || code.endsWith("_NOT_FOUND")) return { ...base, toast: `${docNo} was deleted.`, refetch: true };
+  if (code === "APPROVAL_TYPE_OFF") return { ...base, toast: approvalOffText(menu), refetch: true, off: true };
   if (code === "PERMISSION_DENIED" || code === "FORBIDDEN") {
-    return { ...base, toast: `You no longer have permission to approve ${menu.label}.`, inline: "No permission to approve.", refetchAccess: true };
+    return { ...base, toast: `You no longer have permission to approve ${menu.label}.`, inline: `No permission to ${verb}.`, refetchAccess: true };
   }
-  if (code === "CSRF_INVALID") return { ...base, toast: "Your session needs a refresh. Reload the page and try again.", inline: "Couldn't approve. Try again." };
-  if (code === "UNAUTHORIZED") return { ...base, toast: "Your session has ended. Sign in again.", inline: "Couldn't approve. Try again." };
-  if (isCallerLicenseCode(code)) return { ...base, toast: "Your license doesn't allow this right now. Nothing was approved.", inline: "Couldn't approve. Try again." };
-  return { ...base, toast: `Couldn't approve ${docNo}. Try again.`, inline: "Couldn't approve. Try again." };
+  if (code === "CSRF_INVALID") return { ...base, toast: "Your session needs a refresh. Reload the page and try again.", inline: retryText };
+  if (code === "UNAUTHORIZED") return { ...base, toast: "Your session has ended. Sign in again.", inline: retryText };
+  if (isCallerLicenseCode(code)) return { ...base, toast: `Your license doesn't allow this right now. Nothing was ${DONE[action]}.`, inline: retryText };
+  return { ...base, toast: `Couldn't ${verb} ${docNo}. Try again.`, inline: retryText };
 }
 
-/** List load errors: no VIEW shows the permission text; everything else offers Retry. */
-export function listLoadError(error: unknown, menu: ApproveMenu): { message: string; retry: boolean } {
-  const { domainCode } = readDomainError(error);
-  if (domainCode === "PERMISSION_DENIED" || domainCode === "FORBIDDEN") return { message: noViewMessage(menu), retry: false };
-  if (domainCode === "UNAUTHORIZED") return { message: "Your session has ended. Sign in again.", retry: false };
-  return { message: `Couldn't load ${menu.label} approvals.`, retry: true };
+export const approveFailure = (error: unknown, menu: ApproveMenu, docNo: string) => actionFailure(error, menu, docNo, "approve");
+
+/** List load errors: the type turned off, a stale cursor (reset paging), permission, or Retry. */
+export function listLoadError(error: unknown, menu: ApproveMenu): { message: string; retry: boolean; off: boolean; resetPaging: boolean } {
+  const { domainCode, fieldErrors } = readDomainError(error);
+  const base = { retry: false, off: false, resetPaging: false };
+  if (domainCode === "APPROVAL_TYPE_OFF") return { ...base, message: approvalOffText(menu), off: true };
+  if (domainCode === "VALIDATION_ERROR" && fieldErrors.some((field) => field.path === "cursor")) {
+    return { ...base, message: `Couldn't load ${menu.label} approvals.`, retry: true, resetPaging: true };
+  }
+  if (domainCode === "PERMISSION_DENIED" || domainCode === "FORBIDDEN") return { ...base, message: noApproveMessage(menu) };
+  if (domainCode === "UNAUTHORIZED") return { ...base, message: "Your session has ended. Sign in again." };
+  return { ...base, message: `Couldn't load ${menu.label} approvals.`, retry: true };
 }
 
-export const noViewMessage = (menu: ApproveMenu) => `You don't have permission to view ${menu.label} documents.`;
 export const noApproveMessage = (menu: ApproveMenu) => `You don't have permission to approve ${menu.label} documents.`;
+/** approval-setup error-handling: `APPROVAL_TYPE_OFF` → "Approval is off for {Menu}." and the off state. */
+export const approvalOffText = (menu: ApproveMenu) => `Approval is off for ${menu.label}.`;
+export const APPROVAL_OFF_TITLE = "Approval is off";
+export const approvalOffDetail = (menu: ApproveMenu) => `${approvalOffText(menu)} Its documents are approved when they are saved.`;
 
-/** Phase 1 disabled actions (FE-AP-007; Q-AP-01/02 answered, backend designed by SA). */
-export const REJECT_UNAVAILABLE = "Reject is coming soon";
-export const REVISE_UNAVAILABLE = "Revise is coming soon";
+// ---------- Reject… / Revise… (FE-AP-010, FE-AS-013; ADR-0050 Q-AS-32) ----------
+
+export const REVIEW_REASON_MAX = 500;
+/** Revise is offered once per document (ADR-0050). */
+export const REVISE_LIMIT_REASON = "Already sent back once. Approve or reject it.";
+export const canRevise = (row: Pick<ApprovalRow, "revisionCount">) => row.revisionCount < 1;
+
+export type ReviewKind = Exclude<ReviewAction, "approve">;
+export type ReviewText = { title: string; body: string; label: string; confirmLabel: string; pendingLabel: string; required: string; success: string };
+
+export function reviewText(kind: ReviewKind, docNo: string): ReviewText {
+  if (kind === "reject") {
+    return {
+      title: `Reject ${docNo}?`,
+      body: "Rejecting is final: the document can no longer be edited or sent again.",
+      label: "Reason for reject",
+      confirmLabel: "Reject",
+      pendingLabel: "Rejecting…",
+      required: "Enter the reason before choosing Reject",
+      success: `${docNo} rejected`,
+    };
+  }
+  return {
+    title: `Send ${docNo} back for revision?`,
+    body: "It goes back to its creator to edit and send again. A document can be sent back only once.",
+    label: "Reason for revise",
+    confirmLabel: "Revise",
+    pendingLabel: "Sending back…",
+    required: "Enter the reason before choosing Revise",
+    success: `${docNo} sent back for revision`,
+  };
+}
+
+export const REASON_TOO_LONG = `Keep the reason to ${REVIEW_REASON_MAX} characters or fewer.`;
+
+/** Client check before the call (the server checks the same: trimmed, 1–500 characters). */
+export function reviewReasonError(kind: ReviewKind, reason: string): string | null {
+  const text = reason.trim();
+  if (text === "") return reviewText(kind, "").required;
+  if (text.length > REVIEW_REASON_MAX) return REASON_TOO_LONG;
+  return null;
+}
+
+/** A server `VALIDATION_ERROR` on `reason` / `note` → the dialog's inline message; null for any other error. */
+export function reviewFieldError(kind: ReviewKind, error: unknown): string | null {
+  const { domainCode, fieldErrors } = readDomainError(error);
+  if (domainCode !== "VALIDATION_ERROR") return null;
+  const field = fieldErrors.find((entry) => entry.path === "reason" || entry.path === "note");
+  if (!field) return null;
+  return field.code === "too_big" ? REASON_TOO_LONG : reviewText(kind, "").required;
+}
 
 export const EMPTY_TITLE = "Nothing waiting";
 export const EMPTY_TEXT = "Every document in this menu has been reviewed.";
@@ -344,15 +433,13 @@ export const NO_SELECTION: ReadonlySet<string> = new Set();
 /** The selection belongs to one search + sort; changing either starts a new, empty selection. */
 export const selectionScope = (q: string | undefined, sort: SortState) => `${q ?? ""}\u0000${sort.key}:${sort.dir}`;
 
-export type BulkCalls = {
-  prepare: (id: string) => Promise<{ version: number }>;
-  approve: (id: string, expectedVersion: number) => Promise<unknown>;
-};
+export type BulkCalls = { approve: (id: string, expectedVersion: number) => Promise<unknown> };
 export type BulkOutcome = { ok: number; failed: Map<string, ApproveFailure>; stopped: boolean };
 
 /**
- * FE-AP-006: approves `rows` one at a time in the given order (no parallel burst; 4 GB / 2 vCPU budget). Each row gets
- * a fresh version (`get`) before its `approve`. `isCancelled` is read before each document, so Cancel stops before the next.
+ * FE-AP-006: approves `rows` one at a time in the given order (no parallel burst; 4 GB / 2 vCPU budget), each with the
+ * version its row was listed at (FE-AP-009: no `get` first). `isCancelled` is read before each document, so Cancel
+ * stops before the next.
  */
 export async function runBulkApprove(
   rows: readonly ApprovalRow[],
@@ -368,8 +455,7 @@ export async function runBulkApprove(
     if (isCancelled()) break;
     onProgress(index + 1, rows.length);
     try {
-      const { version } = await calls.prepare(row.id);
-      await calls.approve(row.id, version);
+      await calls.approve(row.id, row.version);
       ok += 1;
     } catch (error) {
       failed.set(row.id, approveFailure(error, menu, row.docNo));

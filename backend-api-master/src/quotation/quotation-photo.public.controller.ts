@@ -5,9 +5,13 @@ import type { Request, Response } from "express";
 import { parseId } from "../common/request";
 import { prisma } from "../database/prisma-client";
 import { PublicRoute } from "../internal-auth/public.decorator";
-import { requireMasterGrant, type MasterContext, type MasterMenu } from "../master/authorization";
+import { TRPCError } from "@trpc/server";
+import { Prisma } from "../generated/prisma/client";
+import type { ApprovalDocType } from "../approval-setting/approval-types";
+import { APPROVAL_REGISTRY } from "../approval/approval.registry";
+import type { MasterContext, MasterMenu } from "../master/authorization";
 import { MasterTrpcHandler } from "../master/trpc-handler";
-import { photoUploaderId } from "./quotation-photo.http";
+import { photoReader, photoUploaderId } from "./quotation-photo.http";
 import { mapQuotationError, quotationNotFound, quotationPhotoInvalid } from "./quotation.errors";
 import {
   isPhotoType,
@@ -79,10 +83,40 @@ export async function uploadPhoto(endpoint: PhotoEndpoint, context: MasterContex
   }
 }
 
-/** Streams one ready photo of this endpoint's source with immutable caching and safe headers. */
+/**
+ * G14: whether photo `fileId` is on a line of a live PENDING_APPROVAL document of the endpoint's type (registry
+ * identifiers only; one indexed EXISTS over `<line>_photo(file_id)`).
+ */
+export async function isPendingDocumentPhoto(menu: MasterMenu, fileId: string): Promise<boolean> {
+  const entry = APPROVAL_REGISTRY[menu as ApprovalDocType];
+  if (!entry) return false;
+  const table = (name: string) => Prisma.raw(`"partner"."${name}"`);
+  const [row] = await prisma.$queryRaw<{ ok: boolean }[]>(Prisma.sql`
+    SELECT EXISTS (
+      SELECT 1 FROM ${table(`${entry.lineTable}_photo`)} p
+      JOIN ${table(entry.lineTable)} l ON l."id" = p."line_id"
+      JOIN ${table(entry.table)} h ON h."id" = l.${Prisma.raw(`"${entry.parentColumn}"`)}
+      WHERE p."file_id" = ${fileId}::uuid AND h."status" = 'PENDING_APPROVAL' AND h."deleted_at" IS NULL
+    ) AS "ok"`);
+  return row?.ok === true;
+}
+
+/**
+ * Streams one ready photo of this endpoint's source with immutable caching and safe headers. Readers: `<menu>:VIEW`, or
+ * (G14) an approver of the type for a photo of a live PENDING_APPROVAL document; any other photo → PERMISSION_DENIED.
+ */
 export async function streamPhoto(endpoint: PhotoEndpoint, context: MasterContext, rawId: string, response: Response, logger: Logger) {
-  requireMasterGrant(context, endpoint.menu, "VIEW", false);
+  const { approverOnly } = photoReader(context, endpoint.menu);
   const id = parseId(rawId);
+  if (approverOnly) {
+    let allowed: boolean;
+    try {
+      allowed = await isPendingDocumentPhoto(endpoint.menu, id);
+    } catch (error) {
+      throw endpoint.mapError(error, "photo_read");
+    }
+    if (!allowed) throw new TRPCError({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+  }
   const file = await prisma.storedFile.findFirst({ where: { id, sourceType: endpoint.source, status: "ready" }, select: { objectKey: true, contentType: true } });
   if (!file) throw endpoint.notFound();
   const photo = await endpoint.open(file.objectKey);

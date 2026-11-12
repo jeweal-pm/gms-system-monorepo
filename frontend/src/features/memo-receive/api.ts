@@ -16,7 +16,7 @@ import { authTrpc } from "@/lib/auth-trpc";
 import { masterTrpc } from "@/lib/master-trpc";
 import { daybookInput, daybookQueryOptions, deletedMessage, mapDocumentRestoreError } from "@/features/trade-document/document-api";
 import { isCallerLicenseCode, readDomainError, retryTransient } from "@/lib/trpc-error";
-import type { MemoReceiveFormValues, MemoReceiveStatus } from "./schema";
+import type { MemoReceiveFormValues } from "./schema";
 
 export type MemoReceiveDetail = InferQueryLikeData<typeof masterTrpc.memoReceive.get>;
 export type MemoReceiveOptions = InferQueryLikeData<typeof masterTrpc.memoReceive.options>;
@@ -209,7 +209,7 @@ export function useMemoReceiveWrites() {
   const create = masterTrpc.memoReceive.create.useMutation(writes);
   const update = masterTrpc.memoReceive.update.useMutation(writes);
   const remove = masterTrpc.memoReceive.delete.useMutation(writes);
-  const approve = masterTrpc.memoReceive.approve.useMutation(writes);
+  const submit = masterTrpc.memoReceive.submit.useMutation(writes);
   const restore = masterTrpc.memoReceive.restore.useMutation(writes);
   const invalidate = useCallback(
     () => Promise.all([utils.memoReceive.list.invalidate(), utils.memoReceive.get.invalidate(), utils.memoReceive.nextNumber.invalidate()]),
@@ -224,12 +224,11 @@ export function useMemoReceiveWrites() {
     create: create.mutateAsync,
     update: update.mutateAsync,
     remove: remove.mutateAsync,
-    approve: approve.mutateAsync,
+    submit: submit.mutateAsync,
     restore: restore.mutateAsync,
     invalidate,
     reload,
-    busy: create.isPending || update.isPending || remove.isPending || approve.isPending || restore.isPending,
+    busy: create.isPending || update.isPending || remove.isPending || submit.isPending || restore.isPending,
   };
 }
 
-export const isPendingApproval = (status: MemoReceiveStatus | undefined) => status === "PENDING_APPROVAL";

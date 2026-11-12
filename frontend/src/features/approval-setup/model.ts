@@ -1,20 +1,37 @@
-import { APPROVE_MENUS, type ApproveMenu, type ApproveMenuSlug, type AvailableMenu } from "@/features/approve-center/menus";
-import type { CountState, Mine } from "@/features/approve-center/model";
+import { APPROVE_MENUS, type ApprovalSettingType, type ApproveMenu } from "@/features/approve-center/menus";
+import { readDomainError } from "@/lib/trpc-error";
 
 /**
- * Setup › Approval pure rules (approval-setup UI rev 1, phase 1, owner 2026-11-09). The rows are the Approve Center
- * registry (sidebar order, Memo rows included). Phase 1 keeps the switches in page state only: nothing is saved.
+ * Setup › Approval pure rules (approval-setup UI rev 1; phase 2 FE-AS-008/011 on `approvalSetting.list` / `update`,
+ * ADR-0050). The rows are the Approve Center registry (sidebar order, Memo rows included).
  */
-
-export type ApprovalSettings = Readonly<Record<ApproveMenuSlug, boolean>>;
-
-/** The system today (owner answer 4): Quotation is approved on Save; every other type needs approval. */
-export const DEFAULT_APPROVAL_SETTINGS: ApprovalSettings = Object.fromEntries(APPROVE_MENUS.map((menu) => [menu.slug, menu.slug !== "quotation"])) as Record<ApproveMenuSlug, boolean>;
 
 export const SETUP_ROWS: readonly ApproveMenu[] = APPROVE_MENUS;
 
 /** Load to Stock, Merge/Split Stock, Transfer Location: no page yet; switch On and disabled (Q-AS-04). */
 export const isNotAvailable = (menu: ApproveMenu) => menu.availability === "not-available";
+
+// ---------- server rows (FE-AS-008, api-contract `approvalSetting.list`) ----------
+
+export type ApprovalSettingItem = {
+  type: string;
+  requireApproval: boolean;
+  /** false for the three future types: the switch stays disabled (G6). */
+  available: boolean;
+  version: number;
+  updatedAt: string;
+  updatedByName: string | null;
+  /** PENDING_APPROVAL + REVISION_REQUESTED, capped at 100; null without approval-setup:VIEW (shown "—"). */
+  waiting: number | null;
+};
+
+export const settingOf = (items: readonly ApprovalSettingItem[] | undefined, type: ApprovalSettingType) => items?.find((item) => item.type === type);
+
+/** A row can be switched only when the page has it, the server says it is available and the user has EDIT. */
+export function rowLocked(menu: ApproveMenu, setting: ApprovalSettingItem | undefined): "not-available" | "loading" | null {
+  if (isNotAvailable(menu) || (setting && !setting.available)) return "not-available";
+  return setting ? null : "loading";
+}
 
 // ---------- status chain (C-AS-05/06) ----------
 
@@ -45,40 +62,24 @@ export function helperText(menu: ApproveMenu, on: boolean): string {
 
 // ---------- waiting for approval (C-AS-07) ----------
 
-export const documentsLabel = (count: number) => `${count.toLocaleString("en-US")} ${count === 1 ? "document" : "documents"}`;
+/** `waiting` is capped at 100 by the server: 100 reads "100+". */
+export const WAITING_CAP = 100;
 
-/** Count queries only for a type with a document API that the user may list (VIEW). */
-export function countedSetupMenus(mine: Mine): AvailableMenu[] {
-  const canView = (menu: ApproveMenu) => Boolean(mine && (mine.isSuperAdmin || mine.permissions === "ALL" || mine.permissions.includes(`${menu.leaf}:VIEW`)));
-  return SETUP_ROWS.filter((menu): menu is AvailableMenu => menu.availability === "available" && canView(menu));
-}
+export const documentsLabel = (count: number) => `${count >= WAITING_CAP ? `${WAITING_CAP}+` : count.toLocaleString("en-US")} ${count === 1 ? "document" : "documents"}`;
 
-export type WaitingCell =
-  | { kind: "none-applicable" }
-  | { kind: "loading" }
-  | { kind: "error" }
-  | { kind: "zero" }
-  | { kind: "count"; total: number; text: string };
+export type WaitingCell = { kind: "none-applicable" } | { kind: "zero" } | { kind: "count"; total: number; text: string };
 
-/** `count` is undefined when the type has no count query (Quotation, not available, no VIEW). */
-export function waitingCell(count: CountState | undefined): WaitingCell {
-  if (!count) return { kind: "none-applicable" };
-  if (count.status === "pending") return { kind: "loading" };
-  if (count.status === "error") return { kind: "error" };
-  const total = count.total ?? 0;
-  return total > 0 ? { kind: "count", total, text: documentsLabel(total) } : { kind: "zero" };
+/** `waiting` null (no approval-setup:VIEW, a type that is off or not available) → "—". */
+export function waitingCell(waiting: number | null | undefined): WaitingCell {
+  if (waiting === null || waiting === undefined) return { kind: "none-applicable" };
+  return waiting > 0 ? { kind: "count", total: waiting, text: documentsLabel(waiting) } : { kind: "zero" };
 }
 
 // ---------- switch (C-AS-09…12) ----------
 
-export type TurnOffDecision = "wait" | "blocked" | "confirm" | "failed";
-
-/** Turning Off: never on an unknown count; blocked while any document waits (owner answer 3). */
-export function turnOffDecision(count: CountState | undefined): TurnOffDecision {
-  if (!count) return "confirm";
-  if (count.status === "pending") return "wait";
-  if (count.status === "error") return "failed";
-  return (count.total ?? 0) > 0 ? "blocked" : "confirm";
+/** Turning Off: blocked at once when the loaded count shows waiting documents; otherwise confirm and let the server decide. */
+export function turnOffDecision(waiting: number | null | undefined): "blocked" | "confirm" {
+  return (waiting ?? 0) > 0 ? "blocked" : "confirm";
 }
 
 export type DialogText = { title: string; lead?: string; body: string; confirmLabel: string; cancelLabel: string };
@@ -100,17 +101,45 @@ export function turnOffText(menu: ApproveMenu): DialogText {
   return { title: `Turn off approval for ${menu.label}?`, body, confirmLabel: "Turn off", cancelLabel: "Cancel" };
 }
 
-/** Source 03: bold first sentence (singular / plural), then the instruction. */
+/**
+ * Source 03 layout with the Q-AS-12 / error-handling wording (waiting includes documents sent back for revision): bold
+ * first sentence (singular / plural), then the instruction.
+ */
 export function blockedText(menu: ApproveMenu, total: number): DialogText {
-  const lead = total === 1 ? `1 ${menu.label} document is still waiting for approval.` : `${total.toLocaleString("en-US")} ${menu.label} documents are still waiting for approval.`;
-  return { title: "Can't turn off approval yet", lead, body: "Approve or reject them in the Approve menu first, then turn approval off.", confirmLabel: "Go to Approve", cancelLabel: "Close" };
+  const lead =
+    total === 1
+      ? `1 ${menu.label} document is still waiting for approval or sent back for revision.`
+      : `${total >= WAITING_CAP ? `${WAITING_CAP}+` : total.toLocaleString("en-US")} ${menu.label} documents are still waiting for approval or sent back for revision.`;
+  return {
+    title: "Can't turn off approval yet",
+    lead,
+    body: "Finish them in the Approve menu (or have them sent again or deleted) first, then turn approval off.",
+    confirmLabel: "Go to Approve",
+    cancelLabel: "Close",
+  };
 }
 
-export function checkFailedText(menu: ApproveMenu): DialogText {
-  return { title: "Couldn't check waiting documents", body: `Try again in a moment. Approval for ${menu.label} stays on.`, confirmLabel: "Try again", cancelLabel: "Close" };
+export const switchedToast = (menu: ApproveMenu, on: boolean) => `Approval turned ${on ? "on" : "off"} for ${menu.label}.`;
+
+/** What a failed `approvalSetting.update` does (api-contract errors, approval-setup error-handling). */
+export type UpdateFailure =
+  | { kind: "blocked"; total: number }
+  | { kind: "toast"; message: string; refetchSettings: boolean; refetchAccess: boolean };
+
+export function updateFailure(error: unknown, menu: ApproveMenu, on: boolean): UpdateFailure {
+  const { domainCode, details } = readDomainError(error);
+  if (domainCode === "APPROVAL_SETTING_HAS_WAITING") {
+    const count = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 0);
+    return { kind: "blocked", total: count(details?.pending) + count(details?.revision) };
+  }
+  const toast = (message: string, refetchSettings = true, refetchAccess = false): UpdateFailure => ({ kind: "toast", message, refetchSettings, refetchAccess });
+  if (domainCode === "APPROVAL_SETTING_CHANGED") return toast(`Approval for ${menu.label} was changed by someone else.`);
+  if (domainCode === "VALIDATION_ERROR") return toast(`Approval for ${menu.label} is not available yet.`);
+  if (domainCode === "PERMISSION_DENIED" || domainCode === "FORBIDDEN") return toast("You don't have permission to change approval settings.", true, true);
+  if (domainCode === "CSRF_INVALID") return toast("Your session needs a refresh. Reload the page and try again.", false);
+  if (domainCode === "UNAUTHORIZED") return toast("Your session has ended. Sign in again.", false);
+  return toast(`Couldn't save. Approval for ${menu.label} is still ${on ? "on" : "off"}.`, false);
 }
 
-export const switchedToast = (menu: ApproveMenu, on: boolean) => `Approval turned ${on ? "on" : "off"} for ${menu.label}. Not saved yet.`;
-
-/** Phase 1 notice (Q-AS-06). */
-export const PREVIEW_NOTICE = "Preview only. These settings aren't saved yet: changes are lost when you refresh and don't change how documents are saved.";
+export const SETTINGS_LOAD_ERROR = "Couldn't load the approval settings.";
+export const VIEW_ONLY_HINT = "View only";

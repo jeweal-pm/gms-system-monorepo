@@ -6,11 +6,13 @@ import { Button, cx, focusRing } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { useTabReplace } from "@/features/home/tabs/tab-host";
-import { useApprovalCounts, useApproveCalls, usePendingList, useVisibleMenus } from "../api";
+import { useApprovalCounts, usePendingList, useReviewCalls, useVisibleMenus } from "../api";
 import { approveMenuFor, approveMenuHref, searchPlaceholder, type AvailableMenu } from "../menus";
 import {
+  actionFailure,
+  APPROVAL_OFF_TITLE,
+  approvalOffDetail,
   approveConfirm,
-  approveFailure,
   bulkConfirm,
   bulkProgress,
   bulkResult,
@@ -24,27 +26,32 @@ import {
   menuAccess,
   nextSort,
   noApproveMessage,
-  noViewMessage,
   NOT_AVAILABLE_TITLE,
   notAvailableText,
   NO_SELECTION,
+  pendingInput,
   pruneSelection,
+  reviewFieldError,
+  reviewText,
   rowsOf,
   runBulkApprove,
   SEARCH_DEBOUNCE_MS,
   SEARCH_MAX,
   searchQuery,
   selectedInOrder,
-  sortRows,
   toggleAll,
   toggleOne,
   type ApprovalRow,
+  type CountState,
+  type ReviewAction,
+  type ReviewKind,
   selectionScope,
   type SortState,
 } from "../model";
 import { ApprovalEmptyState, ApprovalTable, ProvisionalTable, SkeletonRows, type RowError } from "./ApprovalTable";
 import { ApproveMenuSelect, ApprovePanel } from "./ApprovePanel";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
+import { ReviewDialog } from "./ReviewDialog";
 import type { PreviewDetail } from "../preview";
 
 /** `/approve` (Q-AP-04): opens the first visible menu with pending documents, else the first visible menu, in this tab. */
@@ -105,14 +112,13 @@ export function ApproveMenuPage({ slug }: { slug: string }) {
     body = <SkeletonRows />;
   } else if (!menuAccess(mine, menu).approve) {
     body = <ApprovalEmptyState title="No access" text={noApproveMessage(menu)} />;
-  } else if (menu.availability === "off") {
-    body = <ApprovalEmptyState title={EMPTY_TITLE} text={EMPTY_TEXT} />;
   } else if (menu.availability === "not-available") {
     body = <ProvisionalTable menu={menu} title={NOT_AVAILABLE_TITLE} text={notAvailableText(menu)} />;
-  } else if (!menuAccess(mine, menu).view) {
-    body = <ApprovalEmptyState title="No access" text={noViewMessage(menu)} />;
+  } else if (countOf(menu)?.off) {
+    // FE-AS-009: the type's approval setting is OFF (approval.summary types[].requireApproval).
+    body = <ApprovalEmptyState title={APPROVAL_OFF_TITLE} text={approvalOffDetail(menu)} />;
   } else {
-    body = <PendingApprovals key={menu.slug} menu={menu} />;
+    body = <PendingApprovals key={menu.slug} menu={menu} count={countOf(menu)} />;
   }
 
   return (
@@ -126,8 +132,21 @@ type Confirm =
   | { kind: "one"; row: ApprovalRow; index: number; version: number; title: string; body: string; fromPreview?: boolean }
   | { kind: "bulk"; rows: ApprovalRow[]; title: string; body: string };
 
-/** FE-AP-004…007: search, pending rows, sort, selection, Approve and Approve selected for one available menu. */
-export function PendingApprovals({ menu }: { menu: AvailableMenu }) {
+/** An open Reject… / Revise… dialog: the row, its index and the version to send (the row's, or the modal's). */
+type Review = { kind: ReviewKind; row: ApprovalRow; index: number; version: number; fromPreview: boolean };
+
+/** "Showing n of N" uses the summary count (the pending list has no total); "100+" at the cap. */
+export function showingText(shown: number, q: string | undefined, count: CountState | undefined): string {
+  const total = count?.status === "success" && !count.off ? count.total : undefined;
+  if (q || total === undefined) return `Showing ${shown}`;
+  return `Showing ${shown} of ${total >= 100 ? "100+" : total}`;
+}
+
+/**
+ * FE-AP-004…007, FE-AP-009/010: search, server-sorted pending rows, selection, Approve / Approve selected, Reject… and
+ * Revise… for one available menu.
+ */
+export function PendingApprovals({ menu, count }: { menu: AvailableMenu; count?: CountState }) {
   const toast = useToast();
   const searchId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -148,8 +167,24 @@ export function PendingApprovals({ menu }: { menu: AvailableMenu }) {
   // Rev 2 (FE-AP-013): the row whose document preview modal is open.
   const [previewRow, setPreviewRow] = useState<ApprovalRow | null>(null);
   const cancelRef = useRef(false);
-  const list = usePendingList(menu, q, true);
-  const calls = useApproveCalls(menu);
+  const [review, setReview] = useState<Review | null>(null);
+  const [reviewPending, setReviewPending] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const list = usePendingList(menu, q, sort);
+  const calls = useReviewCalls(menu);
+  const loadError = list.isError ? listLoadError(list.error, menu) : null;
+
+  // A stale cursor (VALIDATION_ERROR cursor) restarts paging from the first page, once per failure.
+  const resetFor = loadError?.resetPaging ? list.errorUpdatedAt : null;
+  const { resetPaging, invalidate } = calls;
+  useEffect(() => {
+    if (resetFor !== null) void resetPaging(pendingInput(menu, q, sort));
+  }, [resetFor, resetPaging, menu, q, sort]);
+  // APPROVAL_TYPE_OFF: the type was turned off meanwhile; the summary refetch switches the page to the off state.
+  const offNow = loadError?.off ?? false;
+  useEffect(() => {
+    if (offNow) void invalidate("reject");
+  }, [offNow, invalidate]);
 
   // Search: debounced 300 ms, trimmed, ≤ 100 characters.
   useEffect(() => {
@@ -157,10 +192,9 @@ export function PendingApprovals({ menu }: { menu: AvailableMenu }) {
     return () => clearTimeout(timer);
   }, [text]);
 
-  const rows = useMemo(() => sortRows(rowsOf(list.data?.pages), sort), [list.data, sort]);
+  const rows = useMemo(() => rowsOf(list.data?.pages), [list.data]);
   // A refresh that removes a selected row drops it from the selection.
   const visibleSelection = useMemo(() => pruneSelection(selected, rows), [rows, selected]);
-  const total = list.data?.pages[0]?.total;
   const running = progress !== null;
 
   const setBusy = (id: string, on: boolean) =>
@@ -186,25 +220,58 @@ export function PendingApprovals({ menu }: { menu: AvailableMenu }) {
     });
   }
 
-  function fail(row: ApprovalRow, error: unknown) {
-    const outcome = approveFailure(error, menu, row.docNo);
+  function fail(row: ApprovalRow, error: unknown, action: ReviewAction) {
+    const outcome = actionFailure(error, menu, row.docNo, action);
     toast.show(outcome.refetch ? "warning" : "error", outcome.toast);
     setRowError(row.id, outcome.inline ? { message: outcome.inline, link: outcome.link } : null);
-    if (outcome.refetch) void calls.invalidate();
+    if (outcome.refetch) void calls.invalidate(action);
     if (outcome.refetchAccess) void calls.refetchAccess();
     return outcome;
   }
 
-  async function onApprove(row: ApprovalRow, index: number) {
+  /** FE-AP-009: the row carries its version and line count, so the confirm opens without a `get`. */
+  function onApprove(row: ApprovalRow, index: number) {
     if (busyIds.has(row.id) || running) return;
-    setBusy(row.id, true);
+    setRowError(row.id, null);
+    setConfirm({ kind: "one", row, index, version: row.version, ...approveConfirm(menu, row.docNo, row.lineCount) });
+  }
+
+  function openReview(kind: ReviewKind, row: ApprovalRow, index: number, version: number, fromPreview: boolean) {
+    if (busyIds.has(row.id) || running) return;
+    setRowError(row.id, null);
+    setReviewError(null);
+    setReview({ kind, row, index, version, fromPreview });
+  }
+
+  function previewReview(kind: ReviewKind, row: ApprovalRow, detail: PreviewDetail) {
+    const index = Math.max(0, rows.findIndex((candidate) => candidate.id === row.id));
+    openReview(kind, row, index, detail.version, true);
+  }
+
+  /** FE-AP-010: `<doc>.reject {reason}` / `<doc>.requestRevision {note}` with the listed (or previewed) version. */
+  async function submitReview(target: Review, reason: string) {
+    const action: ReviewAction = target.kind;
+    setReviewPending(true);
+    setBusy(target.row.id, true);
     try {
-      const { version, lineCount } = await calls.prepare(row.id);
-      setConfirm({ kind: "one", row, index, version, ...approveConfirm(menu, row.docNo, lineCount) });
+      if (target.kind === "reject") await calls.reject(target.row.id, target.version, reason);
+      else await calls.requestRevision(target.row.id, target.version, reason);
+      toast.show("success", reviewText(target.kind, target.row.docNo).success);
+      setReview(null);
+      if (target.fromPreview) setPreviewRow(null);
+      await calls.invalidate(action);
+      focusAfterRemoval(target.index);
     } catch (error) {
-      fail(row, error);
+      const inline = reviewFieldError(target.kind, error);
+      if (inline) {
+        setReviewError(inline);
+      } else {
+        setReview(null);
+        fail(target.row, error, action);
+      }
     } finally {
-      setBusy(row.id, false);
+      setReviewPending(false);
+      setBusy(target.row.id, false);
     }
   }
 
@@ -219,7 +286,7 @@ export function PendingApprovals({ menu }: { menu: AvailableMenu }) {
   function closePreview(changed: boolean) {
     setPreviewRow(null);
     // The document stopped waiting meanwhile (approved elsewhere, deleted): refresh the list and counts.
-    if (changed) void calls.invalidate();
+    if (changed) void calls.invalidate("approve");
   }
 
   async function approveOne(target: Extract<Confirm, { kind: "one" }>) {
@@ -231,11 +298,11 @@ export function PendingApprovals({ menu }: { menu: AvailableMenu }) {
       toast.show("success", `${target.row.docNo} approved`);
       setConfirm(null);
       if (target.fromPreview) setPreviewRow(null);
-      await calls.invalidate();
+      await calls.invalidate("approve");
       focusAfterRemoval(target.index);
     } catch (error) {
       setConfirm(null);
-      fail(target.row, error);
+      fail(target.row, error, "approve");
     } finally {
       setConfirmPending(false);
       setBusy(target.row.id, false);
@@ -260,7 +327,7 @@ export function PendingApprovals({ menu }: { menu: AvailableMenu }) {
     setProgress(null);
     toast.show(failed.size > 0 || stopped ? "warning" : "success", bulkResult(ok, targets.length, stopped));
     setSelected(new Set(failed.keys()));
-    await calls.invalidate();
+    await calls.invalidate("approve");
   }
 
   function onSort(key: Parameters<typeof nextSort>[1]) {
@@ -271,12 +338,13 @@ export function PendingApprovals({ menu }: { menu: AvailableMenu }) {
   let content: ReactNode;
   if (list.isPending) {
     content = <SkeletonRows />;
-  } else if (list.isError && rows.length === 0) {
-    const problem = listLoadError(list.error, menu);
+  } else if (loadError?.off) {
+    content = <ApprovalEmptyState title={APPROVAL_OFF_TITLE} text={approvalOffDetail(menu)} />;
+  } else if (loadError && rows.length === 0) {
     content = (
       <div role="alert" className="flex flex-col items-center gap-3 px-4 py-16 text-center text-gms-body text-gms-text">
-        {problem.message}
-        {problem.retry && <Button onClick={() => void list.refetch()}>Retry</Button>}
+        {loadError.message}
+        {loadError.retry && <Button onClick={() => void list.refetch()}>Retry</Button>}
       </div>
     );
   } else if (rows.length === 0) {
@@ -296,9 +364,9 @@ export function PendingApprovals({ menu }: { menu: AvailableMenu }) {
   } else {
     content = (
       <>
-        {list.isError && (
+        {loadError && (
           <p role="alert" className="mb-2 text-gms-body text-gms-danger">
-            {listLoadError(list.error, menu).message}{" "}
+            {loadError.message}{" "}
             <button type="button" className={cx("underline", focusRing)} onClick={() => void list.refetch()}>
               Retry
             </button>
@@ -316,12 +384,14 @@ export function PendingApprovals({ menu }: { menu: AvailableMenu }) {
             busyIds={busyIds}
             locked={running}
             errors={errors}
-            onApprove={(row, index) => void onApprove(row, index)}
+            onApprove={onApprove}
+            onReject={(row, index) => openReview("reject", row, index, row.version, false)}
+            onRevise={(row, index) => openReview("revise", row, index, row.version, false)}
             onOpen={setPreviewRow}
           />
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 pt-3 text-gms-label text-gms-text-secondary">
-          <span>{q || total === undefined ? `Showing ${rows.length}` : `Showing ${rows.length} of ${total}`}</span>
+          <span>{showingText(rows.length, q, count)}</span>
           {list.hasNextPage && (
             <Button loading={list.isFetchingNextPage} loadingLabel="Loading…" onClick={() => void list.fetchNextPage()}>
               Load more
@@ -382,10 +452,21 @@ export function PendingApprovals({ menu }: { menu: AvailableMenu }) {
       <DocumentPreviewModal
         menu={menu}
         row={previewRow}
-        busy={previewRow !== null && (busyIds.has(previewRow.id) || (confirm?.kind === "one" && confirm.row.id === previewRow.id))}
+        busy={previewRow !== null && (busyIds.has(previewRow.id) || (confirm?.kind === "one" && confirm.row.id === previewRow.id) || review?.row.id === previewRow.id)}
         error={previewRow ? (errors.get(previewRow.id)?.message ?? null) : null}
         onClose={closePreview}
         onApprove={(detail) => previewRow && onPreviewApprove(previewRow, detail)}
+        onReject={(detail) => previewRow && previewReview("reject", previewRow, detail)}
+        onRevise={(detail) => previewRow && previewReview("revise", previewRow, detail)}
+      />
+      <ReviewDialog
+        target={review ? { kind: review.kind, docNo: review.row.docNo } : null}
+        pending={reviewPending}
+        error={reviewError}
+        onCancel={() => setReview(null)}
+        onSubmit={(reason) => {
+          if (review) void submitReview(review, reason);
+        }}
       />
       <ConfirmDialog
         open={confirm !== null}

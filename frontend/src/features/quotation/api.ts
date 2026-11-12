@@ -31,13 +31,10 @@ export function useQuotationAccess(): QuotationAccess | undefined {
   return mine.data ? quotationAccess(mine.data) : undefined;
 }
 
-/** Edit/Submit are allowed only before approval (SA-QT-03). */
-/** Quotation has no approval step (owner 2026-10-27): every saved, non-cancelled quotation can be edited or deleted. */
-export const isEditableStatus = (status: QuotationStatus | undefined) => status !== undefined && status !== "CANCELLED";
-
-/** transaction-soft-delete OQ-1 / D2: only a quotation before approval can be deleted (every quotation created today is APPROVED). */
-export const DELETABLE_QUOTATION_STATUSES: readonly QuotationStatus[] = ["DRAFT", "PENDING_APPROVAL"];
-export const isDeletableStatus = (status: QuotationStatus | undefined) => status !== undefined && DELETABLE_QUOTATION_STATUSES.includes(status);
+/*
+ * approval-setup ADR-0050: Quotation follows its approval setting (OFF by default). Edit / Delete come from the
+ * document's `Flow` (`quotation.get`): Draft / Revise, or approved by Save while OFF and not used.
+ */
 
 // ---- form ↔ contract ----
 
@@ -123,7 +120,7 @@ export function fromQuotation(detail: QuotationDetail): QuotationFormValues {
         stockPendingWeightCt: saved.stockPendingWeightCt ?? "",
       };
     }),
-    status: detail.status,
+    status: detail.status as QuotationFormValues["status"],
     statusReason: detail.statusReason ?? undefined,
     customerId: detail.customerId,
     shippingAddressId: detail.shippingAddressId ?? "",
@@ -214,6 +211,8 @@ export function useQuotationMutations() {
     update: masterTrpc.quotation.update.useMutation(options),
     remove: masterTrpc.quotation.delete.useMutation(options),
     restore: masterTrpc.quotation.restore.useMutation(options),
+    /** FE-AS-010: Send to approve (Draft / Revise -> Pending Approval) while Quotation approval is ON. */
+    submit: masterTrpc.quotation.submit.useMutation(options),
     invalidate: () => Promise.all([utils.quotation.list.invalidate(), utils.quotation.get.invalidate(), utils.quotation.nextNumber.invalidate()]),
   };
 }
