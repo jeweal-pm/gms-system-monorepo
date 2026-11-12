@@ -13,25 +13,29 @@ import { sizePartCode } from "../stone-master/stone-code";
 import { calculateTotals, oversizeAmounts } from "./quotation.calculate";
 import {
   mapQuotationError,
+  quotationApprovalOff,
   quotationChanged,
   quotationDeleted,
+  quotationFlowErrors,
   quotationNotFound,
   quotationPhotoInvalid,
   quotationReferenceInvalid,
   quotationStatusInvalid,
 } from "./quotation.errors";
 import { completeFromMemoStock, type CopiedStockFields, type StockSnapshot } from "../trade-document/stock-lines";
+import { lineTotals } from "../trade-document/document-totals";
 import { QUOTATION_PHOTO_SOURCE } from "./quotation-photo.storage";
 import { CHARGE_TYPES, type QuotationInput, type QuotationListInput, type QuotationStatus } from "./quotation.schemas";
+import { assertEditable, saveStatus, type FlowPrincipal } from "../approval-setting/approval-flow";
+import { peekApprovalSetting, readApprovalSetting } from "../approval-setting/approval-setting.service";
+import { documentFlow, explainReviewMiss, MISS_SELECT, planData, restoreData, reviewOfRow, reviewUpdate, saveFlow, storedInput, type DocumentActor, type MissRow } from "../trade-document/document-engine";
 
 /**
- * Quotation has no approval step (owner 2026-10-27): it is saved as APPROVED and stays editable until cancelled.
- * DRAFT/PENDING_APPROVAL/REJECTED remain only for rows saved before this change. Since transaction-soft-delete (owner
- * OQ-1, 2026-11-06) only DRAFT / PENDING_APPROVAL can be deleted, and a delete is soft (DELETABLE below).
+ * Quotation follows the approval setting (approval-setup ADR-0050, Q-AS-28): OFF (seed default) → Save approves it
+ * (`auto_approved`, editable while no later document uses it — none exists yet); ON → DRAFT → Send to approve →
+ * PENDING_APPROVAL (locked) → Approve / Revise (once) / Reject. CANCELLED stays a quotation-only final status.
+ * Edit / delete (soft, ADR-0045): DRAFT, REVISION_REQUESTED or auto-approved.
  */
-const EDITABLE: readonly QuotationStatus[] = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED"];
-/** transaction-soft-delete D2 (owner OQ-1, 2026-11-06): only a quotation before approval can be (soft) deleted. */
-export const DELETABLE: readonly QuotationStatus[] = ["DRAFT", "PENDING_APPROVAL"];
 const COMPANY_PROFILE_ID = 1;
 const CUSTOMER_OPTIONS_LIMIT = 1_000;
 const COUNTRY_NAME = new Map(COUNTRY_OPTIONS.map((item) => [item.code, item.name]));
@@ -270,7 +274,10 @@ export class QuotationService {
           where: { ...where, AND: and },
           orderBy: [{ docDate: "desc" }, { createdAt: "desc" }, { id: "desc" }],
           take: input.limit + 1,
-          select: { id: true, docNo: true, status: true, docDate: true, dueDate: true, customerNameSnapshot: true, currencyCode: true, grandTotal: true, createdAt: true, updatedAt: true, deletedAt: true },
+          select: {
+            id: true, docNo: true, status: true, docDate: true, dueDate: true, customerNameSnapshot: true, currencyCode: true, grandTotal: true, createdAt: true, updatedAt: true, deletedAt: true,
+            autoApproved: true, revisionCount: true, reviewAction: true, reviewNote: true, reviewedAt: true, reviewedByName: true,
+          },
         }),
         prisma.quotation.count({ where }),
       ]);
@@ -288,6 +295,10 @@ export class QuotationService {
           grandTotal: money(row.grandTotal),
           updatedAt: row.updatedAt.toISOString(),
           deletedAt: row.deletedAt?.toISOString() ?? null,
+          // ADR-0050 D6 Daybook.
+          autoApproved: row.autoApproved,
+          revisionCount: (row.revisionCount >= 1 ? 1 : 0) as 0 | 1,
+          review: reviewOfRow(row),
         })),
         nextCursor: rows.length > input.limit && last ? encodeCursor({ docDate: fromDbDate(last.docDate), createdAt: last.createdAt.toISOString(), id: last.id }) : null,
         total,
@@ -297,11 +308,13 @@ export class QuotationService {
     }
   }
 
-  async get(id: string) {
+  /** Detail plus `Flow` for `viewer` (approval-setup api-contract); a quotation is never used by another document yet. */
+  async get(id: string, viewer: FlowPrincipal | null = null) {
     try {
       const row = await prisma.quotation.findUnique({ where: { id }, include: DETAIL_INCLUDE });
       if (!row) throw quotationNotFound();
-      return toQuotation(row);
+      const requireApproval = await peekApprovalSetting(prisma, "quotation");
+      return { ...toQuotation(row), ...documentFlow(row as unknown as Record<string, unknown>, "quotation", requireApproval, null, viewer) };
     } catch (error) {
       throw mapQuotationError(error, "get");
     }
@@ -357,9 +370,15 @@ export class QuotationService {
     }
   }
 
-  async create(actorId: string, input: QuotationInput) {
+  /**
+   * Save (create), approval-setup ADR-0050: Quotation approval ON → DRAFT; OFF (the seed default) → APPROVED with
+   * `auto_approved` (a quotation has no stock effects; it stays editable while no later document uses it).
+   */
+  async create(actorId: string, input: QuotationInput, viewer: FlowPrincipal | null = null) {
     try {
       const created = await prisma.$transaction(async (tx) => {
+        const requireApproval = await readApprovalSetting(tx, "quotation");
+        const plan = saveStatus(requireApproval, null);
         const snapshot = await this.checkReferences(tx, input, null);
         const prepared = await this.prepareStockLines(tx, input, []);
         const { numberingId, runningNo, docNo } = await this.issueNumber(tx, input.docDate, true);
@@ -372,10 +391,9 @@ export class QuotationService {
             numberingId,
             runningNo,
             docNo,
-            status: "APPROVED",
-            approvedAt: now,
-            approvedBy: actorId,
+            ...(planData(plan, false, actorId, now) as { status: QuotationStatus }),
             ...this.headerData(prepared, snapshot),
+            ...lineTotals(prepared.lines),
             createdAt: now,
             createdBy: actorId,
             updatedAt: now,
@@ -383,26 +401,32 @@ export class QuotationService {
           },
         });
         await this.writeChildren(tx, id, prepared);
-        return { id, docNo, version: 1 };
+        return { id, docNo, version: 1, ...saveFlow("quotation", plan, 0, requireApproval, viewer) };
       }, WRITE_TX);
-      this.logger.log({ event: "quotation.created", actorId, id: created.id, docNo: created.docNo });
+      this.logger.log({ event: "quotation.created", actorId, id: created.id, docNo: created.docNo, status: created.status });
       return created;
     } catch (error) {
       throw mapQuotationError(error, "create");
     }
   }
 
-  async update(actorId: string, id: string, expectedVersion: number, input: QuotationInput) {
+  /**
+   * Save (update), ADR-0050 rule 2: DRAFT, REVISION_REQUESTED or auto-approved (no document uses a quotation yet).
+   * DRAFT stays DRAFT (ON) or is approved by this Save (OFF); REVISION_REQUESTED stays; auto-approved stays.
+   * Pending, rejected, reviewed-approved and cancelled quotations → QUOTATION_STATUS_INVALID.
+   */
+  async update(actorId: string, id: string, expectedVersion: number, input: QuotationInput, viewer: FlowPrincipal | null = null) {
     try {
-      const version = await prisma.$transaction(async (tx) => {
-        const stored = await tx.quotation.findUnique({
+      const saved = await prisma.$transaction(async (tx) => {
+        const requireApproval = await readApprovalSetting(tx, "quotation");
+        const now = new Date();
+        await this.lockHeader(tx, id, expectedVersion, actorId, now);
+        const stored = (await tx.quotation.findUnique({
           where: { id },
-          select: { status: true, version: true, deletedAt: true, customerId: true, shippingAddressId: true, invoiceAddressId: true, currencyCode: true, lines: { select: { stoneCodeId: true, memoStockId: true, pcs: true, weightCt: true, stockPendingPcs: true, stockPendingWeightCt: true } } },
-        });
-        if (!stored) throw quotationNotFound();
-        if (stored.deletedAt) throw quotationDeleted();
-        if (stored.version !== expectedVersion) throw quotationChanged();
-        if (!EDITABLE.includes(stored.status as QuotationStatus)) throw quotationStatusInvalid();
+          select: { status: true, autoApproved: true, revisionCount: true, customerId: true, shippingAddressId: true, invoiceAddressId: true, currencyCode: true, lines: { select: { stoneCodeId: true, memoStockId: true, pcs: true, weightCt: true, stockPendingPcs: true, stockPendingWeightCt: true } } },
+        }))!;
+        assertEditable({ ...stored, deletedAt: null }, null, quotationFlowErrors);
+        const plan = saveStatus(requireApproval, stored);
         const snapshot = await this.checkReferences(tx, input, {
           customerId: stored.customerId,
           shippingAddressId: stored.shippingAddressId,
@@ -411,41 +435,97 @@ export class QuotationService {
           stoneCodeIds: new Set(stored.lines.flatMap((line) => (line.stoneCodeId ? [line.stoneCodeId] : []))),
         });
         const prepared = await this.prepareStockLines(tx, input, stored.lines);
-        const result = await tx.quotation.updateMany({
-          where: { id, version: expectedVersion, status: { in: [...EDITABLE] }, deletedAt: null },
-          data: {
-            ...this.headerData(prepared, snapshot),
-            // An older row is approved by its first save after the change.
-            ...(stored.status === "APPROVED" ? {} : { status: "APPROVED" as const, approvedAt: new Date(), approvedBy: actorId, statusReason: null }),
-            version: { increment: 1 },
-            updatedAt: new Date(),
-            updatedBy: actorId,
-          },
+        await tx.quotation.update({
+          where: { id },
+          data: { ...this.headerData(prepared, snapshot), ...lineTotals(prepared.lines), ...(planData(plan, true, actorId, now) as Prisma.QuotationUncheckedUpdateInput) },
         });
-        if (result.count === 0) throw quotationChanged();
         await tx.quotationLine.deleteMany({ where: { quotationId: id } });
         await tx.quotationCharge.deleteMany({ where: { quotationId: id } });
         await this.writeChildren(tx, id, prepared);
-        return expectedVersion + 1;
+        return saveFlow("quotation", plan, stored.revisionCount, requireApproval, viewer);
       }, WRITE_TX);
-      this.logger.log({ event: "quotation.updated", actorId, id, version });
-      return { id, version };
+      const version = expectedVersion + 1;
+      this.logger.log({ event: "quotation.updated", actorId, id, version, status: saved.status });
+      return { id, version, ...saved };
     } catch (error) {
       throw mapQuotationError(error, "update");
     }
   }
 
-  submit(actorId: string, id: string, expectedVersion: number) {
-    return this.transition(actorId, id, expectedVersion, ["DRAFT", "REJECTED"], "PENDING_APPROVAL", { statusReason: null }, "submitted");
+  /**
+   * Send to approve (ADR-0050): DRAFT / REVISION_REQUESTED → PENDING_APPROVAL with submitted_* after the save validation
+   * on the stored quotation; Quotation approval OFF → QUOTATION_APPROVAL_OFF.
+   */
+  async submit(actor: DocumentActor, id: string, expectedVersion: number) {
+    const now = new Date();
+    try {
+      await prisma.$transaction(async (tx) => {
+        const requireApproval = await readApprovalSetting(tx, "quotation");
+        const locked = await tx.quotation.updateMany({
+          where: { id, version: expectedVersion, status: { in: ["DRAFT", "REVISION_REQUESTED"] }, deletedAt: null },
+          data: { status: "PENDING_APPROVAL", submittedAt: now, submittedBy: actor.id, submittedByName: actor.name, version: { increment: 1 }, updatedAt: now, updatedBy: actor.id },
+        });
+        if (locked.count === 0) await this.explainMiss(tx, id, expectedVersion);
+        if (!requireApproval) throw quotationApprovalOff();
+        const row = (await tx.quotation.findUnique({ where: { id }, include: { lines: { orderBy: { position: "asc" } }, charges: true } }))!;
+        const stored = storedInput(row as unknown as Record<string, unknown>) as unknown as QuotationInput;
+        await this.checkReferences(tx, stored, {
+          customerId: row.customerId,
+          shippingAddressId: row.shippingAddressId,
+          invoiceAddressId: row.invoiceAddressId,
+          currencyCode: row.currencyCode,
+          stoneCodeIds: new Set(row.lines.flatMap((line) => (line.stoneCodeId ? [line.stoneCodeId] : []))),
+        });
+        this.headerData(await this.prepareStockLines(tx, stored, row.lines), { customerCode: "", customerName: "", shippingText: "", invoiceText: "" });
+      }, WRITE_TX);
+    } catch (error) {
+      throw mapQuotationError(error, "submitted");
+    }
+    this.logger.log({ event: "quotation.submitted", actorId: actor.id, id });
+    return { id, version: expectedVersion + 1, status: "PENDING_APPROVAL" as const, submittedAt: now.toISOString() };
   }
 
-  /** Used by the separate Approve page (owner 2026-10-26, Q-QT-02); the creator may approve. */
+  /** Approve menu (ADR-0046/0048): PENDING_APPROVAL → APPROVED (reviewed, read-only); the creator may approve. */
   approve(actorId: string, id: string, expectedVersion: number) {
-    return this.transition(actorId, id, expectedVersion, ["PENDING_APPROVAL"], "APPROVED", { approvedAt: new Date(), approvedBy: actorId, statusReason: null }, "approved");
+    return this.transition(actorId, id, expectedVersion, ["PENDING_APPROVAL"], "APPROVED", { approvedAt: new Date(), approvedBy: actorId, autoApproved: false }, "approved");
   }
 
-  reject(actorId: string, id: string, expectedVersion: number, reason: string) {
-    return this.transition(actorId, id, expectedVersion, ["PENDING_APPROVAL"], "REJECTED", { statusReason: reason }, "rejected");
+  /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction (no stock effects). */
+  async approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
+    try {
+      const now = new Date();
+      const result = await tx.quotation.updateMany({
+        where: { id, version: expectedVersion, status: { in: ["PENDING_APPROVAL"] }, deletedAt: null },
+        data: { approvedAt: now, approvedBy: actorId, autoApproved: false, status: "APPROVED", version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
+      });
+      if (result.count === 0) await this.explainMiss(tx, id, expectedVersion);
+    } catch (error) {
+      throw mapQuotationError(error, "approved");
+    }
+    return { id, status: "APPROVED" as const, version: expectedVersion + 1 };
+  }
+
+  /** ADR-0046 D3: PENDING_APPROVAL → REJECTED (final) with the reason (also kept in `status_reason` for older readers). */
+  reject(actor: DocumentActor, id: string, expectedVersion: number, reason: string) {
+    return this.review(actor, id, expectedVersion, "REJECT", reason);
+  }
+
+  /** ADR-0046 D3 / ADR-0050: PENDING_APPROVAL → REVISION_REQUESTED once (QUOTATION_REVISE_LIMIT after). */
+  requestRevision(actor: DocumentActor, id: string, expectedVersion: number, note: string) {
+    return this.review(actor, id, expectedVersion, "REVISE", note);
+  }
+
+  private async review(actor: DocumentActor, id: string, expectedVersion: number, action: "REJECT" | "REVISE", note: string) {
+    const status = action === "REJECT" ? "REJECTED" : "REVISION_REQUESTED";
+    try {
+      const update = reviewUpdate(actor, id, expectedVersion, action, note, new Date());
+      const updated = await prisma.quotation.updateMany({ where: update.where, data: { ...update.data, ...(action === "REJECT" ? { statusReason: note } : {}) } as Prisma.QuotationUpdateManyMutationInput });
+      if (updated.count === 0) explainReviewMiss(quotationFlowErrors, (await prisma.quotation.findUnique({ where: { id }, select: MISS_SELECT })) as MissRow, action);
+    } catch (error) {
+      throw mapQuotationError(error, action === "REJECT" ? "rejected" : "revision_requested");
+    }
+    this.logger.log({ event: `quotation.${action === "REJECT" ? "rejected" : "revision_requested"}`, actorId: actor.id, id, noteLength: note.length });
+    return { id, version: expectedVersion + 1, status: status as "REJECTED" | "REVISION_REQUESTED" };
   }
 
   cancel(actorId: string, id: string, expectedVersion: number, reason: string) {
@@ -453,20 +533,20 @@ export class QuotationService {
   }
 
   /**
-   * Soft delete (ADR-0045 D4, D2 owner OQ-1): only DRAFT / PENDING_APPROVAL, in one guarded `UPDATE … RETURNING`;
-   * status, lines, charges and photos stay. The Doc No. stays taken (D5), so the next save never reuses it.
+   * Soft delete (ADR-0045 D4 as amended by ADR-0050): DRAFT, REVISION_REQUESTED or auto-approved (never used); status,
+   * lines, charges and photos stay. The Doc No. stays taken (D5), so the next save never reuses it.
    */
   async delete(actorId: string, id: string, expectedVersion: number) {
     let docNo: string;
     try {
-      const now = new Date();
-      const rows = await prisma.quotation.updateManyAndReturn({
-        where: { id, version: expectedVersion, status: { in: [...DELETABLE] }, deletedAt: null },
-        data: { deletedAt: now, deletedBy: actorId, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
-        select: { docNo: true },
-      });
-      if (rows.length === 0) await this.explainMiss(prisma, id, expectedVersion);
-      docNo = rows[0].docNo;
+      docNo = await prisma.$transaction(async (tx) => {
+        const now = new Date();
+        await this.lockHeader(tx, id, expectedVersion, actorId, now);
+        const stored = (await tx.quotation.findUnique({ where: { id }, select: { docNo: true, status: true, autoApproved: true, revisionCount: true } }))!;
+        assertEditable({ ...stored, deletedAt: null }, null, quotationFlowErrors);
+        await tx.quotation.update({ where: { id }, data: { deletedAt: now, deletedBy: actorId } });
+        return stored.docNo;
+      }, WRITE_TX);
     } catch (error) {
       throw mapQuotationError(error, "delete");
     }
@@ -475,29 +555,42 @@ export class QuotationService {
     return { ok: true as const, version };
   }
 
-  /** Restore (D6/D7): a deleted quotation back to its unchanged status; content is not re-checked. */
+  /** Restore (D6/D7, clarification G3): back as DRAFT while Quotation approval is ON, auto-approved while OFF. */
   async restore(actorId: string, id: string, expectedVersion: number) {
     let restored: { docNo: string; status: string };
     try {
-      const rows = await prisma.quotation.updateManyAndReturn({
-        where: { id, version: expectedVersion, deletedAt: { not: null } },
-        data: { deletedAt: null, deletedBy: null, version: { increment: 1 }, updatedAt: new Date(), updatedBy: actorId },
-        select: { docNo: true, status: true },
-      });
-      if (rows.length === 0) {
-        // D8 restore miss: missing → NOT_FOUND, not deleted → STATUS_INVALID, else (stale version) CHANGED.
-        const row = await prisma.quotation.findUnique({ where: { id }, select: { deletedAt: true } });
-        if (!row) throw quotationNotFound();
-        if (!row.deletedAt) throw quotationStatusInvalid();
-        throw quotationChanged();
-      }
-      restored = rows[0];
+      restored = await prisma.$transaction(async (tx) => {
+        const requireApproval = await readApprovalSetting(tx, "quotation");
+        const now = new Date();
+        const locked = await tx.quotation.updateMany({
+          where: { id, version: expectedVersion, deletedAt: { not: null } },
+          data: { deletedAt: null, deletedBy: null, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
+        });
+        if (locked.count === 0) {
+          // D8 restore miss: missing → NOT_FOUND, not deleted → STATUS_INVALID, else (stale version) CHANGED.
+          const row = await tx.quotation.findUnique({ where: { id }, select: { deletedAt: true } });
+          if (!row) throw quotationNotFound();
+          if (!row.deletedAt) throw quotationStatusInvalid();
+          throw quotationChanged();
+        }
+        const row = await tx.quotation.update({ where: { id }, data: restoreData(requireApproval, actorId, now) as Prisma.QuotationUncheckedUpdateInput, select: { docNo: true, status: true } });
+        return row;
+      }, WRITE_TX);
     } catch (error) {
       throw mapQuotationError(error, "restore");
     }
     const version = expectedVersion + 1;
-    this.logger.log({ event: "quotation.restored", actorId, id, docNo: restored.docNo, version });
+    this.logger.log({ event: "quotation.restored", actorId, id, docNo: restored.docNo, version, status: restored.status });
     return { id, version, status: restored.status as QuotationStatus };
+  }
+
+  /** Header lock of update / delete: a guarded version bump that only a live DRAFT / REVISION_REQUESTED / APPROVED passes. */
+  private async lockHeader(tx: Tx, id: string, expectedVersion: number, actorId: string, now: Date) {
+    const locked = await tx.quotation.updateMany({
+      where: { id, version: expectedVersion, status: { in: ["DRAFT", "REVISION_REQUESTED", "APPROVED"] }, deletedAt: null },
+      data: { version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
+    });
+    if (locked.count === 0) await this.explainMiss(tx, id, expectedVersion);
   }
 
   private async transition(actorId: string, id: string, expectedVersion: number, from: readonly QuotationStatus[], to: QuotationStatus, data: Prisma.QuotationUpdateManyMutationInput, event: string) {

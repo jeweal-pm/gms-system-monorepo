@@ -37,7 +37,9 @@ describe("memo return input (memo-return SA rev 2)", () => {
 
   it("UT-MRT-B02 list filters by status; the Memo Stock dialog filters by currency", () => {
     expect(memoReturnListSchema.parse({ status: "APPROVED" })).toMatchObject({ status: "APPROVED", limit: 50 });
-    expect(memoReturnListSchema.safeParse({ status: "DRAFT" }).success).toBe(false);
+    // ADR-0050: DRAFT is a list status (BE-AP-006); a status outside the approval set is refused.
+    expect(memoReturnListSchema.safeParse({ status: "DRAFT" }).success).toBe(true);
+    expect(memoReturnListSchema.safeParse({ status: "CANCELLED" }).success).toBe(false);
     expect(memoStockListSchema.parse({ vendorId: ID(1), currency: "USD" })).toMatchObject({ currency: "USD" });
     expect(memoStockListSchema.safeParse({ vendorId: ID(1), currency: "usd" }).success).toBe(false);
   });

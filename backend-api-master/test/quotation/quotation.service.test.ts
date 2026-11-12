@@ -33,6 +33,8 @@ const db = vi.hoisted(() => ({
   restoredStatus: "DRAFT",
   listRows: [] as Row[],
   countArgs: [] as Row[],
+  /** Quotation approval setting (seed: OFF). */
+  requireApproval: false,
 }));
 
 vi.mock("@gms/storage", () => ({
@@ -43,8 +45,10 @@ vi.mock("@gms/storage", () => ({
 
 vi.mock("../../src/database/prisma-client", () => {
   const tx = {
-    $queryRaw: vi.fn(async (sql: { strings: string[] }) => {
-      db.rawSql.push(sql.strings.join("?"));
+    $queryRaw: vi.fn(async (sql: { strings: string[] } | TemplateStringsArray) => {
+      // ADR-0050: the approval setting read (tagged template, FOR SHARE) answers db.requireApproval; not recorded.
+      if (Array.isArray(sql)) return [{ requireApproval: db.requireApproval }];
+      db.rawSql.push((sql as { strings: string[] }).strings.join("?"));
       return db.numbering ? [db.numbering] : [];
     }),
     customer: {
@@ -67,11 +71,13 @@ vi.mock("../../src/database/prisma-client", () => {
       findMany: vi.fn(async () => [{ code: "EUR", name: "Euro", active: false }, { code: "THB", name: "Baht", active: true }, { code: "USD", name: "Dollar", active: true }]),
     },
     documentSetup: { findUnique: vi.fn(async () => null) },
+    approvalSetting: { findUnique: vi.fn(async () => ({ requireApproval: db.requireApproval })) },
     quotation: {
       aggregate: vi.fn(async () => ({ _max: { runningNo: db.maxRunning } })),
       create: vi.fn(async ({ data }: { data: Row }) => { db.created.push(data); return data; }),
       findUnique: vi.fn(async () => db.stored),
       updateMany: vi.fn(async (args: Row) => { db.updates.push(args); return { count: db.writeCount }; }),
+      update: vi.fn(async (args: Row) => { db.updates.push(args); return { docNo: "QT-26001", status: (args.data as Row).status ?? db.restoredStatus }; }),
       // Soft delete / restore (ADR-0045): one guarded UPDATE … RETURNING.
       updateManyAndReturn: vi.fn(async (args: Row) => { db.deletes.push(args); return db.writeCount ? [{ docNo: "QT-26001", status: db.restoredStatus }] : []; }),
       findMany: vi.fn(async (args: Row) => { db.findManyArgs.push(args); return db.listRows; }),
@@ -133,13 +139,15 @@ beforeEach(() => {
     stored: null,
     writeCount: 1,
     rawSql: [], created: [], updates: [], lines: [], linePhotos: [], charges: [], findManyArgs: [], deletes: [], restoredStatus: "DRAFT", listRows: [], countArgs: [],
+    requireApproval: false,
   });
 });
 
 describe("numbering (SA-QT-04, owner Q-QT-03)", () => {
   it("UT-QT-B01 the first quotation of a numbering row gets its start number, under a row lock", async () => {
     await expect(service.create("actor", input())).resolves.toMatchObject({ docNo: "QT-26001", version: 1 });
-    expect(db.created[0]).toMatchObject({ numberingId: NUMBERING, runningNo: 26001, docNo: "QT-26001", status: "APPROVED", approvedBy: "actor", createdBy: "actor" });
+    // Quotation approval OFF (seed): Save approves it (auto-approved, ADR-0050).
+    expect(db.created[0]).toMatchObject({ numberingId: NUMBERING, runningNo: 26001, docNo: "QT-26001", status: "APPROVED", autoApproved: true, approvedBy: "actor", createdBy: "actor" });
     expect(db.created[0].approvedAt).toBeInstanceOf(Date);
     expect(db.rawSql[0]).toContain("FOR UPDATE");
   });
@@ -224,61 +232,82 @@ describe("create and references (SA-QT-06/07/08/10)", () => {
 describe("edit and status guards (SA-QT-03/09)", () => {
   const stored = (status: string, version = 3) => ({ status, version, customerId: CUSTOMER, shippingAddressId: SHIP, invoiceAddressId: INVOICE, lines: [{ stoneCodeId: STONE }] });
 
-  it("UT-QT-B15 update replaces children in any non-cancelled status and approves an older row; a stored inactive customer or stone code may stay", async () => {
-    db.stored = stored("REJECTED");
+  it("UT-QT-B15 update (ADR-0050): auto-approved stays approved; a DRAFT is approved by the Save while OFF and stays a DRAFT while ON; a stored inactive customer or stone code may stay", async () => {
+    db.stored = { ...stored("APPROVED"), autoApproved: true, revisionCount: 0 };
     db.customer = { ...db.customer!, active: false };
     db.stoneCodes = [{ id: STONE, active: false }];
-    await expect(service.update("editor", QT, 3, input())).resolves.toEqual({ id: QT, version: 4 });
-    expect(db.updates[0]).toMatchObject({
-      where: { id: QT, version: 3, status: { in: ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED"] } },
-      data: { updatedBy: "editor", version: { increment: 1 }, status: "APPROVED", approvedBy: "editor", statusReason: null },
-    });
-    expect(db.lines).toHaveLength(1);
-    db.stored = stored("APPROVED", 4);
-    await expect(service.update("editor", QT, 4, input())).resolves.toEqual({ id: QT, version: 5 });
+    await expect(service.update("editor", QT, 3, input())).resolves.toMatchObject({ id: QT, version: 4, status: "APPROVED", autoApproved: true });
+    // The header lock is one guarded version bump over DRAFT / REVISION_REQUESTED / APPROVED.
+    expect(db.updates[0]).toMatchObject({ where: { id: QT, version: 3, status: { in: ["DRAFT", "REVISION_REQUESTED", "APPROVED"] }, deletedAt: null }, data: { updatedBy: "editor", version: { increment: 1 } } });
     expect(db.updates[1].data).not.toHaveProperty("status");
     expect(db.updates[1].data).not.toHaveProperty("approvedBy");
+    expect(db.lines).toHaveLength(1);
+    db.stored = { ...stored("DRAFT", 4), autoApproved: false, revisionCount: 0 };
+    await expect(service.update("editor", QT, 4, input())).resolves.toMatchObject({ version: 5, status: "APPROVED", autoApproved: true });
+    expect(db.updates[3]).toMatchObject({ data: { status: "APPROVED", autoApproved: true, approvedBy: "editor", reviewAction: null } });
+    db.requireApproval = true;
+    await expect(service.update("editor", QT, 4, input())).resolves.toMatchObject({ status: "DRAFT", autoApproved: false });
+    expect(db.updates[5]).toMatchObject({ data: { status: "DRAFT", autoApproved: false } });
   });
 
-  it("UT-QT-B16 update of a cancelled quotation is STATUS_INVALID; a stale version is CHANGED; missing is NOT_FOUND", async () => {
-    db.stored = stored("CANCELLED");
+  it("UT-QT-B16 update of a pending / rejected / reviewed-approved / cancelled quotation is STATUS_INVALID; a stale version is CHANGED; missing is NOT_FOUND", async () => {
+    for (const status of ["PENDING_APPROVAL", "REJECTED", "CANCELLED"]) {
+      db.stored = { ...stored(status), autoApproved: false, revisionCount: 0 };
+      expect(await failure(service.update("a", QT, 3, input()))).toMatchObject({ status: 409, code: "QUOTATION_STATUS_INVALID" });
+    }
+    db.stored = { ...stored("APPROVED"), autoApproved: false, revisionCount: 0 };
     expect(await failure(service.update("a", QT, 3, input()))).toMatchObject({ status: 409, code: "QUOTATION_STATUS_INVALID" });
+    db.writeCount = 0;
     db.stored = stored("DRAFT", 4);
     expect(await failure(service.update("a", QT, 3, input()))).toMatchObject({ status: 409, code: "QUOTATION_CHANGED" });
     db.stored = null;
     expect(await failure(service.update("a", QT, 3, input()))).toMatchObject({ status: 404, code: "QUOTATION_NOT_FOUND" });
   });
 
-  it("UT-QT-B17 submit/approve/reject/cancel move only from their allowed statuses", async () => {
-    await expect(service.submit("a", QT, 1)).resolves.toEqual({ id: QT, status: "PENDING_APPROVAL", version: 2 });
-    expect(db.updates[0]).toMatchObject({ where: { status: { in: ["DRAFT", "REJECTED"] } } });
+  it("UT-QT-B17 submit (DRAFT / REVISION_REQUESTED, approval ON), approve, reject / revise (review columns), cancel move only from their allowed statuses", async () => {
+    db.requireApproval = true;
+    db.stored = { ...stored("PENDING_APPROVAL", 2), lines: [], charges: [], docDate: new Date("2026-10-26"), dueDate: new Date("2026-11-25"), currencyCode: "THB", exchangeRate: null,
+      discountType: "NONE", discountValue: "0", taxEnabled: false, taxRate: "7", taxIncluded: false, laborWork: null, laborBasis: null, laborQty: null, laborRate: null };
+    await expect(service.submit({ id: "a", name: "Ann" }, QT, 1)).resolves.toMatchObject({ id: QT, status: "PENDING_APPROVAL", version: 2 });
+    expect(db.updates[0]).toMatchObject({ where: { status: { in: ["DRAFT", "REVISION_REQUESTED"] } }, data: { status: "PENDING_APPROVAL", submittedBy: "a", submittedByName: "Ann" } });
     await service.approve("creator", QT, 2);
-    expect(db.updates[1]).toMatchObject({ where: { status: { in: ["PENDING_APPROVAL"] } }, data: { status: "APPROVED", approvedBy: "creator" } });
-    await service.reject("b", QT, 2, "Price changed");
-    expect(db.updates[2]).toMatchObject({ data: { status: "REJECTED", statusReason: "Price changed" } });
+    expect(db.updates[1]).toMatchObject({ where: { status: { in: ["PENDING_APPROVAL"] } }, data: { status: "APPROVED", approvedBy: "creator", autoApproved: false } });
+    await service.reject({ id: "b", name: "Bee" }, QT, 2, "Price changed");
+    expect(db.updates[2]).toMatchObject({ where: { status: "PENDING_APPROVAL", deletedAt: null }, data: { status: "REJECTED", reviewAction: "REJECT", reviewNote: "Price changed", reviewedByName: "Bee", statusReason: "Price changed" } });
+    await service.requestRevision({ id: "b", name: null }, QT, 2, "Fix the price");
+    expect(db.updates[3]).toMatchObject({ where: { status: "PENDING_APPROVAL", revisionCount: { lt: 1 } }, data: { status: "REVISION_REQUESTED", reviewAction: "REVISE", revisionCount: { increment: 1 } } });
     await service.cancel("b", QT, 5, "Customer declined");
-    expect(db.updates[3]).toMatchObject({ where: { status: { in: ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED"] } }, data: { status: "CANCELLED" } });
+    expect(db.updates[4]).toMatchObject({ where: { status: { in: ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED"] } }, data: { status: "CANCELLED" } });
+    // Approval OFF → submit refused (stale page).
+    db.requireApproval = false;
+    expect(await failure(service.submit({ id: "a", name: null }, QT, 1))).toMatchObject({ status: 409, code: "QUOTATION_APPROVAL_OFF" });
+    // Second Revise → REVISE_LIMIT.
+    db.writeCount = 0;
+    db.stored = { status: "PENDING_APPROVAL", version: 2, deletedAt: null, revisionCount: 1 };
+    expect(await failure(service.requestRevision({ id: "b", name: null }, QT, 2, "Again"))).toMatchObject({ status: 409, code: "QUOTATION_REVISE_LIMIT" });
   });
 
   it("UT-QT-B18 a guarded write that touches no row explains why", async () => {
     db.writeCount = 0;
     db.stored = { version: 2 };
     expect(await failure(service.approve("a", QT, 2))).toMatchObject({ code: "QUOTATION_STATUS_INVALID" });
-    expect(await failure(service.submit("a", QT, 1))).toMatchObject({ code: "QUOTATION_CHANGED" });
+    expect(await failure(service.submit({ id: "a", name: null }, QT, 1))).toMatchObject({ code: "QUOTATION_CHANGED" });
     db.stored = null;
     expect(await failure(service.cancel("a", QT, 1, "x"))).toMatchObject({ code: "QUOTATION_NOT_FOUND" });
   });
 
-  it("UT-QT-B19 / UT-SD-08 delete is a soft delete of a DRAFT / PENDING_APPROVAL quotation at the expected version (OQ-1)", async () => {
+  it("UT-QT-B19 / UT-SD-08 delete (ADR-0045 / ADR-0050) is a soft delete of a DRAFT, REVISION_REQUESTED or auto-approved quotation at the expected version", async () => {
+    db.stored = { docNo: "QT-26001", status: "APPROVED", autoApproved: true, revisionCount: 0 };
     await expect(service.delete("actor", QT, 1)).resolves.toEqual({ ok: true, version: 2 });
-    expect(db.deletes[0]).toMatchObject({
-      where: { id: QT, version: 1, status: { in: ["DRAFT", "PENDING_APPROVAL"] }, deletedAt: null },
-      data: { deletedBy: "actor", version: { increment: 1 }, updatedBy: "actor" },
-      select: { docNo: true },
-    });
-    expect((db.deletes[0].data as Row).deletedAt).toBeInstanceOf(Date);
+    expect(db.updates[0]).toMatchObject({ where: { id: QT, version: 1, status: { in: ["DRAFT", "REVISION_REQUESTED", "APPROVED"] }, deletedAt: null }, data: { version: { increment: 1 }, updatedBy: "actor" } });
+    expect(db.updates[1]).toMatchObject({ where: { id: QT }, data: { deletedBy: "actor" } });
+    expect((db.updates[1].data as Row).deletedAt).toBeInstanceOf(Date);
+    // Pending / reviewed approved → STATUS_INVALID.
+    db.stored = { docNo: "QT-26001", status: "PENDING_APPROVAL", autoApproved: false, revisionCount: 0 };
+    expect(await failure(service.delete("a", QT, 1))).toMatchObject({ status: 409, code: "QUOTATION_STATUS_INVALID" });
+    db.stored = { docNo: "QT-26001", status: "APPROVED", autoApproved: false, revisionCount: 0 };
+    expect(await failure(service.delete("a", QT, 1))).toMatchObject({ status: 409, code: "QUOTATION_STATUS_INVALID" });
     db.writeCount = 0;
-    // APPROVED / REJECTED / CANCELLED at the current version → STATUS_INVALID (D2).
     db.stored = { version: 1, deletedAt: null };
     expect(await failure(service.delete("a", QT, 1))).toMatchObject({ status: 409, code: "QUOTATION_STATUS_INVALID" });
     db.stored = { version: 3, deletedAt: null };
@@ -289,14 +318,13 @@ describe("edit and status guards (SA-QT-03/09)", () => {
     expect(await failure(service.delete("a", QT, 1))).toMatchObject({ status: 404, code: "QUOTATION_NOT_FOUND" });
   });
 
-  it("UT-SD-08 restore clears both columns at the expected version and keeps the status; misses explain why", async () => {
-    db.restoredStatus = "PENDING_APPROVAL";
-    await expect(service.restore("restorer", QT, 2)).resolves.toEqual({ id: QT, version: 3, status: "PENDING_APPROVAL" });
-    expect(db.deletes[0]).toMatchObject({
-      where: { id: QT, version: 2, deletedAt: { not: null } },
-      data: { deletedAt: null, deletedBy: null, version: { increment: 1 }, updatedBy: "restorer" },
-    });
-    expect(db.deletes[0].data).not.toHaveProperty("status");
+  it("UT-SD-08 restore (G3) clears both columns at the expected version: auto-approved while OFF, DRAFT while ON; misses explain why", async () => {
+    await expect(service.restore("restorer", QT, 2)).resolves.toEqual({ id: QT, version: 3, status: "APPROVED" });
+    expect(db.updates[0]).toMatchObject({ where: { id: QT, version: 2, deletedAt: { not: null } }, data: { deletedAt: null, deletedBy: null, version: { increment: 1 }, updatedBy: "restorer" } });
+    expect(db.updates[1]).toMatchObject({ data: { status: "APPROVED", autoApproved: true, approvedBy: "restorer", submittedAt: null, reviewAction: null } });
+    db.requireApproval = true;
+    await expect(service.restore("restorer", QT, 2)).resolves.toEqual({ id: QT, version: 3, status: "DRAFT" });
+    expect(db.updates[3]).toMatchObject({ data: { status: "DRAFT", autoApproved: false, approvedAt: null, submittedAt: null } });
     db.writeCount = 0;
     db.stored = null;
     expect(await failure(service.restore("a", QT, 2))).toMatchObject({ status: 404, code: "QUOTATION_NOT_FOUND" });
@@ -306,19 +334,20 @@ describe("edit and status guards (SA-QT-03/09)", () => {
     expect(await failure(service.restore("a", QT, 2))).toMatchObject({ status: 409, code: "QUOTATION_CHANGED" });
   });
 
-  it("UT-SD-09 update and submit/approve/reject/cancel refuse a deleted quotation with QUOTATION_DELETED", async () => {
+  it("UT-SD-09 update and submit/approve/reject/revise/cancel refuse a deleted quotation with QUOTATION_DELETED", async () => {
+    db.writeCount = 0;
     db.stored = { ...stored("DRAFT"), deletedAt: new Date() };
     expect(await failure(service.update("a", QT, 3, input()))).toMatchObject({ status: 409, code: "QUOTATION_DELETED" });
-    expect(db.updates).toHaveLength(0);
+    expect(db.updates).toHaveLength(1);
     expect(db.lines).toHaveLength(0);
-    db.writeCount = 0;
     db.stored = { version: 3, deletedAt: new Date() };
-    for (const call of [service.submit("a", QT, 3), service.approve("a", QT, 3), service.reject("a", QT, 3, "x"), service.cancel("a", QT, 3, "x")]) {
+    const actor = { id: "a", name: null };
+    for (const call of [service.submit(actor, QT, 3), service.approve("a", QT, 3), service.reject(actor, QT, 3, "x"), service.requestRevision(actor, QT, 3, "x"), service.cancel("a", QT, 3, "x")]) {
       expect(await failure(call)).toMatchObject({ status: 409, code: "QUOTATION_DELETED" });
     }
-    // Every transition guard excludes deleted rows.
+    // Every guard excludes deleted rows.
     for (const update of db.updates) expect(update).toMatchObject({ where: { deletedAt: null } });
-    expect(db.updates).toHaveLength(4);
+    expect(db.updates).toHaveLength(6);
   });
 });
 

@@ -2,15 +2,15 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { DISCARD_CHANGES_CONFIRM, deleteDocumentConfirm, restoreDocumentConfirm, useConfirm } from "./use-confirm";
-import { clearNotice, DocumentDeletedBanner, handOverNotice, peekNotice, restoredStatusLabel, type DeletedInfo } from "@/features/trade-document/document-api";
+import { clearNotice, DocumentDeletedBanner, handOverNotice, peekNotice, type DeletedInfo } from "@/features/trade-document/document-api";
+import { useDocumentFlow } from "@/features/trade-document/approval-flow";
+import { savedMessage, type DocFlow } from "@/features/trade-document/flow-status";
 import { Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTabDirty, useTabDocument, useTabReplace } from "@/features/home/tabs/tab-host";
 import { FormProvider, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { ScanIcon } from "@/components/ui/scan-icon";
 import {
-  isDeletableStatus,
-  isEditableStatus,
   mapSaveError,
   quotationRestoreError,
   toQuotationInput,
@@ -41,7 +41,7 @@ import { Button, IconButton, Toast } from "./ui";
  * One quotation document (ADR-0025 layout, data from SA quotation rev 1). A saved quotation is remounted
  * with the new server version after every write (QuotationPage keys on id + version).
  */
-export function QuotationForm({ initial, deleted: initialDeleted = null, access }: { initial?: QuotationFormValues; deleted?: DeletedInfo | null; access: QuotationAccess }) {
+export function QuotationForm({ initial, deleted: initialDeleted = null, flow = null, access }: { initial?: QuotationFormValues; deleted?: DeletedInfo | null; flow?: DocFlow | null; access: QuotationAccess }) {
   const replaceTab = useTabReplace();
   const [saved, setSaved] = useState<QuotationFormValues | undefined>(initial);
   const [mode, setMode] = useState<"view" | "edit">(initial ? "view" : "edit");
@@ -78,7 +78,7 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, access 
   // Without a Document Setup row in effect the server numbers plainly 1, 2, 3 … (owner 2026-10-26).
   const docNo = saved?.docNo ?? nextNumber.data?.docNo ?? "—";
   const mutations = useQuotationMutations();
-  const busy = mutations.create.isPending || mutations.update.isPending || mutations.remove.isPending || mutations.restore.isPending;
+  const busy = mutations.create.isPending || mutations.update.isPending || mutations.remove.isPending || mutations.restore.isPending || mutations.submit.isPending;
 
   // A new quotation starts in the company currency once the options arrive.
   const companyCurrency = options.data?.companyCurrency;
@@ -97,7 +97,7 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, access 
 
   /* ---------- document actions ---------- */
 
-  const showError = (error: unknown) => {
+  function showError(error: unknown) {
     const outcome = mapSaveError(error);
     for (const field of outcome.fieldErrors) setError(field.name, { type: "server", message: field.message });
     setToast(outcome.message);
@@ -107,12 +107,35 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, access 
       setMode("view");
       void mutations.invalidate();
     }
-  };
+  }
 
-  /** After a write: reload the saved document (the page remounts with the new version). */
+  /** After a write: reload the saved document (the page remounts with the new version and keeps the message). */
   const afterWrite = async (message: string) => {
     setToast(message);
+    if (saved?.id) handOverNotice(saved.id, message);
+    setMode("view");
     await mutations.invalidate();
+  };
+
+  // FE-AS-010 (ADR-0050): Save / Send to approve / Edit / Delete follow the Quotation approval setting and `Flow`.
+  const approvalFlow = useDocumentFlow({
+    type: "quotation",
+    saved,
+    flow,
+    deleted: isDeleted,
+    access,
+    editing: !readOnly,
+    dirty: formState.isDirty,
+    busy,
+    submit: (args) => mutations.submit.mutateAsync(args),
+    confirm,
+    toast: setToast,
+    reload: afterWrite,
+    onError: (error) => showError(error),
+  });
+
+  const onWriteError = async (error: unknown, action: "save" | "delete") => {
+    if (!(await approvalFlow.handleError(error, action))) showError(error);
   };
 
   const onSave = handleSubmit(
@@ -121,15 +144,16 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, access 
       const input = toQuotationInput(v);
       try {
         if (saved?.id && saved.version) {
-          await mutations.update.mutateAsync({ id: saved.id, expectedVersion: saved.version, ...input });
-          await afterWrite(`Saved ${saved.docNo}`);
+          const result = await mutations.update.mutateAsync({ id: saved.id, expectedVersion: saved.version, ...input });
+          await afterWrite(savedMessage(saved.docNo, result));
         } else {
           const result = await mutations.create.mutateAsync(input);
+          handOverNotice(result.id, savedMessage(result.docNo, result));
           await mutations.invalidate();
           replaceTab(`/pre-sale/quotation/${result.id}`);
         }
       } catch (error) {
-        showError(error);
+        await onWriteError(error, "save");
       }
     },
     (errors) => {
@@ -161,13 +185,13 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, access 
       await mutations.invalidate();
       replaceTab("/pre-sale/quotation");
     } catch (error) {
-      showError(error);
+      await onWriteError(error, "delete");
     }
   };
 
   /** FE-SD-002: a deleted quotation back to its status (Draft / Pending Approval); the page remounts editable. */
   const onRestore = async () => {
-    if (!saved?.id || !saved.version || !(await confirm(restoreDocumentConfirm(saved.docNo, restoredStatusLabel(saved.status))))) return;
+    if (!saved?.id || !saved.version || !(await confirm(restoreDocumentConfirm(saved.docNo, approvalFlow.restoreLabel)))) return;
     try {
       await mutations.restore.mutateAsync({ id: saved.id, expectedVersion: saved.version });
       handOverNotice(saved.id, `Restored ${saved.docNo ?? ""}`.trim());
@@ -272,17 +296,18 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, access 
           <QuotationHeader
             docNo={docNo}
             isPreview={!saved?.docNo}
-            status={saved ? status : undefined}
+            status={saved ? ((flow?.status as typeof status | undefined) ?? status) : undefined}
+            statusLabels={approvalFlow.statusLabels}
+            statusNote={approvalFlow.statusNote}
             statusReason={saved?.statusReason}
             mode={isDeleted ? "view" : mode}
             saving={busy}
             canSave={!isDeleted && (saved ? access.edit : access.add)}
             canCreate={access.add}
-            canEdit={Boolean(saved) && access.edit && isEditableStatus(status) && !isDeleted}
-            // OQ-1: Delete only before approval; it is hidden for APPROVED / REJECTED / CANCELLED and for a deleted copy.
-            canDelete={Boolean(saved) && access.delete && isDeletableStatus(status) && !isDeleted}
-            hideEditDelete={isDeleted}
-            hideDelete={Boolean(saved) && !isDeletableStatus(status)}
+            canEdit={approvalFlow.canEdit}
+            canDelete={approvalFlow.canDelete}
+            hideEditDelete={approvalFlow.hideEditDelete}
+            extraActions={approvalFlow.sendButton}
             actions={{
               onCancel: () => void onCancel(),
               onSave: () => void onSave(),

@@ -3,7 +3,8 @@
 import { useCallback, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
-export type ConfirmRequest = { title: string; body: string; cancelLabel: string; confirmLabel: string };
+/** `confirmVariant`: "primary" for a safe action (Send to approve); default danger. */
+export type ConfirmRequest = { title: string; body: string; cancelLabel: string; confirmLabel: string; confirmVariant?: "danger" | "primary" };
 
 export const DISCARD_CHANGES_CONFIRM: ConfirmRequest = {
   title: "Discard unsaved changes?",
@@ -64,6 +65,7 @@ export function useConfirm() {
       confirmLabel={request?.confirmLabel ?? "OK"}
       pendingLabel=""
       pending={false}
+      confirmVariant={request?.confirmVariant}
       onCancel={() => settle(false)}
       onConfirm={() => settle(true)}
     />

@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { DUE_BEFORE_DOC_MESSAGE, isFilledLine, lineSchema, lineStoneRule, serviceChargeSchema } from "@/features/quotation/schema";
+import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
 
 /** Memo Receive (ADR-0033, ADR-0034): lines, discounts and totals use the Quotation shape (D6, rev 2). */
-export const MEMO_RECEIVE_STATUSES = ["PENDING_APPROVAL", "APPROVED"] as const;
+/** ADR-0050: Draft, Pending Approval, Approved, Revise, Rejected. */
+export const MEMO_RECEIVE_STATUSES = APPROVAL_DOC_STATUSES;
 export type MemoReceiveStatus = (typeof MEMO_RECEIVE_STATUSES)[number];
 
 export const MAX_MEMO_NOTE = 250;
@@ -50,5 +52,3 @@ export const memoReceiveSchema = z
 
 export type MemoReceiveFormValues = z.infer<typeof memoReceiveSchema>;
 
-/** Pending documents can still be edited, deleted or approved; an approved one is read-only (rev 3, Q-MR-12). */
-export const isEditableMemo = (status: MemoReceiveStatus | undefined) => status !== "APPROVED";

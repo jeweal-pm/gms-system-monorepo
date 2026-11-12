@@ -9,12 +9,11 @@ import {
   emptyCustomerStock,
   memoStockToStockLine,
   pickedStockIds,
-  stockRowCount,
   toCustomerStockInput,
   type CustomerStockFormValues,
   type CustomerStockOptions,
 } from "./customer-stock";
-import { APPROVAL_STATUS_LABELS, type DocumentApi, type DocumentFormConfig, type SaveOutcome } from "./document-form";
+import { type DocumentApi, type DocumentFormConfig, type SaveOutcome } from "./document-form";
 import type { RestoreOutcome } from "./document-api";
 import { MemoStockModal } from "./memo-stock-modal";
 import type { DocumentPhotos } from "./document-photos";
@@ -35,10 +34,8 @@ export type CustomerStockPageOptions = {
   mapRestoreError: (error: unknown) => RestoreOutcome;
   /** The From Stock dialog title (Reserve design: "Add From Stock"). */
   pickerTitle: string;
-  /** What approval does to the stock rows, e.g. "cut from Memo Stock" / "held for the customer". */
-  approvedStock: string;
-  /** What happens with no stock rows, e.g. "cut" / "held". */
-  noStock: string;
+  /** The approval setting key (ADR-0050). */
+  approvalType: "reserve" | "memo-out";
   notePlaceholder: string;
   noteHint: string;
   daybook: ReactNode;
@@ -50,7 +47,7 @@ export type CustomerStockPageOptions = {
  * The shared document form settings of a customer document with From Stock rows:
  * - the Quotation header with a customer and both addresses;
  * - one From Stock button over Memo Stock (every vendor), whose rows take part or all of their item;
- * - approval badges, Approve and the stock messages.
+ * - the approval flow of its type (ADR-0050: Save, Send to approve, Edit / Delete per Flow).
  * Rows keyed in by hand hold nothing.
  */
 export function customerStockConfig(options: CustomerStockPageOptions): DocumentFormConfig<CustomerStockFormValues, CustomerStockInput, CustomerStockOptions> {
@@ -99,17 +96,7 @@ export function customerStockConfig(options: CustomerStockPageOptions): Document
       ),
       addedToast: (count) => `Added ${count} item${count === 1 ? "" : "s"} from Stock`,
     },
-    approval: {
-      statusLabels: APPROVAL_STATUS_LABELS,
-      pendingStatus: "PENDING_APPROVAL",
-      confirmTitle: `Approve ${options.title}`,
-      confirmBody: (lines) => {
-        const count = stockRowCount(lines);
-        return count === 0
-          ? `Approve this ${options.title}? It has no stock items, so nothing is ${options.noStock}. It can no longer be edited.`
-          : `Approve this ${options.title}? Its ${count} stock ${count === 1 ? "item is" : "items are"} ${options.approvedStock} and it can no longer be edited.`;
-      },
-    },
+    approvalType: options.approvalType,
     notePlaceholder: options.notePlaceholder,
     noteHint: options.noteHint,
     daybook: options.daybook,

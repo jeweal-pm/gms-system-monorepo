@@ -1,14 +1,14 @@
 import { uuidV7 } from "@gms/storage";
-import { HttpStatus, Injectable, Logger } from "@nestjs/common";
+import { HttpStatus, Injectable } from "@nestjs/common";
 import { partnerException, validationException, type FieldError } from "../common/errors";
-import { WRITE_TX, type Tx } from "../common/persistence";
+import { prismaCode, type Tx } from "../common/persistence";
+import type { FlowPrincipal } from "../approval-setting/approval-flow";
 import { prisma } from "../database/prisma-client";
 import { Prisma } from "../generated/prisma/client";
 import { documentErrors } from "./document-errors";
-import { explainMiss, MISS_SELECT, TradeDocumentEngine, type LineHook, type MissRow } from "./document-engine";
+import { TradeDocumentEngine, type DocumentActor, type DocumentEffects, type LineHook } from "./document-engine";
 import { vendorDocumentOptions, vendorParty, type VendorOut } from "./memo-out-return.service";
 import type { MemoReceiveInput, MemoReceiveListInput, MemoReceiveStatus } from "./memo-schemas";
-import { emitNotificationSignals } from "../notification/notification-hub";
 
 export const memoReceiveErrors = documentErrors("MEMO_RECEIVE", "MemoReceive", "memo_receive");
 /** SA-MR-16: an upload that isn't a JPEG/PNG ≤ 5 MB, or a saved photo id that isn't a ready Memo Receive photo. */
@@ -31,8 +31,6 @@ export async function checkLinePhotos(tx: Tx, lines: { photoIds: string[] }[]): 
   });
 }
 
-const PENDING: MemoReceiveStatus = "PENDING_APPROVAL";
-const APPROVED: MemoReceiveStatus = "APPROVED";
 /** Location of every Memo Stock item (ADR-0034 D6, SA-MR-07). */
 export const MEMO_LOCATION = "Memo";
 /** 4-digit running number per year (SA-MR-04); item 10,000 is refused (Q-MR-09 still open). */
@@ -96,11 +94,10 @@ export function netUnitPrice(line: { priceUnit: string; pcs: number; weightCt: D
 
 /**
  * memo-receive SA rev 1 / ADR-0034: Document Setup key `memo-receive`, vendor + address like Memo Out Return,
- * PENDING_APPROVAL → APPROVED (approval copies each line to Memo Stock), server-issued Stock IDs.
+ * the approval flow of approval-setup ADR-0050 (approval copies each line to Memo Stock), server-issued Stock IDs.
  */
 @Injectable()
 export class MemoReceiveService {
-  private readonly logger = new Logger("memo_receive");
   /** Server clock for the Stock ID year; replaced in tests only. */
   clock: () => Date = () => new Date();
 
@@ -129,6 +126,77 @@ export class MemoReceiveService {
     },
   };
 
+  /**
+   * SA-MR-05/06 effects (approval-setup "Effects and their reversal"): approval writes one `memo_stock` row per line,
+   * location `Memo`, pending = received; unique `memo_receive_line_id` / `stock_id` make a duplicate copy impossible.
+   * The reversal (auto-approved edit / delete) locks those rows in id order and deletes them; a row that another document
+   * has moved (returned / reserved / sold / purchased > 0) or that a line names → `MEMO_RECEIVE_IN_USE`.
+   */
+  private readonly effects: DocumentEffects = {
+    apply: async (tx, doc, actorId, now) => {
+      const document = await tx.memoReceive.findUniqueOrThrow({
+        where: { id: doc.id },
+        select: {
+          docNo: true, docDate: true, dueDate: true, vendorId: true, vendorCodeSnapshot: true, vendorNameSnapshot: true, currencyCode: true,
+          lines: { orderBy: { position: "asc" } },
+        },
+      });
+      const rows = document.lines.map((line) => ({
+        id: uuidV7(),
+        stockId: line.stockId,
+        memoReceiveId: doc.id,
+        memoReceiveLineId: line.id,
+        receivedDocNo: document.docNo,
+        receivedDocDate: document.docDate,
+        dueDate: document.dueDate,
+        vendorId: document.vendorId,
+        vendorCodeSnapshot: document.vendorCodeSnapshot,
+        vendorNameSnapshot: document.vendorNameSnapshot,
+        location: MEMO_LOCATION,
+        stone: line.stone,
+        shape: line.shape,
+        size: line.size,
+        color: line.color,
+        clarity: line.clarity,
+        cutting: line.cutting,
+        quality: line.quality,
+        lot: line.lot,
+        cerType: line.cerType,
+        cerNo: line.cerNo,
+        itemNote: line.itemNote,
+        receivedPcs: line.pcs,
+        receivedWeightCt: line.weightCt,
+        pendingPcs: line.pcs,
+        pendingWeightCt: line.weightCt,
+        priceUnit: line.priceUnit,
+        unitPrice: line.unitPrice,
+        lineAmount: line.amount,
+        netUnitPrice: netUnitPrice(line),
+        currencyCode: document.currencyCode,
+        createdAt: now,
+        createdBy: actorId,
+        updatedAt: now,
+      }));
+      if (rows.length > 0) await tx.memoStock.createMany({ data: rows });
+      return { result: { memoStockCount: rows.length }, log: { lineCount: rows.length } };
+    },
+    reverse: async (tx, doc) => {
+      const locked = await tx.$queryRaw<{ id: string; moved: boolean }[]>(Prisma.sql`
+        SELECT id::text AS id, (returned_pcs > 0 OR returned_weight_ct > 0 OR reserved_pcs > 0 OR reserved_weight_ct > 0
+          OR sold_pcs > 0 OR sold_weight_ct > 0 OR purchased_pcs > 0 OR purchased_weight_ct > 0) AS moved
+        FROM "partner"."memo_stock" WHERE memo_receive_id = ${doc.id}::uuid ORDER BY id FOR UPDATE`);
+      if (locked.some((row) => row.moved)) throw memoReceiveErrors.inUse(await memoReceiveUsedBy(tx, doc.id));
+      try {
+        await tx.memoStock.deleteMany({ where: { memoReceiveId: doc.id } });
+      } catch (error) {
+        // A line of another document named an item between the check and the delete (RESTRICT foreign key).
+        if (prismaCode(error) === "P2003") throw memoReceiveErrors.inUse(null);
+        throw error;
+      }
+    },
+    usedBy: memoReceiveUsedBy,
+  };
+
   private readonly engine = new TradeDocumentEngine<MemoReceiveInput, VendorOut, MemoReceiveStatus>({
     document: "memoReceive",
     transactionKey: "memo-receive",
@@ -139,8 +207,8 @@ export class MemoReceiveService {
     parentKey: "memoReceiveId",
     errors: memoReceiveErrors,
     party: vendorParty<MemoReceiveInput>(memoReceiveErrors),
-    createStatus: PENDING,
-    editableStatuses: [PENDING],
+    approvalType: "memo-receive",
+    effects: this.effects,
     lineOmit: ["stoneCodeId", "location"],
     lineHook: this.stockIds,
     detailExtra: (row) => ({
@@ -152,24 +220,42 @@ export class MemoReceiveService {
   list(input: MemoReceiveListInput) {
     return this.engine.list(input);
   }
-  get(id: string) {
-    return this.engine.get(id) as Promise<unknown> as Promise<MemoReceiveDetail>;
+  get(id: string, viewer: FlowPrincipal | null = null) {
+    return this.engine.get(id, viewer) as Promise<unknown> as Promise<MemoReceiveDetail>;
   }
   nextNumber(docDate: string) {
     return this.engine.nextNumber(docDate);
   }
-  create(actorId: string, input: MemoReceiveInput) {
-    return this.engine.create(actorId, input) as Promise<{ id: string; docNo: string; version: number; stockIds: string[] }>;
+  create(actorId: string, input: MemoReceiveInput, viewer: FlowPrincipal | null = null) {
+    return this.engine.create(actorId, input, viewer) as Promise<unknown> as Promise<{ id: string; docNo: string; version: number; stockIds: string[]; status: string; autoApproved: boolean }>;
   }
-  update(actorId: string, id: string, expectedVersion: number, input: MemoReceiveInput) {
-    return this.engine.update(actorId, id, expectedVersion, input) as Promise<{ id: string; version: number; stockIds: string[] }>;
+  update(actorId: string, id: string, expectedVersion: number, input: MemoReceiveInput, viewer: FlowPrincipal | null = null) {
+    return this.engine.update(actorId, id, expectedVersion, input, viewer) as Promise<unknown> as Promise<{ id: string; version: number; stockIds: string[]; status: string; autoApproved: boolean }>;
   }
   delete(actorId: string, id: string, expectedVersion: number) {
     return this.engine.delete(actorId, id, expectedVersion);
   }
-  /** transaction-soft-delete D6: a deleted document back to its unchanged status. */
+  /** transaction-soft-delete D6 / approval-setup G3. */
   restore(actorId: string, id: string, expectedVersion: number) {
     return this.engine.restore(actorId, id, expectedVersion);
+  }
+  submit(actor: DocumentActor, id: string, expectedVersion: number) {
+    return this.engine.submit(actor, id, expectedVersion);
+  }
+  /** PENDING_APPROVAL → APPROVED and the Memo Stock rows above, in one transaction. */
+  approve(actorId: string, id: string, expectedVersion: number) {
+    return this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED"; memoStockCount: number }>;
+  }
+
+  /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction. */
+  approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
+    return this.engine.approveWithin(tx, actorId, id, expectedVersion);
+  }
+  reject(actor: DocumentActor, id: string, expectedVersion: number, reason: string) {
+    return this.engine.reject(actor, id, expectedVersion, reason);
+  }
+  requestRevision(actor: DocumentActor, id: string, expectedVersion: number, note: string) {
+    return this.engine.requestRevision(actor, id, expectedVersion, note);
   }
 
   /** `memoOutReturn.options` shape plus `numbering`; stone lists without stone codes (SA-MR-07/10). */
@@ -185,80 +271,35 @@ export class MemoReceiveService {
       throw memoReceiveErrors.map(error, "options");
     }
   }
+}
 
-  /**
-   * SA-MR-05/06: PENDING_APPROVAL → APPROVED (approved_at/by, version + 1) and one `memo_stock` row per line, location
-   * `Memo`, pending = received, in one transaction. The guarded UPDATE serializes concurrent approvals; unique
-   * `memo_receive_line_id` / `stock_id` make a duplicate copy impossible.
-   */
-  async approve(actorId: string, id: string, expectedVersion: number) {
-    const errors = memoReceiveErrors;
-    try {
-      const approved = await prisma.$transaction(async (tx) => {
-        const now = new Date();
-        const updated = await tx.memoReceive.updateMany({
-          where: { id, version: expectedVersion, status: PENDING, deletedAt: null },
-          data: { status: APPROVED, approvedAt: now, approvedBy: actorId, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
-        });
-        if (updated.count === 0) {
-          // D8: NOT_FOUND → DELETED → STATUS_INVALID → CHANGED.
-          explainMiss(errors, (await tx.memoReceive.findUnique({ where: { id }, select: MISS_SELECT })) as MissRow, [PENDING]);
-        }
-        const document = await tx.memoReceive.findUniqueOrThrow({
-          where: { id },
-          select: {
-            docNo: true, docDate: true, dueDate: true, vendorId: true, vendorCodeSnapshot: true, vendorNameSnapshot: true, currencyCode: true,
-            lines: { orderBy: { position: "asc" } },
-          },
-        });
-        const rows = document.lines.map((line) => ({
-          id: uuidV7(),
-          stockId: line.stockId,
-          memoReceiveId: id,
-          memoReceiveLineId: line.id,
-          receivedDocNo: document.docNo,
-          receivedDocDate: document.docDate,
-          dueDate: document.dueDate,
-          vendorId: document.vendorId,
-          vendorCodeSnapshot: document.vendorCodeSnapshot,
-          vendorNameSnapshot: document.vendorNameSnapshot,
-          location: MEMO_LOCATION,
-          stone: line.stone,
-          shape: line.shape,
-          size: line.size,
-          color: line.color,
-          clarity: line.clarity,
-          cutting: line.cutting,
-          quality: line.quality,
-          lot: line.lot,
-          cerType: line.cerType,
-          cerNo: line.cerNo,
-          itemNote: line.itemNote,
-          receivedPcs: line.pcs,
-          receivedWeightCt: line.weightCt,
-          pendingPcs: line.pcs,
-          pendingWeightCt: line.weightCt,
-          priceUnit: line.priceUnit,
-          unitPrice: line.unitPrice,
-          lineAmount: line.amount,
-          netUnitPrice: netUnitPrice(line),
-          currencyCode: document.currencyCode,
-          createdAt: now,
-          createdBy: actorId,
-          updatedAt: now,
-        }));
-        if (rows.length > 0) await tx.memoStock.createMany({ data: rows });
-        // ADR-0049: the creator hears about the approval once this transaction commits.
-        const signals = await this.engine.notifyApproved(tx, id, actorId);
-        return { signals, docNo: document.docNo, memoStockCount: rows.length };
-      }, WRITE_TX);
-      emitNotificationSignals(approved.signals);
-      this.logger.log({ event: "memo_receive.approved", actorId, id, docNo: approved.docNo, lineCount: approved.memoStockCount });
-      return { id, version: expectedVersion + 1, status: APPROVED as "APPROVED", memoStockCount: approved.memoStockCount };
-    } catch (error) {
-      throw errors.map(error, "approve");
-    }
-  }
+/**
+ * An auto-approved Memo Receive is used once any of its Memo Stock rows is named by a line of another document (Memo
+ * Return, Reserve, Memo Out, Purchase, Quotation; any status — soft-deleted ones too, because their lines keep the
+ * RESTRICT foreign key) or has a moved bucket. Returns that document's number (live first, oldest first), else the
+ * moved item's Stock ID, else null. One statement on the line FK indexes (≤ 200 items per receive).
+ */
+export async function memoReceiveUsedBy(client: Tx | typeof prisma, id: string): Promise<string | null> {
+  const [row] = await client.$queryRaw<{ doc_no: string }[]>(Prisma.sql`
+    WITH items AS (SELECT s.id FROM "partner"."memo_stock" s WHERE s.memo_receive_id = ${id}::uuid)
+    SELECT CASE WHEN deleted_at IS NOT NULL THEN doc_no || ' (deleted)' ELSE doc_no END AS doc_no FROM (
+      SELECT h.doc_no, h.deleted_at, h.created_at FROM "partner"."memo_return_line" l JOIN "partner"."memo_return" h ON h.id = l.memo_return_id WHERE l.memo_stock_id IN (SELECT id FROM items)
+      UNION ALL
+      SELECT h.doc_no, h.deleted_at, h.created_at FROM "partner"."reserve_line" l JOIN "partner"."reserve" h ON h.id = l.reserve_id WHERE l.memo_stock_id IN (SELECT id FROM items)
+      UNION ALL
+      SELECT h.doc_no, h.deleted_at, h.created_at FROM "partner"."memo_out_line" l JOIN "partner"."memo_out" h ON h.id = l.memo_out_id WHERE l.memo_stock_id IN (SELECT id FROM items)
+      UNION ALL
+      SELECT h.doc_no, h.deleted_at, h.created_at FROM "partner"."purchase_line" l JOIN "partner"."purchase" h ON h.id = l.purchase_id WHERE l.memo_stock_id IN (SELECT id FROM items)
+      UNION ALL
+      SELECT h.doc_no, h.deleted_at, h.created_at FROM "partner"."quotation_line" l JOIN "partner"."quotation" h ON h.id = l.quotation_id WHERE l.memo_stock_id IN (SELECT id FROM items)
+      UNION ALL
+      SELECT s.stock_id, NULL::timestamp, NULL::timestamp FROM "partner"."memo_stock" s WHERE s.memo_receive_id = ${id}::uuid
+        AND (s.returned_pcs > 0 OR s.returned_weight_ct > 0 OR s.reserved_pcs > 0 OR s.reserved_weight_ct > 0
+          OR s.sold_pcs > 0 OR s.sold_weight_ct > 0 OR s.purchased_pcs > 0 OR s.purchased_weight_ct > 0)
+    ) u
+    ORDER BY (deleted_at IS NOT NULL), created_at NULLS LAST
+    LIMIT 1`);
+  return row?.doc_no ?? null;
 }
 
 type EngineDetail = Awaited<ReturnType<TradeDocumentEngine<MemoReceiveInput, VendorOut, MemoReceiveStatus>["get"]>>;

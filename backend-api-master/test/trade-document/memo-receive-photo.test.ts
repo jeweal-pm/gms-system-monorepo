@@ -21,11 +21,14 @@ const db = vi.hoisted(() => ({
   findWhere: [] as unknown[],
   stored: [] as Buffer[],
   modules: [] as string[],
+  pending: false,
+  raw: [] as string[],
 }));
 
 vi.mock("@gms/storage", () => ({ uuidV7: () => "00000000-0000-7000-8000-000000000009", createStorage: () => ({}), buildKey: () => "x" }));
 vi.mock("../../src/database/prisma-client", () => ({
   prisma: {
+    $queryRaw: vi.fn(async (query: { sql: string }) => { db.raw.push(query.sql); return [{ ok: db.pending }]; }),
     storedFile: {
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => { db.created.push(data); return data; }),
       findFirst: vi.fn(async ({ where }: { where: unknown }) => { db.findWhere.push(where); return db.file; }),
@@ -66,6 +69,8 @@ beforeEach(() => {
   db.created = [];
   db.stored = [];
   db.findWhere = [];
+  db.pending = false;
+  db.raw = [];
   db.file = { objectKey: "memo-receive-photo/abc.png", contentType: "image/png" };
 });
 
@@ -123,6 +128,11 @@ describe("memo receive line photos (SA-MR-15/16)", () => {
 });
 
 /** A response that records status/body and emits finish/close like Node's ServerResponse. */
+/** A writable response that accepts a streamed photo. */
+function streamingResponse() {
+  return Object.assign(new Writable({ write(_chunk: Buffer, _encoding, callback) { callback(); } }), { setHeader: vi.fn(), status: vi.fn() });
+}
+
 function fakeResponse() {
   const emitter = new EventEmitter();
   const state = { status: 0, body: undefined as unknown, headers: {} as Record<string, string> };
@@ -143,6 +153,42 @@ async function run(handler: ReturnType<typeof createPhotoAccessCheck>, method: s
   await new Promise((resolve) => setImmediate(resolve));
   return { next, ...fake };
 }
+
+describe("G14 approver photo reads (approval-setup clarification G14)", () => {
+  it("UT-AS-PH1 canApprove without VIEW streams a photo of a live PENDING_APPROVAL document only; VIEW needs no document check", async () => {
+    db.pending = true;
+    const response = streamingResponse();
+    await controllerFor(["memo-receive:APPROVE"]).read({} as Request, PHOTO_ID, response as unknown as Response);
+    expect(response.status).toHaveBeenCalledWith(200);
+    expect(db.raw).toHaveLength(1);
+    const sql = db.raw[0].replace(/\s+/g, " ");
+    expect(sql).toContain(`FROM "partner"."memo_receive_line_photo" p JOIN "partner"."memo_receive_line" l ON l."id" = p."line_id" JOIN "partner"."memo_receive" h ON h."id" = l."memo_receive_id"`);
+    expect(sql).toContain(`h."status" = 'PENDING_APPROVAL' AND h."deleted_at" IS NULL`);
+    // Not on a pending live document (draft, approved, rejected, revised, deleted, or no document) → denied before the file lookup.
+    db.pending = false;
+    db.findWhere = [];
+    expect(await code(controllerFor(["memo-receive:APPROVE"]).read({} as Request, PHOTO_ID, {} as Response))).toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(db.findWhere).toHaveLength(0);
+    // VIEW reads without the document check; another type's APPROVE or nothing is denied before any query.
+    db.raw = [];
+    await controllerFor(["memo-receive:VIEW"]).read({} as Request, PHOTO_ID, streamingResponse() as unknown as Response);
+    expect(db.raw).toHaveLength(0);
+    expect(await code(controllerFor(["purchase-order:APPROVE"]).read({} as Request, PHOTO_ID, {} as Response))).toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(await code(controllerFor([]).read({} as Request, PHOTO_ID, {} as Response))).toMatchObject({ code: "PERMISSION_DENIED" });
+    expect(db.raw).toHaveLength(0);
+    // Upload is unchanged: APPROVE does not allow it.
+    expect(await code(controllerFor(["memo-receive:APPROVE"]).upload(upload("image/png", PNG)))).toMatchObject({ code: "PERMISSION_DENIED" });
+  });
+
+  it("UT-AS-PH2 the route access check lets an approver GET through (the controller then checks the document) but not POST", async () => {
+    const fresh = () => ({ uploads: createPhotoLimiter(1), downloads: createPhotoLimiter(1) });
+    expect((await run(createPhotoAccessCheck(auth(["memo-receive:APPROVE"]), "memo-receive", fresh()), "GET")).next).toHaveBeenCalledOnce();
+    expect((await run(createPhotoAccessCheck(auth(["memo-receive:APPROVE"]), "memo-receive", fresh()), "POST")).state).toMatchObject({ status: 403 });
+    expect((await run(createPhotoAccessCheck(auth(["quotation:APPROVE"]), "memo-receive", fresh()), "GET")).state).toMatchObject({ status: 403, body: { error: { code: "PERMISSION_DENIED" } } });
+    expect((await run(createPhotoAccessCheck(auth(["quotation:APPROVE"]), "quotation", fresh()), "GET")).next).toHaveBeenCalledOnce();
+    expect((await run(createPhotoAccessCheck(auth(["purchase-order:APPROVE"]), "purchase-order", fresh()), "GET")).next).toHaveBeenCalledOnce();
+  });
+});
 
 describe("shared photo limiter (SA-MR-15, INV-20261026-001)", () => {
   it("UT-MR-PH5 Quotation and Memo Receive routes take slots from the same 3-upload / 6-download limiters; grants are per menu", async () => {

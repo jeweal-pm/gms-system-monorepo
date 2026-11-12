@@ -242,7 +242,7 @@ describe("load errors and predicates", () => {
 
   it("UT-VEN-A21 readVendorError reads domain code, field errors and status", () => {
     const error = gatewayError({ domainCode: "VALIDATION_ERROR", fieldErrors: [{ path: "email", code: "invalid_format" }] });
-    expect(readVendorError(error)).toEqual({ domainCode: "VALIDATION_ERROR", fieldErrors: [{ path: "email", code: "invalid_format" }], httpStatus: 400 });
+    expect(readVendorError(error)).toEqual({ domainCode: "VALIDATION_ERROR", fieldErrors: [{ path: "email", code: "invalid_format" }], httpStatus: 400, details: null });
   });
 
   it("UT-VEN-A22 an edit Save PERMISSION_DENIED differs from create only by the verb", () => {

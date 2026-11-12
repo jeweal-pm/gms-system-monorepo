@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { HttpException } from "@nestjs/common";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { sendAndApprove, setApproval, submitted } from "../partner-shared/approval";
 
 /**
  * IT-PU-B01…B06 (purchase SA rev 1 / ADR-0042, owner 2026-11-04) against real PostgreSQL: the migration's columns,
@@ -102,7 +103,7 @@ async function vendorFixture(name: string, currencyCode = "THB"): Promise<Vendor
 /** An approved memo receive: one Memo Stock item per line (pending = received), in line order. */
 async function approvedStock(vendor: Vendor, lines: ReturnType<typeof receiveLine>[], patch: Record<string, unknown> = {}) {
   const saved = await receive.create(ACTOR, { ...header(vendor, patch), lines } as never);
-  await receive.approve(ACTOR, saved.id, saved.version);
+  await sendAndApprove(receive, ACTOR, saved.id, saved.version);
   const items = await prisma.memoStock.findMany({ where: { memoReceiveId: saved.id } });
   const byLine = new Map(items.map((item) => [item.memoReceiveLineId, item]));
   const lineIds = await prisma.memoReceiveLine.findMany({ where: { memoReceiveId: saved.id }, orderBy: { position: "asc" }, select: { id: true } });
@@ -112,7 +113,7 @@ async function approvedStock(vendor: Vendor, lines: ReturnType<typeof receiveLin
 /** An approved purchase order; returns its line ids in position order. */
 async function approvedOrder(vendor: Vendor, lines: ReturnType<typeof orderLine>[], approve = true, patch: Record<string, unknown> = {}) {
   const saved = await order.create(ACTOR, { ...header(vendor, patch), lines } as never);
-  if (approve) await order.approve(ACTOR, saved.id, saved.version);
+  if (approve) await sendAndApprove(order, ACTOR, saved.id, saved.version);
   const rows = await prisma.purchaseOrderLine.findMany({ where: { purchaseOrderId: saved.id }, orderBy: { position: "asc" }, select: { id: true } });
   return { id: saved.id, docNo: saved.docNo, lineIds: rows.map((row) => row.id) };
 }
@@ -174,6 +175,7 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     await prisma.memoStockIdCounter.deleteMany({ where: { year: YEAR } });
     vendorA = await vendorFixture("PU IT Vendor A");
     vendorB = await vendorFixture("PU IT Vendor B");
+    for (const type of ["memo-receive", "purchase-order", "purchase"] as const) await setApproval(prisma, type, true);
   });
 
   afterAll(async () => {
@@ -246,8 +248,8 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
       ["IN_STOCK", 1, "0.500", "Ruby", "Y", "Memo", "PER_CT", expect.any(String)],
     ]);
 
-    const approved = await purchase.approve(ACTOR, saved.id, saved.version);
-    expect(approved).toEqual({ id: saved.id, version: 2, status: "APPROVED", lineCount: 3 });
+    const approved = await sendAndApprove(purchase, ACTOR, saved.id, saved.version);
+    expect(approved).toEqual({ id: saved.id, version: 3, status: "APPROVED", lineCount: 3 });
     expect(await buckets(x.id)).toMatchObject({ pending: [3, "1.500"], sold: [2, "1.000"], purchased: [2, "1.000"], balanced: true, version: 2 });
     expect(await buckets(y.id)).toMatchObject({ pending: [0, "0.000"], sold: [3, "1.500"], purchased: [3, "1.500"], balanced: true });
     const after = await purchase.get(saved.id);
@@ -262,24 +264,24 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     ]);
 
     // Two pending purchases of the same quantity: the first approval wins, the second is short and changes nothing.
-    const first = await purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(x.id, "IN_STOCK", 3, "1.5")]));
-    const second = await purchase.create(ACTOR, purchaseInput(vendorA, [manualLine(), stockLine(x.id, "IN_STOCK", 3, "1.5")]));
-    await purchase.approve(ACTOR, first.id, 1);
+    const first = await submitted(purchase, ACTOR, await purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(x.id, "IN_STOCK", 3, "1.5")])));
+    const second = await submitted(purchase, ACTOR, await purchase.create(ACTOR, purchaseInput(vendorA, [manualLine(), stockLine(x.id, "IN_STOCK", 3, "1.5")])));
+    await purchase.approve(ACTOR, first.id, 2);
     const before = await buckets(x.id);
-    expect(await failure(purchase.approve(ACTOR, second.id, 1))).toEqual({
+    expect(await failure(purchase.approve(ACTOR, second.id, 2))).toEqual({
       status: 409, code: "PURCHASE_PENDING_SHORT",
       fieldErrors: [{ path: "lines.1.pcs", code: "exceeds_available" }, { path: "lines.1.weightCt", code: "exceeds_available" }],
     });
     expect(await buckets(x.id)).toEqual(before);
-    expect(await prisma.purchase.findUniqueOrThrow({ where: { id: second.id }, select: { status: true, version: true } })).toEqual({ status: "PENDING_APPROVAL", version: 1 });
+    expect(await prisma.purchase.findUniqueOrThrow({ where: { id: second.id }, select: { status: true, version: true } })).toEqual({ status: "PENDING_APPROVAL", version: 2 });
     // A fully bought memo receive leaves the report through the existing open filter.
     expect((await outstanding.vendorItems({ memoReceiveIds: [receiveId] })).items).toEqual([]);
 
     // Parallel approvals that name the same two items in opposite orders do not deadlock (locks in id order).
     const { items: [z1, z2] } = await approvedStock(vendorA, [receiveLine({ lot: "Z1" }), receiveLine({ lot: "Z2" })]);
-    const p = await purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(z1.id, "IN_STOCK", 1, "0.5"), stockLine(z2.id, "IN_STOCK", 1, "0.5")]));
-    const q = await purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(z2.id, "IN_STOCK", 2, "1"), stockLine(z1.id, "IN_STOCK", 2, "1")]));
-    const results = await Promise.all([purchase.approve(ACTOR, p.id, 1), purchase.approve(ACTOR, q.id, 1)]);
+    const p = await submitted(purchase, ACTOR, await purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(z1.id, "IN_STOCK", 1, "0.5"), stockLine(z2.id, "IN_STOCK", 1, "0.5")])));
+    const q = await submitted(purchase, ACTOR, await purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(z2.id, "IN_STOCK", 2, "1"), stockLine(z1.id, "IN_STOCK", 2, "1")])));
+    const results = await Promise.all([purchase.approve(ACTOR, p.id, 2), purchase.approve(ACTOR, q.id, 2)]);
     expect(results.map((result) => result.status)).toEqual(["APPROVED", "APPROVED"]);
     expect(await buckets(z1.id)).toMatchObject({ pending: [2, "1.000"], sold: [3, "1.500"], purchased: [3, "1.500"], balanced: true, version: 3 });
   });
@@ -299,7 +301,7 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     expect(line).toMatchObject({ source: "PURCHASE_ORDER", purchaseOrderLineId: l1, stone: "Sapphire", location: "Safe A", priceUnit: "PER_PCS", limitPcs: 10, limitWeightCt: "4.000",
       purchaseOrder: { id: po.id, docNo: po.docNo, position: 1 }, discount: { type: "NONE" } });
     expect(await poPurchased(l1)).toEqual([0, "0.000"]);
-    await purchase.approve(ACTOR, saved.id, 1);
+    await sendAndApprove(purchase, ACTOR, saved.id, 1);
     expect(await poPurchased(l1)).toEqual([4, "1.500"]);
     expect((await order.get(po.id)).lines[0]).toMatchObject({ purchasedPcs: 4, purchasedWeightCt: "1.500" });
     expect((await picker()).counts).toEqual({ all: 2, open: 1, partlyPurchased: 1 });
@@ -307,10 +309,10 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     expect(partly.items.map((row) => [row.purchaseOrderLineId, row.status, row.availablePcs, row.availableWeightCt, row.netUnitPrice])).toEqual([[l1, "PARTLY_PURCHASED", 6, "2.500", "90.00"]]);
 
     // Two purchases of one PO line: the second approval is short.
-    const q2 = await purchase.create(ACTOR, purchaseInput(vendorA, [poLine(l1, 6, "2.5")]));
-    const q3 = await purchase.create(ACTOR, purchaseInput(vendorA, [poLine(l1, 1, "0.1")]));
-    await purchase.approve(ACTOR, q2.id, 1);
-    expect(await failure(purchase.approve(ACTOR, q3.id, 1))).toMatchObject({ code: "PURCHASE_PENDING_SHORT", fieldErrors: [{ path: "lines.0.pcs" }, { path: "lines.0.weightCt" }] });
+    const q2 = await submitted(purchase, ACTOR, await purchase.create(ACTOR, purchaseInput(vendorA, [poLine(l1, 6, "2.5")])));
+    const q3 = await submitted(purchase, ACTOR, await purchase.create(ACTOR, purchaseInput(vendorA, [poLine(l1, 1, "0.1")])));
+    await purchase.approve(ACTOR, q2.id, 2);
+    expect(await failure(purchase.approve(ACTOR, q3.id, 2))).toMatchObject({ code: "PURCHASE_PENDING_SHORT", fieldErrors: [{ path: "lines.0.pcs" }, { path: "lines.0.weightCt" }] });
     expect(await poPurchased(l1)).toEqual([10, "4.000"]);
     // The fully purchased line leaves the picker.
     expect((await picker()).items.map((row) => row.purchaseOrderLineId)).toEqual([l2]);
@@ -328,7 +330,7 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
       code: "PURCHASE_REFERENCE_INVALID", fieldErrors: [{ path: "lines.0.memoStockId" }],
     });
     // Approved purchase orders stay read-only, so Purchase is the only writer of purchased_* (SA-PO-05).
-    expect((await failure(order.update(ACTOR, po.id, 2, { ...header(vendorA), lines: [orderLine()] } as never))).code).toBe("PURCHASE_ORDER_STATUS_INVALID");
+    expect((await failure(order.update(ACTOR, po.id, 3, { ...header(vendorA), lines: [orderLine()] } as never))).code).toBe("PURCHASE_ORDER_STATUS_INVALID");
   });
 
   it("IT-PU-B04 lifecycle: numbers, Stock IDs kept by line id, version guard, delete pending only, approve read-only, Document Setup used", async () => {
@@ -355,9 +357,9 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     expect((await purchase.get(saved.id)).lines.slice(0, 2).map((line) => line.id)).toEqual([manualId, poLineId]);
     expect(await failure(purchase.update(ACTOR, saved.id, 1, purchaseInput(vendorA, [manualLine()])))).toMatchObject({ status: 409, code: "PURCHASE_CHANGED" });
 
-    const listed = await purchase.list({ partyId: vendorA.id, status: "PENDING_APPROVAL", q: saved.docNo, limit: 50, deleted: false });
+    const listed = await purchase.list({ partyId: vendorA.id, status: "DRAFT", q: saved.docNo, limit: 50, deleted: false });
     expect(listed.items.map((row) => row.id)).toEqual([saved.id]);
-    expect(listed.items[0]).toMatchObject({ vendorName: "PU IT Vendor A", status: "PENDING_APPROVAL" });
+    expect(listed.items[0]).toMatchObject({ vendorName: "PU IT Vendor A", status: "DRAFT" });
 
     // Document Setup counts purchase numbers as used.
     const purchaseSetup = (await setup.get("purchase")).setup!;
@@ -369,18 +371,19 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     expect(await failure(purchase.delete(ACTOR, doomed.id, 2))).toMatchObject({ code: "PURCHASE_CHANGED" });
     // transaction-soft-delete (ADR-0045 D4): the delete is soft; the purchase stays readable and read-only.
     expect(await purchase.delete(ACTOR, doomed.id, 1)).toEqual({ ok: true, version: 2 });
-    expect(await purchase.get(doomed.id)).toMatchObject({ status: "PENDING_APPROVAL", deletedBy: ACTOR, version: 2 });
+    expect(await purchase.get(doomed.id)).toMatchObject({ status: "DRAFT", deletedBy: ACTOR, version: 2 });
     expect(await failure(purchase.approve(ACTOR, doomed.id, 2))).toMatchObject({ code: "PURCHASE_DELETED" });
     expect(await buckets(item.id)).toEqual(before);
 
-    await purchase.approve(ACTOR, saved.id, 2);
-    expect(await failure(purchase.update(ACTOR, saved.id, 3, purchaseInput(vendorA, [manualLine()])))).toMatchObject({ code: "PURCHASE_STATUS_INVALID" });
-    expect(await failure(purchase.delete(ACTOR, saved.id, 3))).toMatchObject({ code: "PURCHASE_STATUS_INVALID" });
-    expect(await failure(purchase.approve(ACTOR, saved.id, 3))).toMatchObject({ code: "PURCHASE_STATUS_INVALID" });
+    await sendAndApprove(purchase, ACTOR, saved.id, 2);
+    expect(await failure(purchase.update(ACTOR, saved.id, 4, purchaseInput(vendorA, [manualLine()])))).toMatchObject({ code: "PURCHASE_STATUS_INVALID" });
+    expect(await failure(purchase.delete(ACTOR, saved.id, 4))).toMatchObject({ code: "PURCHASE_STATUS_INVALID" });
+    expect(await failure(purchase.approve(ACTOR, saved.id, 4))).toMatchObject({ code: "PURCHASE_STATUS_INVALID" });
+    await submitted(purchase, ACTOR, plain);
     expect(await failure(purchase.approve(ACTOR, plain.id, 9))).toMatchObject({ code: "PURCHASE_CHANGED" });
     expect(await failure(purchase.approve(ACTOR, randomUUID(), 1))).toMatchObject({ code: "PURCHASE_NOT_FOUND" });
     // Manual-only purchases approve with no stock change.
-    expect(await purchase.approve(ACTOR, plain.id, 1)).toMatchObject({ status: "APPROVED", lineCount: 1 });
+    expect(await purchase.approve(ACTOR, plain.id, 2)).toMatchObject({ status: "APPROVED", lineCount: 1 });
   });
 
   it("IT-PU-B05 purchase.memoStock: vendor + currency scope, SOLD first across pages, counts with q and dates, reserved never listed, q escaping", async () => {
@@ -428,7 +431,7 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
 
     // The SOLD group is bought too: purchased += q only, and the row leaves the SOLD group once fully bought.
     const bought = await purchase.create(ACTOR, purchaseInput(vendorC, [stockLine(older.id, "SOLD", 5, "2.5")]));
-    await purchase.approve(ACTOR, bought.id, 1);
+    await sendAndApprove(purchase, ACTOR, bought.id, 1);
     expect(await buckets(older.id)).toMatchObject({ pending: [0, "0.000"], sold: [5, "2.500"], purchased: [5, "2.500"], balanced: true });
     expect((await purchase.memoStock({ ...base, status: "SOLD" })).items.map((row) => row.lot)).toEqual(["PART"]);
   });
@@ -437,7 +440,7 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     const vendorD = await vendorFixture("PU IT Vendor D");
     const { items } = await approvedStock(vendorD, Array.from({ length: 200 }, (_, n) => receiveLine({ lot: `B${n}`, pcs: 2, weightCt: "1" })));
     expect(items).toHaveLength(200);
-    const saved = await purchase.create(ACTOR, purchaseInput(vendorD, items.map((item) => stockLine(item.id, "IN_STOCK", 1, "0.5"))));
+    const saved = await submitted(purchase, ACTOR, await purchase.create(ACTOR, purchaseInput(vendorD, items.map((item) => stockLine(item.id, "IN_STOCK", 1, "0.5")))));
 
     let updates = 0;
     const original = prisma.$transaction.bind(prisma) as (fn: (tx: unknown) => Promise<unknown>, options?: unknown) => Promise<unknown>;
@@ -449,7 +452,7 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
       },
     })), options)) as never);
     const started = performance.now();
-    const approved = await purchase.approve(ACTOR, saved.id, 1);
+    const approved = await purchase.approve(ACTOR, saved.id, 2);
     const elapsed = performance.now() - started;
     spy.mockRestore();
 
@@ -479,7 +482,7 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     ]);
 
     // Approve: Sold part first. m keeps 1 → only the Sold part is settled; n keeps 2 → Sold 1 + In stock 1.
-    await purchase.approve(ACTOR, one.id, one.version);
+    await sendAndApprove(purchase, ACTOR, one.id, one.version);
     expect(await buckets(m.id)).toMatchObject({ pending: [1, "0.760"], sold: [1, "0.760"], purchased: [1, "0.760"], balanced: true });
     expect(await buckets(n.id)).toMatchObject({ pending: [0, "0.000"], sold: [2, "1.520"], purchased: [2, "1.520"], balanced: true });
     expect(await buckets(s.id)).toMatchObject({ pending: [1, "0.760"], sold: [1, "0.760"], purchased: [1, "0.760"], balanced: true });
@@ -491,16 +494,17 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     // Q-PU-33: the stock part leaves between Save and Approve → refused on that row, nothing moves, still pending.
     const { items: [k] } = await approvedStock(vendorA, [receiveLine({ lot: "K", pcs: 2, weightCt: "1.52" })]);
     await sell(k.id, 1, "0.760");
-    const later = await purchase.create(ACTOR, purchaseInput(vendorA, [manualLine(), stockLine(k.id, "MERGED", 2, "1.52")]));
-    await purchase.approve(ACTOR, (await purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(k.id, "IN_STOCK", 1, "0.76")]))).id, 1);
+    const later = await submitted(purchase, ACTOR, await purchase.create(ACTOR, purchaseInput(vendorA, [manualLine(), stockLine(k.id, "MERGED", 2, "1.52")])));
+    await sendAndApprove(purchase, ACTOR, (await purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(k.id, "IN_STOCK", 1, "0.76")]))).id, 1);
     const before = await buckets(k.id);
     expect(await failure(purchase.approve(ACTOR, later.id, later.version))).toEqual({
       status: 409, code: "PURCHASE_PENDING_SHORT",
       fieldErrors: [{ path: "lines.1.pcs", code: "exceeds_available" }, { path: "lines.1.weightCt", code: "exceeds_available" }],
     });
     expect(await buckets(k.id)).toEqual(before);
-    // An item with no stock part left can't be merged any more.
-    expect(await failure(purchase.update(ACTOR, later.id, later.version, purchaseInput(vendorA, [stockLine(k.id, "MERGED", 1, "0.76")])))).toMatchObject({
+    // Sent back for revision (Pending is locked); an item with no stock part left can't be merged any more.
+    await purchase.requestRevision({ id: "approver", name: null }, later.id, later.version, "Stock part gone");
+    expect(await failure(purchase.update(ACTOR, later.id, later.version + 1, purchaseInput(vendorA, [stockLine(k.id, "MERGED", 1, "0.76")])))).toMatchObject({
       fieldErrors: [{ path: "lines.0.memoStockId", code: "not_mergeable" }],
     });
 
@@ -518,7 +522,7 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     await sell(p.id, 5, "5.000"); // p: Sold 5 + In stock 5
     // Buy p merged 7 (Sold 5 first + 2 from stock) and q in stock 1.
     const bought = await purchase.create(ACTOR, purchaseInput(vendor, [stockLine(p.id, "MERGED", 7, "7"), stockLine(q.id, "IN_STOCK", 1, "0.5")]));
-    await purchase.approve(ACTOR, bought.id, bought.version);
+    await sendAndApprove(purchase, ACTOR, bought.id, bought.version);
     await sell(q.id, 1, "0.500"); // q: one more sold to a customer, not yet purchased
 
     const filters = { vendorIds: [vendor.id] };
@@ -537,7 +541,7 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
 
     // Everything bought → the memo leaves the report.
     const rest = await purchase.create(ACTOR, purchaseInput(vendor, [stockLine(p.id, "IN_STOCK", 3, "3"), stockLine(q.id, "SOLD", 1, "0.5"), stockLine(q.id, "IN_STOCK", 2, "1")]));
-    await purchase.approve(ACTOR, rest.id, rest.version);
+    await sendAndApprove(purchase, ACTOR, rest.id, rest.version);
     expect((await outstanding.purchaseList({ ...filters, page: 1, pageSize: 10 })).total).toBe(0);
     expect((await outstanding.purchaseItems({ memoReceiveIds: [receiveId] })).items).toEqual([]);
     expect(await outstanding.purchaseSummary(filters)).toMatchObject({ documents: 0, grandTotal: "0.00" });

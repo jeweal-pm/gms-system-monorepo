@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { sendAndApprove, setApproval } from "../partner-shared/approval";
 
 /**
  * IT-MOC-01…03 (memo-outstanding-customer SA rev 1 / ADR-0039, owner 2026-11-03) against real PostgreSQL: the read-only
@@ -72,13 +73,13 @@ async function approvedStock(lines: ReturnType<typeof receiveLine>[]) {
   const saved = await receive.create(ACTOR, {
     docDate: "2026-10-15", dueDate: "2026-12-15", currency: "THB", exchangeRate: null, ref: "", documentNote: "", ...money, lines, vendorId: vendor!.id, addressId: vendor!.addressId,
   });
-  await receive.approve(ACTOR, saved.id, saved.version);
+  await sendAndApprove(receive, ACTOR, saved.id, saved.version);
   return prisma.memoStock.findMany({ where: { memoReceiveId: saved.id }, orderBy: { stockId: "asc" } });
 }
 
 async function approvedMemoOut(customer: Customer, lines: ReturnType<typeof stockLine>[], patch: Record<string, unknown> = {}) {
   const saved = await memoOut.create(ACTOR, createMemoOutSchema.parse({ ...header(customer, patch), lines }));
-  await memoOut.approve(ACTOR, saved.id, saved.version);
+  await sendAndApprove(memoOut, ACTOR, saved.id, saved.version);
   return saved;
 }
 
@@ -94,7 +95,7 @@ async function approvedReturn(customer: Customer, memoOutId: string, pcs: number
       outstandingPcs: line.pcs - line.returnedPcs, outstandingWeightCt: line.weightCt.minus(line.returnedWeightCt).toFixed(3),
     }],
   }));
-  await memoOutReturn.approve(ACTOR, saved.id, saved.version);
+  await sendAndApprove(memoOutReturn, ACTOR, saved.id, saved.version);
 }
 
 const ids = (rows: { memoOutId: string }[]) => rows.map((row) => row.memoOutId);
@@ -132,6 +133,7 @@ describe.runIf(canRun)("IT-MOC memo outstanding from customer on PostgreSQL", ()
     vendor = { id, addressId };
     alpha = await customerFixture(`Alpha MOC ${ACTOR.slice(-4)}`);
     beta = await customerFixture(`Beta MOC ${ACTOR.slice(-4)}`);
+    for (const type of ["memo-receive", "memo-out", "memo-out-return"] as const) await setApproval(prisma, type, true);
   });
 
   afterAll(async () => {

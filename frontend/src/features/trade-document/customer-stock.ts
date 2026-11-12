@@ -10,6 +10,7 @@ import type { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError } from "@/lib/trpc-error";
 import { mapDocumentSaveError } from "./document-api";
 import type { MemoStockItem } from "./memo-stock-api";
+import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
 
 /**
  * Customer documents whose rows may come From Stock (memo-out rev 2, reserve rev 1). They share the form values, rules
@@ -22,7 +23,8 @@ export type CustomerStockDetail = InferQueryLikeData<typeof masterTrpc.memoOut.g
 export type CustomerStockOptions = InferQueryLikeData<typeof masterTrpc.memoOut.options>;
 
 /** Saving sends the document to approval; Approve holds its stock rows and makes it read-only. */
-export const CUSTOMER_STOCK_STATUSES = ["PENDING_APPROVAL", "APPROVED"] as const;
+/** ADR-0050: Draft, Pending Approval, Approved, Revise, Rejected. */
+export const CUSTOMER_STOCK_STATUSES = APPROVAL_DOC_STATUSES;
 const HEADER_FIELDS = ["docDate", "dueDate", "customerId", "shippingAddressId", "invoiceAddressId", "currency", "exchangeRate", "ref", "documentNote"] as const;
 
 /**
@@ -56,7 +58,7 @@ export type CustomerStockFormValues = z.infer<typeof customerStockSchema>;
 /** A new document: today, five empty rows, the company currency once options load. */
 export function emptyCustomerStock(): CustomerStockFormValues {
   const q = emptyQuotation();
-  return { ...q, status: "PENDING_APPROVAL", lines: q.lines.map((line) => ({ ...line, memoStockId: "", stockPendingPcs: "", stockPendingWeightCt: "" })) };
+  return { ...q, status: "DRAFT", lines: q.lines.map((line) => ({ ...line, memoStockId: "", stockPendingPcs: "", stockPendingWeightCt: "" })) };
 }
 
 /**
@@ -142,7 +144,7 @@ export const stockRowCount = (lines: readonly unknown[]) => lines.filter((line) 
 export function customerStockSaveError(code: string, noun: string) {
   return (error: unknown) => {
     if (readDomainError(error).domainCode === `${code}_PENDING_SHORT`) {
-      return { fieldErrors: [], message: "Some stock items no longer have enough pending. Edit the row and approve again." };
+      return { fieldErrors: [], message: "Some stock items no longer have enough pending. Edit the row and save again. Nothing was saved." };
     }
     return mapDocumentSaveError(error, code, noun, HEADER_FIELDS);
   };

@@ -1,7 +1,7 @@
 import { generateKeyPairSync } from "node:crypto";
 import { SignJWT, type JWK } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MasterAuthContextAdapter, MasterJwksCache } from "../../src/master/auth-context";
+import { displayNameOf, MasterAuthContextAdapter, MasterJwksCache } from "../../src/master/auth-context";
 
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 const publicJwk = { ...(publicKey.export({ format: "jwk" }) as JWK), kid: "master-test", alg: "EdDSA", use: "sig" };
@@ -63,6 +63,22 @@ describe("master trusted JWT + live auth context", () => {
     });
     expect(fetcher).toHaveBeenCalledOnce();
     expect(authorizationReader).toHaveBeenCalledWith("user-1", "session-1");
+  });
+
+  it("UT-AP-B10 user_name → principal.displayName (trimmed, ≤ 200); null / blank / non-string / missing → null and auth still succeeds", async () => {
+    const token = await accessToken();
+    const read = async (row: Record<string, unknown>) => (await adapter({ authorizationReader: vi.fn(async () => authorizationRow(row)) }).subject.create(request(token))).principal?.displayName;
+    expect(await read({ user_name: "  Mint Approver  " })).toBe("Mint Approver");
+    expect(await read({ user_name: "สมชาย ใจดี" })).toBe("สมชาย ใจดี");
+    expect(await read({ user_name: `${"n".repeat(199)} x${"y".repeat(50)}` })).toBe(`${"n".repeat(199)}`);
+    expect(await read({ user_name: "x".repeat(300) })).toHaveLength(200);
+    for (const value of [null, "", "   ", 42, { name: "x" }, ["x"], undefined]) {
+      expect(await read({ user_name: value }), String(value)).toBeNull();
+    }
+    // An older view without the column (row without the key) still authenticates.
+    const legacy = await adapter().subject.create(request(token));
+    expect(legacy).toMatchObject({ authorization: "CURRENT", principal: { userId: "user-1", displayName: null } });
+    expect(displayNameOf(" a ")).toBe("a");
   });
 
   it("UT-GPMT-08 rejects invalid, expired, unknown-key and unavailable-key tokens closed", async () => {

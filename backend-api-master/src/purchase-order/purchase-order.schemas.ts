@@ -2,6 +2,7 @@ import { z } from "zod";
 import { LINES_MAX, lineInputSchema, tradeDocumentFields, tradeDocumentRules } from "../quotation/quotation.schemas";
 import { documentListFields } from "../trade-document/document-engine";
 import { discountBoundRules } from "../trade-document/memo-schemas";
+import { DOC_STATUSES } from "../approval/approval.schemas";
 
 /**
  * purchase-order SA rev 1 / ADR-0041 (owner 2026-11-04): the vendor fields of memo receive with keyed-in quotation lines.
@@ -19,7 +20,8 @@ export const createPurchaseOrderSchema = z.object(purchaseOrderFields).strict().
 export const updatePurchaseOrderSchema = z.object({ ...purchaseOrderFields, id: uuid, expectedVersion: z.number().int().min(1) }).strict().superRefine(purchaseOrderRules);
 export type PurchaseOrderInput = z.output<typeof createPurchaseOrderSchema>;
 
-export const PURCHASE_ORDER_STATUSES = ["PENDING_APPROVAL", "APPROVED"] as const;
+/** List status filter (ADR-0046 D2 + ADR-0050 DRAFT). */
+export const PURCHASE_ORDER_STATUSES = DOC_STATUSES;
 export type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number];
 export const purchaseOrderListSchema = z.object({ ...documentListFields, status: z.enum(PURCHASE_ORDER_STATUSES).optional() }).strict();
 export type PurchaseOrderListInput = z.output<typeof purchaseOrderListSchema>;

@@ -244,9 +244,9 @@ describe("load errors", () => {
 
   it("UT-CUS-A24 readCustomerError / isPermissionDenied read the gateway envelope (domain code from the message as fallback)", () => {
     const error = gatewayError({ domainCode: "VALIDATION_ERROR", fieldErrors: [{ path: "name", code: "too_big" }] });
-    expect(readCustomerError(error)).toEqual({ domainCode: "VALIDATION_ERROR", fieldErrors: [{ path: "name", code: "too_big" }], httpStatus: 400 });
+    expect(readCustomerError(error)).toEqual({ domainCode: "VALIDATION_ERROR", fieldErrors: [{ path: "name", code: "too_big" }], httpStatus: 400, details: null });
     expect(readCustomerError(gatewayError({ message: "CUSTOMER_STALE" })).domainCode).toBe("CUSTOMER_STALE");
-    expect(readCustomerError("not an error")).toEqual({ domainCode: null, fieldErrors: [], httpStatus: null });
+    expect(readCustomerError("not an error")).toEqual({ domainCode: null, fieldErrors: [], httpStatus: null, details: null });
     expect(isPermissionDenied(gatewayError({ domainCode: "PERMISSION_DENIED", httpStatus: 403 }))).toBe(true);
     expect(isPermissionDenied(gatewayError({ domainCode: "CUSTOMER_STALE" }))).toBe(false);
   });

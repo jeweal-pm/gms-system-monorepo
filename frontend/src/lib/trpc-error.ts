@@ -7,7 +7,8 @@ import { isTRPCClientError } from "@trpc/client";
  */
 
 export type ServerFieldError = { path: string; code: string };
-export type DomainErrorInfo = { domainCode: string | null; fieldErrors: ServerFieldError[]; httpStatus: number | null };
+/** `details`: structured error data (approval-setup G5), e.g. `{ usedBy }` of `<CODE>_IN_USE`. */
+export type DomainErrorInfo = { domainCode: string | null; fieldErrors: ServerFieldError[]; httpStatus: number | null; details: Record<string, string | number> | null };
 
 const DOMAIN_CODE_PATTERN = /^[A-Z][A-Z_]{1,63}$/;
 
@@ -16,13 +17,19 @@ const DOMAIN_CODE_PATTERN = /^[A-Z][A-Z_]{1,63}$/;
  * message code). A 401 has no domain code ("Authentication required"), so it is reported as "UNAUTHORIZED".
  */
 export function readDomainError(error: unknown): DomainErrorInfo {
-  if (!isTRPCClientError(error)) return { domainCode: null, fieldErrors: [], httpStatus: null };
+  if (!isTRPCClientError(error)) return { domainCode: null, fieldErrors: [], httpStatus: null, details: null };
   const data = error.data;
   const domainCode =
     data?.domainCode ??
     (DOMAIN_CODE_PATTERN.test(error.message) ? error.message : null) ??
     (data?.code === "UNAUTHORIZED" ? "UNAUTHORIZED" : null);
-  return { domainCode, fieldErrors: data?.fieldErrors ?? [], httpStatus: data?.httpStatus ?? null };
+  const details = data?.details;
+  return {
+    domainCode,
+    fieldErrors: data?.fieldErrors ?? [],
+    httpStatus: data?.httpStatus ?? null,
+    details: typeof details === "object" && details !== null && !Array.isArray(details) ? (details as Record<string, string | number>) : null,
+  };
 }
 
 export function isCallerLicenseCode(code: string | null): boolean {

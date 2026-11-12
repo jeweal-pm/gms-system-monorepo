@@ -1,6 +1,6 @@
 # Handoff: approval-setup → SA (phase 2 service design)
 
-- Feature ID / UI revision: `approval-setup` / UI revision 1 (**pending-review**; not approved)
+- Feature ID / UI revision: `approval-setup` / UI revision 1 (approved 2026-11-09). Dispatched 2026-11-10 by the owner ("ออก adr มาถามคำถาม เริ่มออกแบบ ยังไม่ต้องเริ่มทำ"): SA revision 1 draft = [ADR-0050](../../adr/0050-approval-setting-draft-send-to-approve.md), Q-AS-23…32 open.
 - SA revision / source UI revision (if applicable): none yet / UI 1
 - From role/scope: ui-spec (documents only)
 - To role/scope / parent integration owner: SA, dispatched by the parent **only after** the owner approves UI rev 1 or explicitly asks for SA design. The owner said "ตอนนี้ยังไม่ต้องทำ backend" (2026-11-09): SA may design for review; backend implementation waits for a separate owner instruction.

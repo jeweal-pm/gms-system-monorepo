@@ -1,20 +1,21 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { validationException, type FieldError } from "../common/errors";
-import { WRITE_TX } from "../common/persistence";
+import type { Tx } from "../common/persistence";
+import type { FlowPrincipal } from "../approval-setting/approval-flow";
 import { prisma } from "../database/prisma-client";
 import { Prisma } from "../generated/prisma/client";
-import { explainMiss, MISS_SELECT, TradeDocumentEngine, type LineHook, type TradeDocumentInput, type MissRow } from "../trade-document/document-engine";
+import { TradeDocumentEngine, type DocumentActor, type DocumentEffects, type LineHook, type TradeDocumentInput } from "../trade-document/document-engine";
 import { vendorDocumentOptions, vendorParty, type VendorOut } from "../trade-document/memo-out-return.service";
 import { issueStockIds } from "../trade-document/memo-receive.service";
 import { purchaseMemoStock, purchaseOrderLines } from "./purchase-pickers";
-import { completeSourceLines, memoLineRange, purchaseOrderAvailable, takeForPurchase, type PreparedInput, type SoldPart } from "./purchase-stock";
+import { lockSourceHeaders } from "../trade-document/source-lock";
+import { completeSourceLines, giveBackForPurchase, memoLineRange, purchaseOrderAvailable, takeForPurchase, type PreparedInput, type SoldPart } from "./purchase-stock";
 import { purchaseErrors, purchasePendingShort, purchaseStockIdExhausted } from "./purchase.errors";
 import type { LineMemoGroup, PurchaseInput, PurchaseLineSource, PurchaseListInput, PurchaseMemoStockInput, PurchaseOrderLinesInput, PurchaseStatus } from "./purchase.schemas";
 import { LINE_PHOTO_DOCUMENTS, withLinePhotos } from "../trade-document/line-photos";
-import { emitNotificationSignals } from "../notification/notification-hub";
 
-const PENDING: PurchaseStatus = "PENDING_APPROVAL";
-const APPROVED: PurchaseStatus = "APPROVED";
+/** Statuses in which the lines show their current range (`limit*` / `min*`): the purchase can still be saved. */
+const LIMITED: readonly string[] = ["DRAFT", "REVISION_REQUESTED"];
 type Row = Record<string, unknown>;
 type Dec = Prisma.Decimal;
 
@@ -30,12 +31,12 @@ type StoredPoLine = { position: number; pcs: number; weightCt: Dec; purchasedPcs
 
 /**
  * purchase SA rev 1 / ADR-0042 (owner 2026-11-04): a vendor document shaped like Purchase Order whose lines come from
- * Memo Stock, an approved PO line or are keyed in. Document Setup key `purchase` (`PU`). Save checks availability and
- * moves no stock (SA default D2); Approve cuts it under row locks (`takeForPurchase`). Delete is the engine delete.
+ * Memo Stock, an approved PO line or are keyed in. Document Setup key `purchase` (`PU`). With approval ON, Save checks
+ * availability and moves no stock (SA default D2) and Approve cuts it under row locks (`takeForPurchase`); with approval
+ * OFF, Save cuts it at once (auto-approved, ADR-0050 D4).
  */
 @Injectable()
 export class PurchaseService {
-  private readonly logger = new Logger("purchase");
   /** Server clock for the Stock ID year; replaced in tests only. */
   clock: () => Date = () => new Date();
 
@@ -106,6 +107,38 @@ export class PurchaseService {
     },
   };
 
+  /**
+   * Effects (SA-PU-09 / ADR-0043; approval-setup "Effects and their reversal"): `takeForPurchase` locks memo_stock then
+   * purchase_order_line rows in id order, guards and cuts (`PURCHASE_PENDING_SHORT` rolls back), and each MERGED line
+   * records its Sold part. The reversal gives all of it back through `giveBackForPurchase` (same locks, exact inverse,
+   * Sold parts cleared). A Purchase is never "used" until Load to Stock exists; the balance checks guard the reversal.
+   */
+  private readonly effects: DocumentEffects = {
+    apply: async (tx, doc, _actorId, now) => {
+      const document = await tx.purchase.findUniqueOrThrow({
+        where: { id: doc.id },
+        select: {
+          vendorId: true, currencyCode: true,
+          lines: { orderBy: { position: "asc" }, select: { id: true, source: true, memoStockId: true, memoGroup: true, purchaseOrderLineId: true, pcs: true, weightCt: true } },
+        },
+      });
+      const takes = document.lines.map((line, index) => ({ ...line, index }));
+      const { soldParts, ...moved } = await takeForPurchase(tx, { vendorId: document.vendorId, currency: document.currencyCode }, takes, purchasePendingShort, now);
+      await writeSoldParts(tx, document.lines.map((line) => line.id), soldParts);
+      return { result: { lineCount: document.lines.length }, log: { lineCount: document.lines.length, ...moved } };
+    },
+    reverse: async (tx, doc, now) => {
+      const lines = await tx.purchaseLine.findMany({
+        where: { purchaseId: doc.id },
+        orderBy: { position: "asc" },
+        select: { source: true, memoStockId: true, memoGroup: true, purchaseOrderLineId: true, pcs: true, weightCt: true, soldPartPcs: true, soldPartWeightCt: true },
+      });
+      await giveBackForPurchase(tx, lines.map((line, index) => ({ ...line, index })), () => purchaseErrors.inUse(null), now);
+      await tx.purchaseLine.updateMany({ where: { purchaseId: doc.id, memoGroup: "MERGED" }, data: { soldPartPcs: null, soldPartWeightCt: null } });
+    },
+    usedBy: async () => null,
+  };
+
   private readonly engine = new TradeDocumentEngine<EngineInput, VendorOut, PurchaseStatus>({
     document: "purchase",
     transactionKey: "purchase",
@@ -116,9 +149,13 @@ export class PurchaseService {
     parentKey: "purchaseId",
     errors: purchaseErrors,
     party: vendorParty<EngineInput>(purchaseErrors),
-    createStatus: PENDING,
-    editableStatuses: [PENDING],
+    approvalType: "purchase",
+    effects: this.effects,
     prepare: async (tx, input) => (await completeSourceLines(tx, input as unknown as PurchaseInput)) as unknown as EngineInput,
+    // INV-20261111-002 F1: the named POs FOR SHARE before prepare / line writes when the Save applies effects.
+    lockSources: async (tx, input) => {
+      await lockSourceHeaders(tx, "purchaseOrder", (input as unknown as PurchaseInput).lines.flatMap((line) => (line.source === "PURCHASE_ORDER" && line.purchaseOrderLineId ? [line.purchaseOrderLineId] : [])));
+    },
     lineHook: withLinePhotos(LINE_PHOTO_DOCUMENTS.purchase, this.lines),
     detailExtra: (row: Row) => ({
       approvedAt: row.approvedAt ? (row.approvedAt as Date).toISOString() : null,
@@ -130,29 +167,47 @@ export class PurchaseService {
     return this.engine.list(input);
   }
 
-  /** SA-PU-16/26: `limit*` / `min*` only while PENDING_APPROVAL (null once approved and for manual lines). */
-  async get(id: string): Promise<PurchaseDetail> {
-    const detail = (await this.engine.get(id)) as unknown as PurchaseDetail;
-    if (detail.status === PENDING) return detail;
+  /** SA-PU-16/26: `limit*` / `min*` only while the purchase can still be changed (DRAFT / REVISION_REQUESTED). */
+  async get(id: string, viewer: FlowPrincipal | null = null): Promise<PurchaseDetail> {
+    const detail = (await this.engine.get(id, viewer)) as unknown as PurchaseDetail;
+    if (LIMITED.includes(detail.status)) return detail;
     return { ...detail, lines: detail.lines.map((line) => ({ ...line, limitPcs: null, limitWeightCt: null, minPcs: null, minWeightCt: null })) };
   }
 
   nextNumber(docDate: string) {
     return this.engine.nextNumber(docDate);
   }
-  create(actorId: string, input: PurchaseInput) {
-    return this.engine.create(actorId, asEngine(input)) as Promise<{ id: string; docNo: string; version: number; stockIds: string[] }>;
+  create(actorId: string, input: PurchaseInput, viewer: FlowPrincipal | null = null) {
+    return this.engine.create(actorId, asEngine(input), viewer) as Promise<unknown> as Promise<{ id: string; docNo: string; version: number; stockIds: string[]; status: string; autoApproved: boolean }>;
   }
-  update(actorId: string, id: string, expectedVersion: number, input: PurchaseInput) {
-    return this.engine.update(actorId, id, expectedVersion, asEngine(input)) as Promise<{ id: string; version: number; stockIds: string[] }>;
+  update(actorId: string, id: string, expectedVersion: number, input: PurchaseInput, viewer: FlowPrincipal | null = null) {
+    return this.engine.update(actorId, id, expectedVersion, asEngine(input), viewer) as Promise<unknown> as Promise<{ id: string; version: number; stockIds: string[]; status: string; autoApproved: boolean }>;
   }
-  /** SA-PU-08 / ADR-0045 D4: soft delete of a pending purchase, guarded by version; lines and charges stay; no stock change (nothing was cut). */
+  /** SA-PU-08 / ADR-0045 D4 / ADR-0050: soft delete; an auto-approved purchase gives its stock back first. */
   delete(actorId: string, id: string, expectedVersion: number) {
     return this.engine.delete(actorId, id, expectedVersion);
   }
-  /** transaction-soft-delete D6: a deleted document back to its unchanged status. */
+  /** transaction-soft-delete D6 / approval-setup G3. */
   restore(actorId: string, id: string, expectedVersion: number) {
     return this.engine.restore(actorId, id, expectedVersion);
+  }
+  submit(actor: DocumentActor, id: string, expectedVersion: number) {
+    return this.engine.submit(actor, id, expectedVersion);
+  }
+  /** SA-PU-09 in one `WRITE_TX`: the guarded status update, then the stock cut above. */
+  approve(actorId: string, id: string, expectedVersion: number) {
+    return this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED"; lineCount: number }>;
+  }
+
+  /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction. */
+  approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
+    return this.engine.approveWithin(tx, actorId, id, expectedVersion);
+  }
+  reject(actor: DocumentActor, id: string, expectedVersion: number, reason: string) {
+    return this.engine.reject(actor, id, expectedVersion, reason);
+  }
+  requestRevision(actor: DocumentActor, id: string, expectedVersion: number, note: string) {
+    return this.engine.requestRevision(actor, id, expectedVersion, note);
   }
 
   /** `purchaseOrder.options` shape (stone lists with codes) plus `numbering` for Document Setup key `purchase`. */
@@ -173,45 +228,6 @@ export class PurchaseService {
   }
   purchaseOrderLines(input: PurchaseOrderLinesInput) {
     return purchaseOrderLines(input);
-  }
-
-  /**
-   * SA-PU-09 in one `WRITE_TX`: the guarded status update (0 rows → NOT_FOUND / STATUS_INVALID / CHANGED), then
-   * `takeForPurchase` (lock memo_stock, then purchase_order_line, in id order; guard; ≤ 2 bulk UPDATEs). A short →
-   * `PURCHASE_PENDING_SHORT` with every short line and the whole transaction rolls back (the purchase stays pending).
-   */
-  async approve(actorId: string, id: string, expectedVersion: number) {
-    try {
-      const approved = await prisma.$transaction(async (tx) => {
-        const now = new Date();
-        const updated = await tx.purchase.updateMany({
-          where: { id, version: expectedVersion, status: PENDING, deletedAt: null },
-          data: { status: APPROVED, approvedAt: now, approvedBy: actorId, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
-        });
-        if (updated.count === 0) {
-          // D8: NOT_FOUND → DELETED → STATUS_INVALID → CHANGED.
-          explainMiss(purchaseErrors, (await tx.purchase.findUnique({ where: { id }, select: MISS_SELECT })) as MissRow, [PENDING]);
-        }
-        const document = await tx.purchase.findUniqueOrThrow({
-          where: { id },
-          select: {
-            docNo: true, vendorId: true, currencyCode: true,
-            lines: { orderBy: { position: "asc" }, select: { id: true, source: true, memoStockId: true, memoGroup: true, purchaseOrderLineId: true, pcs: true, weightCt: true } },
-          },
-        });
-        const takes = document.lines.map((line, index) => ({ ...line, index }));
-        const { soldParts, ...moved } = await takeForPurchase(tx, { vendorId: document.vendorId, currency: document.currencyCode }, takes, purchasePendingShort, now);
-        await writeSoldParts(tx, document.lines.map((line) => line.id), soldParts);
-        // ADR-0049: the creator hears about the approval once this transaction commits.
-        const signals = await this.engine.notifyApproved(tx, id, actorId);
-        return { signals, docNo: document.docNo, lineCount: document.lines.length, ...moved };
-      }, WRITE_TX);
-      emitNotificationSignals(approved.signals);
-      this.logger.log({ event: "purchase.approved", actorId, id, docNo: approved.docNo, lineCount: approved.lineCount, memoStockKeys: approved.memoStockKeys, purchaseOrderKeys: approved.purchaseOrderKeys });
-      return { id, version: expectedVersion + 1, status: APPROVED as "APPROVED", lineCount: approved.lineCount };
-    } catch (error) {
-      throw purchaseErrors.map(error, "approve");
-    }
   }
 }
 

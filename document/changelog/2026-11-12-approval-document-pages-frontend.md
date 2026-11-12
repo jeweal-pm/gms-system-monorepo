@@ -1,0 +1,27 @@
+# 2026-11-12: Document pages follow the approval setting (frontend stage A)
+
+- Feature: `approval-setup` FE-AS-010 and FE-AS-012 on SA revision 1 ([ADR-0050](../adr/0050-approval-setting-draft-send-to-approve.md)). The owner started this on 2026-11-12 ("เริ่มทำ frontend ให้หน้าเว็บใช้ flow ใหม่"). Branch `feat/10-11-26-approval-api`, uncommitted.
+- Pages: Quotation, Reserve, Memo Receive, Memo Return, Memo Out, Memo Out Return, Purchase Order and Purchase. They all use one hook, `trade-document/approval-flow.tsx`, and one set of rules, `trade-document/flow-status.ts`.
+- **Buttons**
+  - Document pages no longer have an Approve button. Approving is done in the Approve menu only.
+  - The buttons are Save, **Send to approve**, Edit and Delete:
+    - Edit and Delete follow the document's `Flow` from `<doc>.get` and the user's permission.
+    - Send to approve shows only when approval is ON for the type and the document is Draft or Revise. The user needs Create or Edit. It asks for confirmation before sending.
+- **Approval ON**
+  - Save keeps the document as a Draft.
+  - A Pending document is read-only and shows "Waiting for approval".
+  - Revise shows its reason, can be edited, and can be sent again.
+  - Rejected shows its reason and is read-only.
+  - A document approved through review is read-only.
+- **Approval OFF**
+  - Save approves at once. The toast says "{docNo} saved and approved (approval is off)."
+  - The document stays editable until another document uses it. After that it shows "Used in {docNo}".
+- **Errors:** pages now handle `_APPROVAL_OFF` (the setting and the document are loaded again), `_IN_USE` (with `usedBy`), `_STATUS_INVALID` and `_REVISE_LIMIT`. Stock-shortage errors on Save now end with "Nothing was saved."
+- **Daybook:** dots are grey for Draft, orange for Pending and Revise, green for Approved and red for Rejected. When approval is OFF, a Draft shows green. The Revise or Reject reason appears under the party.
+- **Restore:** the confirmation says the document goes back to Draft when approval is ON, or to Approved when it is OFF.
+- **Tests:**
+  - added `test/trade-document/approval-flow.test.ts` (UT-AS-F01…F05) and `approval-flow.integration.test.ts` (IT-AS-F01…F05);
+  - updated the existing document tests;
+  - full suite: 96 files, 911 tests, all passed.
+- **Smoke test:** run against the real API on dev. The screenshots are in `document/testing/screenshots/approval-setup/`. The test documents RS-2 (rejected) and QT-32 (deleted) were left in the dev data.
+- **Not in this change** (stage B): Approve Center, persisting the Approval setup page, and wiring the permission leaf. The security reviews will run once at the end of stage B.

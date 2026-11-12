@@ -10,6 +10,7 @@ import { documentLoadError, mapDocumentSaveError, daybookInput, daybookQueryOpti
 import type { DocumentApi } from "@/features/trade-document/document-form";
 import { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError, retryTransient } from "@/lib/trpc-error";
+import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
 import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 /**
@@ -32,7 +33,8 @@ export const MEMO_OUTSTANDING_PAGE_SIZE = 50;
 const HEADER_FIELDS = ["docDate", "dueDate", "customerId", "shippingAddressId", "invoiceAddressId", "currency", "exchangeRate", "ref", "documentNote"] as const;
 
 /** Saving sends it to approval; Approve makes it read-only and brings the stones back (Q-MOR-14). */
-export const MEMO_OUT_RETURN_STATUSES = ["PENDING_APPROVAL", "APPROVED"] as const;
+/** ADR-0050: Draft, Pending Approval, Approved, Revise, Rejected. */
+export const MEMO_OUT_RETURN_STATUSES = APPROVAL_DOC_STATUSES;
 
 /**
  * A row keeps the Memo Out line it came from and the Outstanding quantity it was picked with; its pcs / weightCt are
@@ -75,7 +77,7 @@ export function emptyMemoOutReturn(): MemoOutReturnFormValues {
   const q = emptyQuotation();
   return {
     ...q,
-    status: "PENDING_APPROVAL",
+    status: "DRAFT",
     lines: q.lines.map((line) => ({ ...line, memoOutLineId: "", memoOutNo: "", outstandingPcs: "", outstandingWeightCt: "" })),
   };
 }
@@ -167,7 +169,7 @@ export const pickedOutLineIds = (lines: QuotationLine[]) =>
 export function mapMemoOutReturnSaveError(error: unknown) {
   // Approval found less outstanding than a row returns: another memo out return took it first.
   if (readDomainError(error).domainCode === "MEMO_OUT_RETURN_OUTSTANDING_SHORT") {
-    return { fieldErrors: [], message: "Some items were already returned by another document. Edit the Return quantity and approve again." };
+    return { fieldErrors: [], message: "Some items were already returned by another document. Edit the Return quantity and save again. Nothing was saved." };
   }
   return mapDocumentSaveError(error, "MEMO_OUT_RETURN", "memo out return", HEADER_FIELDS);
 }
@@ -219,7 +221,7 @@ export function useMemoOutReturnApi(customerId: string | undefined, docDate: str
   const create = masterTrpc.memoOutReturn.create.useMutation(writes);
   const update = masterTrpc.memoOutReturn.update.useMutation(writes);
   const remove = masterTrpc.memoOutReturn.delete.useMutation(writes);
-  const approve = masterTrpc.memoOutReturn.approve.useMutation(writes);
+  const submit = masterTrpc.memoOutReturn.submit.useMutation(writes);
   const restore = masterTrpc.memoOutReturn.restore.useMutation(writes);
   return {
     options: options.data,
@@ -228,7 +230,7 @@ export function useMemoOutReturnApi(customerId: string | undefined, docDate: str
     create: (input) => create.mutateAsync(input),
     update: (args) => update.mutateAsync(args),
     remove: (args) => remove.mutateAsync(args),
-    approve: (args) => approve.mutateAsync(args),
+    submit: (args) => submit.mutateAsync(args),
     restore: (args) => restore.mutateAsync(args),
     invalidate: () =>
       Promise.all([
@@ -238,6 +240,6 @@ export function useMemoOutReturnApi(customerId: string | undefined, docDate: str
         utils.memoOutReturn.outstanding.invalidate(),
         utils.memoStock.list.invalidate(),
       ]),
-    busy: create.isPending || update.isPending || remove.isPending || approve.isPending || restore.isPending,
+    busy: create.isPending || update.isPending || remove.isPending || submit.isPending || restore.isPending,
   };
 }

@@ -61,3 +61,15 @@ Result: `vitest run` 94 files / 879 tests passed; approve-center 73.
 | UA-AP-09 | FE-AP-002 | user with APPROVE on Reserve only | open Approve | only Reserve item; other routes show "Menu not found"/permission state | — | not run |
 | UA-AP-10 | FE-AP-004 | a deleted pending document | open its menu | not listed | — | not run |
 | UA-AP-11 | FE-AP-001 | width 1024 and 800 | resize | rail + panel; then panel → select, table scrolls, Action sticky | 1024 / 800 | not run |
+
+## Phase 2 automated coverage (FE-AP-009/010, 2026-11-12)
+
+| Target | Test case IDs | File |
+|---|---|---|
+| `summaryCount`, badges ("off" from settings), total, landing; summary / pending query keys | UT-AP-03 | `frontend/test/approve-center/counts.test.ts` |
+| `approval.pending` row adapter, sub line, stones, `pendingInput` (server sort) | UT-AP-04 | `api.test.ts` |
+| table: server order, enriched cells, Reject… / Revise… / Approve, Revise disabled after one revise | UT-AP-05, UT-AP-09 | `table.test.ts` |
+| list errors (`APPROVAL_TYPE_OFF`, stale cursor), off state | UT-AP-06 | `states.test.ts` |
+| approve without `get`, bulk with row versions; review texts, reason checks, error mapping | UT-AP-07, UT-AP-08, UT-AP-19 | `approve.test.ts` |
+| modal footer actions use the loaded version | UT-AP-18 | `preview.test.ts` |
+| pages, sidebar, summary / pending / approve / reject / requestRevision through the real link; `ReviewDialog` | IT-AP-01…08 | `approve.integration.test.ts` |

@@ -7,6 +7,7 @@ const MAX_JWKS_BYTES = 16_384;
 const MAX_JWKS_KEYS = 2;
 const MAX_COOKIE_HEADER_BYTES = 8_192;
 const MAX_AUTHORIZATION_GRANTS = 576;
+const MAX_DISPLAY_NAME = 200;
 const JWKS_TTL_MS = 10 * 60_000;
 const UNKNOWN_KID_REFRESH_INTERVAL_MS = 1_000;
 
@@ -22,6 +23,8 @@ type CurrentAuthorizationRow = {
   account_role: string;
   permissions: string[];
   location_keys: string[];
+  /** ADR-0046 D5 (auth migration 20261107090000): typed unknown so a missing or odd value never fails authentication. */
+  user_name?: unknown;
 };
 
 type JwksDocument = { keys: JWK[] };
@@ -169,6 +172,7 @@ export class MasterAuthContextAdapter {
         sessionId: payload.sid,
         isSuperAdmin: row.account_role === "admin",
         grants: [...row.permissions],
+        displayName: displayNameOf(row.user_name),
       },
       authorization: "CURRENT",
       license,
@@ -177,6 +181,16 @@ export class MasterAuthContextAdapter {
       accessExpiresAt: typeof payload.exp === "number" ? payload.exp * 1000 : null,
     };
   }
+}
+
+/**
+ * Own display name for snapshots (approve-center ADR-0046 D5): trimmed and at most 200 characters; null when missing,
+ * blank or not a string. Never part of any authorization decision.
+ */
+export function displayNameOf(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, MAX_DISPLAY_NAME).trimEnd() : null;
 }
 
 function parseJwks(value: unknown): JWK[] | null {

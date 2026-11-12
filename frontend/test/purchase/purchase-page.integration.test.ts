@@ -91,6 +91,14 @@ function seeded(permissions: string[]) {
 
 const decoded = (html: string) => html.replaceAll("&#x27;", "'").replaceAll("&amp;", "&");
 const render = (queryClient: QueryClient, element: ReactElement) => decoded(renderToStaticMarkup(withProviders(queryClient, element)));
+/** approval-setup: seeds `approvalSetting.list` (Purchase ON / OFF) under its real query key. */
+function withSetting(queryClient: QueryClient, requireApproval: boolean) {
+  queryClient.setQueryData(getQueryKey(masterTrpc.approvalSetting.list, undefined, "query"), {
+    items: [{ type: "purchase", requireApproval, available: true, version: 1, updatedAt: "2026-11-10T00:00:00.000Z", updatedByName: null, waiting: null }],
+  });
+  return queryClient;
+}
+
 const button = (html: string, label: string) => new RegExp(`<button[^>]*>(?:(?!</button>).)*${label}(?:(?!</button>).)*</button>`).exec(html)?.[0] ?? "";
 const ALL = ["purchase:VIEW", "purchase:ADD", "purchase:EDIT", "purchase:DELETE", "purchase:APPROVE"];
 
@@ -145,28 +153,88 @@ describe("IT-PU-02 purchase page composition (rev 2, wired)", () => {
     expect(html).not.toContain("Purchase No.:");
   });
 
-  it("a saved pending purchase opens in view mode with its rows, sources, Stock IDs and Approve", () => {
+  it("FE-AS-010 a Pending purchase is read-only: no Approve, no Edit / Delete / Send to approve, and says why", () => {
     const queryClient = seeded(ALL);
     queryClient.setQueryData(getQueryKey(masterTrpc.purchase.get, { id: ID }, "query"), savedPurchase());
     const html = render(queryClient, createElement(EditPurchasePage, { id: ID }));
     expect(html).toContain("PU-7");
     expect(html).toContain("Pending Approval");
+    expect(html).toContain("Waiting for approval · Read-only until it is approved, sent back or rejected");
     expect(html).toContain(">260003 · In stock<");
     expect(html).toContain("260012 · from PO2611001");
     expect(html).toContain(">260011<");
     expect(html).toContain("3 rows");
-    expect(button(html, "lucide-circle-check")).toContain("Approve");
-    expect(button(html, "lucide-circle-check")).not.toContain('disabled=""');
+    expect(button(html, "lucide-circle-check")).toBe("");
+    expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>).)*> Approve<\/button>/);
+    expect(button(html, "Send to approve")).toBe("");
+    expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>).)*>Delete<\/button>/);
     expect(button(html, "Purchase Order")).toContain('disabled=""');
   });
 
-  it("an approved purchase is read-only: no Approve, no Edit / Delete", () => {
+  it("an approved (reviewed) purchase is read-only: no Approve, no Edit / Delete", () => {
     const queryClient = seeded(ALL);
     queryClient.setQueryData(getQueryKey(masterTrpc.purchase.get, { id: ID }, "query"), savedPurchase({ status: "APPROVED", version: 4 }));
     const html = render(queryClient, createElement(EditPurchasePage, { id: ID }));
     expect(html).toContain("Approved");
+    expect(html).toContain("Approved · Read-only");
     expect(button(html, "lucide-circle-check")).toBe("");
     expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>).)*>Delete<\/button>/);
+  });
+
+  it("FE-AS-010 approval ON: a Draft shows Draft, Edit / Delete and an enabled Send to approve (ADD or EDIT)", () => {
+    const queryClient = withSetting(seeded(["purchase:VIEW", "purchase:ADD", "purchase:EDIT", "purchase:DELETE"]), true);
+    queryClient.setQueryData(getQueryKey(masterTrpc.purchase.get, { id: ID }, "query"), savedPurchase({ status: "DRAFT", canEdit: true, canDelete: true, canSubmit: true, submittedAt: null, submittedByName: null }));
+    const html = render(queryClient, createElement(EditPurchasePage, { id: ID }));
+    expect(html).toContain(">Draft<");
+    expect(button(html, "Send to approve")).not.toContain('disabled=""');
+    expect(button(html, "> Edit")).not.toContain('disabled=""');
+    expect(button(html, "> Delete")).not.toContain('disabled=""');
+    // VIEW only: Send to approve is not offered.
+    const viewer = withSetting(seeded(["purchase:VIEW"]), true);
+    viewer.setQueryData(getQueryKey(masterTrpc.purchase.get, { id: ID }, "query"), savedPurchase({ status: "DRAFT", canEdit: false, canDelete: false, canSubmit: false }));
+    expect(button(render(viewer, createElement(EditPurchasePage, { id: ID })), "Send to approve")).toBe("");
+  });
+
+  it("FE-AS-010 a sent-back purchase shows the revise reason and can be sent again once", () => {
+    const queryClient = withSetting(seeded(ALL), true);
+    const review = { action: "REVISE", note: "Check row 2 weight", at: "2026-11-05T03:00:00.000Z", byName: "Boss" };
+    queryClient.setQueryData(getQueryKey(masterTrpc.purchase.get, { id: ID }, "query"), savedPurchase({ status: "REVISION_REQUESTED", revisionCount: 1, canEdit: true, canDelete: true, canSubmit: true, review }));
+    const html = render(queryClient, createElement(EditPurchasePage, { id: ID }));
+    expect(html).toContain(">Revise<");
+    expect(html).toContain("Revise: Check row 2 weight");
+    expect(button(html, "Send to approve")).not.toContain('disabled=""');
+    expect(button(html, "> Edit")).not.toContain('disabled=""');
+  });
+
+  it("FE-AS-010 a rejected purchase is final: the reason, no Edit / Delete / Send to approve", () => {
+    const queryClient = withSetting(seeded(ALL), true);
+    const review = { action: "REJECT", note: "Wrong vendor", at: "2026-11-05T03:00:00.000Z", byName: "Boss" };
+    queryClient.setQueryData(getQueryKey(masterTrpc.purchase.get, { id: ID }, "query"), savedPurchase({ status: "REJECTED", review }));
+    const html = render(queryClient, createElement(EditPurchasePage, { id: ID }));
+    expect(html).toContain(">Rejected<");
+    expect(html).toContain("Reason: Wrong vendor · Read-only");
+    expect(button(html, "Send to approve")).toBe("");
+    expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>).)*>Delete<\/button>/);
+  });
+
+  it("FE-AS-010 approval OFF: an auto-approved purchase stays editable until used; once used it says where", () => {
+    const queryClient = withSetting(seeded(ALL), false);
+    queryClient.setQueryData(getQueryKey(masterTrpc.purchase.get, { id: ID }, "query"), savedPurchase({ status: "APPROVED", autoApproved: true, canEdit: true, canDelete: true }));
+    const html = render(queryClient, createElement(EditPurchasePage, { id: ID }));
+    expect(html).toContain(">Approved<");
+    expect(html).not.toContain("Read-only");
+    expect(button(html, "> Edit")).not.toContain('disabled=""');
+    expect(button(html, "> Delete")).not.toContain('disabled=""');
+    expect(button(html, "Send to approve")).toBe("");
+    const used = withSetting(seeded(ALL), false);
+    used.setQueryData(getQueryKey(masterTrpc.purchase.get, { id: ID }, "query"), savedPurchase({ status: "APPROVED", autoApproved: true, usedBy: { docNo: "LS-1 (deleted)" } }));
+    const usedHtml = render(used, createElement(EditPurchasePage, { id: ID }));
+    expect(usedHtml).toContain("Used in LS-1 (deleted) · Read-only");
+    expect(usedHtml).not.toMatch(/<button[^>]*>(?:(?!<\/button>).)*>Delete<\/button>/);
+    // A Draft left from before the switch: Save approves it; no Send to approve while OFF.
+    const draft = withSetting(seeded(ALL), false);
+    draft.setQueryData(getQueryKey(masterTrpc.purchase.get, { id: ID }, "query"), savedPurchase({ status: "DRAFT", canEdit: true, canDelete: true, canSubmit: false }));
+    expect(button(render(draft, createElement(EditPurchasePage, { id: ID })), "Send to approve")).toBe("");
   });
 
   it("IT-SD-F01 a soft-deleted purchase: banner, every write control off, Restore only with DELETE", () => {
@@ -230,12 +298,12 @@ describe("IT-PU-01 purchase API wiring (FE-PU-003, SA rev 1 contract)", () => {
     });
   });
 
-  it("get → fromPurchase → update sends the saved line ids and expectedVersion; delete and approve carry the version", async () => {
+  it("get → fromPurchase → update sends the saved line ids and expectedVersion; delete and Send to approve (submit) carry the version", async () => {
     respond = (path) => {
       if (path === "purchase.get") return ok(savedPurchase());
       if (path === "purchase.update") return ok({ id: ID, version: 4, stockIds: ["260003", "260012", "260011"] });
       if (path === "purchase.delete") return ok({ ok: true });
-      if (path === "purchase.approve") return ok({ id: ID, version: 4, status: "APPROVED", lineCount: 3 });
+      if (path === "purchase.submit") return ok({ id: ID, version: 4, status: "PENDING_APPROVAL", submittedAt: "2026-11-12T03:00:00.000Z" });
       return ok(null);
     };
     const { api, utils } = probe(seeded(ALL), "2026-11-04", false);
@@ -249,25 +317,25 @@ describe("IT-PU-01 purchase API wiring (FE-PU-003, SA rev 1 contract)", () => {
       ["55555555-5555-4555-8555-555555555555", "MANUAL"],
     ]);
     await api.remove({ id: ID, expectedVersion: 3 });
-    await expect(api.approve!({ id: ID, expectedVersion: 3 })).resolves.toMatchObject({ status: "APPROVED", version: 4 });
+    await expect(api.submit({ id: ID, expectedVersion: 3 })).resolves.toMatchObject({ status: "PENDING_APPROVAL", version: 4 });
     expect(calls.filter((call) => call.method === "POST").map((call) => [call.path, call.input])).toEqual([
       ["purchase.update", update.input],
       ["purchase.delete", { id: ID, expectedVersion: 3 }],
-      ["purchase.approve", { id: ID, expectedVersion: 3 }],
+      ["purchase.submit", { id: ID, expectedVersion: 3 }],
     ]);
     expect(calls.some((call) => call.path === "purchase.nextNumber")).toBe(false);
   });
 
-  it("approve short → PURCHASE_PENDING_SHORT row errors; save over the cap → VALIDATION_ERROR exceeds_available; conflict → PURCHASE_CHANGED", async () => {
+  it("Save with approval OFF short → PURCHASE_PENDING_SHORT row errors; save over the cap → VALIDATION_ERROR exceeds_available; conflict → PURCHASE_CHANGED", async () => {
     respond = (path) => {
-      if (path === "purchase.approve") return fail(409, "CONFLICT", "PURCHASE_PENDING_SHORT", [{ path: "lines.1.pcs", code: "exceeds_available" }]);
+      if (path === "purchase.update" && (calls.filter((call) => call.path === "purchase.update").length === 1)) return fail(409, "CONFLICT", "PURCHASE_PENDING_SHORT", [{ path: "lines.1.pcs", code: "exceeds_available" }]);
       if (path === "purchase.create") return fail(400, "BAD_REQUEST", "VALIDATION_ERROR", [{ path: "lines.0.weightCt", code: "exceeds_available" }]);
       if (path === "purchase.update") return fail(409, "CONFLICT", "PURCHASE_CHANGED");
       return ok(null);
     };
     const { api } = probe(seeded(ALL));
-    const approve = mapPurchaseSaveError(await api.approve!({ id: ID, expectedVersion: 1 }).catch((error: unknown) => error));
-    expect(approve).toEqual({ fieldErrors: [{ name: "lines.1.pcs", message: "More than the available quantity" }], message: "Row 2: not enough is available any more. Lower the quantity or remove the row, then save and approve again." });
+    const approve = mapPurchaseSaveError(await api.update({ ...toPurchaseInput(validValues()), id: ID, expectedVersion: 1 }).catch((error: unknown) => error));
+    expect(approve).toEqual({ fieldErrors: [{ name: "lines.1.pcs", message: "More than the available quantity" }], message: "Row 2: not enough is available any more. Lower the quantity or remove the row, then save again. Nothing was saved." });
     const save = mapPurchaseSaveError(await api.create(toPurchaseInput(validValues())).catch((error: unknown) => error));
     expect(save.message).toBe("Row 1: more than the available quantity. Nothing was saved.");
     const stale = mapPurchaseSaveError(await api.update({ ...toPurchaseInput(validValues()), id: ID, expectedVersion: 1 }).catch((error: unknown) => error));

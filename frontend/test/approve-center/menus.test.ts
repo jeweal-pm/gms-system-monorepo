@@ -19,12 +19,12 @@ describe("UT-AP-01 menu registry", () => {
     ]);
   });
 
-  it("marks Quotation off, the inventory menus not available, and the rest available with their procedures", () => {
+  it("the inventory menus are not available; the eight document types are available with their procedures (FE-AS-009: Quotation too)", () => {
     const by = Object.fromEntries(APPROVE_MENUS.map((menu) => [menu.slug, menu]));
-    expect(by.quotation.availability).toBe("off");
     for (const slug of ["load-to-stock", "merge-split", "transfer-location"]) expect(by[slug].availability).toBe("not-available");
     const procs = APPROVE_MENUS.flatMap((menu) => (menu.availability === "available" ? [[menu.slug, menu.proc]] : []));
     expect(procs).toEqual([
+      ["quotation", "quotation"],
       ["reserve", "reserve"],
       ["memo-receive", "memoReceive"],
       ["memo-return", "memoReturn"],
@@ -32,6 +32,12 @@ describe("UT-AP-01 menu registry", () => {
       ["memo-out-return", "memoOutReturn"],
       ["purchase-order", "purchaseOrder"],
       ["purchase", "purchase"],
+    ]);
+  });
+
+  it("uses the kebab-case approval setting keys as types (G13)", () => {
+    expect(APPROVE_MENUS.map((menu) => menu.type)).toEqual([
+      "quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase", "load-to-stock", "merge-split", "stock-transfer-location",
     ]);
   });
 

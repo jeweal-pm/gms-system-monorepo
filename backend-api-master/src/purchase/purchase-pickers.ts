@@ -233,7 +233,7 @@ const PO_UNTOUCHED = Prisma.sql`(l.purchased_pcs = 0 AND l.purchased_weight_ct =
  */
 export async function purchaseOrderLines(input: PurchaseOrderLinesInput) {
   const scope: Prisma.Sql[] = [
-    Prisma.sql`d.status = 'APPROVED'`,
+    Prisma.sql`d.status = 'APPROVED' AND d.deleted_at IS NULL`,
     Prisma.sql`d.vendor_id = ${input.vendorId}::uuid`,
     Prisma.sql`d.currency_code = ${input.currency}::char(3)`,
     PO_OPEN,

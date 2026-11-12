@@ -1,6 +1,7 @@
 import { validationException, type FieldError } from "../common/errors";
 import type { Tx } from "../common/persistence";
 import { Prisma } from "../generated/prisma/client";
+import { lockSourceHeaders } from "../trade-document/source-lock";
 import { purchaseErrors } from "./purchase.errors";
 import type { LineMemoGroup, MemoGroup, PurchaseInput, PurchaseLineInput } from "./purchase.schemas";
 
@@ -64,7 +65,7 @@ export async function completeSourceLines(tx: Tx, input: PurchaseInput): Promise
     memoIds.length === 0 ? [] : tx.memoStock.findMany({ where: { id: { in: memoIds } } }),
     poLineIds.length === 0 ? [] : tx.purchaseOrderLine.findMany({
       where: { id: { in: poLineIds } },
-      include: { document: { select: { status: true, vendorId: true, currencyCode: true } } },
+      include: { document: { select: { status: true, vendorId: true, currencyCode: true, deletedAt: true } } },
     }),
   ]);
   const itemById = new Map(items.map((item) => [item.id, item]));
@@ -110,7 +111,7 @@ export async function completeSourceLines(tx: Tx, input: PurchaseInput): Promise
     }
     if (line.source === "PURCHASE_ORDER") {
       const source = line.purchaseOrderLineId ? poLineById.get(line.purchaseOrderLineId) : undefined;
-      if (!source || source.document.status !== "APPROVED" || source.document.vendorId !== input.vendorId || source.document.currencyCode !== input.currency) {
+      if (!source || source.document.status !== "APPROVED" || source.document.deletedAt || source.document.vendorId !== input.vendorId || source.document.currencyCode !== input.currency) {
         references.push({ path: `lines.${index}.purchaseOrderLineId`, code: "invalid_reference" });
         return line;
       }
@@ -224,6 +225,7 @@ type LockedPoLine = {
   purchased_pcs: number;
   purchased_weight_ct: Dec | string;
   status: string;
+  deleted: boolean;
   vendor_id: string;
   currency_code: string;
 };
@@ -234,8 +236,9 @@ const zero = () => new Decimal(0);
 /**
  * BE-PU-004 / SA-PU-09 step 2–5, inside the approve transaction (after the guarded status update):
  * 1. sums the lines per key;
- * 2. locks the touched `memo_stock` rows `FOR UPDATE` in id order, then the touched `purchase_order_line` rows in id
- *    order (lock order purchase → memo_stock → purchase_order_line; other memo_stock writers lock only memo_stock);
+ * 2. locks the source `purchase_order` headers `FOR SHARE` (INV-20261111-002 F1), the touched `memo_stock` rows
+ *    `FOR UPDATE` in id order, then the touched `purchase_order_line` rows in id order (lock order purchase → PO header →
+ *    memo_stock → purchase_order_line; other memo_stock writers lock only memo_stock);
  * 3. re-checks each PO is APPROVED with the purchase's vendor and currency;
  * 4. splits each MERGED line Sold part first (`splitMerged`, ADR-0043), then guards every key (IN_STOCK q ≤ pending;
  *    SOLD q ≤ sold − purchased; PO q ≤ ordered − purchased). Any short →
@@ -256,12 +259,15 @@ export async function takeForPurchase(
   const poIds = [...po.keys()].sort();
   const shortFields: FieldError[] = [];
 
+  // INV-20261111-002 F1: the source POs FOR SHARE first (their soft delete / edit locks the header before `usedBy`); the
+  // PO line read below then sees their committed state and re-checks APPROVED / not deleted.
+  await lockSourceHeaders(tx, "purchaseOrder", poIds);
   const lockedItems = memoIds.length === 0 ? [] : await tx.$queryRaw<LockedItem[]>(Prisma.sql`
     SELECT id::text AS id, pending_pcs, pending_weight_ct, sold_pcs, sold_weight_ct, purchased_pcs, purchased_weight_ct
     FROM "partner"."memo_stock"
     WHERE id = ANY(${memoIds}::uuid[]) ORDER BY id FOR UPDATE`);
   const lockedPoLines = poIds.length === 0 ? [] : await tx.$queryRaw<LockedPoLine[]>(Prisma.sql`
-    SELECT l.id::text AS id, l.pcs, l.weight_ct, l.purchased_pcs, l.purchased_weight_ct, d.status, d.vendor_id::text AS vendor_id, d.currency_code
+    SELECT l.id::text AS id, l.pcs, l.weight_ct, l.purchased_pcs, l.purchased_weight_ct, d.status, (d.deleted_at IS NOT NULL) AS deleted, d.vendor_id::text AS vendor_id, d.currency_code
     FROM "partner"."purchase_order_line" l JOIN "partner"."purchase_order" d ON d.id = l.purchase_order_id
     WHERE l.id = ANY(${poIds}::uuid[]) ORDER BY l.id FOR UPDATE OF l`);
 
@@ -281,7 +287,7 @@ export async function takeForPurchase(
   const poLines = new Map(lockedPoLines.map((row) => [row.id, row]));
   for (const total of po.values()) {
     const line = poLines.get(total.id);
-    if (!line || line.status !== "APPROVED" || line.vendor_id !== scope.vendorId || line.currency_code !== scope.currency) {
+    if (!line || line.status !== "APPROVED" || line.deleted || line.vendor_id !== scope.vendorId || line.currency_code !== scope.currency) {
       // A PO that is no longer valid (unreachable while approved POs are read-only, SA-PO-03).
       shortFields.push(...shortPaths(total, "purchaseOrderLineId", "invalid_reference"));
       continue;
@@ -321,4 +327,85 @@ export async function takeForPurchase(
       WHERE o.id = r.id`);
   }
   return { memoStockKeys: inStock.size + sold.size, purchaseOrderKeys: po.size, soldParts: mergedParts.soldParts };
+}
+
+/** A stored, approved purchase line with the Sold part its MERGED line took (`purchase_line.sold_part_*`). */
+export type PurchaseGiveBack = PurchaseTake & { soldPartPcs: number | null; soldPartWeightCt: Dec | null };
+
+/**
+ * Exact inverse of `takeForPurchase` (approval-setup "Effects and their reversal", auto-approved edit / delete), with the
+ * same lock order (memo_stock rows, then purchase_order_line rows, each in id order) and ≤ 1 bulk UPDATE per table:
+ * IN_STOCK q → pending += q, sold −= q, purchased −= q; SOLD q → purchased −= q; MERGED → its recorded Sold part as SOLD
+ * and the rest as IN_STOCK; PO q → purchased_* −= q. A bucket that no longer holds the quantity (a later document moved
+ * it) → `inUse()` before any UPDATE, so nothing changes. Manual lines move nothing.
+ */
+export async function giveBackForPurchase(tx: Tx, lines: PurchaseGiveBack[], inUse: () => Error, now: Date): Promise<void> {
+  const inStock = new Map<string, { pcs: number; weightCt: Dec }>();
+  const sold = new Map<string, { pcs: number; weightCt: Dec }>();
+  const po = new Map<string, { pcs: number; weightCt: Dec }>();
+  const add = (map: Map<string, { pcs: number; weightCt: Dec }>, id: string, pcs: number, weightCt: Dec) => {
+    const total = map.get(id) ?? { pcs: 0, weightCt: zero() };
+    map.set(id, { pcs: total.pcs + pcs, weightCt: total.weightCt.plus(weightCt) });
+  };
+  for (const line of lines) {
+    const weight = new Decimal(line.weightCt);
+    if (line.source === "STOCK" && line.memoStockId) {
+      if (line.memoGroup === "SOLD") add(sold, line.memoStockId, line.pcs, weight);
+      else if (line.memoGroup === "MERGED") {
+        if (line.soldPartPcs === null || line.soldPartWeightCt === null) throw inUse();
+        const soldWeight = new Decimal(line.soldPartWeightCt);
+        add(sold, line.memoStockId, line.soldPartPcs, soldWeight);
+        add(inStock, line.memoStockId, line.pcs - line.soldPartPcs, weight.minus(soldWeight));
+      } else add(inStock, line.memoStockId, line.pcs, weight);
+    } else if (line.source === "PURCHASE_ORDER" && line.purchaseOrderLineId) add(po, line.purchaseOrderLineId, line.pcs, weight);
+  }
+  const memoIds = [...new Set([...inStock.keys(), ...sold.keys()])].sort();
+  const poIds = [...po.keys()].sort();
+  const items = memoIds.length === 0 ? [] : await tx.$queryRaw<LockedItem[]>(Prisma.sql`
+    SELECT id::text AS id, pending_pcs, pending_weight_ct, sold_pcs, sold_weight_ct, purchased_pcs, purchased_weight_ct
+    FROM "partner"."memo_stock"
+    WHERE id = ANY(${memoIds}::uuid[]) ORDER BY id FOR UPDATE`);
+  const poLines = poIds.length === 0 ? [] : await tx.$queryRaw<{ id: string; purchased_pcs: number; purchased_weight_ct: Dec | string }[]>(Prisma.sql`
+    SELECT id::text AS id, purchased_pcs, purchased_weight_ct FROM "partner"."purchase_order_line"
+    WHERE id = ANY(${poIds}::uuid[]) ORDER BY id FOR UPDATE`);
+  const byId = new Map(items.map((row) => [row.id, row]));
+  for (const id of memoIds) {
+    const item = byId.get(id);
+    const back = inStock.get(id) ?? { pcs: 0, weightCt: zero() };
+    const settled = sold.get(id) ?? { pcs: 0, weightCt: zero() };
+    if (!item || back.pcs > item.sold_pcs || back.weightCt.gt(dec(item.sold_weight_ct))
+      || back.pcs + settled.pcs > item.purchased_pcs || back.weightCt.plus(settled.weightCt).gt(dec(item.purchased_weight_ct))) throw inUse();
+  }
+  const poById = new Map(poLines.map((row) => [row.id, row]));
+  for (const id of poIds) {
+    const line = poById.get(id);
+    const back = po.get(id)!;
+    if (!line || back.pcs > line.purchased_pcs || back.weightCt.gt(dec(line.purchased_weight_ct))) throw inUse();
+  }
+  if (memoIds.length > 0) {
+    const rows = memoIds.map((id) => {
+      const back = inStock.get(id) ?? { pcs: 0, weightCt: zero() };
+      const settled = sold.get(id) ?? { pcs: 0, weightCt: zero() };
+      return Prisma.sql`(${id}::uuid, ${back.pcs}::int, ${back.weightCt.toFixed(3)}::numeric, ${settled.pcs}::int, ${settled.weightCt.toFixed(3)}::numeric)`;
+    });
+    await tx.$executeRaw(Prisma.sql`
+      UPDATE "partner"."memo_stock" AS s
+      SET pending_pcs = s.pending_pcs + r.in_pcs, pending_weight_ct = s.pending_weight_ct + r.in_weight,
+          sold_pcs = s.sold_pcs - r.in_pcs, sold_weight_ct = s.sold_weight_ct - r.in_weight,
+          purchased_pcs = s.purchased_pcs - r.in_pcs - r.sold_pcs, purchased_weight_ct = s.purchased_weight_ct - r.in_weight - r.sold_weight,
+          version = s.version + 1, updated_at = ${now}
+      FROM (VALUES ${Prisma.join(rows)}) AS r(id, in_pcs, in_weight, sold_pcs, sold_weight)
+      WHERE s.id = r.id`);
+  }
+  if (poIds.length > 0) {
+    const rows = poIds.map((id) => {
+      const back = po.get(id)!;
+      return Prisma.sql`(${id}::uuid, ${back.pcs}::int, ${back.weightCt.toFixed(3)}::numeric)`;
+    });
+    await tx.$executeRaw(Prisma.sql`
+      UPDATE "partner"."purchase_order_line" AS o
+      SET purchased_pcs = o.purchased_pcs - r.pcs, purchased_weight_ct = o.purchased_weight_ct - r.weight
+      FROM (VALUES ${Prisma.join(rows)}) AS r(id, pcs, weight)
+      WHERE o.id = r.id`);
+  }
 }

@@ -91,35 +91,80 @@ export async function takeFromMemoStock(tx: Tx, takes: MemoStockTake[], bucket: 
     WHERE s.id = r.id`);
 }
 
+/** Reverse moves of a bucket back to pending (fixed SQL per bucket, never input). */
+const RELEASE_SQL = {
+  returned: {
+    read: Prisma.sql`returned_pcs AS bucket_pcs, returned_weight_ct AS bucket_weight_ct`,
+    set: Prisma.sql`returned_pcs = s.returned_pcs - r.pcs, returned_weight_ct = s.returned_weight_ct - r.weight`,
+    code: "exceeds_returned",
+  },
+  reserved: {
+    read: Prisma.sql`reserved_pcs AS bucket_pcs, reserved_weight_ct AS bucket_weight_ct`,
+    set: Prisma.sql`reserved_pcs = s.reserved_pcs - r.pcs, reserved_weight_ct = s.reserved_weight_ct - r.weight`,
+    code: "exceeds_reserved",
+  },
+} as const;
+
 /**
- * Inside a Memo Out Return approval (memo-out-return SA-MOR-17): locks the items in id order and moves each quantity from
- * Reserve back to pending (`reserved -= q, pending += q`), so the stone is available again. An item with less in Reserve
- * than the lines bring back → `short` (nothing changes); `memo_stock_balance` holds either way. Lines of two memo outs
- * that took the same item are summed per item first (`totalPerItem`, INV-20261031-001).
+ * Moves quantity from `bucket` back to pending (`bucket -= q, pending += q`) under the same id-ordered `FOR UPDATE` lock
+ * as `takeFromMemoStock`. Used by a Memo Out Return approval (Reserve → pending, memo-out-return SA-MOR-17) and by the
+ * reversal of an auto-approved Memo Out / Reserve (reserved) or Memo Return (returned) edit or delete (approval-setup
+ * ADR-0050 D4). An item with less in the bucket than the lines bring back → `short` (nothing changes);
+ * `memo_stock_balance` holds either way. Lines naming the same item are summed first (`totalPerItem`, INV-20261031-001).
  */
-export async function releaseToMemoStock(tx: Tx, puts: MemoStockTake[], short: (fields: FieldError[]) => Error, now: Date): Promise<void> {
+export async function releaseToMemoStock(tx: Tx, puts: MemoStockTake[], short: (fields: FieldError[]) => Error, now: Date, bucket: keyof typeof RELEASE_SQL = "reserved"): Promise<void> {
   if (puts.length === 0) return;
+  const sql = RELEASE_SQL[bucket];
   const totals = totalPerItem(puts);
   const ids = totals.map((total) => total.memoStockId);
-  const locked = await tx.$queryRaw<{ id: string; reserved_pcs: number; reserved_weight_ct: Dec | string }[]>(Prisma.sql`
-    SELECT id::text AS id, reserved_pcs, reserved_weight_ct FROM "partner"."memo_stock"
+  const locked = await tx.$queryRaw<{ id: string; bucket_pcs: number; bucket_weight_ct: Dec | string }[]>(Prisma.sql`
+    SELECT id::text AS id, ${sql.read} FROM "partner"."memo_stock"
     WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR UPDATE`);
-  const reserved = new Map(locked.map((row) => [row.id, row]));
+  const held = new Map(locked.map((row) => [row.id, row]));
   const shortFields: FieldError[] = [];
   for (const total of totals) {
-    const item = reserved.get(total.memoStockId);
-    if (!item || total.pcs > item.reserved_pcs) shortFields.push(...shortPaths(total, "pcs", "exceeds_reserved"));
-    if (!item || total.weightCt.gt(new Decimal(item.reserved_weight_ct.toString()))) shortFields.push(...shortPaths(total, "weightCt", "exceeds_reserved"));
+    const item = held.get(total.memoStockId);
+    if (!item || total.pcs > item.bucket_pcs) shortFields.push(...shortPaths(total, "pcs", sql.code));
+    if (!item || total.weightCt.gt(new Decimal(item.bucket_weight_ct.toString()))) shortFields.push(...shortPaths(total, "weightCt", sql.code));
   }
   if (shortFields.length > 0) throw short(shortFields);
   await tx.$executeRaw(Prisma.sql`
     UPDATE "partner"."memo_stock" AS s
-    SET reserved_pcs = s.reserved_pcs - r.pcs, reserved_weight_ct = s.reserved_weight_ct - r.weight,
+    SET ${sql.set},
         pending_pcs = s.pending_pcs + r.pcs, pending_weight_ct = s.pending_weight_ct + r.weight,
         version = s.version + 1, updated_at = ${now}
     FROM (VALUES ${Prisma.join(valuesOf(totals))}) AS r(id, pcs, weight)
     WHERE s.id = r.id`);
 }
+
+/**
+ * The newest live document line (Memo Return, Reserve, Memo Out, Purchase, Quotation; any status) that names one of
+ * `memoStockIds`, excluding `excludeDocIds` (the documents being reversed / their own sources): who took the stock
+ * again, for `<CODE>_IN_USE {usedBy}`. One bounded statement over the line FK indexes.
+ */
+export async function latestStockUser(client: Tx | typeof prisma, memoStockIds: readonly string[], excludeDocIds: readonly string[] = []): Promise<string | null> {
+  if (memoStockIds.length === 0) return null;
+  const exclude = excludeDocIds.length === 0 ? [ZERO_UUID] : [...excludeDocIds];
+  const [row] = await client.$queryRaw<{ doc_no: string }[]>(Prisma.sql`
+    SELECT doc_no FROM (
+      SELECT h.doc_no, h.created_at FROM "partner"."memo_return_line" l JOIN "partner"."memo_return" h ON h.id = l.memo_return_id
+        WHERE l.memo_stock_id = ANY(${memoStockIds}::uuid[]) AND h.deleted_at IS NULL AND h.id <> ALL(${exclude}::uuid[])
+      UNION ALL
+      SELECT h.doc_no, h.created_at FROM "partner"."reserve_line" l JOIN "partner"."reserve" h ON h.id = l.reserve_id
+        WHERE l.memo_stock_id = ANY(${memoStockIds}::uuid[]) AND h.deleted_at IS NULL AND h.id <> ALL(${exclude}::uuid[])
+      UNION ALL
+      SELECT h.doc_no, h.created_at FROM "partner"."memo_out_line" l JOIN "partner"."memo_out" h ON h.id = l.memo_out_id
+        WHERE l.memo_stock_id = ANY(${memoStockIds}::uuid[]) AND h.deleted_at IS NULL AND h.id <> ALL(${exclude}::uuid[])
+      UNION ALL
+      SELECT h.doc_no, h.created_at FROM "partner"."purchase_line" l JOIN "partner"."purchase" h ON h.id = l.purchase_id
+        WHERE l.memo_stock_id = ANY(${memoStockIds}::uuid[]) AND h.deleted_at IS NULL AND h.id <> ALL(${exclude}::uuid[])
+    ) u
+    ORDER BY created_at DESC
+    LIMIT 1`);
+  return row?.doc_no ?? null;
+}
+
+const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
 
 type StockRow = {
   id: string;

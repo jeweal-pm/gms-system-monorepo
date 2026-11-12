@@ -5,6 +5,7 @@ import path from "node:path";
 import { HttpException } from "@nestjs/common";
 import type { Request } from "express";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { setApproval, submitted } from "../partner-shared/approval";
 
 /**
  * IT-PO-01…03 (purchase-order SA rev 1 / ADR-0041, owner 2026-11-04) against real PostgreSQL: Document Setup / plain
@@ -105,6 +106,7 @@ describe.runIf(canRun)("IT-PO purchase order on PostgreSQL", () => {
       } }));
     }
     vendor = await vendorFixture("PO IT Vendor");
+    await setApproval(prisma, "purchase-order", true);
   });
 
   afterAll(async () => {
@@ -123,11 +125,11 @@ describe.runIf(canRun)("IT-PO purchase order on PostgreSQL", () => {
     vi.unstubAllEnvs();
   });
 
-  it("IT-PO-01 create → PENDING_APPROVAL with a Document Setup / plain number; update and delete only while pending; version conflict", async () => {
+  it("IT-PO-01 create → DRAFT with a Document Setup / plain number; update and delete only while pending; version conflict", async () => {
     const result = await service.create(ACTOR, input(vendor, [line()]));
     expect(result).toMatchObject({ docNo: expect.stringMatching(/^PO-\d+$/), version: 1 });
     const detail = await service.get(result.id);
-    expect(detail).toMatchObject({ status: "PENDING_APPROVAL", approvedAt: null, approvedBy: null, vendorId: vendor.id, vendor: { name: "PO IT Vendor" } });
+    expect(detail).toMatchObject({ status: "DRAFT", approvedAt: null, approvedBy: null, vendorId: vendor.id, vendor: { name: "PO IT Vendor" } });
     expect(detail.lines[0]).toMatchObject({ source: "MANUAL", location: "Safe A", stoneCodeId: null, purchasedPcs: 0, purchasedWeightCt: "0.000", photoIds: [] });
     expect(detail.lines[0]).not.toHaveProperty("stockId");
     expect(detail.lines[0]).not.toHaveProperty("outstandingPcs");
@@ -135,9 +137,9 @@ describe.runIf(canRun)("IT-PO purchase order on PostgreSQL", () => {
     const plain = await service.create(ACTOR, input(vendor, [line()], { docDate: "2025-06-01", dueDate: "2025-06-30" }));
     expect(plain.docNo).toMatch(/^\d+$/);
     expect((await service.nextNumber("2026-11-04")).docNo).toMatch(/^PO-\d+$/);
-    const listed = await service.list({ partyId: vendor.id, status: "PENDING_APPROVAL", limit: 50, deleted: false });
+    const listed = await service.list({ partyId: vendor.id, status: "DRAFT", limit: 50, deleted: false });
     expect(listed.items.map((item) => item.id)).toEqual(expect.arrayContaining([result.id, plain.id]));
-    expect(listed.items[0]).toMatchObject({ status: "PENDING_APPROVAL", vendorName: "PO IT Vendor" });
+    expect(listed.items[0]).toMatchObject({ status: "DRAFT", vendorName: "PO IT Vendor" });
 
     const updated = await service.update(ACTOR, result.id, 1, input(vendor, [line({ location: "Safe B", pcs: 3 }), line()]));
     expect(updated.version).toBe(2);
@@ -146,23 +148,23 @@ describe.runIf(canRun)("IT-PO purchase order on PostgreSQL", () => {
     expect(await failure(service.delete(ACTOR, plain.id, 9))).toMatchObject({ status: 409, code: "PURCHASE_ORDER_CHANGED" });
     await expect(service.delete(ACTOR, plain.id, 1)).resolves.toEqual({ ok: true, version: 2 });
     // transaction-soft-delete (ADR-0045 D4/D10): kept and readable, marked deleted.
-    expect(await service.get(plain.id)).toMatchObject({ status: "PENDING_APPROVAL", deletedBy: ACTOR });
+    expect(await service.get(plain.id)).toMatchObject({ status: "DRAFT", deletedBy: ACTOR });
     expect(await failure(service.create(ACTOR, input(vendor, [line()], { vendorId: randomUUID() })))).toMatchObject({ status: 422, code: "PURCHASE_ORDER_REFERENCE_INVALID" });
   });
 
   it("IT-PO-02 approve → APPROVED, read-only, no stock written, every line outstanding in full; Document Setup row used", async () => {
-    const result = await service.create(ACTOR, input(vendor, [line(), line({ priceUnit: "PER_PCS", pcs: 4, weightCt: "2" })]));
+    const result = await submitted(service, ACTOR, await service.create(ACTOR, input(vendor, [line(), line({ priceUnit: "PER_PCS", pcs: 4, weightCt: "2" })])));
     const memoStockBefore = await prisma.memoStock.count();
     expect(await failure(service.approve(ACTOR, result.id, 7))).toMatchObject({ status: 409, code: "PURCHASE_ORDER_CHANGED" });
-    expect(await service.approve(ACTOR, result.id, 1)).toEqual({ id: result.id, version: 2, status: "APPROVED", lineCount: 2 });
+    expect(await service.approve(ACTOR, result.id, 2)).toEqual({ id: result.id, version: 3, status: "APPROVED", lineCount: 2 });
     const detail = await service.get(result.id);
-    expect(detail).toMatchObject({ status: "APPROVED", approvedBy: ACTOR, approvedAt: expect.any(String), version: 2 });
+    expect(detail).toMatchObject({ status: "APPROVED", approvedBy: ACTOR, approvedAt: expect.any(String), version: 3 });
     expect(detail.lines.map((entry) => [entry.purchasedPcs, entry.purchasedWeightCt])).toEqual([[0, "0.000"], [0, "0.000"]]);
     expect(await prisma.memoStock.count()).toBe(memoStockBefore);
 
-    expect(await failure(service.approve(ACTOR, result.id, 2))).toMatchObject({ status: 409, code: "PURCHASE_ORDER_STATUS_INVALID" });
-    expect(await failure(service.update(ACTOR, result.id, 2, input(vendor, [line()])))).toMatchObject({ status: 409, code: "PURCHASE_ORDER_STATUS_INVALID" });
-    expect(await failure(service.delete(ACTOR, result.id, 2))).toMatchObject({ status: 409, code: "PURCHASE_ORDER_STATUS_INVALID" });
+    expect(await failure(service.approve(ACTOR, result.id, 3))).toMatchObject({ status: 409, code: "PURCHASE_ORDER_STATUS_INVALID" });
+    expect(await failure(service.update(ACTOR, result.id, 3, input(vendor, [line()])))).toMatchObject({ status: 409, code: "PURCHASE_ORDER_STATUS_INVALID" });
+    expect(await failure(service.delete(ACTOR, result.id, 3))).toMatchObject({ status: 409, code: "PURCHASE_ORDER_STATUS_INVALID" });
     expect(await failure(service.approve(ACTOR, randomUUID(), 1))).toMatchObject({ status: 404, code: "PURCHASE_ORDER_NOT_FOUND" });
     expect((await service.list({ partyId: vendor.id, status: "APPROVED", limit: 50, deleted: false })).items.map((item) => item.id)).toContain(result.id);
 

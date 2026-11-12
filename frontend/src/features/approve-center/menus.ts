@@ -12,11 +12,13 @@ import {
   StockTransferIcon,
   type NavIcon,
 } from "@/features/home/nav-icons";
+import type { DocumentApprovalType } from "@/features/trade-document/flow-status";
 
 /**
  * Approve Center menu registry (approve-center UI rev 1, FE-AP-002). Order follows the sidebar (owner Q-AP-03,
- * 2026-11-07). `availability`: `available` = the document has list / get / approve today; `off` = approval is not
- * required (Quotation is created Approved, Q-AP-06); `not-available` = no document page or API yet (Q-AP-07).
+ * 2026-11-07). `availability`: `available` = a document type of `approval.pending` (approval-setup ADR-0050: the eight
+ * document types, Quotation included, FE-AS-009); `not-available` = no document page or API yet (Q-AP-07). Whether a
+ * type's approval is on is not fixed here: it comes from `approval.summary` (`types[].requireApproval`, G13).
  */
 export type ApproveMenuSlug =
   | "quotation"
@@ -32,7 +34,14 @@ export type ApproveMenuSlug =
   | "transfer-location";
 
 /** The `masterTrpc` router key of a document that can be approved today. */
-export type ApprovalProc = "reserve" | "memoReceive" | "memoReturn" | "memoOut" | "memoOutReturn" | "purchaseOrder" | "purchase";
+export type ApprovalProc = "quotation" | "reserve" | "memoReceive" | "memoReturn" | "memoOut" | "memoOutReturn" | "purchaseOrder" | "purchase";
+
+/** approval-setup api-contract `ApprovalType`: the kebab-case setting keys (G13), in sidebar order. */
+export type ApprovalSettingType =
+  | DocumentApprovalType
+  | "load-to-stock"
+  | "merge-split"
+  | "stock-transfer-location";
 
 export type Party = "customer" | "vendor" | "none";
 
@@ -42,11 +51,14 @@ type MenuBase = {
   icon: NavIcon;
   /** Permission catalog leaf (ADR-0020); the item is shown with `<leaf>:APPROVE` (Q-AP-13). */
   leaf: string;
+  /** The approval setting / `approval.*` type key (G13). */
+  type: ApprovalSettingType;
   party: Party;
 };
 
 export type AvailableMenu = MenuBase & {
   availability: "available";
+  type: DocumentApprovalType;
   proc: ApprovalProc;
   /** Document page of one document, e.g. `/pre-sale/reserve/<id>`. */
   documentBase: string;
@@ -55,20 +67,33 @@ export type AvailableMenu = MenuBase & {
   /** Approve confirm consequence for `count` lines, as the document page says it. */
   consequence: (count: number) => string;
 };
-export type OffMenu = MenuBase & { availability: "off"; documentBase: string };
 export type NotAvailableMenu = MenuBase & { availability: "not-available" };
-export type ApproveMenu = AvailableMenu | OffMenu | NotAvailableMenu;
+export type ApproveMenu = AvailableMenu | NotAvailableMenu;
 
 const items = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 const noLonger = "It can no longer be edited.";
 
 export const APPROVE_MENUS: readonly ApproveMenu[] = [
-  { slug: "quotation", label: "Quotation", icon: QuotationIcon, leaf: "quotation", party: "customer", availability: "off", documentBase: "/pre-sale/quotation" },
+  {
+    slug: "quotation",
+    label: "Quotation",
+    icon: QuotationIcon,
+    leaf: "quotation",
+    type: "quotation",
+    party: "customer",
+    availability: "available",
+    proc: "quotation",
+    documentBase: "/pre-sale/quotation",
+    dueLabel: "Valid until",
+    // ADR-0050 Q-AS-28: an approved Quotation is read-only; approving moves no stock.
+    consequence: () => "It can no longer be edited.",
+  },
   {
     slug: "reserve",
     label: "Reserve",
     icon: ReserveIcon,
     leaf: "reserve",
+    type: "reserve",
     party: "customer",
     availability: "available",
     proc: "reserve",
@@ -81,6 +106,7 @@ export const APPROVE_MENUS: readonly ApproveMenu[] = [
     label: "Memo Receive",
     icon: MemoReceiveIcon,
     leaf: "memo-receive",
+    type: "memo-receive",
     party: "vendor",
     availability: "available",
     proc: "memoReceive",
@@ -93,6 +119,7 @@ export const APPROVE_MENUS: readonly ApproveMenu[] = [
     label: "Memo Return",
     icon: MemoReturnIcon,
     leaf: "memo-return",
+    type: "memo-return",
     party: "vendor",
     availability: "available",
     proc: "memoReturn",
@@ -105,6 +132,7 @@ export const APPROVE_MENUS: readonly ApproveMenu[] = [
     label: "Memo Out",
     icon: MemoOutIcon,
     leaf: "memo-out",
+    type: "memo-out",
     party: "customer",
     availability: "available",
     proc: "memoOut",
@@ -117,6 +145,7 @@ export const APPROVE_MENUS: readonly ApproveMenu[] = [
     label: "Memo Out Return",
     icon: MemoOutReturnIcon,
     leaf: "memo-out-return",
+    type: "memo-out-return",
     party: "customer",
     availability: "available",
     proc: "memoOutReturn",
@@ -129,6 +158,7 @@ export const APPROVE_MENUS: readonly ApproveMenu[] = [
     label: "Purchase Order (PO)",
     icon: PurchaseOrderIcon,
     leaf: "purchase-order",
+    type: "purchase-order",
     party: "vendor",
     availability: "available",
     proc: "purchaseOrder",
@@ -141,6 +171,7 @@ export const APPROVE_MENUS: readonly ApproveMenu[] = [
     label: "Purchase",
     icon: PurchaseIcon,
     leaf: "purchase",
+    type: "purchase",
     party: "vendor",
     availability: "available",
     proc: "purchase",
@@ -148,9 +179,9 @@ export const APPROVE_MENUS: readonly ApproveMenu[] = [
     dueLabel: null,
     consequence: (count) => `Its ${items(count, "item is", "items are")} recorded as bought, and it can no longer be edited.`,
   },
-  { slug: "load-to-stock", label: "Load to Stock", icon: BoxClockIcon, leaf: "load-to-stock", party: "none", availability: "not-available" },
-  { slug: "merge-split", label: "Merge/Split Stock", icon: SplitVerticalIcon, leaf: "merge-split", party: "none", availability: "not-available" },
-  { slug: "transfer-location", label: "Transfer Location", icon: StockTransferIcon, leaf: "stock-transfer-location", party: "none", availability: "not-available" },
+  { slug: "load-to-stock", label: "Load to Stock", icon: BoxClockIcon, leaf: "load-to-stock", type: "load-to-stock", party: "none", availability: "not-available" },
+  { slug: "merge-split", label: "Merge/Split Stock", icon: SplitVerticalIcon, leaf: "merge-split", type: "merge-split", party: "none", availability: "not-available" },
+  { slug: "transfer-location", label: "Transfer Location", icon: StockTransferIcon, leaf: "stock-transfer-location", type: "stock-transfer-location", party: "none", availability: "not-available" },
 ];
 
 export const APPROVE_HREF = "/approve";

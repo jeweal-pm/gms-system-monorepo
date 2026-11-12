@@ -10,7 +10,8 @@ import { mapMemoReceiveError, memoReceiveRestoreError } from "@/features/memo-re
 import { mapMemoReturnSaveError, memoReturnRestoreError } from "@/features/memo-return/api";
 import { mapPurchaseSaveError, purchaseRestoreError } from "@/features/purchase/api";
 import { mapPurchaseOrderError, purchaseOrderRestoreError } from "@/features/purchase-order/api";
-import { isDeletableStatus, isEditableStatus, mapSaveError as mapQuotationSaveError, quotationRestoreError } from "@/features/quotation/api";
+import { mapSaveError as mapQuotationSaveError, quotationRestoreError } from "@/features/quotation/api";
+import { flowActions } from "@/features/trade-document/flow-status";
 import { QuotationHeader } from "@/features/quotation/components/header/QuotationHeader";
 import { quotationDot } from "@/features/quotation/components/rail/RightRail";
 import { deleteDocumentConfirm, restoreDocumentConfirm } from "@/features/quotation/components/use-confirm";
@@ -30,7 +31,7 @@ import {
   formatDeletedAt,
   handOverNotice,
   peekNotice,
-  restoredStatusLabel,
+  restoreStatusLabel,
 } from "@/features/trade-document/document-api";
 
 /** transaction-soft-delete FE-SD-001…003 (UT-SD-F01…F06) on the verified backend contract (BE-SD-005). */
@@ -152,7 +153,8 @@ describe("UT-SD-F03 deleted document: banner and read-only header", () => {
       const text = src(form);
       expect(text).toMatch(/const readOnly = mode === "view" \|\| isDeleted;/);
       expect(text).toContain("<DocumentDeletedBanner info={deleted}");
-      expect(text).toMatch(/hideEditDelete=\{[^}]*isDeleted\}/);
+      expect(text).toContain("hideEditDelete={approvalFlow.hideEditDelete}");
+      expect(text).toMatch(/deleted: isDeleted,/);
     }
     for (const page of ["memo-out/components/MemoOutPage.tsx", "reserve/components/ReservePage.tsx", "memo-return/components/MemoReturnPage.tsx", "memo-out-return/components/MemoOutReturnPage.tsx", "purchase/components/PurchasePage.tsx", "quotation/components/QuotationPage.tsx", "memo-receive/components/MemoReceivePage.tsx", "purchase-order/components/PurchaseOrderPage.tsx"]) {
       expect(src(page)).toContain("deleted={deletedInfo(detail.data)}");
@@ -162,13 +164,15 @@ describe("UT-SD-F03 deleted document: banner and read-only header", () => {
 
 describe("UT-SD-F04 Restore and Delete availability", () => {
   it("Restore confirm names the number and the status it goes back to", () => {
-    expect(restoreDocumentConfirm("PO-3", restoredStatusLabel("PENDING_APPROVAL"))).toEqual({
+    // ADR-0050 G3 / G10: Draft while approval is ON, approved again while OFF.
+    expect(restoreDocumentConfirm("PO-3", restoreStatusLabel(true))).toEqual({
       title: "Restore PO-3?",
-      body: "It goes back to Pending Approval and can be edited again.",
+      body: "It goes back to Draft and can be edited again.",
       cancelLabel: "Cancel",
       confirmLabel: "Restore",
     });
-    expect(restoreDocumentConfirm("QT-1", restoredStatusLabel("DRAFT")).body).toBe("It goes back to Draft and can be edited again.");
+    expect(restoreDocumentConfirm("QT-1", restoreStatusLabel(false)).body).toBe("It goes back to Approved and can be edited again.");
+    expect(restoreStatusLabel(undefined)).toBe("its saved status");
   });
 
   it("Restore shows only with DELETE", () => {
@@ -178,11 +182,10 @@ describe("UT-SD-F04 Restore and Delete availability", () => {
     expect(busy).toMatch(/<button[^>]*disabled=""/);
   });
 
-  it("Quotation can be deleted only as DRAFT / PENDING_APPROVAL (OQ-1); Edit stays as before", () => {
-    expect(isDeletableStatus("DRAFT")).toBe(true);
-    expect(isDeletableStatus("PENDING_APPROVAL")).toBe(true);
-    for (const status of ["APPROVED", "REJECTED", "CANCELLED"] as const) expect(isDeletableStatus(status)).toBe(false);
-    expect(isEditableStatus("APPROVED")).toBe(true);
+  it("a deleted document shows no Edit / Delete / Send to approve whatever its Flow (ADR-0050 replaces OQ-1)", () => {
+    const flow = { status: "DRAFT", autoApproved: false, revisionCount: 0, canEdit: true, canDelete: true, canSubmit: true, usedBy: null, review: null };
+    const all = { add: true, edit: true, delete: true };
+    expect(flowActions({ flow, deleted: true, requireApproval: true, access: all, editing: false, dirty: false })).toEqual({ showEditDelete: false, canEdit: false, canDelete: false, showSend: false, canSend: false });
   });
 
   it("the header hides only Delete for a quotation past approval", () => {

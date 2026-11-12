@@ -1,162 +1,156 @@
 "use client";
 
-import { useQueries } from "@tanstack/react-query";
-import { ArrowRight, ChevronRight, Info, LoaderCircle, RotateCw } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { ArrowRight, ChevronRight, LoaderCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useState } from "react";
-import { cx, focusRing } from "@/components/ui/button";
+import { Button, cx, focusRing } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Switch } from "@/components/ui/switch";
 import { ToastProvider, useToast } from "@/components/ui/toast";
-import { COUNT_STALE_MS, documentClients, listQueryKey, useMine } from "@/features/approve-center/api";
+import { useMine } from "@/features/approve-center/api";
 import { approveMenuHref, type ApproveMenu, type ApproveMenuSlug } from "@/features/approve-center/menus";
-import { COUNT_INPUT, menuAccess, type CountState, type Mine } from "@/features/approve-center/model";
+import { menuAccess } from "@/features/approve-center/model";
 import { PartnerAccessGuard, PartnerPageFrame } from "@/features/partner/components/partner-page-parts";
+import { APPROVAL_SETTING_QUERY } from "@/features/trade-document/approval-flow";
 import { masterTrpc } from "@/lib/master-trpc";
-import { retryTransient } from "@/lib/trpc-error";
 import {
   blockedText,
-  checkFailedText,
-  countedSetupMenus,
-  DEFAULT_APPROVAL_SETTINGS,
   helperText,
   isNotAvailable,
-  PREVIEW_NOTICE,
+  rowLocked,
+  SETTINGS_LOAD_ERROR,
+  settingOf,
   SETUP_ROWS,
   statusChain,
   switchedToast,
   turnOffDecision,
   turnOffText,
   turnOnText,
+  updateFailure,
+  VIEW_ONLY_HINT,
   waitingCell,
-  type ApprovalSettings,
+  type ApprovalSettingItem,
   type ChipTone,
   type DialogText,
 } from "../model";
 
-/** `approval-setup` leaf (proposed, SA-AS-07). Until it exists only Super Admin / ALL pass the guard (Q-AS-09). */
+/** `approval-setup` catalog leaf (BE-AS-001, FE-AS-011): VIEW opens the page read-only, EDIT switches. */
 export const APPROVAL_SETUP_ENTITY = { key: "approval-setup", singular: "Approval", plural: "Approvals" };
 
-/** Setup › Approval (approval-setup UI rev 1, phase 1 FE-AS-002…005, owner 2026-11-09). */
+/** Setup › Approval (approval-setup UI rev 1; FE-AS-008 persisted settings, FE-AS-011 permissions). */
 export function ApprovalSetupPage() {
   return (
     <ToastProvider>
-      <PartnerAccessGuard entity={APPROVAL_SETUP_ENTITY}>{() => <ApprovalSetupWorkspace />}</PartnerAccessGuard>
+      <PartnerAccessGuard entity={APPROVAL_SETUP_ENTITY}>{(access) => <ApprovalSetupWorkspace canEdit={access.edit} />}</PartnerAccessGuard>
     </ToastProvider>
   );
 }
 
-type SetupCount = { state: CountState; refetch: () => Promise<unknown> };
+type OpenDialog = { kind: "on" | "off" | "blocked"; menu: ApproveMenu; text: DialogText };
 
 /**
- * FE-AS-004: `{ status: PENDING_APPROVAL, limit: 1 }` per type the user may list, on the same query keys as the
- * Approve Center counts, so a fresh sidebar count adds no request. No polling.
+ * FE-AS-008: `approvalSetting.list` on the same query (key and options) as the document pages' `useApprovalSetting`,
+ * so a switch here updates their buttons; `approvalSetting.update` per switch, not optimistic (the switch is busy until
+ * the server answers, then shows the saved value).
  */
-function useSetupCounts(mine: Mine): Map<ApproveMenuSlug, SetupCount> {
-  const utils = masterTrpc.useUtils();
-  const clients = documentClients(utils.client);
-  const menus = countedSetupMenus(mine);
-  const results = useQueries({
-    queries: menus.map((menu) => ({
-      queryKey: listQueryKey(menu.proc, COUNT_INPUT, "query"),
-      queryFn: () => clients[menu.proc].list.query(COUNT_INPUT),
-      staleTime: COUNT_STALE_MS,
-      retry: retryTransient,
-      refetchOnWindowFocus: true,
-    })),
-  });
-  return new Map(menus.map((menu, index) => [menu.slug, { state: { status: results[index].status, total: results[index].data?.total }, refetch: () => results[index].refetch() }]));
-}
-
-type OpenDialog = { kind: "on" | "off" | "blocked" | "failed"; menu: ApproveMenu; text: DialogText };
-
-function ApprovalSetupWorkspace() {
+function ApprovalSetupWorkspace({ canEdit }: { canEdit: boolean }) {
   const toast = useToast();
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const utils = masterTrpc.useUtils();
   const { mine } = useMine();
-  const counts = useSetupCounts(mine);
-  // Phase 1 (owner answer 4): page state only, lost on refresh; never written to storage.
-  const [settings, setSettings] = useState<ApprovalSettings>(DEFAULT_APPROVAL_SETTINGS);
+  const list = masterTrpc.approvalSetting.list.useQuery(undefined, APPROVAL_SETTING_QUERY);
   const [dialog, setDialog] = useState<OpenDialog | null>(null);
-  const [waitingOff, setWaitingOff] = useState<ApproveMenuSlug | null>(null);
-
-  const countOf = (menu: ApproveMenu) => counts.get(menu.slug)?.state;
-
-  function decideOff(menu: ApproveMenu, count: CountState | undefined) {
-    const decision = turnOffDecision(count);
-    if (decision === "wait") setWaitingOff(menu.slug);
-    else if (decision === "blocked") setDialog({ kind: "blocked", menu, text: blockedText(menu, count?.total ?? 0) });
-    else if (decision === "failed") setDialog({ kind: "failed", menu, text: checkFailedText(menu) });
-    else setDialog({ kind: "off", menu, text: turnOffText(menu) });
-  }
-
-  // A turn-off clicked while the count was loading continues once the count settles (state adjusted during render,
-  // guarded so it runs once per settle).
-  const waitingMenu = SETUP_ROWS.find((menu) => menu.slug === waitingOff);
-  if (waitingMenu && countOf(waitingMenu)?.status !== "pending") {
-    setWaitingOff(null);
-    decideOff(waitingMenu, countOf(waitingMenu));
-  }
+  const [saving, setSaving] = useState<ApproveMenuSlug | null>(null);
+  const items = list.data?.items;
 
   function onToggle(menu: ApproveMenu, next: boolean) {
+    if (saving || dialog) return;
     if (next) setDialog({ kind: "on", menu, text: turnOnText(menu) });
-    else decideOff(menu, countOf(menu));
+    else {
+      const waiting = settingOf(items, menu.type)?.waiting;
+      if (turnOffDecision(waiting) === "blocked") setDialog({ kind: "blocked", menu, text: blockedText(menu, waiting ?? 0) });
+      else setDialog({ kind: "off", menu, text: turnOffText(menu) });
+    }
   }
 
-  function apply(menu: ApproveMenu, on: boolean) {
-    setSettings((current) => ({ ...current, [menu.slug]: on }));
-    toast.show("info", switchedToast(menu, on));
+  async function save(menu: ApproveMenu, on: boolean) {
+    const setting = settingOf(items, menu.type);
+    if (!setting) return;
+    setSaving(menu.slug);
+    try {
+      const saved = await utils.client.approvalSetting.update.mutate({ type: menu.type, requireApproval: on, expectedVersion: setting.version });
+      utils.approvalSetting.list.setData(undefined, (current) =>
+        current ? { ...current, items: current.items.map((item) => (item.type === saved.type ? { ...item, ...saved } : item)) } : current,
+      );
+      toast.show("success", switchedToast(menu, saved.requireApproval));
+      await Promise.all([utils.approvalSetting.list.invalidate(), queryClient.invalidateQueries({ queryKey: [["approval"]] })]);
+    } catch (error) {
+      const failure = updateFailure(error, menu, setting.requireApproval);
+      if (failure.kind === "blocked") {
+        setDialog({ kind: "blocked", menu, text: blockedText(menu, failure.total) });
+        void utils.approvalSetting.list.invalidate();
+      } else {
+        toast.show("error", failure.message);
+        if (failure.refetchSettings) void utils.approvalSetting.list.invalidate();
+        if (failure.refetchAccess) void queryClient.invalidateQueries({ queryKey: [["permission", "mine"]] });
+      }
+    } finally {
+      setSaving(null);
+    }
   }
 
   function onConfirm() {
     if (!dialog) return;
     const { kind, menu } = dialog;
     setDialog(null);
-    if (kind === "on") apply(menu, true);
-    else if (kind === "off") apply(menu, false);
-    else if (kind === "blocked") router.push(approveMenuHref(menu.slug));
-    else {
-      setWaitingOff(menu.slug);
-      void counts.get(menu.slug)?.refetch();
-    }
+    if (kind === "on") void save(menu, true);
+    else if (kind === "off") void save(menu, false);
+    else router.push(approveMenuHref(menu.slug));
   }
 
   return (
     <PartnerPageFrame>
       <h1 className="text-gms-title font-medium text-gms-text-heading">Approval</h1>
       <section aria-label="Approval settings" className="mt-8 rounded-gms-lg bg-gms-surface p-6">
-        <p role="note" className="mb-4 flex items-start gap-2 rounded-gms-md border border-gms-border bg-gms-surface-muted px-4 py-3 text-gms-body text-gms-text">
-          <Info aria-hidden size={16} className="mt-0.5 shrink-0 text-gms-info-dot" />
-          {PREVIEW_NOTICE}
-        </p>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[960px] border-collapse text-left">
-            <caption className="sr-only">Approval settings</caption>
-            <thead>
-              <tr className="h-14 border-b border-gms-border bg-gms-page text-gms-body font-semibold text-gms-text">
-                <th scope="col" className="w-[24%] min-w-[240px] pl-8 pr-4">Menu</th>
-                <th scope="col" className="min-w-[520px] px-4">When a document is saved</th>
-                <th scope="col" className="w-[200px] px-4">Waiting for approval</th>
-                <th scope="col" className="w-[180px] px-4">Require approval</th>
-              </tr>
-            </thead>
-            <tbody>
-              {SETUP_ROWS.map((menu) => (
-                <SettingRow
-                  key={menu.slug}
-                  menu={menu}
-                  on={isNotAvailable(menu) ? true : settings[menu.slug]}
-                  count={countOf(menu)}
-                  canOpenApprove={menuAccess(mine, menu).approve}
-                  checking={waitingOff === menu.slug}
-                  onToggle={(next) => onToggle(menu, next)}
-                  onRetry={() => void counts.get(menu.slug)?.refetch()}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {list.isError && !items ? (
+          <div role="alert" className="flex flex-col items-start gap-3 py-8 text-gms-body text-gms-text">
+            {SETTINGS_LOAD_ERROR}
+            <Button onClick={() => void list.refetch()}>Retry</Button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[960px] border-collapse text-left">
+              <caption className="sr-only">Approval settings</caption>
+              <thead>
+                <tr className="h-14 border-b border-gms-border bg-gms-page text-gms-body font-semibold text-gms-text">
+                  <th scope="col" className="w-[24%] min-w-[240px] pl-8 pr-4">Menu</th>
+                  <th scope="col" className="min-w-[520px] px-4">When a document is saved</th>
+                  <th scope="col" className="w-[200px] px-4">Waiting for approval</th>
+                  <th scope="col" className="w-[180px] px-4" title={canEdit ? undefined : VIEW_ONLY_HINT}>
+                    Require approval
+                    {!canEdit && <span className="ml-2 text-gms-label font-normal text-gms-text-secondary">({VIEW_ONLY_HINT})</span>}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {SETUP_ROWS.map((menu) => (
+                  <SettingRow
+                    key={menu.slug}
+                    menu={menu}
+                    setting={settingOf(items, menu.type)}
+                    canEdit={canEdit}
+                    canOpenApprove={menuAccess(mine, menu).approve}
+                    saving={saving === menu.slug}
+                    onToggle={(next) => onToggle(menu, next)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
       <ConfirmDialog
         open={dialog !== null}
@@ -182,17 +176,21 @@ function ApprovalSetupWorkspace() {
   );
 }
 
-export function SettingRow({ menu, on, count, canOpenApprove, checking, onToggle, onRetry }: {
+export function SettingRow({ menu, setting, canEdit, canOpenApprove, saving, onToggle }: {
   menu: ApproveMenu;
-  on: boolean;
-  count: CountState | undefined;
+  /** undefined while the list loads (or for a type the server did not return). */
+  setting: ApprovalSettingItem | undefined;
+  canEdit: boolean;
   canOpenApprove: boolean;
-  checking: boolean;
+  /** The row's update is running (not optimistic). */
+  saving: boolean;
   onToggle: (next: boolean) => void;
-  onRetry: () => void;
 }) {
   const Icon = menu.icon;
-  const notAvailable = isNotAvailable(menu);
+  const locked = rowLocked(menu, setting);
+  const notAvailable = locked === "not-available";
+  // Not-available types read On (Q-AS-04); a loading row shows its last known value only once loaded.
+  const on = notAvailable ? true : (setting?.requireApproval ?? false);
   return (
     <tr className="h-[82px] border-b border-gms-border align-middle">
       <th scope="row" className="pl-8 pr-4 text-left font-normal">
@@ -202,16 +200,34 @@ export function SettingRow({ menu, on, count, canOpenApprove, checking, onToggle
         </span>
       </th>
       <td className="px-4 py-3">
-        <StatusChainView on={on} />
-        <p className="mt-1.5 text-gms-label text-gms-text-muted">{helperText(menu, on)}</p>
+        {locked === "loading" ? (
+          <span aria-label="Loading" className="block h-4 w-64 animate-pulse rounded-gms-sm bg-gms-surface-sunken" />
+        ) : (
+          <>
+            <StatusChainView on={on} />
+            <p className="mt-1.5 text-gms-label text-gms-text-muted">{helperText(menu, on)}</p>
+          </>
+        )}
       </td>
       <td className="px-4">
-        <WaitingCellView menu={menu} count={on && !notAvailable ? count : undefined} canOpenApprove={canOpenApprove} onRetry={onRetry} />
+        {locked === "loading" ? (
+          <span aria-label="Loading" className="block h-4 w-24 animate-pulse rounded-gms-sm bg-gms-surface-sunken" />
+        ) : (
+          <WaitingCellView menu={menu} waiting={on && !notAvailable ? setting?.waiting : null} canOpenApprove={canOpenApprove} />
+        )}
       </td>
       <td className="px-4">
-        <span className="flex items-center gap-2" aria-busy={checking || undefined}>
-          <Switch id={`approval-${menu.slug}`} label={on ? "On" : "Off"} checked={on} disabled={notAvailable || checking} hint={notAvailable ? "Not available yet" : undefined} onChange={onToggle} />
-          {checking && <LoaderCircle aria-label="Checking waiting documents" size={14} className="animate-spin text-gms-text-muted" />}
+        <span className="flex items-center gap-2" aria-busy={saving || undefined}>
+          <Switch
+            id={`approval-${menu.slug}`}
+            label={on ? "On" : "Off"}
+            checked={on}
+            readOnly={!canEdit && !notAvailable}
+            disabled={notAvailable || locked === "loading" || saving}
+            hint={notAvailable ? "Not available yet" : undefined}
+            onChange={onToggle}
+          />
+          {saving && <LoaderCircle aria-label="Saving" size={14} className="animate-spin text-gms-text-muted" />}
         </span>
       </td>
     </tr>
@@ -245,23 +261,12 @@ function StatusChainView({ on }: { on: boolean }) {
   );
 }
 
-function WaitingCellView({ menu, count, canOpenApprove, onRetry }: { menu: ApproveMenu; count: CountState | undefined; canOpenApprove: boolean; onRetry: () => void }) {
-  const cell = waitingCell(count);
+function WaitingCellView({ menu, waiting, canOpenApprove }: { menu: ApproveMenu; waiting: number | null | undefined; canOpenApprove: boolean }) {
+  const cell = waitingCell(waiting);
   if (cell.kind === "none-applicable") return <span aria-label="Not applicable" className="text-gms-body text-gms-text-muted">—</span>;
-  if (cell.kind === "loading") return <span aria-label="Loading" className="block h-4 w-24 animate-pulse rounded-gms-sm bg-gms-surface-sunken" />;
   if (cell.kind === "zero") return <span className="text-gms-body text-gms-text-muted">No documents</span>;
-  if (cell.kind === "error") {
-    return (
-      <span className="flex items-center gap-2 text-gms-body text-gms-text-muted">
-        Couldn&apos;t load
-        <button type="button" aria-label={`Retry ${menu.label} count`} title="Retry" onClick={onRetry} className={cx("rounded-gms-sm p-1 hover:bg-gms-surface-sunken", focusRing)}>
-          <RotateCw aria-hidden size={14} />
-        </button>
-      </span>
-    );
-  }
-  const label = `${cell.total} ${menu.label} ${cell.total === 1 ? "document" : "documents"} waiting for approval`;
-  if (!canOpenApprove) return <span aria-label={label} className="text-gms-body font-semibold text-gms-warning-text">{cell.text}</span>;
+  const label = `${cell.text.replace(/ documents?$/, "")} ${menu.label} ${cell.total === 1 ? "document" : "documents"} waiting for approval or sent back`;
+  if (!canOpenApprove || isNotAvailable(menu)) return <span aria-label={label} className="text-gms-body font-semibold text-gms-warning-text">{cell.text}</span>;
   return (
     <Link href={approveMenuHref(menu.slug)} aria-label={label} className={cx("inline-flex items-center gap-1 rounded-gms-sm text-gms-body font-semibold text-gms-warning-text hover:underline", focusRing)}>
       {cell.text}

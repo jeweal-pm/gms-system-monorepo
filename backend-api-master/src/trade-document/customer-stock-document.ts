@@ -1,6 +1,8 @@
-import { HttpStatus, Logger } from "@nestjs/common";
+import { HttpStatus } from "@nestjs/common";
 import { partnerException, type FieldError } from "../common/errors";
-import { WRITE_TX, type Tx } from "../common/persistence";
+import type { Tx } from "../common/persistence";
+import type { FlowPrincipal } from "../approval-setting/approval-flow";
+import type { ApprovalDocType } from "../approval-setting/approval-types";
 import { currencyOptions } from "../currency/currency-directory";
 import { prisma } from "../database/prisma-client";
 import type { NumberedDocument } from "../document-setup/document-numbering";
@@ -9,26 +11,23 @@ import { Prisma } from "../generated/prisma/client";
 import { CHARGE_TYPES } from "../quotation/quotation.schemas";
 import { customerLineOptions, formatAddress, stoneLineOptions } from "../quotation/quotation.service";
 import { documentErrors, type DocumentErrors } from "./document-errors";
-import { explainMiss, MISS_SELECT, TradeDocumentEngine, type LineHook, type PartyAdapter, type TradeDocumentInput, type MissRow } from "./document-engine";
+import { TradeDocumentEngine, type DocumentActor, type DocumentEffects, type LineHook, type PartyAdapter, type TradeDocumentInput } from "./document-engine";
 import type { MemoOutInput, MemoReceiveListInput, MemoReceiveStatus } from "./memo-schemas";
-import { takeFromMemoStock } from "./memo-stock.service";
+import { releaseToMemoStock, takeFromMemoStock } from "./memo-stock.service";
 import { completeFromMemoStock } from "./stock-lines";
 import { withLinePhotos, type LinePhotoDocument } from "./line-photos";
-import { emitNotificationSignals } from "../notification/notification-hub";
 
 /**
  * A customer document whose lines may come From Stock (memo-out SA rev 2 SA-MO-11…15; reserve SA rev 1 SA-RS-04…08):
  * - customer + SHIPPING / INVOICE address;
  * - Document Setup number;
- * - PENDING_APPROVAL → APPROVED;
+ * - the engine's approval flow (DRAFT → PENDING_APPROVAL → APPROVED, or auto-approved while approval is OFF);
  * - lines that may name a Memo Stock item, which approval moves from pending into Reserve.
  * Memo Out and Reserve share it, and each has its own tables, numbering key, error codes and grants. Rows keyed in by
  * hand hold nothing.
  */
 export type CustomerStockInput = MemoOutInput;
 export type CustomerStockStatus = MemoReceiveStatus;
-const PENDING: CustomerStockStatus = "PENDING_APPROVAL";
-const APPROVED: CustomerStockStatus = "APPROVED";
 
 /** Customer + its SHIPPING and INVOICE address, like a quotation (memo-out SA-MO-05; memo out return SA-MOR-11). */
 export type CustomerOut = {
@@ -137,23 +136,21 @@ export type CustomerStockConfig = {
   photos: LinePhotoDocument;
 };
 
-type ApprovalDelegate = {
-  updateMany(args: unknown): Promise<{ count: number }>;
-  findUnique(args: unknown): Promise<unknown>;
-  findUniqueOrThrow(args: unknown): Promise<{ docNo: string; lines: { memoStockId: string | null; pcs: number; weightCt: Prisma.Decimal }[] }>;
-};
+/** The approval documents a customer stock document can be (registry key = permission menu). */
+type CustomerStockType = Extract<ApprovalDocType, "reserve" | "memo-out">;
+
+type StockLineRow = { memoStockId: string | null; pcs: number; weightCt: Prisma.Decimal };
+type LineDelegate = { findMany(args: unknown): Promise<StockLineRow[]> };
 
 export class CustomerStockDocument {
   readonly errors: DocumentErrors;
   /** Approval found a Memo Stock item with less pending than a stock line takes (another document took it first). */
   readonly pendingShort: (fields: FieldError[]) => Error;
-  private readonly logger: Logger;
   private readonly engine: TradeDocumentEngine<CustomerStockInput, CustomerOut, CustomerStockStatus>;
 
-  constructor(private readonly config: CustomerStockConfig) {
+  constructor(private readonly config: CustomerStockConfig & { approvalType: CustomerStockType; usedBy?: DocumentEffects["usedBy"] }) {
     this.errors = documentErrors(config.code, config.entity, config.table);
     this.pendingShort = (fields) => partnerException(`${config.code}_PENDING_SHORT`, HttpStatus.CONFLICT, fields);
-    this.logger = new Logger(config.event);
     this.engine = new TradeDocumentEngine<CustomerStockInput, CustomerOut, CustomerStockStatus>({
       document: config.document,
       transactionKey: config.transactionKey,
@@ -164,8 +161,8 @@ export class CustomerStockDocument {
       parentKey: config.parentKey,
       errors: this.errors,
       party: customerParty<CustomerStockInput>(this.errors),
-      createStatus: PENDING,
-      editableStatuses: [PENDING],
+      approvalType: config.approvalType,
+      effects: this.effects(),
       prepare: completeStockLines(this.errors),
       lineHook: withLinePhotos(config.photos, stockLines),
       detailExtra: (row) => ({
@@ -175,65 +172,72 @@ export class CustomerStockDocument {
     });
   }
 
+  /**
+   * Effects (SA-MO-14 / SA-RS-07, Q-MOV-04; approval-setup "Effects and their reversal"): each stock line's pcs / weight
+   * move from its Memo Stock item's pending into Reserve under the shared id-ordered lock (`takeFromMemoStock`, the same
+   * lock for Memo Out, Reserve and Memo Return); a short item → `<CODE>_PENDING_SHORT`. The reversal gives Reserve back
+   * to pending through the same lock; a short there (something took it out of Reserve) → `<CODE>_IN_USE`. Manual lines
+   * change no stock.
+   */
+  private effects(): DocumentEffects {
+    const takesOf = async (tx: Tx, id: string) => {
+      const lines = await (tx as unknown as Record<string, LineDelegate>)[this.config.lineModel].findMany({
+        where: { [this.config.parentKey]: id }, orderBy: { position: "asc" }, select: { memoStockId: true, pcs: true, weightCt: true },
+      });
+      return lines.flatMap((line, index) => (line.memoStockId ? [{ memoStockId: line.memoStockId, pcs: line.pcs, weightCt: line.weightCt, index }] : []));
+    };
+    return {
+      apply: async (tx, doc, _actorId, now) => {
+        const takes = await takesOf(tx, doc.id);
+        await takeFromMemoStock(tx, takes, "reserved", this.pendingShort, now);
+        return { result: { stockLineCount: takes.length }, log: { stockLineCount: takes.length } };
+      },
+      reverse: async (tx, doc, now) => {
+        await releaseToMemoStock(tx, await takesOf(tx, doc.id), () => this.errors.inUse(null), now, "reserved");
+      },
+      usedBy: (client, id) => (this.config.usedBy ? this.config.usedBy(client, id) : Promise.resolve(null)),
+    };
+  }
+
   list(input: MemoReceiveListInput) {
     return this.engine.list(input);
   }
-  get(id: string) {
-    return this.engine.get(id) as Promise<unknown> as Promise<CustomerStockDetail>;
+  get(id: string, viewer: FlowPrincipal | null = null) {
+    return this.engine.get(id, viewer) as Promise<unknown> as Promise<CustomerStockDetail>;
   }
   nextNumber(docDate: string) {
     return this.engine.nextNumber(docDate);
   }
-  create(actorId: string, input: CustomerStockInput) {
-    return this.engine.create(actorId, input);
+  create(actorId: string, input: CustomerStockInput, viewer: FlowPrincipal | null = null) {
+    return this.engine.create(actorId, input, viewer);
   }
-  update(actorId: string, id: string, expectedVersion: number, input: CustomerStockInput) {
-    return this.engine.update(actorId, id, expectedVersion, input);
+  update(actorId: string, id: string, expectedVersion: number, input: CustomerStockInput, viewer: FlowPrincipal | null = null) {
+    return this.engine.update(actorId, id, expectedVersion, input, viewer);
   }
   delete(actorId: string, id: string, expectedVersion: number) {
     return this.engine.delete(actorId, id, expectedVersion);
   }
-  /** transaction-soft-delete D6: a deleted document back to its unchanged status. */
+  /** transaction-soft-delete D6 / approval-setup G3: back as DRAFT (ON) or re-approved automatically (OFF). */
   restore(actorId: string, id: string, expectedVersion: number) {
     return this.engine.restore(actorId, id, expectedVersion);
   }
+  submit(actor: DocumentActor, id: string, expectedVersion: number) {
+    return this.engine.submit(actor, id, expectedVersion);
+  }
+  /** PENDING_APPROVAL → APPROVED with the Reserve move above; `<CODE>_PENDING_SHORT` changes nothing. */
+  approve(actorId: string, id: string, expectedVersion: number) {
+    return this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED"; stockLineCount: number }>;
+  }
 
-  /**
-   * PENDING_APPROVAL → APPROVED, and each stock line's pcs / weight move from its Memo Stock item's pending into Reserve
-   * (SA-MO-14 / SA-RS-07, Q-MOV-04), in one transaction. The guarded UPDATE serializes approvals of this document; the
-   * shared `takeFromMemoStock` locks the items (the same lock for Memo Out, Reserve and Memo Return) and refuses a short
-   * one with `<CODE>_PENDING_SHORT` (409), changing nothing. Manual lines change no stock.
-   */
-  async approve(actorId: string, id: string, expectedVersion: number) {
-    const { errors } = this;
-    try {
-      const approved = await prisma.$transaction(async (tx) => {
-        const doc = (tx as unknown as Record<string, ApprovalDelegate>)[this.config.model];
-        const now = new Date();
-        const updated = await doc.updateMany({
-          where: { id, version: expectedVersion, status: PENDING, deletedAt: null },
-          data: { status: APPROVED, approvedAt: now, approvedBy: actorId, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
-        });
-        if (updated.count === 0) {
-          // D8: NOT_FOUND → DELETED → STATUS_INVALID → CHANGED.
-          explainMiss(errors, (await doc.findUnique({ where: { id }, select: MISS_SELECT })) as MissRow, [PENDING]);
-        }
-        const document = await doc.findUniqueOrThrow({
-          where: { id },
-          select: { docNo: true, lines: { orderBy: { position: "asc" }, select: { memoStockId: true, pcs: true, weightCt: true } } },
-        });
-        const takes = document.lines.flatMap((line, index) => (line.memoStockId ? [{ memoStockId: line.memoStockId, pcs: line.pcs, weightCt: line.weightCt, index }] : []));
-        await takeFromMemoStock(tx, takes, "reserved", this.pendingShort, now);
-        // ADR-0049: the creator hears about the approval once this transaction commits.
-        const signals = await this.engine.notifyApproved(tx, id, actorId);
-        return { signals, docNo: document.docNo, stockLineCount: takes.length };
-      }, WRITE_TX);
-      emitNotificationSignals(approved.signals);
-      this.logger.log({ event: `${this.config.event}.approved`, actorId, id, docNo: approved.docNo, stockLineCount: approved.stockLineCount });
-      return { id, version: expectedVersion + 1, status: APPROVED as "APPROVED", stockLineCount: approved.stockLineCount };
-    } catch (error) {
-      throw errors.map(error, "approve");
-    }
+  /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction. */
+  approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
+    return this.engine.approveWithin(tx, actorId, id, expectedVersion);
+  }
+  reject(actor: DocumentActor, id: string, expectedVersion: number, reason: string) {
+    return this.engine.reject(actor, id, expectedVersion, reason);
+  }
+  requestRevision(actor: DocumentActor, id: string, expectedVersion: number, note: string) {
+    return this.engine.requestRevision(actor, id, expectedVersion, note);
   }
 
   /** Same shape as `quotation.options`, so the page reuses the quotation header fields and item editor. */

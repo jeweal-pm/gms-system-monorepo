@@ -54,6 +54,16 @@ Follow [automated-testing](../../../../workflow/automated-testing.md). Backend t
 | M-AP-02 | Header/line row counts before the migration; migration duration on the copy | > 100 000 rows in a header → split index creation to `CONCURRENTLY` |
 | M-AP-03 | `approval.summary` p95; api-master RSS under the approve-center flow | p95 > 50 ms → investigate; RSS within the existing container limit |
 
+### Results (backend stage 3, 2026-11-10)
+
+Environment: disposable `postgres:18.6-alpine` container limited to 512 MB / 1 vCPU, local Windows host, api-master code run in-process (Prisma pool ≤ 5); 30 runs per case after one warm-up (15 per sort case). **Data size**: Reserve, Memo Out Return, Purchase Order and Quotation each 5 001 headers (**500 pending** + 4 500 approved) with 5 lines each (≈ 25 000 lines per type, 7 stone names), 200 Memo Stock items; the other four types small. Dev database (M-AP-02) has 1–7 headers per type and 0 pending documents.
+
+| ID | Result | Threshold | Verdict |
+|---|---|---|---|
+| M-AP-01 | `pending` p95, limit 50: default / docNo sorts 12–26 ms; party / qty / value sorts 23–40 ms; search (party, stone, Stock ID, no match) 29–53 ms (Memo Out Return via the Memo Out line 50–53 ms); page 2 by cursor 12–15 ms. Max single run 84 ms (Memo Out Return stone search) | ≤ 150 ms; ≤ 2 000 pending per type | pass; no per-sort index needed (D18) |
+| M-AP-02 | Dev counts: quotation 3, reserve 1, memo_receive 5, memo_return 4, memo_out 3, memo_out_return 3, purchase_order 6, purchase 7 headers; memo_stock 6. The three approval migrations were applied to dev in stage 1 | > 100 000 rows → `CONCURRENTLY` | pass (tiny tables) |
+| M-AP-03 | `summary` (Super Admin, 8 branches) p50 5.8 ms, p95 6.6 ms; IT-AP-B11 EXPLAIN shows `<t>_pending_idx` | p95 ≤ 50 ms | pass. RSS: see the stage 3 report (dev container, `docker stats`) |
+
 ## Acceptance
 
 All UT/GP/IT above pass, plus the existing suites (`test/trade-document/**`, `test/purchase/**`, `test/purchase-order/**`, soft-delete tests); typecheck and lint pass; both security reviewers review the final diff (master + auth view) once on the same revision.

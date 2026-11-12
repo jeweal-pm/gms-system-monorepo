@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { HttpException } from "@nestjs/common";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { sendAndApprove, setApproval, submitted } from "../partner-shared/approval";
 
 /**
  * IT-MRT-01…05 (memo-return SA rev 2, owner 2026-10-29) against real PostgreSQL: lines completed from approved Memo
@@ -79,7 +80,7 @@ async function vendorFixture(name: string): Promise<Vendor> {
 /** An approved memo receive: its lines are now Memo Stock items (location Memo, pending = received). */
 async function approvedStock(vendor: Vendor, lines: ReturnType<typeof receiveLine>[]) {
   const saved = await receive.create(ACTOR, { ...header(vendor), lines });
-  await receive.approve(ACTOR, saved.id, saved.version);
+  await sendAndApprove(receive, ACTOR, saved.id, saved.version);
   const items = await prisma.memoStock.findMany({ where: { memoReceiveId: saved.id }, orderBy: { stockId: "asc" } });
   return items;
 }
@@ -114,6 +115,8 @@ describe.runIf(canRun)("IT-MRT memo return on PostgreSQL", () => {
     await prisma.memoStockIdCounter.deleteMany({ where: { year: YEAR } });
     vendorA = await vendorFixture("MRT IT Vendor A");
     vendorB = await vendorFixture("MRT IT Vendor B");
+    await setApproval(prisma, "memo-receive", true);
+    await setApproval(prisma, "memo-return", true);
   });
 
   afterAll(async () => {
@@ -129,13 +132,13 @@ describe.runIf(canRun)("IT-MRT memo return on PostgreSQL", () => {
     vi.unstubAllEnvs();
   });
 
-  it("IT-MRT-01 save copies the item, net price and Outstanding from Memo Stock; PENDING_APPROVAL; pending unchanged", async () => {
+  it("IT-MRT-01 save copies the item, net price and Outstanding from Memo Stock; DRAFT; pending unchanged", async () => {
     const [item] = await approvedStock(vendorA, [receiveLine({ discount: { type: "PERCENT", value: "10" } })]);
     expect(item).toMatchObject({ location: "Memo", pendingPcs: 3 });
     const saved = await memoReturn.create(ACTOR, returnInput(vendorA, [returnLine(item.id, 2, "1")]));
     expect(saved).toMatchObject({ docNo: expect.stringMatching(/^\d+$/), version: 1 });
     const detail = await memoReturn.get(saved.id) as unknown as Record<string, unknown> & { lines: Record<string, unknown>[] };
-    expect(detail).toMatchObject({ status: "PENDING_APPROVAL", approvedAt: null, vendorId: vendorA.id });
+    expect(detail).toMatchObject({ status: "DRAFT", approvedAt: null, vendorId: vendorA.id });
     expect(detail.lines[0]).toMatchObject({
       memoStockId: item.id, stockId: item.stockId, stone: "Ruby", lot: "LOT-A", location: "Memo", cerNo: "C-1", itemNote: "back",
       pcs: 2, weightCt: "1.000", priceUnit: "PER_CT", unitPrice: "900.00", amount: "900.00", outstandingPcs: 3, outstandingWeightCt: "1.500",
@@ -166,9 +169,9 @@ describe.runIf(canRun)("IT-MRT memo return on PostgreSQL", () => {
   it("IT-MRT-03 approve reduces pending; then the return is read-only and a fully returned item leaves the dialog", async () => {
     const [part, whole] = await approvedStock(vendorA, [receiveLine(), receiveLine({ lot: "LOT-B", priceUnit: "PER_PCS", pcs: 2, weightCt: "0.8", unitPrice: "500" })]);
     const saved = await memoReturn.create(ACTOR, returnInput(vendorA, [returnLine(part.id, 1, "0.5"), returnLine(whole.id, 2, "0.8")]));
-    const updated = await memoReturn.update(ACTOR, saved.id, 1, returnInput(vendorA, [returnLine(part.id, 2, "1"), returnLine(whole.id, 2, "0.8")]));
+    const updated = await submitted(memoReturn, ACTOR, await memoReturn.update(ACTOR, saved.id, 1, returnInput(vendorA, [returnLine(part.id, 2, "1"), returnLine(whole.id, 2, "0.8")])));
     expect(await failure(memoReturn.approve(ACTOR, saved.id, 1))).toMatchObject({ status: 409, code: "MEMO_RETURN_CHANGED" });
-    await expect(memoReturn.approve(ACTOR, saved.id, updated.version)).resolves.toEqual({ id: saved.id, version: 3, status: "APPROVED" });
+    await expect(memoReturn.approve(ACTOR, saved.id, updated.version)).resolves.toEqual({ id: saved.id, version: 4, status: "APPROVED" });
     expect(await pendingOf(part.id)).toEqual([1, "0.500"]);
     expect(await pendingOf(whole.id)).toEqual([0, "0.000"]);
     // The returned quantity moves into the Return bucket (SA-MOV-02: pending = received − returned − sold − reserved).
@@ -179,9 +182,9 @@ describe.runIf(canRun)("IT-MRT memo return on PostgreSQL", () => {
     expect(await returnedOf(part.id)).toEqual([2, "1.000"]);
     expect(await returnedOf(whole.id)).toEqual([2, "0.800"]);
     expect(await memoReturn.get(saved.id)).toMatchObject({ status: "APPROVED", approvedBy: ACTOR, approvedAt: expect.any(String) });
-    expect(await failure(memoReturn.approve(ACTOR, saved.id, 3))).toMatchObject({ status: 409, code: "MEMO_RETURN_STATUS_INVALID" });
-    expect(await failure(memoReturn.update(ACTOR, saved.id, 3, returnInput(vendorA, [returnLine(part.id, 1, "0.5")])))).toMatchObject({ status: 409, code: "MEMO_RETURN_STATUS_INVALID" });
-    expect(await failure(memoReturn.delete(ACTOR, saved.id, 3))).toMatchObject({ status: 409, code: "MEMO_RETURN_STATUS_INVALID" });
+    expect(await failure(memoReturn.approve(ACTOR, saved.id, 4))).toMatchObject({ status: 409, code: "MEMO_RETURN_STATUS_INVALID" });
+    expect(await failure(memoReturn.update(ACTOR, saved.id, 4, returnInput(vendorA, [returnLine(part.id, 1, "0.5")])))).toMatchObject({ status: 409, code: "MEMO_RETURN_STATUS_INVALID" });
+    expect(await failure(memoReturn.delete(ACTOR, saved.id, 4))).toMatchObject({ status: 409, code: "MEMO_RETURN_STATUS_INVALID" });
     const listed = (await stock.list({ vendorId: vendorA.id, limit: 50 })).items;
     expect(listed.find((row) => row.id === part.id)).toMatchObject({ pendingPcs: 1, pendingWeightCt: "0.500" });
     expect(listed.map((row) => row.id)).not.toContain(whole.id);
@@ -190,23 +193,25 @@ describe.runIf(canRun)("IT-MRT memo return on PostgreSQL", () => {
 
   it("IT-MRT-04 over-pull guard: of two returns that together take more than pending, only the first approval passes", async () => {
     const [item] = await approvedStock(vendorA, [receiveLine()]);
-    const first = await memoReturn.create(ACTOR, returnInput(vendorA, [returnLine(item.id, 2, "1")]));
-    const second = await memoReturn.create(ACTOR, returnInput(vendorA, [returnLine(item.id, 2, "1")]));
-    await memoReturn.approve(ACTOR, first.id, 1);
-    expect(await failure(memoReturn.approve(ACTOR, second.id, 1)))
+    const first = await submitted(memoReturn, ACTOR, await memoReturn.create(ACTOR, returnInput(vendorA, [returnLine(item.id, 2, "1")])));
+    const second = await submitted(memoReturn, ACTOR, await memoReturn.create(ACTOR, returnInput(vendorA, [returnLine(item.id, 2, "1")])));
+    await memoReturn.approve(ACTOR, first.id, 2);
+    expect(await failure(memoReturn.approve(ACTOR, second.id, 2)))
       .toMatchObject({ status: 409, code: "MEMO_RETURN_PENDING_SHORT", fieldErrors: [{ path: "lines.0.pcs", code: "exceeds_pending" }, { path: "lines.0.weightCt", code: "exceeds_pending" }] });
     expect(await pendingOf(item.id)).toEqual([1, "0.500"]);
-    expect(await memoReturn.get(second.id)).toMatchObject({ status: "PENDING_APPROVAL", version: 1 });
-    // Edited down to what is left, it passes.
-    await memoReturn.update(ACTOR, second.id, 1, returnInput(vendorA, [returnLine(item.id, 1, "0.5")]));
-    await memoReturn.approve(ACTOR, second.id, 2);
+    expect(await memoReturn.get(second.id)).toMatchObject({ status: "PENDING_APPROVAL", version: 2 });
+    // ADR-0050: sent back once (reason required), edited down to what is left, sent again, it passes.
+    await memoReturn.requestRevision({ id: "approver", name: "Approver" }, second.id, 2, "Only 1 left");
+    await memoReturn.update(ACTOR, second.id, 3, returnInput(vendorA, [returnLine(item.id, 1, "0.5")]));
+    await sendAndApprove(memoReturn, ACTOR, second.id, 4);
     expect(await pendingOf(item.id)).toEqual([0, "0.000"]);
+    expect(await memoReturn.get(second.id)).toMatchObject({ status: "APPROVED", revisionCount: 1, review: { action: "REVISE", note: "Only 1 left", byName: "Approver" } });
   });
 
   it("IT-MRT-05 parallel approvals of the same item never take more than pending", async () => {
     const [item] = await approvedStock(vendorB, [receiveLine({ pcs: 2, weightCt: "1" })]);
-    const returns = await Promise.all([1, 2, 3].map(() => memoReturn.create(ACTOR, returnInput(vendorB, [returnLine(item.id, 1, "0.6")]))));
-    const results = await Promise.allSettled(returns.map((saved) => memoReturn.approve(ACTOR, saved.id, 1)));
+    const returns = await Promise.all([1, 2, 3].map(async () => submitted(memoReturn, ACTOR, await memoReturn.create(ACTOR, returnInput(vendorB, [returnLine(item.id, 1, "0.6")])))));
+    const results = await Promise.allSettled(returns.map((saved) => memoReturn.approve(ACTOR, saved.id, 2)));
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(await pendingOf(item.id)).toEqual([1, "0.400"]);
   });
