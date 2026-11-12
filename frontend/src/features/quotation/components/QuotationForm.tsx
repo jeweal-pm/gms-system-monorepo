@@ -117,7 +117,7 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, flow = 
     await mutations.invalidate();
   };
 
-  // FE-AS-010 (ADR-0048): Save / Send to approve / Edit / Delete follow the Quotation approval setting and `Flow`.
+  // FE-AS-010 (ADR-0050): Save / Send to approve / Edit / Delete follow the Quotation approval setting and `Flow`.
   const approvalFlow = useDocumentFlow({
     type: "quotation",
     saved,

@@ -20,7 +20,7 @@ import {
 } from "./approval.schemas";
 
 /**
- * Approve Center API (approve-center SA rev 1 / ADR-0046 D14–D18 as amended by approval-setup SA rev 1 / ADR-0048):
+ * Approve Center API (approve-center SA rev 1 / ADR-0046 D14–D18 as amended by approval-setup SA rev 1 / ADR-0050):
  * read-only. `summary` = one UNION ALL statement with one capped count per type the caller `canApprove` whose setting
  * is ON; `pending` = one bounded statement per page over one type's pending set (partial index `<t>_pending_idx`),
  * 5 sorts × direction with a keyset cursor bound to sort / direction / search. Identifiers come only from the registry;

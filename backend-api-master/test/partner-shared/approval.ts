@@ -1,7 +1,7 @@
 import type { ApprovalDocType } from "../../src/approval-setting/approval-types";
 
 /**
- * Approval-flow helpers for the document DB integrations (approval-setup ADR-0048): with the type's approval ON a Save
+ * Approval-flow helpers for the document DB integrations (approval-setup ADR-0050): with the type's approval ON a Save
  * is a DRAFT, so a test that needs an approved document sends it to approve first (`submit`, version + 1) and then
  * approves it (version + 1).
  */

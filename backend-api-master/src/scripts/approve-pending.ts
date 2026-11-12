@@ -13,7 +13,7 @@ import { MemoReturnService } from "../trade-document/memo-return.service";
 import { ReserveService } from "../trade-document/reserve.service";
 
 /**
- * Go-live command (approval-setup ADR-0048 D7, database-diagram "Go-live command", BE-AS-009). One-time, inside the
+ * Go-live command (approval-setup ADR-0050 D7, database-diagram "Go-live command", BE-AS-009). One-time, inside the
  * master container only (never reachable over HTTP):
  *
  *   node dist/scripts/approve-pending.js            # dry run (default): approves each document alone in its own

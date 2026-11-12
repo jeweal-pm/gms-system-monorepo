@@ -13,6 +13,7 @@ import type { MemoStockItem } from "@/features/trade-document/memo-stock-api";
 import { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError, retryTransient } from "@/lib/trpc-error";
 import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
+import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 /**
  * Memo Return data access (memo-return SA rev 2, owner 2026-10-29): `memoReturn.*` with a vendor and one address,
@@ -41,7 +42,7 @@ const memoReturnLineSchema = lineSchema.extend({
 });
 export type MemoReturnLine = z.infer<typeof memoReturnLineSchema>;
 /** Saving sends it to approval; Approve makes it read-only and takes the items off Memo Stock (Q-MR-15). */
-/** ADR-0048: Draft, Pending Approval, Approved, Revise, Rejected. */
+/** ADR-0050: Draft, Pending Approval, Approved, Revise, Rejected. */
 export const MEMO_RETURN_STATUSES = APPROVAL_DOC_STATUSES;
 
 export const memoReturnSchema = z
@@ -124,7 +125,7 @@ export function memoStockToLine(item: MemoStockItem): MemoReturnLine {
   };
 }
 
-/** Form values → contract input: each filled row names its Memo Stock item; no photos yet. */
+/** Form values → contract input: each filled row names its Memo Stock item; photos in order (ADR-0048). */
 export function toMemoReturnInput(values: MemoReturnFormValues) {
   const shared = toTradeDocumentInput(values);
   const filled = values.lines.filter(isFilledLine);
@@ -132,7 +133,6 @@ export function toMemoReturnInput(values: MemoReturnFormValues) {
     ...shared,
     lines: shared.lines.map((line, index) => ({
       ...line,
-      photoIds: [] as string[],
       memoStockId: filled[index]?.memoStockId ?? "",
       outstandingPcs: Number.parseInt(filled[index]?.outstandingPcs || "0", 10),
       outstandingWeightCt: filled[index]?.outstandingWeightCt || "0",
@@ -144,7 +144,7 @@ export function toMemoReturnInput(values: MemoReturnFormValues) {
 
 export function fromMemoReturn(detail: MemoReturnDetail): MemoReturnFormValues {
   // Memo Stock items have no stone code (memo-receive rev 2).
-  const shared = fromTradeDocument({ ...detail, lines: detail.lines.map((line) => ({ ...line, stoneCodeId: null })) }, (id) => id);
+  const shared = fromTradeDocument({ ...detail, lines: detail.lines.map((line) => ({ ...line, stoneCodeId: null })) }, DOCUMENT_PHOTOS.memoReturn.url);
   return {
     ...shared,
     lines: shared.lines.map((line, index) => ({

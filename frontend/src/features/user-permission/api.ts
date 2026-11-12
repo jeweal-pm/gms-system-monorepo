@@ -17,6 +17,13 @@ export type { CreateUserInput, UpdateUserInput };
 
 export const PERMISSION_ACTIONS = ["VIEW", "ADD", "EDIT", "DELETE", "CANCEL", "APPROVE", "PRICE", "PRINT", "EXCEL"] as const;
 export type PermissionAction = (typeof PERMISSION_ACTIONS)[number];
+/**
+ * Owner 2026-11-10: the APPROVE column is hidden from the User and Permission matrix. Its grants stay in the catalog,
+ * are still checked by the server, and are saved back unchanged (no column can toggle them; turning VIEW off still
+ * clears them, VD-02).
+ */
+export const HIDDEN_MATRIX_ACTIONS: readonly PermissionAction[] = ["APPROVE"];
+export const MATRIX_ACTIONS: readonly PermissionAction[] = PERMISSION_ACTIONS.filter((action) => !HIDDEN_MATRIX_ACTIONS.includes(action));
 
 export type CatalogNodeKind = "section" | "group" | "leaf";
 

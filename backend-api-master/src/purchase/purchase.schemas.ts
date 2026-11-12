@@ -29,7 +29,8 @@ const purchaseLineSchema = lineInputSchema.extend({
   memoGroup: z.enum(LINE_MEMO_GROUPS).nullish(),
   purchaseOrderLineId: uuid.nullish(),
   // Q-PU-11: no photos in revision 1.
-  photoIds: z.array(uuid).max(0),
+  // ADR-0048 (owner 2026-11-11): up to 5 photos per line, as Quotation / Purchase Order.
+  photoIds: lineInputSchema.shape.photoIds,
 }).strict();
 const createLineSchema = purchaseLineSchema.omit({ id: true }).strict();
 
@@ -96,7 +97,7 @@ export const purchaseVersionedIdSchema = z.object(versioned).strict();
 export const purchaseNextNumberSchema = z.object({ docDate: z.iso.date() }).strict();
 export const purchaseOptionsSchema = z.object({ vendorId: uuid.optional() }).strict();
 
-/** List status filter (ADR-0046 D2 + ADR-0048 DRAFT). */
+/** List status filter (ADR-0046 D2 + ADR-0050 DRAFT). */
 export const PURCHASE_STATUSES = DOC_STATUSES;
 export type PurchaseStatus = (typeof PURCHASE_STATUSES)[number];
 

@@ -33,7 +33,7 @@ export type PreviewDetail = {
   lines: readonly PreviewLine[];
   totals: { grandTotal: string };
   deletedAt?: string | null;
-  /** ADR-0048 `Flow.revisionCount`: 1 = already sent back once (Revise is refused). */
+  /** ADR-0050 `Flow.revisionCount`: 1 = already sent back once (Revise is refused). */
   revisionCount?: number;
 };
 

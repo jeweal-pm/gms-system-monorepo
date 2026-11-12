@@ -131,7 +131,7 @@ export type ApprovalRow = {
   submittedAt: string;
   /** Passed as `expectedVersion` to approve / reject / requestRevision (no `get` first). */
   version: number;
-  /** 1 = already sent back once: Revise is refused (ADR-0048). */
+  /** 1 = already sent back once: Revise is refused (ADR-0050). */
   revisionCount: number;
   lastReview: ApprovalReview | null;
 };
@@ -369,10 +369,10 @@ export const approvalOffText = (menu: ApproveMenu) => `Approval is off for ${men
 export const APPROVAL_OFF_TITLE = "Approval is off";
 export const approvalOffDetail = (menu: ApproveMenu) => `${approvalOffText(menu)} Its documents are approved when they are saved.`;
 
-// ---------- Reject… / Revise… (FE-AP-010, FE-AS-013; ADR-0048 Q-AS-32) ----------
+// ---------- Reject… / Revise… (FE-AP-010, FE-AS-013; ADR-0050 Q-AS-32) ----------
 
 export const REVIEW_REASON_MAX = 500;
-/** Revise is offered once per document (ADR-0048). */
+/** Revise is offered once per document (ADR-0050). */
 export const REVISE_LIMIT_REASON = "Already sent back once. Approve or reject it.";
 export const canRevise = (row: Pick<ApprovalRow, "revisionCount">) => row.revisionCount < 1;
 

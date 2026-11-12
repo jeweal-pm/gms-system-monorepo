@@ -164,7 +164,7 @@ describe("UT-SD-F03 deleted document: banner and read-only header", () => {
 
 describe("UT-SD-F04 Restore and Delete availability", () => {
   it("Restore confirm names the number and the status it goes back to", () => {
-    // ADR-0048 G3 / G10: Draft while approval is ON, approved again while OFF.
+    // ADR-0050 G3 / G10: Draft while approval is ON, approved again while OFF.
     expect(restoreDocumentConfirm("PO-3", restoreStatusLabel(true))).toEqual({
       title: "Restore PO-3?",
       body: "It goes back to Draft and can be edited again.",
@@ -182,7 +182,7 @@ describe("UT-SD-F04 Restore and Delete availability", () => {
     expect(busy).toMatch(/<button[^>]*disabled=""/);
   });
 
-  it("a deleted document shows no Edit / Delete / Send to approve whatever its Flow (ADR-0048 replaces OQ-1)", () => {
+  it("a deleted document shows no Edit / Delete / Send to approve whatever its Flow (ADR-0050 replaces OQ-1)", () => {
     const flow = { status: "DRAFT", autoApproved: false, revisionCount: 0, canEdit: true, canDelete: true, canSubmit: true, usedBy: null, review: null };
     const all = { add: true, edit: true, delete: true };
     expect(flowActions({ flow, deleted: true, requireApproval: true, access: all, editing: false, dirty: false })).toEqual({ showEditDelete: false, canEdit: false, canDelete: false, showSend: false, canSend: false });

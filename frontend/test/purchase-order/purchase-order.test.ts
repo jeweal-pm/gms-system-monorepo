@@ -131,7 +131,7 @@ describe("UT-PO-02 page setting: keyed-in rows, Stone Code, typed Location, no S
 });
 
 describe("UT-PO-03 Approve and form ↔ contract", () => {
-  it("ADR-0048: no Approve button on the PO page; badges cover Draft / Revise", () => {
+  it("ADR-0050: no Approve button on the PO page; badges cover Draft / Revise", () => {
     expect(STATUS_LABELS.APPROVED?.label).toBe("Approved");
     expect(STATUS_LABELS.DRAFT?.label).toBe("Draft");
     expect(STATUS_LABELS.REVISION_REQUESTED?.label).toBe("Revise");

@@ -11,6 +11,7 @@ import type { DocumentApi } from "@/features/trade-document/document-form";
 import { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError, retryTransient } from "@/lib/trpc-error";
 import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
+import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 /**
  * Memo Out Return data access (memo-out-return UI rev 4 + SA rev 2 / ADR-0033 rev 3, owner 2026-10-31): the customer
@@ -32,7 +33,7 @@ export const MEMO_OUTSTANDING_PAGE_SIZE = 50;
 const HEADER_FIELDS = ["docDate", "dueDate", "customerId", "shippingAddressId", "invoiceAddressId", "currency", "exchangeRate", "ref", "documentNote"] as const;
 
 /** Saving sends it to approval; Approve makes it read-only and brings the stones back (Q-MOR-14). */
-/** ADR-0048: Draft, Pending Approval, Approved, Revise, Rejected. */
+/** ADR-0050: Draft, Pending Approval, Approved, Revise, Rejected. */
 export const MEMO_OUT_RETURN_STATUSES = APPROVAL_DOC_STATUSES;
 
 /**
@@ -128,7 +129,6 @@ export function toMemoOutReturnInput(values: MemoOutReturnFormValues) {
     ...shared,
     lines: shared.lines.map((line, index) => ({
       ...line,
-      photoIds: [] as string[],
       memoOutLineId: filled[index]?.memoOutLineId ?? "",
       outstandingPcs: Number.parseInt(filled[index]?.outstandingPcs || "0", 10),
       outstandingWeightCt: filled[index]?.outstandingWeightCt || "0",
@@ -141,7 +141,7 @@ export function toMemoOutReturnInput(values: MemoOutReturnFormValues) {
 
 export function fromMemoOutReturn(detail: MemoOutReturnDetail): MemoOutReturnFormValues {
   // Memo Out lines picked From Stock have no stone code.
-  const shared = fromTradeDocument({ ...detail, lines: detail.lines.map((line) => ({ ...line, source: "MANUAL" as const, stoneCodeId: null })) }, (id) => id);
+  const shared = fromTradeDocument({ ...detail, lines: detail.lines.map((line) => ({ ...line, source: "MANUAL" as const, stoneCodeId: null })) }, DOCUMENT_PHOTOS.memoOutReturn.url);
   return {
     ...shared,
     lines: shared.lines.map((line, index) => {

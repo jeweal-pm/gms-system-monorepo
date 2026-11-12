@@ -1,4 +1,4 @@
-# Sequence diagrams: approval-setup (SA revision 1, 2026-11-10, approved with ADR-0048)
+# Sequence diagrams: approval-setup (SA revision 1, 2026-11-10, approved with ADR-0050)
 
 User flow of the setup page: [diagram/approval-setup-flow.md](../../../../diagram/approval-setup-flow.md). Path for every call: Browser → Next same-origin proxy → nginx → `backend-api-master` tRPC → PostgreSQL `partner` (auth authorization read through the existing reader, unchanged).
 

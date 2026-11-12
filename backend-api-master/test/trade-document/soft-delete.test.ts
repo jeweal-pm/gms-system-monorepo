@@ -111,7 +111,7 @@ beforeEach(() => {
 
 const draftRow = (patch: Row = {}) => ({ docNo: "D-1", status: "DRAFT", autoApproved: false, revisionCount: 0, version: 3, deletedAt: null, ...patch });
 
-describe("soft delete (D4, as amended by ADR-0048)", () => {
+describe("soft delete (D4, as amended by ADR-0050)", () => {
   it.each(documents)("UT-SD-01 $name delete of a DRAFT: a guarded header lock, then one update setting deleted_at / by (never deleteMany)", async ({ service, model }) => {
     db.stored = draftRow();
     await expect(service.delete("actor", DOC, 3)).resolves.toEqual({ ok: true, version: 4 });

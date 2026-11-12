@@ -63,7 +63,7 @@ export function RailPanelView({
   );
 }
 
-/** FE-AS-012: Quotation uses the shared ADR-0048 dots (Draft grey, Pending / Revise orange, Approved green, Rejected red). */
+/** FE-AS-012: Quotation uses the shared ADR-0050 dots (Draft grey, Pending / Revise orange, Approved green, Rejected red). */
 export const quotationDot = (status: string, requireApproval?: boolean): DaybookDot => flowDot(status, requireApproval);
 
 /** Quotations newest first, without cancelled ones (owner 2026-10-26, Q-QT-06); Active / Deleted (FE-SD-001). */

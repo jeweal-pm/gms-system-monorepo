@@ -101,7 +101,7 @@ describe("UT-AS-04 waiting cell (FE-AS-008: `waiting` from approvalSetting.list)
   });
 });
 
-describe("UT-AS-07 turning off (owner answer 3, ADR-0048 D5)", () => {
+describe("UT-AS-07 turning off (owner answer 3, ADR-0050 D5)", () => {
   it("blocks at once while the loaded count shows waiting documents; otherwise confirms and the server decides", () => {
     expect(turnOffDecision(2)).toBe("blocked");
     expect(turnOffDecision(0)).toBe("confirm");
@@ -202,5 +202,16 @@ describe("UT-AS-12 ConfirmDialog additions (FE-AS-006)", () => {
     expect(primary).toContain("<strong>Lead</strong>");
     expect(primary).toContain("bg-gms-primary");
     expect(html(createElement(ConfirmDialog, { ...base, body: "Plain" }))).toContain("bg-gms-danger-button");
+  });
+});
+
+describe("UT-AS-13 Approval permission leaf (catalog 2026-11-10)", () => {
+  it("the tile follows approval-setup:VIEW; the key is a Setup catalog key", async () => {
+    const { canViewWith, menuKeyFor, SETUP_MENU_KEYS } = await import("@/features/home/navigation");
+    expect(menuKeyFor("approval-setup")).toBe("approval-setup");
+    expect(SETUP_MENU_KEYS).toContain("approval-setup");
+    const tile = setupLandingTiles.find((entry) => entry.id === "approval-setup");
+    expect(canViewWith({ isSuperAdmin: false, permissions: ["approval-setup:VIEW"] }, tile?.permission)).toBe(true);
+    expect(canViewWith({ isSuperAdmin: false, permissions: ["document-setup:VIEW"] }, tile?.permission)).toBe(false);
   });
 });

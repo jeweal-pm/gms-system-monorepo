@@ -2,6 +2,7 @@
  * Quotation data access (ADR-0025 D2 → ADR-0032 / SA quotation rev 1): the typed master tRPC router
  * `quotation.*` plus the binary photo route. Components use only the hooks and mappers in this file.
  */
+import { renewAccess } from "@/lib/domain-trpc-fetch";
 import { skipToken } from "@tanstack/react-query";
 import type { InferQueryLikeData } from "@trpc/react-query/shared";
 import { authTrpc } from "@/lib/auth-trpc";
@@ -31,7 +32,7 @@ export function useQuotationAccess(): QuotationAccess | undefined {
 }
 
 /*
- * approval-setup ADR-0048: Quotation follows its approval setting (OFF by default). Edit / Delete come from the
+ * approval-setup ADR-0050: Quotation follows its approval setting (OFF by default). Edit / Delete come from the
  * document's `Flow` (`quotation.get`): Draft / Revise, or approved by Save while OFF and not used.
  */
 
@@ -223,6 +224,12 @@ export const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 
 export class PhotoUploadError extends Error {}
 
+/** Retry-After of a busy photo route, in ms: at least 300 ms, at most 2 s (default 1 s). */
+export function retryAfterMs(response: Pick<Response, "headers">): number {
+  const seconds = Number(response.headers.get("retry-after"));
+  return Number.isFinite(seconds) && seconds > 0 ? Math.min(2000, Math.max(300, seconds * 1000)) : 1000;
+}
+
 /** Uploads one JPEG/PNG ≤ 5 MB to the quotation photo route; returns its photo id. */
 export const uploadQuotationPhoto = (file: File): Promise<string> => uploadLinePhoto("/api/v1/quotation/photos", file);
 
@@ -233,17 +240,29 @@ export const uploadQuotationPhoto = (file: File): Promise<string> => uploadLineP
 export async function uploadLinePhoto(route: string, file: File): Promise<string> {
   if (!(PHOTO_TYPES as readonly string[]).includes(file.type)) throw new PhotoUploadError("Use a JPEG or PNG photo.");
   if (file.size > PHOTO_MAX_BYTES) throw new PhotoUploadError("Photos can be up to 5 MB.");
-  let response: Response;
-  try {
-    response = await fetch(route, {
-      method: "POST",
-      headers: { "content-type": file.type, "x-gms-csrf": "1" },
-      body: file,
-      credentials: "same-origin",
-    });
-  } catch {
-    throw new PhotoUploadError("Couldn't upload the photo. Check the connection and try again.");
+  const send = async () => {
+    try {
+      return await fetch(route, {
+        method: "POST",
+        headers: { "content-type": file.type, "x-gms-csrf": "1" },
+        body: file,
+        credentials: "same-origin",
+      });
+    } catch {
+      throw new PhotoUploadError("Couldn't upload the photo. Check the connection and try again.");
+    }
+  };
+  let response = await send();
+  // Owner 2026-11-11 ("sometimes it says Couldn't upload"): the access cookie had expired (401). The route refuses
+  // before storing anything, so renew the session once and send the photo again.
+  if (response.status === 401 && (await renewAccess())) response = await send();
+  // Every photo route shares a small upload limiter (503 + Retry-After when busy): wait briefly and try once more.
+  if (response.status === 503) {
+    await new Promise((resolve) => setTimeout(resolve, retryAfterMs(response)));
+    response = await send();
   }
+  if (response.status === 401) throw new PhotoUploadError("Your session has ended. Sign in again, then add the photo.");
+  if (response.status === 503) throw new PhotoUploadError("The server is busy. Wait a moment and add the photo again.");
   if (response.status === 403) throw new PhotoUploadError("You don't have permission to add photos.");
   if (response.status === 413 || response.status === 415 || response.status === 422) throw new PhotoUploadError("This file isn't a supported photo (JPEG or PNG, up to 5 MB).");
   if (!response.ok) throw new PhotoUploadError("Couldn't upload the photo. Try again.");

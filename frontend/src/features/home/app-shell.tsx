@@ -14,9 +14,10 @@ import { Sidebar } from "./sidebar";
 import { SidebarContextPanel } from "./sidebar-context-panel";
 import { SidebarRail, type SidebarFocusRequest } from "./sidebar-rail";
 import { TabBar } from "./tabs/tab-bar";
-import { TabPanels, TabsProvider, useTabs } from "./tabs/tab-host";
+import { forgetTabsOnSignOut, TabPanels, TabsProvider, useTabs } from "./tabs/tab-host";
 import { Topbar, topbarIconButton } from "./topbar";
-import { useSidebarCollapsed } from "./use-sidebar-collapsed";
+import { resetSidebarPreference, useSidebarCollapsed } from "./use-sidebar-collapsed";
+import { stopNotificationStreams } from "@/features/notifications/stream";
 
 export type { Breadcrumb } from "./navigation";
 
@@ -100,13 +101,33 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   }, [refetch, sessionError]);
 
   async function handleSignOut() {
+    // ADR-0049: the notification stream closes before the session ends (no reconnect with a dead session).
+    stopNotificationStreams();
     await authClient.signOut();
+    // Owner 2026-11-11: after sign-out the tab bar is empty and the sidebar is back to its default (open).
+    if (session) forgetTabsOnSignOut(session.user.id);
+    resetSidebarPreference();
     clearAccountCache(queryClient);
     router.replace("/login");
     router.refresh();
   }
 
-  function switchSidebar(collapsed: boolean, request: SidebarFocusRequest) {
+  // The toggle sits in a different place in each state (rail: its own top row; full sidebar: the logo row), so after a
+  // switch focus is moved to the new one.
+  const focusToggleRef = useRef(false);
+  useEffect(() => {
+    if (!focusToggleRef.current) return;
+    focusToggleRef.current = false;
+    document.getElementById(sidebarContainerId)?.querySelector<HTMLElement>("[data-sidebar-toggle]")?.focus();
+  }, [showRail]);
+
+  /** Owner 2026-11-11: expand / collapse from the panel-icon toggle. */
+  function toggleSidebar() {
+    focusToggleRef.current = true;
+    switchSidebar(!showRail, null);
+  }
+
+  function switchSidebar(collapsed: boolean, request: SidebarFocusRequest | null) {
     focusRequestRef.current = request;
     setAnimateSidebarWidth(true);
     if (contextNav) setContextExpandedFor(collapsed ? null : pathname);
@@ -131,7 +152,10 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gms-surface">
+    // Owner 2026-11-11 ("content scrolls into empty space"): `relative` contains absolutely placed descendants such as
+    // sr-only labels deep in long tables, which otherwise made the whole document taller than the screen; `overflow-clip`
+    // (unlike hidden) can't be scrolled by scrollIntoView / focus either.
+    <div className="relative flex h-screen overflow-clip bg-gms-surface">
       <a
         href="#main-content"
         className="sr-only z-50 rounded-gms-md bg-gms-surface px-3 py-2 text-gms-body text-gms-text shadow-gms-overlay focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
@@ -152,13 +176,21 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
       >
         {showRail ? (
           <div className="flex h-full">
-            <SidebarRail pathname={pathname} takeFocusRequest={takeFocusRequest} onExpand={(request) => switchSidebar(false, request)} />
+            {/* Owner design 2026-11-11: on the rail the toggle is the rail's first item, above a short divider and the logo. */}
+            <SidebarRail
+              pathname={pathname}
+              takeFocusRequest={takeFocusRequest}
+              onExpand={(request) => switchSidebar(false, request)}
+              toggle={<SidebarToggleButton expanded={false} controlsId={sidebarContainerId} onToggle={toggleSidebar} />}
+            />
             {contextNav && <SidebarContextPanel nav={contextNav} pathname={pathname} />}
           </div>
         ) : (
+          // Owner design 2026-11-11: on the full sidebar it sits at the right of the GMS logo; the menu starts at the top.
           <Sidebar
             pathname={pathname}
-            collapse={{ controlsId: sidebarContainerId, takeFocusRequest, onCollapse: () => switchSidebar(true, { target: "toggle" }) }}
+            collapse={{ takeFocusRequest }}
+            headerAction={<SidebarToggleButton expanded controlsId={sidebarContainerId} onToggle={toggleSidebar} />}
           />
         )}
       </aside>
@@ -180,7 +212,7 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
               />
               <ShellBreadcrumbs />
               {/* Each tab scrolls inside its own pane (TabPanels), so it keeps its scroll position. */}
-              <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-hidden outline-none">
+              <main id="main-content" tabIndex={-1} className="relative min-h-0 flex-1 overflow-clip outline-none">
                 <TabPanels>{children}</TabPanels>
               </main>
             </div>
@@ -188,6 +220,31 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
         </ToastProvider>
       </DecimalSetupProvider>
     </div>
+  );
+}
+
+/** The owner's panel icon (2026-11-11 SVG), 18 × 18 px in #1C252E (owner 2026-11-11). */
+export const SIDEBAR_TOGGLE_ICON_SIZE = 18;
+
+export function SidebarPanelIcon({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden width={SIDEBAR_TOGGLE_ICON_SIZE} height={SIDEBAR_TOGGLE_ICON_SIZE} viewBox="0 0 16 16" fill="none" className={className}>
+      <path
+        d="M6 2V14M6 2H3.33333C2.59695 2 2 2.59695 2 3.33333V12.6667C2 13.403 2.59695 14 3.33333 14H6M6 2H12.6667C13.403 2 14 2.59695 14 3.33333V12.6667C14 13.403 13.403 14 12.6667 14H6"
+        stroke="currentColor"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/** Expand / collapse the sidebar (rail ⇄ full sidebar). */
+export function SidebarToggleButton({ expanded, controlsId, onToggle }: { expanded: boolean; controlsId: string; onToggle: () => void }) {
+  const label = expanded ? "Collapse sidebar" : "Expand sidebar";
+  return (
+    <button type="button" data-sidebar-toggle aria-label={label} title={label} aria-expanded={expanded} aria-controls={controlsId} onClick={onToggle} className={topbarIconButton}>
+      <SidebarPanelIcon className="text-[#1C252E]" />
+    </button>
   );
 }
 
@@ -275,7 +332,7 @@ function MobileNavigation({ pathname, contextNav, onClose }: Readonly<{ pathname
 
 function AppShellSkeleton() {
   return (
-    <div className="flex h-screen overflow-hidden bg-gms-surface" aria-busy="true" aria-label="Loading application">
+    <div className="relative flex h-screen overflow-clip bg-gms-surface" aria-busy="true" aria-label="Loading application">
       <aside className="hidden w-gms-sidebar shrink-0 flex-col gap-[15px] border-r border-gms-border bg-gms-surface-muted px-[14px] py-4 lg:flex">
         <div className="h-9 w-[131px] animate-pulse rounded-gms-sm bg-gms-surface-sunken" />
         <div className="mt-4 space-y-4 px-2.5">

@@ -47,7 +47,7 @@ export type DocumentFlowState = {
   /** Restore confirm text: the status the document goes back to. */
   restoreLabel: string;
   /**
-   * A write failed: handles the ADR-0048 codes (toast, reload the document / the setting) and returns true, or false
+   * A write failed: handles the ADR-0050 codes (toast, reload the document / the setting) and returns true, or false
    * for any other error (the page maps it as before).
    */
   handleError: (error: unknown, action: "save" | "delete" | "submit") => Promise<boolean>;

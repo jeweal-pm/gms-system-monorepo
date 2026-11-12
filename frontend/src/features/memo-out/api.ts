@@ -17,6 +17,7 @@ import { documentLoadError, daybookInput, daybookQueryOptions, mapDocumentRestor
 import type { DocumentApi } from "@/features/trade-document/document-form";
 import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
+import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 export { pickedStockIds } from "@/features/trade-document/customer-stock";
 
@@ -39,7 +40,7 @@ export const memoOutSchema = customerStockSchema;
 export const emptyMemoOut = emptyCustomerStock;
 export const memoStockToOutLine = memoStockToStockLine;
 export const toMemoOutInput = toCustomerStockInput;
-export const fromMemoOut = (detail: MemoOutDetail) => fromCustomerStock(detail);
+export const fromMemoOut = (detail: MemoOutDetail) => fromCustomerStock(detail, DOCUMENT_PHOTOS.memoOut.url);
 
 export const mapMemoOutSaveError = customerStockSaveError("MEMO_OUT", "memo out");
 export const memoOutLoadError = (error: unknown) => documentLoadError(error, "MEMO_OUT", "memo out", "memo outs");

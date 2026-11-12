@@ -14,7 +14,7 @@ Determine whether the requested behavior can use an existing approved service/co
 unchanged. Reuse it and document the mapping where possible. For changes, specify owning
 domain, public boundary, authorization, input validation, business rules, errors, transactions,
 timeouts, failure/retry behavior, and bounded queries. Do not create a new service simply
-because a new UI page exists. Current auth and gateway use HTTP; Prisma is already installed.
+because a new UI page exists. The active target has no Node gateway: Nginx routes directly to auth and api-master over HTTP; Prisma is already installed.
 Verify the checkout rather than adopting historical TCP/Redis assumptions.
 
 Write service design documents to `document/apps/backend/<service>/<feature>/` using every
@@ -23,8 +23,8 @@ checklist, adapting auth examples to the actual domain and marking irrelevant pa
 reason. Use its TODO template only as a format; put all actionable backend TODOs in
 `document/task/todo/<feature-id>.md`, not beside the bundle. Include:
 
-- `sequence-diagram.md`: editable Mermaid showing UI -> same-origin proxy -> gateway ->
-  domain service -> owning PostgreSQL schema and relevant alternate/error paths. Link the
+- `sequence-diagram.md`: editable Mermaid showing UI -> Nginx -> owning domain service -> PostgreSQL schema, including relevant
+  alternate/error paths. Do not insert a gateway in the diagram. Link the
   main user flow under `document/diagram/<feature>-flow.md` rather than maintaining a copy.
 - `database-diagram.md`: editable Mermaid ER diagram with real or proposed entities, keys,
   constraints, relationships, schema ownership, indexes, migration/backfill/rollback strategy.
@@ -81,6 +81,52 @@ root-cause ledger/pass across roles. Reuse accepted contracts unless evidence es
 a necessary change; an unchanged failure is not grounds to redesign the flow repeatedly.
 Return the specific design delta or missing fact and durable pending-review handoff;
 do not reset corrective history through a new document revision.
+
+## Owner-selected inventory and operations service boundary
+
+For backend features selected from the supplied GMS sidebar, use one Hono service boundary:
+workspace/package `backend-api-inventory`, exposed as the `backend-api-inventory` runtime
+container. Keep these modules together in that service rather than creating a separate Hono
+container per menu group:
+
+- Inventory: Load to Stock, Merge/Split, Stock Transfer Location, Stock Adjustment, Barcode Printing
+- Sale: Sale
+- Account: Account Outstanding
+- Reports: Stock Movement, Closing Stock, Sale Report
+
+Treat this as a modular service with internal module boundaries. Do not add a gateway or
+split these modules into another service by default. When preparing the next SA bundle,
+update the existing GMS service map, ADR-0027 and affected diagrams/contracts to record this
+owner-selected scope and the exact runtime/DNS name. Map each module's data/schema ownership,
+transaction boundaries, report reads and cross-domain APIs explicitly; grouping modules in
+one process does not authorize cross-schema writes, direct reads of another service's tables,
+or a shared transaction across independent owners. Include the single service's bounded
+resource/DB-pool budget and infra/devops handoffs. Do not start dependent implementation
+until the revised service/API/schema bundle is approved.
+
+## Cross-service notification design
+
+For a feature that notifies users about a domain change, design it as part of the service that
+owns and changes that record. Each owning service controls its notification recipients, durable
+records, unread/read state, query/mutation contract, and authenticated SSE endpoint. Do not
+introduce a central notification service or gateway by default. When the UI combines services,
+document separate feeds and ownership of ordering, pagination, unread totals, and read state.
+
+Specify recipient rules, event types/IDs, replay/reconnect behavior, auth/session and origin
+checks, rate/connection bounds, retention, error behavior, and how the UI refetches authoritative
+data. Keep SSE payloads small (event type and notification ID); never put private record data
+or credentials in the stream. Use transactional persistence with the status change when the
+same owning database permits it; otherwise design an outbox or equivalent delivery guarantee.
+A process-local event emitter is not durable or cross-instance delivery. Do not add Redis, a
+broker, or another package without feature-specific evidence, capacity and approval.
+
+Default transport for browser notifications is same-origin SSE: NestJS uses its `@Sse()` route
+and `MessageEvent` with RxJS `Observable`; Hono uses `streamSSE()` from `hono/streaming`; the
+browser uses native `EventSource`. These are framework/browser capabilities, not a new
+notification library choice. Verify current official docs and installed/proposed package status.
+The active Nest package set includes `@nestjs/common` and `rxjs`; Hono remains proposed until
+its approved service is implemented. Design/sequence bundles must include frontend, backend,
+Nginx/infra, and DevOps implications.
 
 ## Single-approval delivery
 

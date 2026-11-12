@@ -128,7 +128,7 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     await prisma.memoStockIdCounter.deleteMany({ where: { year: { in: YEARS } } });
     vendorA = await vendorFixture("MR IT Vendor A");
     vendorB = await vendorFixture("MR IT Vendor B");
-    // ADR-0048: these tests follow the approval-ON flow (Save → DRAFT → Send to approve → Approve).
+    // ADR-0050: these tests follow the approval-ON flow (Save → DRAFT → Send to approve → Approve).
     await setApproval(prisma, "memo-receive", true);
     await setApproval(prisma, "memo-out", true);
   });
@@ -233,7 +233,7 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     expect(await failure(receive.update(ACTOR, doc.id, 7, input(vendorA, [line()])))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_CHANGED" });
     expect(await failure(receive.delete(ACTOR, doc.id, 7))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_CHANGED" });
     await submitted(receive, ACTOR, doc);
-    // ADR-0048: Pending is locked.
+    // ADR-0050: Pending is locked.
     expect(await failure(receive.update(ACTOR, doc.id, 2, input(vendorA, [line()])))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
     expect(await failure(receive.delete(ACTOR, doc.id, 2))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
     await receive.approve(ACTOR, doc.id, 2);
@@ -469,7 +469,7 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     const { vendorId: _vendorId, addressId: _addressId, ...shared } = input(vendorA, [{ ...line(), stoneCodeId: null, location: "Shelf 1" } as never]);
     const out = await memoOut.create(ACTOR, { ...shared, customerId, shippingAddressId: shipping, invoiceAddressId: invoice } as never);
     const detail = await memoOut.get(out.id);
-    // ADR-0048: Memo Out starts as a DRAFT (approval ON); a manual line has no Memo Stock item.
+    // ADR-0050: Memo Out starts as a DRAFT (approval ON); a manual line has no Memo Stock item.
     expect(detail).toMatchObject({ status: "DRAFT", version: 1, lines: [expect.objectContaining({ location: "Shelf 1", stoneCodeId: null, source: "MANUAL", memoStockId: null, stockId: null })] });
     await expect(memoOut.update(ACTOR, out.id, 1, { ...shared, customerId, shippingAddressId: shipping, invoiceAddressId: invoice } as never)).resolves.toMatchObject({ id: out.id, version: 2, status: "DRAFT" });
     await expect(memoOut.delete(ACTOR, out.id, 2)).resolves.toEqual({ ok: true, version: 3 });

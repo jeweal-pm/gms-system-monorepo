@@ -1,6 +1,10 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../generated/prisma/client";
+import { setApproverLookup } from "../notification/notification-recipients";
+
+/** ADR-0049 D4: at most this many approvers receive one event. */
+export const APPROVER_LIMIT = 200;
 
 export type CurrentAuthorization = {
   session_id: string;
@@ -36,8 +40,32 @@ export class MasterAuthzDatabase implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async onModuleInit() { await this.client.$connect(); }
-  async onModuleDestroy() { await this.client.$disconnect(); }
+  async onModuleInit() {
+    await this.client.$connect();
+    setApproverLookup((documentType) => this.approvers(documentType));
+  }
+
+  async onModuleDestroy() {
+    setApproverLookup(null);
+    await this.client.$disconnect();
+  }
+
+  /**
+   * ADR-0049 D4: active users who may approve `leaf` (APPROVE + VIEW on it) or are Super Admins, from the auth-owned
+   * `auth.permission_holders` view. Bounded to APPROVER_LIMIT ids.
+   */
+  async approvers(leaf: string): Promise<string[]> {
+    if (!/^[a-z0-9-]{1,64}$/.test(leaf)) return [];
+    const wanted = [`${leaf}:APPROVE`, `${leaf}:VIEW`];
+    const rows = await this.client.$queryRaw<{ user_id: string }[]>`
+      SELECT user_id
+      FROM "auth"."permission_holders"
+      WHERE account_active AND (account_role = 'admin' OR permissions @> ${wanted}::text[])
+      ORDER BY user_id
+      LIMIT ${APPROVER_LIMIT}
+    `;
+    return rows.map((row) => row.user_id);
+  }
 
   async read(userId: string, sessionId: string): Promise<CurrentAuthorization | null> {
     const rows = await this.client.$queryRaw<CurrentAuthorization[]>`

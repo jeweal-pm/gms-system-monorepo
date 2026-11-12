@@ -307,7 +307,7 @@ describe.runIf(canRun)("IT-SD transaction soft delete on PostgreSQL", () => {
     expect(await prisma.memoStock.findUniqueOrThrow({ where: { id: item.id } })).toMatchObject({ pendingPcs: 3, reservedPcs: 1 });
   });
 
-  it("IT-SD-03/06 Quotation (ADR-0048): auto-approved (OFF) can be deleted while unused; a reviewed APPROVED can't; read-only while deleted; restore → DRAFT when ON", async () => {
+  it("IT-SD-03/06 Quotation (ADR-0050): auto-approved (OFF) can be deleted while unused; a reviewed APPROVED can't; read-only while deleted; restore → DRAFT when ON", async () => {
     const body = { ...header(), lines: [quotationLine()], customerId: customer.id, shippingAddressId: customer.shipping, invoiceAddressId: customer.invoice } as never;
     const auto = await s.quotation.create(ACTOR, body);
     expect(auto).toMatchObject({ status: "APPROVED", autoApproved: true });

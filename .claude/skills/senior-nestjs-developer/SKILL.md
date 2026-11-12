@@ -1,6 +1,6 @@
 ---
 name: senior-nestjs-developer
-description: Implement and debug this project's NestJS auth and domain services from approved SA contracts, diagrams, ADRs, and backend TODOs, then hand verified contracts back to frontend. Invoke as backend.
+description: Implement and debug this project's NestJS and Hono domain services from approved SA contracts, diagrams, ADRs, and backend TODOs, then hand verified contracts back to frontend. Invoke as backend.
 ---
 
 # Senior NestJS Developer
@@ -128,6 +128,40 @@ ownership, API, auth, data migration, storage profile, capacity, dependencies, t
 and rollback in the SA bundle. Record proposed vs approved vs installed packages in
 `document/adr/tech-stack.md`; the parent serializes shared edits. Keep file/profile choices
 per customer explicit and preserve the default customer-controlled `db-local + fs` path.
+
+## Hono inventory and operations implementation target
+
+When an approved backend TODO is selected from the GMS sidebar, its runtime target is the
+single Hono service in workspace/package `backend-api-inventory` and runtime container
+`backend-api-inventory`. Keep Inventory (Load to Stock, Merge/Split, Stock Transfer Location,
+Stock Adjustment, Barcode Printing), Sale, Account Outstanding, and Reports (Stock Movement,
+Closing Stock, Sale Report) as internal modules of this service. Do not create a second Hono
+container per menu group or a gateway. The service is a target and is not evidence that its
+workspace/container already exists.
+
+Implement only the exact approved SA contracts. The SA bundle must first reconcile the
+existing `api-inventory` naming in ADR-0027/GMS spec and specify service DNS, module/schema
+ownership, report read paths, authorization, cross-domain contracts, and the aggregate
+4 GB RAM / 2 vCPU budget. Grouping these modules in one process does not permit direct
+cross-service table access, cross-schema writes/FKs, or unapproved shared transactions.
+Route Compose/image changes through the parent integration owner, infra and devops.
+
+## Service-owned notifications
+
+For approved notification features, implement notifications inside the domain service that
+owns the changed record. That service owns recipient calculation, durable notification/read
+state, list/unread/read APIs, and its authenticated SSE endpoint. Do not create a shared
+notification service/gateway by default. Keep transport events to an ID/type signal and have
+clients refetch details through the owning API with authorization.
+
+Use built-in streaming support: NestJS `@Sse()` / `MessageEvent` with RxJS `Observable`; Hono
+`streamSSE()` from `hono/streaming`. Do not add Socket.IO or another SSE package unless a
+reviewed requirement needs it. Treat RxJS in-process subjects/listeners as local fan-out only,
+not durable delivery or multi-instance pub/sub. Persist the notification with the domain
+change in one transaction where possible; otherwise use the approved outbox/equivalent.
+Design replay after reconnect, duplicate handling, bounded queues/connections, heartbeat and
+graceful disconnect. Do not add Redis/broker/worker without an approved contract and capacity
+review. Never trust client-supplied recipient IDs or expose record details in the SSE payload.
 
 ## Verification and frontend continuation
 

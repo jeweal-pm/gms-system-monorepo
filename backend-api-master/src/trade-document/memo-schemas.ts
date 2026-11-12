@@ -11,7 +11,8 @@ import { DOC_STATUSES } from "../approval/approval.schemas";
  * can't carry photo ids.
  */
 const uuid = z.uuid();
-const memoLineSchema = lineInputSchema.extend({ photoIds: z.array(uuid).max(0) });
+// ADR-0048 (owner 2026-11-11): Reserve, Memo Out, Memo Return and Memo Out Return lines take up to 5 photos, as Quotation.
+const memoLineSchema = lineInputSchema.extend({ photoIds: lineInputSchema.shape.photoIds });
 const memoFields = { ...tradeDocumentFields, lines: z.array(memoLineSchema).min(1).max(LINES_MAX) };
 const versioned = { id: uuid, expectedVersion: z.number().int().min(1) };
 
@@ -122,7 +123,7 @@ export const updateMemoReceiveSchema = z.object({ ...memoReceiveFields, ...versi
 export type MemoReceiveInput = z.output<typeof updateMemoReceiveSchema> extends infer U ? Omit<U, "id" | "expectedVersion"> : never;
 export type MemoReceiveLineInput = z.output<typeof receiveLineSchema>;
 
-/** List status filter (ADR-0046 D2 + ADR-0048 DRAFT): every status the approval documents can hold. */
+/** List status filter (ADR-0046 D2 + ADR-0050 DRAFT): every status the approval documents can hold. */
 export const MEMO_RECEIVE_STATUSES = DOC_STATUSES;
 export type MemoReceiveStatus = (typeof MEMO_RECEIVE_STATUSES)[number];
 export const memoReceiveListSchema = z.object({ ...documentListFields, status: z.enum(MEMO_RECEIVE_STATUSES).optional() }).strict();

@@ -68,11 +68,11 @@ describe("shared header (UT-MO-02)", () => {
 });
 
 describe("mapping (UT-MO-03)", () => {
-  it("sends the customer and both addresses, drops empty rows, never sends photos", () => {
+  it("sends the customer and both addresses, drops empty rows, sends the photos in order (ADR-0048)", () => {
     const input = toMemoOutInput(values({ lines: [manual({ photos: [{ id: "p", name: "a", url: "/x" }] }), emptyMemoOut().lines[0]] }));
     expect(input).toMatchObject({ customerId: ID, shippingAddressId: ID, invoiceAddressId: ID });
     expect(input.lines).toHaveLength(1);
-    expect(input.lines[0]).toMatchObject({ photoIds: [], memoStockId: null });
+    expect(input.lines[0]).toMatchObject({ photoIds: ["p"], memoStockId: null });
   });
 
   it("loads a saved memo out into the quotation form shape", () => {
@@ -114,7 +114,7 @@ describe("From Stock rows (UT-MO-201…205, memo-out rev 2)", () => {
     expect(issues(values({ lines: [picked({ pcs: "0", weightCt: "0" })] }))).toEqual(["lines.0.pcs:Enter the quantity"]);
     expect(issues(values({ lines: [picked({ unitPrice: "" })] }))).toEqual(["lines.0.unitPrice:Enter the sale price"]);
     expect(issues(values({ lines: [manual({ unitPrice: "" })] }))).toEqual([]);
-    // ADR-0048: every flow status is a valid saved status; anything else is refused.
+    // ADR-0050: every flow status is a valid saved status; anything else is refused.
     expect(issues(values({ status: "DRAFT" })).filter((issue) => issue.startsWith("status:"))).toEqual([]);
     expect(issues(values({ status: "BOGUS" as never })).some((issue) => issue.startsWith("status:"))).toBe(true);
   });
@@ -136,6 +136,11 @@ describe("From Stock rows (UT-MO-201…205, memo-out rev 2)", () => {
       totals: { subtotal: "77800.00", discountAmount: "0.00", priceBeforeTax: "77800.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "77800.00" },
       approvedAt: "2026-10-31T03:00:00.000Z", approvedBy: "u", createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, ...FLOW_DETAIL,
     } satisfies MemoOutDetail;
+    // ADR-0048 (owner 2026-11-11): saved photos load back in order, read from this document's own photo route.
+    expect(fromMemoOut({ ...detail, lines: detail.lines.map((line) => ({ ...line, photoIds: ["p1", "p2"] })) } as typeof detail).lines[0]?.photos).toEqual([
+      { id: "p1", name: "Photo 1", url: "/api/v1/memo-out/photos/p1" },
+      { id: "p2", name: "Photo 2", url: "/api/v1/memo-out/photos/p2" },
+    ]);
     const loaded = fromMemoOut(detail);
     expect(loaded.status).toBe("APPROVED");
     expect(loaded.lines[0]).toMatchObject({ source: "STOCK", stockId: "260005", memoStockId: STOCK, stockPendingPcs: "5", stockPendingWeightCt: "5.000", pcs: "2" });

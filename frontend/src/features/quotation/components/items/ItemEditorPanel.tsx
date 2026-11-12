@@ -1,13 +1,14 @@
 "use client";
 
 import { ChevronDown, ChevronUp, Lock, X } from "lucide-react";
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import { lineGross } from "../../lib/calculate";
 import { dec, div, mul, toFixed, ZERO } from "../../lib/decimal";
 import { CER_TYPES, toOptions, type Option } from "../../lib/options";
 import { ATTRIBUTE_KEYS, rebuildStoneCode } from "../../lib/stone-code";
 import { DiscountPair } from "../DiscountPair";
+import { useCountBump } from "./photo-motion";
 import { DEFAULT_PRICE_TITLE, useDocumentKind } from "../../document-kind";
 import { useLineOptions, useRefreshLineOptions } from "../../options-context";
 import { isFilledLine, MAX_LINE_PHOTOS, type QuotationFormValues } from "../../schema";
@@ -282,7 +283,7 @@ export function ItemEditorPanel({
           />
         </Section>
 
-        <Section title={`Photos ${line.photos.length} / ${MAX_LINE_PHOTOS}`}>
+        <Section title={<PhotoCountTitle count={line.photos.length} row={index} />}>
           <div className="col-span-2">
             <LinePhotosField index={index} readOnly={readOnly} />
           </div>
@@ -314,11 +315,25 @@ function pick<T, K extends keyof T>(source: T, keys: readonly K[]): Pick<T, K> {
   return Object.fromEntries(keys.map((key) => [key, source[key]])) as Pick<T, K>;
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, children }: { title: ReactNode; children: ReactNode }) {
   return (
     <div className="border-b border-[#EEF0F2] py-4 last:border-b-0">
       <h3 className="mb-4 text-sm font-medium text-[#1C252E]">{title}</h3>
       <div className="grid grid-cols-2 gap-x-3 gap-y-5">{children}</div>
     </div>
+  );
+}
+
+/** "Photos n / 5"; the number bumps when a photo is added or removed (PhotoGrid sample, owner 2026-11-10). */
+function PhotoCountTitle({ count, row }: { count: number; row: number }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useCountBump(ref, count, row);
+  return (
+    <>
+      Photos{" "}
+      <span ref={ref} className="inline-block tabular-nums">
+        {count} / {MAX_LINE_PHOTOS}
+      </span>
+    </>
   );
 }

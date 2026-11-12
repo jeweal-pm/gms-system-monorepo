@@ -6,7 +6,7 @@ import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
  * Purchase Order (purchase-order UI rev 1 / ADR-0041): the vendor header of Memo Receive with the Quotation lines,
  * discounts and totals. Rows are keyed in only (Q-PO-05).
  */
-/** ADR-0048: Draft, Pending Approval, Approved, Revise, Rejected. */
+/** ADR-0050: Draft, Pending Approval, Approved, Revise, Rejected. */
 export const PURCHASE_ORDER_STATUSES = APPROVAL_DOC_STATUSES;
 export type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number];
 

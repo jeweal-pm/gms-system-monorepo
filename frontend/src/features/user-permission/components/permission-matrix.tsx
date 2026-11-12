@@ -2,7 +2,7 @@
 
 import { ChevronDown } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
-import { PERMISSION_ACTIONS, type CatalogNode } from "../api";
+import { MATRIX_ACTIONS, type CatalogNode } from "../api";
 import { aggregateState, applicableKeys, editableKeys, leafNodes, toggleCells, type PermissionValues } from "../permission-utils";
 import { cx, focusRing } from "@/components/ui/button";
 import { DisabledCheckbox, TriStateCheckbox } from "@/components/ui/checkbox";
@@ -40,7 +40,7 @@ const actionHeadText = "text-gms-label @min-[880px]:text-gms-body";
 const narrowLabel = "truncate @max-[720px]:whitespace-normal";
 
 /**
- * C-13 PermissionMatrix v2 (rev2-01..03): 9 action columns, "Select All",
+ * C-13 PermissionMatrix v2 (rev2-01..03): 8 action columns (APPROVE hidden, owner 2026-11-10), "Select All",
  * section headings, group rows with "N sub-menus" and a chevron, and leaf
  * rows. Section/group/Select All states are derived from the visible leaf
  * cells and are never sent as grants. Non-applicable cells render "—".
@@ -50,7 +50,7 @@ const narrowLabel = "truncate @max-[720px]:whitespace-normal";
 export function PermissionMatrix({ nodes, values, onChange, collapsed, onToggleGroup, forceExpand, lockedDescriptionId, grantable }: PermissionMatrixProps) {
   /** One row of cells aggregating the leaves under `scope`. */
   function cells(label: string, scope: readonly CatalogNode[], className?: string) {
-    return PERMISSION_ACTIONS.map((action) => {
+    return MATRIX_ACTIONS.map((action) => {
       const keys = applicableKeys(scope, action);
       const state = aggregateState(keys, values);
       const editable = editableKeys(keys, grantable);
@@ -131,7 +131,7 @@ export function PermissionMatrix({ nodes, values, onChange, collapsed, onToggleG
       <Fragment key={`section:${node.id}`}>
         <tr className="bg-gms-surface">
           {/* Labels are rendered as delivered by the catalog (SETUP… in caps, "Memo" in title case per design). */}
-          <th scope="rowgroup" colSpan={PERMISSION_ACTIONS.length + 1} className={cx("h-[42px] pl-4 text-left font-semibold text-gms-primary", cellBorder)}>
+          <th scope="rowgroup" colSpan={MATRIX_ACTIONS.length + 1} className={cx("h-[42px] pl-4 text-left font-semibold text-gms-primary", cellBorder)}>
             {node.label}
           </th>
         </tr>
@@ -151,14 +151,14 @@ export function PermissionMatrix({ nodes, values, onChange, collapsed, onToggleG
       <table className="w-full min-w-[640px] table-fixed border-separate border-spacing-0 text-gms-body text-gms-text">
         <colgroup>
           <col className="w-[28%] @max-[720px]:w-[24%]" />
-          {PERMISSION_ACTIONS.map((action) => <col key={action} />)}
+          {MATRIX_ACTIONS.map((action) => <col key={action} />)}
         </colgroup>
         <thead>
           <tr>
             <th scope="col" className={cx(stickyHeader, "h-[42px] border-b border-gms-border bg-gms-page pl-3 text-left text-gms-body font-medium uppercase")}>
               Menu
             </th>
-            {PERMISSION_ACTIONS.map((action) => (
+            {MATRIX_ACTIONS.map((action) => (
               <th key={action} scope="col" className={cx(stickyHeader, actionHeadText, "h-[42px] border-b border-gms-border bg-gms-page text-center font-medium")}>
                 {action}
               </th>

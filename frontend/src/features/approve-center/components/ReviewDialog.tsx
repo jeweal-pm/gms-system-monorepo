@@ -16,7 +16,7 @@ type Props = {
 };
 
 /**
- * FE-AP-010 / FE-AS-013 (ADR-0048 Q-AS-32): Reject… and Revise… ask for a required reason (1–500 characters). Native
+ * FE-AP-010 / FE-AS-013 (ADR-0050 Q-AS-32): Reject… and Revise… ask for a required reason (1–500 characters). Native
  * modal `<dialog>` like `ConfirmDialog` (focus trap, Esc = Cancel unless pending); focus starts in the reason field and
  * returns to the trigger on close. The reason is plain text; line breaks are kept.
  */

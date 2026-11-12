@@ -5,7 +5,7 @@ import { documentFlow, explainReviewMiss, planData, restoreData, reviewOfRow, re
 import { documentErrors } from "../../src/trade-document/document-errors";
 
 /**
- * UT-AP-B01…B04 / UT-AS-B01 / UT-AS-B08 (approval-setup ADR-0048 with ADR-0046): the engine's pure approval helpers —
+ * UT-AP-B01…B04 / UT-AS-B01 / UT-AS-B08 (approval-setup ADR-0050 with ADR-0046): the engine's pure approval helpers —
  * Save plan columns, restore columns (G3), the guarded review UPDATE, the review miss order, Flow of a stored row and
  * the stored document as submit's validation input.
  */

@@ -1,4 +1,4 @@
-# Database diagram: approval-setup (SA revision 1, 2026-11-10, approved with ADR-0048)
+# Database diagram: approval-setup (SA revision 1, 2026-11-10, approved with ADR-0050)
 
 Owner `backend-api-master`, schema `partner`. Applies on top of the approve-center migration `20261107090000_approval_review` ([its diagram](../approve-center/database-diagram.md)), which is not yet applied; both migrations ship in the same release, approve-center first.
 
@@ -55,7 +55,7 @@ erDiagram
 1. Create `approval_setting`; seed 11 rows: quotation `false`, all others `true`, `updated_at = now()`.
 2. Per header: add `auto_approved`, `revision_count`; make `submitted_at`/`submitted_by` nullable; replace the constraints above; add the indexes.
 3. Backfill: `quotation` rows with `status = 'APPROVED'` → `auto_approved = true` (today's Save-approved Quotation stays editable while Quotation is OFF); every other existing row keeps `auto_approved = false`, `revision_count = 0`.
-4. No data is approved by SQL. Existing `PENDING_APPROVAL` documents are handled by the go-live command (ADR-0048 D7), which runs after the migration and before the new frontend is opened.
+4. No data is approved by SQL. Existing `PENDING_APPROVAL` documents are handled by the go-live command (ADR-0050 D7), which runs after the migration and before the new frontend is opened.
 
 Auth migration: none (the catalog is code; the new leaf `approval-setup` has no default grants).
 

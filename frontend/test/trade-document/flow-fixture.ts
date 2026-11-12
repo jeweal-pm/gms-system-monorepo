@@ -1,4 +1,4 @@
-/** The ADR-0048 `Flow` fields every `<doc>.get` result now carries (api-contract "Shared types"), for detail fixtures. */
+/** The ADR-0050 `Flow` fields every `<doc>.get` result now carries (api-contract "Shared types"), for detail fixtures. */
 export const FLOW_DETAIL = {
   autoApproved: false,
   revisionCount: 0 as const,

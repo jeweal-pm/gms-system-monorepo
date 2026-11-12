@@ -91,7 +91,7 @@ beforeEach(() => {
 
 describe("staged master domain tRPC boundary", () => {
   /**
-   * GP-AP-01 / GP-AP-04 / UT-AS-B03 (approval-setup authorization.md, ADR-0046 as amended by ADR-0048): on all eight
+   * GP-AP-01 / GP-AP-04 / UT-AS-B03 (approval-setup authorization.md, ADR-0046 as amended by ADR-0050): on all eight
    * document routers, `submit` needs ADD or EDIT + CSRF; `approve` / `reject` / `requestRevision` need APPROVE
    * (`canApprove`) + CSRF; reason / note trimmed 1–500 with field errors; the actor id and name come from the context.
    */
@@ -468,7 +468,7 @@ describe("staged master domain tRPC boundary", () => {
     expect(quotation.delete).toHaveBeenCalledWith("user-1", id, 1);
 
     await expect(as(["ADD"]).quotation.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
-    // ADR-0048 Q-AS-25: Send to approve with ADD or EDIT; VIEW alone is refused.
+    // ADR-0050 Q-AS-25: Send to approve with ADD or EDIT; VIEW alone is refused.
     await as(["VIEW", "ADD"]).quotation.submit(versioned);
     await expect(as(["VIEW"]).quotation.submit(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(as(["EDIT"]).quotation.approve(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -480,7 +480,7 @@ describe("staged master domain tRPC boundary", () => {
     await expect(as(["ADD"]).quotation.create(body)).rejects.toMatchObject({ code: "UNPROCESSABLE_CONTENT", message: "QUOTATION_REFERENCE_INVALID" });
   });
 
-  it("GP-MT-MO memo out / memo out return: exact grants, CSRF on writes, strict party fields, no photos", async () => {
+  it("GP-MT-MO memo out / memo out return: exact grants, CSRF on writes, strict party fields, ≤ 5 distinct photos", async () => {
     const ID2 = "0b9f3c4e-1d2a-4b3c-8d4e-5f6a7b8c9d0f";
     const line = { source: "MANUAL" as const, stoneCodeId: null, stoneCode: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "",
       lot: "", location: "", cerType: "", cerNo: "", pcs: 1, weightCt: "1", priceUnit: "PER_CT" as const, unitPrice: "100", discount: { type: "NONE" as const, value: "0" }, itemNote: "", photoIds: [] as string[] };
@@ -500,7 +500,9 @@ describe("staged master domain tRPC boundary", () => {
     expect(memoOut.list).toHaveBeenCalledWith(expect.objectContaining({ q: "gem", partyId: ID, limit: 50 }));
     expect(memoOut.options).toHaveBeenCalledWith(ID);
     expect(memoOut.update).toHaveBeenCalledWith("user-1", ID, 1, expect.objectContaining({ customerId: ID }), expect.objectContaining({ userId: "user-1" }));
-    await expect(outCaller.memoOut.create({ ...out, lines: [{ ...line, photoIds: [ID] }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // ADR-0048: up to 5 distinct photo ids per line.
+    await expect(outCaller.memoOut.create({ ...out, lines: [{ ...line, photoIds: [ID, ID] }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(outCaller.memoOut.create({ ...out, lines: [{ ...line, photoIds: Array.from({ length: 6 }, (_, n) => `00000000-0000-4000-8000-00000000010${n}`) }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(outCaller.memoOut.create({ ...back } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(router.createCaller(context(["memo-out:VIEW"])).memoOut.create(out)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(router.createCaller(context(["memo-out:ADD"], { csrfVerified: false })).memoOut.create(out)).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -573,7 +575,7 @@ describe("staged master domain tRPC boundary", () => {
     await expect(caller.memoReceive.create({ ...body, lines: [{ ...line, photoIds: [ID, ID] }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.memoReceive.create({ ...body, lines: [{ ...line, photoIds: Array.from({ length: 6 }, (_, n) => `00000000-0000-4000-8000-00000000010${n}`) }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.memoReceive.create({ ...body, lines: [{ ...line, id: ID2 }] } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    // ADR-0048: DRAFT is a list status now (BE-AP-006); a status outside the approval set is still refused.
+    // ADR-0050: DRAFT is a list status now (BE-AP-006); a status outside the approval set is still refused.
     await caller.memoReceive.list({ status: "DRAFT" });
     expect(memoReceive.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: "DRAFT" }));
     await expect(caller.memoReceive.list({ status: "CANCELLED" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
@@ -767,7 +769,7 @@ describe("staged master domain tRPC boundary", () => {
 
     await caller.memoOut.list({ status: "PENDING_APPROVAL" });
     expect(memoOut.list).toHaveBeenCalledWith(expect.objectContaining({ status: "PENDING_APPROVAL" }));
-    // ADR-0048: DRAFT is a list status now (BE-AP-006); a status outside the approval set is still refused.
+    // ADR-0050: DRAFT is a list status now (BE-AP-006); a status outside the approval set is still refused.
     await caller.memoOut.list({ status: "DRAFT" });
     expect(memoOut.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: "DRAFT" }));
     await expect(caller.memoOut.list({ status: "CANCELLED" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
@@ -836,8 +838,11 @@ describe("staged master domain tRPC boundary", () => {
     await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: null }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2, unitPrice: "0" }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2 }, { ...line, memoStockId: ID2 }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2, photoIds: [ID] }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    // ADR-0048: DRAFT is a list status now (BE-AP-006); a status outside the approval set is still refused.
+    // ADR-0048 (owner 2026-11-11): up to 5 distinct photo ids per line; a 6th or a duplicate is refused.
+    await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2, photoIds: [ID] }] })).resolves.toBeDefined();
+    await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2, photoIds: [ID, ID] }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.reserve.create({ ...body, lines: [{ ...line, memoStockId: ID2, photoIds: Array.from({ length: 6 }, (_, n) => `00000000-0000-4000-8000-00000000010${n}`) }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    // ADR-0050: DRAFT is a list status now (BE-AP-006); a status outside the approval set is still refused.
     await caller.reserve.list({ status: "DRAFT" });
     expect(reserve.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: "DRAFT" }));
     await expect(caller.reserve.list({ status: "CANCELLED" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
@@ -903,7 +908,7 @@ describe("staged master domain tRPC boundary", () => {
     await expect(caller.purchaseOrder.create({ ...body, lines: [{ ...line, photoIds: [ID, ID] }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.purchaseOrder.create({ ...body, lines: [{ ...line, photoIds: Array.from({ length: 6 }, (_, n) => `00000000-0000-4000-8000-00000000010${n}`) }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(caller.purchaseOrder.create({ ...body, lines: [{ ...line, discount: { type: "AMOUNT", value: "101" } }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    // ADR-0048: DRAFT is a list status now (BE-AP-006); a status outside the approval set is still refused.
+    // ADR-0050: DRAFT is a list status now (BE-AP-006); a status outside the approval set is still refused.
     await caller.purchaseOrder.list({ status: "DRAFT" });
     expect(purchaseOrder.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: "DRAFT" }));
     await expect(caller.purchaseOrder.list({ status: "CANCELLED" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });

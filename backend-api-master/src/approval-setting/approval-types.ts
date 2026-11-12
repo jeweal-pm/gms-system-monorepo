@@ -1,7 +1,7 @@
 import type { MasterMenu } from "../master/authorization";
 
 /**
- * Approval type registry (approval-setup SA rev 1 / ADR-0048, api-contract "Shared types"): the 11 setting keys in
+ * Approval type registry (approval-setup SA rev 1 / ADR-0050, api-contract "Shared types"): the 11 setting keys in
  * sidebar order. The first eight have document pages and a header table in schema `partner`; the last three
  * (inventory) have a setting row only until they are designed (SA-AS-10). Every SQL identifier used by the approval
  * modules comes from this fixed map, never from input.
@@ -12,7 +12,7 @@ export const APPROVAL_TYPES = [
 ] as const;
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
 
-/** The eight types with document pages (ADR-0048 scope). */
+/** The eight types with document pages (ADR-0050 scope). */
 export const APPROVAL_DOC_TYPES = ["quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase"] as const;
 export type ApprovalDocType = (typeof APPROVAL_DOC_TYPES)[number];
 

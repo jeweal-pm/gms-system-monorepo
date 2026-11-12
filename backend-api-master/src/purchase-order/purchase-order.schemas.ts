@@ -20,7 +20,7 @@ export const createPurchaseOrderSchema = z.object(purchaseOrderFields).strict().
 export const updatePurchaseOrderSchema = z.object({ ...purchaseOrderFields, id: uuid, expectedVersion: z.number().int().min(1) }).strict().superRefine(purchaseOrderRules);
 export type PurchaseOrderInput = z.output<typeof createPurchaseOrderSchema>;
 
-/** List status filter (ADR-0046 D2 + ADR-0048 DRAFT). */
+/** List status filter (ADR-0046 D2 + ADR-0050 DRAFT). */
 export const PURCHASE_ORDER_STATUSES = DOC_STATUSES;
 export type PurchaseOrderStatus = (typeof PURCHASE_ORDER_STATUSES)[number];
 export const purchaseOrderListSchema = z.object({ ...documentListFields, status: z.enum(PURCHASE_ORDER_STATUSES).optional() }).strict();

@@ -1,6 +1,6 @@
 # 2026-11-12: Document pages follow the approval setting (frontend stage A)
 
-- Feature: `approval-setup` FE-AS-010 and FE-AS-012 on SA revision 1 ([ADR-0048](../adr/0048-approval-setting-draft-send-to-approve.md)). The owner started this on 2026-11-12 ("เริ่มทำ frontend ให้หน้าเว็บใช้ flow ใหม่"). Branch `feat/10-11-26-approval-api`, uncommitted.
+- Feature: `approval-setup` FE-AS-010 and FE-AS-012 on SA revision 1 ([ADR-0050](../adr/0050-approval-setting-draft-send-to-approve.md)). The owner started this on 2026-11-12 ("เริ่มทำ frontend ให้หน้าเว็บใช้ flow ใหม่"). Branch `feat/10-11-26-approval-api`, uncommitted.
 - Pages: Quotation, Reserve, Memo Receive, Memo Return, Memo Out, Memo Out Return, Purchase Order and Purchase. They all use one hook, `trade-document/approval-flow.tsx`, and one set of rules, `trade-document/flow-status.ts`.
 - **Buttons**
   - Document pages no longer have an Approve button. Approving is done in the Approve menu only.

@@ -7,7 +7,7 @@ import { approvalPendingInputSchema } from "../../src/approval/approval.schemas"
 import { permittedApprovalTypes } from "../../src/approval-setting/approval-flow";
 
 /**
- * UT-AP-B11 / UT-AP-B12 (approve-center SA rev 1 D15/D16 as amended by approval-setup SA rev 1 / ADR-0048) against a
+ * UT-AP-B11 / UT-AP-B12 (approve-center SA rev 1 D15/D16 as amended by approval-setup SA rev 1 / ADR-0050) against a
  * mocked Prisma: `summary` SQL from registry identifiers only, permitted ∩ ON; `pending` ORDER BY / keyset per sort and
  * direction, cursor bound to sort / direction / search, LIKE escaping, row mapping and `APPROVAL_TYPE_OFF`.
  */

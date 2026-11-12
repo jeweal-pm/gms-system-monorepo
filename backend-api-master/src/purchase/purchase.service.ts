@@ -12,6 +12,7 @@ import { lockSourceHeaders } from "../trade-document/source-lock";
 import { completeSourceLines, giveBackForPurchase, memoLineRange, purchaseOrderAvailable, takeForPurchase, type PreparedInput, type SoldPart } from "./purchase-stock";
 import { purchaseErrors, purchasePendingShort, purchaseStockIdExhausted } from "./purchase.errors";
 import type { LineMemoGroup, PurchaseInput, PurchaseLineSource, PurchaseListInput, PurchaseMemoStockInput, PurchaseOrderLinesInput, PurchaseStatus } from "./purchase.schemas";
+import { LINE_PHOTO_DOCUMENTS, withLinePhotos } from "../trade-document/line-photos";
 
 /** Statuses in which the lines show their current range (`limit*` / `min*`): the purchase can still be saved. */
 const LIMITED: readonly string[] = ["DRAFT", "REVISION_REQUESTED"];
@@ -32,7 +33,7 @@ type StoredPoLine = { position: number; pcs: number; weightCt: Dec; purchasedPcs
  * purchase SA rev 1 / ADR-0042 (owner 2026-11-04): a vendor document shaped like Purchase Order whose lines come from
  * Memo Stock, an approved PO line or are keyed in. Document Setup key `purchase` (`PU`). With approval ON, Save checks
  * availability and moves no stock (SA default D2) and Approve cuts it under row locks (`takeForPurchase`); with approval
- * OFF, Save cuts it at once (auto-approved, ADR-0048 D4).
+ * OFF, Save cuts it at once (auto-approved, ADR-0050 D4).
  */
 @Injectable()
 export class PurchaseService {
@@ -155,7 +156,7 @@ export class PurchaseService {
     lockSources: async (tx, input) => {
       await lockSourceHeaders(tx, "purchaseOrder", (input as unknown as PurchaseInput).lines.flatMap((line) => (line.source === "PURCHASE_ORDER" && line.purchaseOrderLineId ? [line.purchaseOrderLineId] : [])));
     },
-    lineHook: this.lines,
+    lineHook: withLinePhotos(LINE_PHOTO_DOCUMENTS.purchase, this.lines),
     detailExtra: (row: Row) => ({
       approvedAt: row.approvedAt ? (row.approvedAt as Date).toISOString() : null,
       approvedBy: (row.approvedBy as string | null) ?? null,
@@ -182,7 +183,7 @@ export class PurchaseService {
   update(actorId: string, id: string, expectedVersion: number, input: PurchaseInput, viewer: FlowPrincipal | null = null) {
     return this.engine.update(actorId, id, expectedVersion, asEngine(input), viewer) as Promise<unknown> as Promise<{ id: string; version: number; stockIds: string[]; status: string; autoApproved: boolean }>;
   }
-  /** SA-PU-08 / ADR-0045 D4 / ADR-0048: soft delete; an auto-approved purchase gives its stock back first. */
+  /** SA-PU-08 / ADR-0045 D4 / ADR-0050: soft delete; an auto-approved purchase gives its stock back first. */
   delete(actorId: string, id: string, expectedVersion: number) {
     return this.engine.delete(actorId, id, expectedVersion);
   }
@@ -198,7 +199,7 @@ export class PurchaseService {
     return this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED"; lineCount: number }>;
   }
 
-  /** Go-live command (ADR-0048 D7): the same approve inside the caller's transaction. */
+  /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction. */
   approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
     return this.engine.approveWithin(tx, actorId, id, expectedVersion);
   }
@@ -253,7 +254,8 @@ export type PurchaseLineOut = EngineLineOut & {
   memoGroup: LineMemoGroup | null;
   purchaseOrderLineId: string | null;
   stockId: string;
-  photoIds: [];
+  /** ADR-0048: the line's photos in order (the photo hook replaces the `[]` this hook writes). */
+  photoIds: string[];
   memoReceive: { docNo: string } | null;
   purchaseOrder: { id: string; docNo: string; position: number } | null;
   limitPcs: number | null;

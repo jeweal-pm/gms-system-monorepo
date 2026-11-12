@@ -171,7 +171,7 @@ describe("Stock ID, Location and Approve (UT-MR-F2)", () => {
     expect(quotation).toContain("Vault");
   });
 
-  it("the document page has no Approve button any more (ADR-0048 Q-AS-23: Approve menu only)", () => {
+  it("the document page has no Approve button any more (ADR-0050 Q-AS-23: Approve menu only)", () => {
     const src = readFileSync(join(process.cwd(), "src/features/memo-receive/components/MemoReceiveForm.tsx"), "utf8");
     expect(src).not.toMatch(/writes\.approve|> Approve</);
     expect(src).toContain("extraActions={approvalFlow.sendButton}");

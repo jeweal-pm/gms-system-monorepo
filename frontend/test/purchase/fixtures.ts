@@ -38,7 +38,7 @@ export const savedPurchase = (patch: Record<string, unknown> = {}) => ({
   vendorId: ID, addressId: ID, vendor: { code: "V001", name: "Aom" }, addressText: "", documentNote: "Paid by transfer",
   discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
   totals: {}, approvedAt: null, approvedBy: null, createdAt: "2026-11-04T01:00:00.000Z", createdBy: "u", updatedAt: "2026-11-04T01:00:00.000Z", deletedAt: null, deletedBy: null,
-  // ADR-0048 Flow of a Pending document: read-only for everyone until the approver acts.
+  // ADR-0050 Flow of a Pending document: read-only for everyone until the approver acts.
   autoApproved: false, revisionCount: 0, canEdit: false, canDelete: false, canSubmit: false, usedBy: null, review: null, submittedAt: "2026-11-04T02:00:00.000Z", submittedByName: "Aom",
   lines: [
     savedLine({ id: "66666666-6666-4666-8666-666666666666", source: "STOCK", memoStockId: STOCK, memoGroup: "IN_STOCK", stockId: "260003", stoneCodeId: null, stoneCode: "", discount: { type: "NONE", value: "0" }, memoReceive: { docNo: "MR-1001" }, limitPcs: 2, limitWeightCt: "1.360", pcs: 1, weightCt: "0.680" }),

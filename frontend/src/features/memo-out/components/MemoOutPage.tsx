@@ -8,6 +8,7 @@ import { customerStockConfig } from "@/features/trade-document/customer-stock-co
 import { daybookLoadError, daybookState, deletedInfo, DocumentDaybook, documentAccess, useDocumentAccess } from "@/features/trade-document/document-api";
 import { DocumentForm } from "@/features/trade-document/document-form";
 import { fromMemoOut, MEMO_OUT_HREF, mapMemoOutSaveError, memoOutHref, memoOutLoadError, memoOutRestoreError, useMemoOutApi, useMemoOutDaybook, useMemoOutDetail } from "../api";
+import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 export { MEMO_OUT_HREF };
 
@@ -35,6 +36,7 @@ function MemoOutDaybook() {
  * Reserve; rows can't be keyed in by hand (rev 3). Saved memo outs wait as Pending Approval.
  */
 const CONFIG = customerStockConfig({
+  photos: DOCUMENT_PHOTOS.memoOut,
   noun: "memo out",
   title: "Memo Out",
   newHref: MEMO_OUT_HREF,

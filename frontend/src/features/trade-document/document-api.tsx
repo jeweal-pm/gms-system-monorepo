@@ -38,6 +38,9 @@ export function mapDocumentSaveError(error: unknown, code: string, noun: string,
       return { fieldErrors: onFields("Choose an active option"), message: "A selected party, address, currency or stone code is no longer available." };
     case `${code}_DELETED`:
       return { fieldErrors: [], message: deletedMessage(noun), deleted: true };
+    // ADR-0048: a photo that isn't a ready photo of this document (e.g. removed meanwhile).
+    case `${code}_PHOTO_INVALID`:
+      return { fieldErrors: onFields("Check the photos"), message: "A photo couldn't be used. Remove it and add it again." };
     case `${code}_CHANGED`:
       return { fieldErrors: [], message: `Someone else changed this ${noun}. Refresh to see the latest.` };
     case `${code}_STATUS_INVALID`:
@@ -126,7 +129,7 @@ export function formatDeletedAt(iso: string): string {
 
 export const deletedBannerText = (info: DeletedInfo, byName: string) => `Deleted by ${byName} on ${formatDeletedAt(info.at)}`;
 
-/** Restore confirm: ADR-0048 G3 / G10 — Draft while approval is ON, approved again while OFF (`useDocumentFlow().restoreLabel`). */
+/** Restore confirm: ADR-0050 G3 / G10 — Draft while approval is ON, approved again while OFF (`useDocumentFlow().restoreLabel`). */
 export { restoreStatusLabel } from "./flow-status";
 
 /**
@@ -204,7 +207,7 @@ export const daybookQueryOptions = {
   retry: retryTransient,
 };
 
-/** `note`: the Revise / Reject reason shown under the party (ADR-0048 D6). */
+/** `note`: the Revise / Reject reason shown under the party (ADR-0050 D6). */
 type DaybookItem = { id: string; docNo: string; docDate: string; status: string; name: string; note?: string };
 export type DaybookState = {
   isPending: boolean;
@@ -244,7 +247,7 @@ export function daybookState<T extends ListRow>(list: InfiniteList<T>, loadError
 
 export type { DaybookDot };
 
-/** Daybook dot (FE-AS-012, ADR-0048 D6): Draft grey, Pending / Revise orange, Approved green, Rejected red. */
+/** Daybook dot (FE-AS-012, ADR-0050 D6): Draft grey, Pending / Revise orange, Approved green, Rejected red. */
 export const daybookDot = (status: string, requireApproval?: boolean): DaybookDot => flowDot(status, requireApproval);
 
 
@@ -253,7 +256,7 @@ export function DocumentDaybook({ state, href, plural, dot, emptyText, requireAp
   state: DaybookState;
   href: (id: string) => string;
   plural: string;
-  /** A document with its own colors; default the ADR-0048 dots. */
+  /** A document with its own colors; default the ADR-0050 dots. */
   dot?: (status: string) => DaybookDot;
   /** Empty text (default "No {plural} yet."). */
   emptyText?: string;

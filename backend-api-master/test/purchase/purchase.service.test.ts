@@ -69,7 +69,7 @@ vi.mock("../../src/database/prisma-client", () => {
     currency: { findUnique: track("currency.findUnique", { active: true }) },
     stoneCode: { findMany: track("stoneCode.findMany", []) },
     companyProfile: { findUnique: track("companyProfile.findUnique", { currencyCode: "THB" }) },
-    // Prisma.sql objects, or a tagged template (the approval setting read: no row → approval ON, ADR-0048).
+    // Prisma.sql objects, or a tagged template (the approval setting read: no row → approval ON, ADR-0050).
     $queryRaw: vi.fn(async (sql: { sql: string } | TemplateStringsArray) => {
       if (Array.isArray(sql)) { db.calls.push("setting"); return []; }
       if ((sql as { sql: string }).sql.includes("memo_stock_id_counter")) {
@@ -95,6 +95,9 @@ vi.mock("../../src/database/prisma-client", () => {
       deleteMany: track("purchaseLine.deleteMany", { count: 1 }),
     },
     purchaseCharge: { createMany: track("purchaseCharge.createMany", {}), deleteMany: track("purchaseCharge.deleteMany", {}) },
+    // ADR-0049: create (pending approval) and approve record a notification in the same transaction.
+    notificationEvent: { create: vi.fn(async () => ({})) },
+    notificationRecipient: { createMany: vi.fn(async () => ({ count: 0 })) },
   };
   return { prisma: { ...tx, $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) } };
 });

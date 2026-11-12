@@ -13,7 +13,7 @@ import { createMasterTrpcClient, masterTrpc } from "@/lib/master-trpc";
 import { FLOW_DETAIL } from "./flow-fixture";
 
 /**
- * IT-AS-F01…F05 (approval-setup FE-AS-010 / FE-AS-012, ADR-0048): the shared document flow hook, a document page and
+ * IT-AS-F01…F05 (approval-setup FE-AS-010 / FE-AS-012, ADR-0050): the shared document flow hook, a document page and
  * the Daybook through the app's provider stack (React Query + auth / master tRPC) and the real tRPC link + CSRF fetch
  * wrapper against a controlled `/api/master/trpc` server that answers in the master error envelope.
  */

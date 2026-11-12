@@ -1,4 +1,5 @@
 import { FLOW_DETAIL } from "../trade-document/flow-fixture";
+import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 import { createElement, isValidElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FormProvider, useForm } from "react-hook-form";
@@ -27,7 +28,7 @@ const stockItem: MemoStockItem = {
 };
 const noop = () => undefined;
 const config = customerStockConfig({
-  noun: "reserve", title: "Reserve", newHref: RESERVE_HREF, detailHref: reserveHref, useApi: () => { throw new Error("not called"); },
+  photos: DOCUMENT_PHOTOS.reserve, noun: "reserve", title: "Reserve", newHref: RESERVE_HREF, detailHref: reserveHref, useApi: () => { throw new Error("not called"); },
   mapSaveError: mapReserveSaveError, mapRestoreError: reserveRestoreError, pickerTitle: "Add From Stock", approvalType: "reserve",
   notePlaceholder: "", noteHint: "Printed on the reserve for the customer", daybook: null,
 });
@@ -54,7 +55,7 @@ describe("page settings (UT-RS-02, design 01/02)", () => {
     expect((picker as { props: { title: string; showPrice: boolean; vendorId?: string } }).props).toMatchObject({ title: "Add From Stock", showPrice: false });
     expect((picker as { props: { vendorId?: string } }).props.vendorId).toBeUndefined();
     expect(config.picker!.addedToast(2)).toBe("Added 2 items from Stock");
-    // ADR-0048: no Approve confirm on the page; the reserve approval setting drives Save / Send to approve.
+    // ADR-0050: no Approve confirm on the page; the reserve approval setting drives Save / Send to approve.
     expect(config).not.toHaveProperty("approval");
     expect(config.approvalType).toBe("reserve");
   });
@@ -83,6 +84,11 @@ describe("mapping (UT-RS-03/04)", () => {
       totals: { subtotal: "3400.00", discountAmount: "0.00", priceBeforeTax: "3400.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "3400.00" },
       approvedAt: "2026-11-02T03:00:00.000Z", approvedBy: "u", createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, ...FLOW_DETAIL,
     } satisfies ReserveDetail;
+    // ADR-0048 (owner 2026-11-11): saved photos load back in order, read from this document's own photo route.
+    expect(fromReserve({ ...detail, lines: detail.lines.map((line) => ({ ...line, photoIds: ["p1", "p2"] })) } as typeof detail).lines[0]?.photos).toEqual([
+      { id: "p1", name: "Photo 1", url: "/api/v1/reserve/photos/p1" },
+      { id: "p2", name: "Photo 2", url: "/api/v1/reserve/photos/p2" },
+    ]);
     expect(fromReserve(detail)).toMatchObject({
       docNo: "RS-1", status: "APPROVED", invoiceAddressId: "",
       lines: [{ source: "STOCK", stockId: "260003", memoStockId: STOCK, stockPendingPcs: "2", stockPendingWeightCt: "1.360", pcs: "1" }],
@@ -122,7 +128,7 @@ describe("From Stock only (UT-RS-06, owner 2026-11-02: \"Reserve ไม่มี
     expect(reserveTable).not.toContain("Add row");
     expect(reserveTable).toContain("Empty row · click to pick From Stock");
     expect(renderTable(QUOTATION_KIND)).toContain("Add row");
-    const memoOut = customerStockConfig({ noun: "memo out", title: "Memo Out", newHref: "/memo/memo-out", detailHref: (id: string) => id, useApi: () => { throw new Error("not called"); }, mapSaveError: mapReserveSaveError, mapRestoreError: reserveRestoreError, pickerTitle: "From Stock", approvalType: "memo-out", notePlaceholder: "", noteHint: "", daybook: null });
+    const memoOut = customerStockConfig({ photos: DOCUMENT_PHOTOS.memoOut, noun: "memo out", title: "Memo Out", newHref: "/memo/memo-out", detailHref: (id: string) => id, useApi: () => { throw new Error("not called"); }, mapSaveError: mapReserveSaveError, mapRestoreError: reserveRestoreError, pickerTitle: "From Stock", approvalType: "memo-out", notePlaceholder: "", noteHint: "", daybook: null });
     expect(memoOut.kind?.pickOnly).toBe(true);
     expect(renderTable(memoOut.kind!)).not.toContain("Add row");
   });

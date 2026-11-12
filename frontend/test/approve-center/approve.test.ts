@@ -126,7 +126,7 @@ describe("UT-AP-08 approve selected", () => {
   });
 });
 
-describe("UT-AP-19 Reject… / Revise… (FE-AP-010, FE-AS-013, ADR-0048 Q-AS-32)", () => {
+describe("UT-AP-19 Reject… / Revise… (FE-AP-010, FE-AS-013, ADR-0050 Q-AS-32)", () => {
   it("dialog texts: Reject field 'Reason for reject'; Revise names the action; success toasts", () => {
     expect(reviewText("reject", "RS1")).toMatchObject({ title: "Reject RS1?", label: "Reason for reject", confirmLabel: "Reject", success: "RS1 rejected" });
     expect(reviewText("revise", "RS1")).toMatchObject({ title: "Send RS1 back for revision?", confirmLabel: "Revise", success: "RS1 sent back for revision" });

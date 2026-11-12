@@ -65,6 +65,12 @@ const messages: Record<string, string> = {
   PURCHASE_ORDER_STATUS_INVALID: "The purchase order can't be changed in its current status",
   PURCHASE_ORDER_REFERENCE_INVALID: "A selected item is missing or inactive",
   PURCHASE_ORDER_PHOTO_INVALID: "A photo is missing or is not a JPEG or PNG image up to 5 MB",
+  // ADR-0048 (owner 2026-11-11): line photos on five more documents.
+  RESERVE_PHOTO_INVALID: "A photo is missing or is not a JPEG or PNG image up to 5 MB",
+  MEMO_RETURN_PHOTO_INVALID: "A photo is missing or is not a JPEG or PNG image up to 5 MB",
+  MEMO_OUT_PHOTO_INVALID: "A photo is missing or is not a JPEG or PNG image up to 5 MB",
+  MEMO_OUT_RETURN_PHOTO_INVALID: "A photo is missing or is not a JPEG or PNG image up to 5 MB",
+  PURCHASE_PHOTO_INVALID: "A photo is missing or is not a JPEG or PNG image up to 5 MB",
   PURCHASE_NOT_FOUND: "The purchase was not found",
   PURCHASE_CHANGED: "The purchase was changed by someone else",
   PURCHASE_STATUS_INVALID: "The purchase can't be changed in its current status",
@@ -80,11 +86,11 @@ const messages: Record<string, string> = {
   MEMO_OUT_RETURN_DELETED: "The memo out return was deleted",
   PURCHASE_ORDER_DELETED: "The purchase order was deleted",
   PURCHASE_DELETED: "The purchase was deleted",
-  // approval-setup SA rev 1 / ADR-0048.
+  // approval-setup SA rev 1 / ADR-0050.
   APPROVAL_SETTING_HAS_WAITING: "Documents are still waiting for approval or sent back for revision",
   APPROVAL_SETTING_CHANGED: "The approval setting was changed by someone else",
   APPROVAL_TYPE_OFF: "Approval is off for this document type",
-  // approval-setup SA rev 1 / ADR-0048: submit while OFF, second Revise, edit / delete of a used auto-approved document.
+  // approval-setup SA rev 1 / ADR-0050: submit while OFF, second Revise, edit / delete of a used auto-approved document.
   QUOTATION_APPROVAL_OFF: "Approval is off for this document type",
   QUOTATION_REVISE_LIMIT: "The quotation was already sent back for revision once",
   QUOTATION_IN_USE: "The quotation is used by another document",

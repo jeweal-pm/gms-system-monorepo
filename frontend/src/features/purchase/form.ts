@@ -18,7 +18,7 @@ export const purchaseHref = (id: string) => `${PURCHASE_HREF}/${id}`;
 export const PURCHASE_NOTE_MAX = 250;
 /** A document holds at most 200 lines (C `LINES_MAX`). */
 export const PURCHASE_LINES_MAX = 200;
-/** ADR-0048: Draft, Pending Approval, Approved, Revise, Rejected. */
+/** ADR-0050: Draft, Pending Approval, Approved, Revise, Rejected. */
 export const PURCHASE_STATUSES = APPROVAL_DOC_STATUSES;
 
 /** `purchase.memoStock` row (SA-PU-12): SOLD rows first, then IN_STOCK; `sale` / `locationType` are null (D6). */

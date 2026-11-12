@@ -3,7 +3,7 @@ import { HttpException } from "@nestjs/common";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 /**
- * approval-setup SA rev 1 / ADR-0048 + approve-center ADR-0046 (backend stage 1, 2026-11-10) against real PostgreSQL:
+ * approval-setup SA rev 1 / ADR-0050 + approve-center ADR-0046 (backend stage 1, 2026-11-10) against real PostgreSQL:
  * - IT-AS-B01 / IT-AP-B01 / IT-AP-B02: migrations 20261107090000_approval_review and 20261110090000_approval_setting —
  *   the 11 seed rows, the header columns / CHECKs / partial indexes on all eight headers, and the create path writing
  *   submitted_* and totals;
@@ -174,7 +174,7 @@ describe.runIf(canRun)("approval settings and approval columns on PostgreSQL", (
     expect(sent).toMatchObject({ status: "PENDING_APPROVAL", submitted_by: ACTOR, submitted_by_name: "Mint", submitted_at: expect.any(Date) });
 
     const t = `"partner"."purchase_order"`;
-    // ADR-0048: DRAFT has no submitted_*; submitted_* are paired; REVISION_REQUESTED needs revision_count = 1; count ≤ 1.
+    // ADR-0050: DRAFT has no submitted_*; submitted_* are paired; REVISION_REQUESTED needs revision_count = 1; count ≤ 1.
     expect(await sqlState(`UPDATE ${t} SET status = 'DRAFT' WHERE id = $1::uuid`, id)).toBe("23514");
     expect(await sqlState(`UPDATE ${t} SET submitted_by = NULL WHERE id = $1::uuid`, id)).toBe("23514");
     expect(await sqlState(`UPDATE ${t} SET status = 'PENDING_APPROVAL', submitted_at = NULL, submitted_by = NULL WHERE id = $1::uuid`, id)).toBe("23514");

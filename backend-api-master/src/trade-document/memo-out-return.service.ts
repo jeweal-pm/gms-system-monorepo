@@ -14,6 +14,7 @@ import { customerDocumentOptions, customerParty, type CustomerOut } from "./memo
 import type { MemoOutOutstandingInput, MemoOutReturnInput, MemoReceiveListInput, MemoReceiveStatus } from "./memo-schemas";
 import { latestStockUser, releaseToMemoStock, takeFromMemoStock, type MemoStockTake } from "./memo-stock.service";
 import { lockSourceHeaders } from "./source-lock";
+import { LINE_PHOTO_DOCUMENTS, withLinePhotos } from "./line-photos";
 
 const Decimal = Prisma.Decimal;
 type Dec = Prisma.Decimal;
@@ -327,7 +328,7 @@ export async function memoOutReturnUsedBy(client: Tx | typeof prisma, id: string
 
 /**
  * memo-out-return SA rev 2 / ADR-0033 rev 3 (owner 2026-10-31, "อนุมัติ memo-out-return revision 4"): the customer
- * brings back what a Memo Out lent. Document Setup key `memo-out-return`; the approval flow of ADR-0048. Lines come only
+ * brings back what a Memo Out lent. Document Setup key `memo-out-return`; the approval flow of ADR-0050. Lines come only
  * from the customer's approved Memo Out From Stock lines (Memo Outstanding); approval adds to those lines' returned and
  * moves the Memo Stock items from Reserve back to pending.
  */
@@ -350,7 +351,7 @@ export class MemoOutReturnService {
     lockSources: async (tx, input) => {
       await lockSourceHeaders(tx, "memoOut", input.lines.map((line) => line.memoOutLineId));
     },
-    lineHook: memoOutLines,
+    lineHook: withLinePhotos(LINE_PHOTO_DOCUMENTS.memoOutReturn, memoOutLines),
     detailExtra: (row) => ({
       approvedAt: row.approvedAt ? (row.approvedAt as Date).toISOString() : null,
       approvedBy: (row.approvedBy as string | null) ?? null,
@@ -387,7 +388,7 @@ export class MemoOutReturnService {
     return this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED" }>;
   }
 
-  /** Go-live command (ADR-0048 D7): the same approve inside the caller's transaction. */
+  /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction. */
   approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
     return this.engine.approveWithin(tx, actorId, id, expectedVersion);
   }

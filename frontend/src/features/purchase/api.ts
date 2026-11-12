@@ -9,6 +9,7 @@ import type { DocumentApi, SaveOutcome } from "@/features/trade-document/documen
 import { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError, retryTransient } from "@/lib/trpc-error";
 import { purchaseLineSource, type PurchaseFormValues } from "./form";
+import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 export * from "./form";
 
@@ -42,7 +43,7 @@ export function toPurchaseInput(values: PurchaseFormValues) {
     lines: shared.lines.map((line, index) => {
       const row = filled[index]!;
       const id = saved && SERVER_ID.test(row.key) ? { id: row.key } : {};
-      const base = { ...line, ...id, photoIds: [] as string[] };
+      const base = { ...line, ...id };
       const source = purchaseLineSource(row);
       if (source === "STOCK") {
         return { ...base, source, stoneCodeId: null, discount: NO_DISCOUNT, memoStockId: row.memoStockId, memoGroup: row.memoGroup || null, purchaseOrderLineId: null };
@@ -62,7 +63,7 @@ export function toPurchaseInput(values: PurchaseFormValues) {
  * its source, Memo No. / PO No. and, while pending, its cap from `limitPcs` / `limitWeightCt` (SA-PU-16).
  */
 export function fromPurchase(detail: PurchaseDetail): PurchaseFormValues {
-  const shared = fromTradeDocument(detail as unknown as TradeDocumentDetail, (id) => id);
+  const shared = fromTradeDocument(detail as unknown as TradeDocumentDetail, DOCUMENT_PHOTOS.purchase.url);
   return {
     ...shared,
     lines: shared.lines.map((line, index) => {

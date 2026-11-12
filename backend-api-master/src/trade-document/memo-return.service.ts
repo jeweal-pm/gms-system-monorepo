@@ -8,6 +8,7 @@ import { TradeDocumentEngine, type DocumentActor, type DocumentEffects, type Lin
 import { vendorDocumentOptions, vendorParty, type VendorOut } from "./memo-out-return.service";
 import type { MemoReceiveListInput, MemoReceiveStatus, MemoReturnInput } from "./memo-schemas";
 import { releaseToMemoStock, takeFromMemoStock } from "./memo-stock.service";
+import { LINE_PHOTO_DOCUMENTS, withLinePhotos } from "./line-photos";
 
 export const memoReturnErrors = documentErrors("MEMO_RETURN", "MemoReturn", "memo_return");
 /** Approval found a Memo Stock item with less pending than the line returns (another return took it first). */
@@ -111,7 +112,7 @@ const memoReturnEffects: DocumentEffects = {
 
 /**
  * memo-return SA rev 2 (owner 2026-10-29): Memo Stock items sent back to their vendor. Document Setup key
- * `memo-return`; the approval flow of approval-setup ADR-0048, and approval reduces the items' pending pcs / weight
+ * `memo-return`; the approval flow of approval-setup ADR-0050, and approval reduces the items' pending pcs / weight
  * (Q-MR-15).
  */
 @Injectable()
@@ -131,7 +132,7 @@ export class MemoReturnService {
     outstanding: true,
     lineOmit: ["stoneCodeId"],
     prepare: completeReturnLines,
-    lineHook: memoStockLines,
+    lineHook: withLinePhotos(LINE_PHOTO_DOCUMENTS.memoReturn, memoStockLines),
     detailExtra: (row) => ({
       approvedAt: row.approvedAt ? (row.approvedAt as Date).toISOString() : null,
       approvedBy: (row.approvedBy as string | null) ?? null,
@@ -168,7 +169,7 @@ export class MemoReturnService {
     return this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED" }>;
   }
 
-  /** Go-live command (ADR-0048 D7): the same approve inside the caller's transaction. */
+  /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction. */
   approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
     return this.engine.approveWithin(tx, actorId, id, expectedVersion);
   }

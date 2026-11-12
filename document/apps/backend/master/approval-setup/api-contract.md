@@ -1,4 +1,4 @@
-# API contract: approval-setup (SA revision 1, 2026-11-10, approved with ADR-0048)
+# API contract: approval-setup (SA revision 1, 2026-11-10, approved with ADR-0050)
 
 tRPC on `backend-api-master` (`/api/master/trpc`), superjson off, strict zod inputs, CSRF on every mutation (existing double-submit). Shared shapes from the [approve-center contract](../approve-center/api-contract.md) apply unless changed here.
 

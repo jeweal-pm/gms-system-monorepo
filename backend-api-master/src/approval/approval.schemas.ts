@@ -2,11 +2,11 @@ import { z } from "zod";
 import { APPROVAL_DOC_TYPES, type ApprovalDocType } from "../approval-setting/approval-types";
 
 /**
- * Shared approval inputs (approve-center ADR-0046 D2/D3 as amended by approval-setup ADR-0048):
+ * Shared approval inputs (approve-center ADR-0046 D2/D3 as amended by approval-setup ADR-0050):
  * - document statuses of the eight approval documents (Quotation additionally keeps CANCELLED);
- * - `reject` / `requestRevision`: `reason` / `note` required, trimmed 1–500 characters (ADR-0048: a reason is required
+ * - `reject` / `requestRevision`: `reason` / `note` required, trimmed 1–500 characters (ADR-0050: a reason is required
  *   for Revise as well as Reject); line breaks allowed, the client renders plain text;
- * - `submit` (ADR-0048, replaces ADR-0046 `resubmit`, which is never built): `{ id, expectedVersion }`.
+ * - `submit` (ADR-0050, replaces ADR-0046 `resubmit`, which is never built): `{ id, expectedVersion }`.
  * All objects are strict: unknown keys (e.g. an actor id or name) are refused.
  */
 export const DOC_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "REVISION_REQUESTED"] as const;
@@ -81,7 +81,7 @@ export type ApprovalRow = {
   submittedAt: string;
   submittedBy: string;
   submittedByName: string | null;
-  /** 1 = already sent back once: Revise is refused, Approve / Reject stay (ADR-0048). */
+  /** 1 = already sent back once: Revise is refused, Approve / Reject stay (ADR-0050). */
   revisionCount: 0 | 1;
   /** Non-null = resubmitted after a Revise (action REVISE). */
   lastReview: ApprovalReview | null;

@@ -5,7 +5,7 @@ import { isPrismaUnavailable, prismaCode } from "../common/persistence";
 /** Stale `expectedVersion` (or the row is missing): the client refetches the list (error-handling.md). */
 export const approvalSettingChanged = () => partnerException("APPROVAL_SETTING_CHANGED", HttpStatus.CONFLICT);
 
-/** Turn OFF refused while documents of the type wait (ADR-0048 D4): counts for the blocked dialog, each capped at 100. */
+/** Turn OFF refused while documents of the type wait (ADR-0050 D4): counts for the blocked dialog, each capped at 100. */
 export const approvalSettingHasWaiting = (waiting: { pending: number; revision: number }) =>
   partnerException("APPROVAL_SETTING_HAS_WAITING", HttpStatus.CONFLICT, null, { pending: waiting.pending, revision: waiting.revision });
 

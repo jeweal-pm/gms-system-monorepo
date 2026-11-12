@@ -12,13 +12,14 @@ import { DEFAULT_PRICE_TITLE, DocumentKindContext, QUOTATION_KIND, type Document
 import { calculateTotals } from "@/features/quotation/lib/calculate";
 import { emptyLine, emptyQuotation } from "@/features/quotation/lib/defaults";
 import { customerStockConfig } from "@/features/trade-document/customer-stock-config";
+import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 /** UT-PU-02 (purchase FE-PU-001): `DocumentKind.priceTitle`, default "Sale Price". */
 
 const noop = () => undefined;
 const line = { ...emptyLine(), stone: "Ruby", stoneCode: "RU-1", pcs: "1", weightCt: "1.000", unitPrice: "100" };
 const RESERVE_KIND = customerStockConfig({
-  noun: "reserve", title: "Reserve", newHref: "/pre-sale/reserve", detailHref: (id) => id, useApi: () => { throw new Error("not called"); },
+  photos: DOCUMENT_PHOTOS.reserve, noun: "reserve", title: "Reserve", newHref: "/pre-sale/reserve", detailHref: (id) => id, useApi: () => { throw new Error("not called"); },
   mapSaveError: () => ({ fieldErrors: [], message: "" }), mapRestoreError: () => ({ message: "", refetch: false }), pickerTitle: "Add From Stock", approvalType: "reserve", notePlaceholder: "", noteHint: "", daybook: null,
 }).kind as DocumentKind;
 

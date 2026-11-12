@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** ADR-0048: Quotation joins the approval flow (Draft → Send to approve → Pending → Approved / Revise / Rejected); CANCELLED is its own. */
+/** ADR-0050: Quotation joins the approval flow (Draft → Send to approve → Pending → Approved / Revise / Rejected); CANCELLED is its own. */
 export const QUOTATION_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REVISION_REQUESTED", "REJECTED", "CANCELLED"] as const;
 export type QuotationStatus = (typeof QUOTATION_STATUSES)[number];
 

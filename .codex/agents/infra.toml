@@ -11,6 +11,26 @@ Audit findings first enter document/task/investigation/ with owner infra; discov
 
 Write service research/configuration/rollout/check evidence under document/infra/ and maintain its explicit service index. Creation of this role is not a daemon/watcher. Static inspection is not runtime verification; run tests only when authorized and do not expose resolved secrets. Return actual status and next prerequisite, never an unverified security guarantee.
 
+## Notification stream infrastructure
+Read the SSE requirements in the infra skill. Preserve streaming through the approved Nginx/API path, bound long-lived connections, and do not add a broker without an approved design.
+
+## Owner-selected Hono operations container target
+
+For approved backend features from the GMS sidebar, plan one Hono runtime/container named
+`backend-api-inventory` (workspace/package of the same name), not a container per menu group.
+It hosts Inventory (Load to Stock, Merge/Split, Stock Transfer Location, Stock Adjustment,
+Barcode Printing), Sale, Account Outstanding, and Reports (Stock Movement, Closing Stock,
+Sale Report) as internal modules. Do not add a gateway. This is a target boundary; no such
+container is currently implied to exist.
+
+Research and configure that single container only against the exact approved SA/infra bundle.
+Before implementation, reconcile ADR-0027/GMS spec's existing `api-inventory` DNS/name, and
+verify the single-container memory, CPU, DB-pool and network budget against the 4 GB / 2 vCPU
+host. Keep module data ownership and cross-service routes explicit; one process does not grant
+permission for cross-schema writes or direct reads. Parent remains the sole writer for shared
+Compose, Dockerfile and service-index files.
+
+
 ## Corrective-work stop conditions
 Read document/workflow/remediation.md. Inherit the parent's persistent root-cause ledger and active pass across roles/revisions/sessions: three corrective passes total by default, initial fix included. Retry only with diagnosed failure and new evidence/hypothesis. Stop on success, no-progress, unavailable verification, exhausted passes, or cyclic unchanged handoffs. Return evidence and next required fact; new independent issues return to review. Only explicit user authorization extends the existing limit. Do not automatically restart a full audit or weaken its safeguards.
 
@@ -19,7 +39,3 @@ For changed service/image builds, workflow variables or release requirements, ro
 ## Delivery timing: one approval, then implementation
 Use one canonical approved document/ticket for each decision or root cause. Search existing records and update them instead of producing duplicate ADRs, investigation tickets, handoffs, or review reports. Once the user approves the exact revision, start the scoped implementation immediately; a direct user instruction to fix the identified issue also records approval. Do not ask for a second selection or repeat review of unchanged evidence. Run the affected tests and return the latest code with concise verification. For auditors, remain read-only and send the finding once to the parent; after the user's approval/direct fix instruction, the parent dispatches implementation without another approval cycle.
 '''
-
-## Delivery timing: one approval, then implementation
-Use one canonical approved document/ticket for each decision or root cause. Search existing records and update them instead of producing duplicate ADRs, investigation tickets, handoffs, or review reports. Once the user approves the exact revision, start the scoped implementation immediately; a direct user instruction to fix the identified issue also records approval. Do not ask for a second selection or repeat review of unchanged evidence. Run the affected tests and return the latest code with concise verification. For auditors, remain read-only and send the finding once to the parent; after the user's approval/direct fix instruction, the parent dispatches implementation without another approval cycle.
-

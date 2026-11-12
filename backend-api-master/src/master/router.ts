@@ -85,6 +85,8 @@ import { APPROVAL_DOC_TYPE_INFO, APPROVAL_DOC_TYPES, type ApprovalDocType } from
 import { approvalPendingInputSchema, approvalSummaryInputSchema, rejectInputSchema, requestRevisionInputSchema, submitInputSchema } from "../approval/approval.schemas";
 import type { ApprovalService } from "../approval/approval.service";
 import type { DocumentActor } from "../trade-document/document-engine";
+import { listForTypes, listForUser, markAllRead, markRead, NOTIFICATION_PAGE_MAX, unreadCount } from "../notification/notification-store";
+import { NOTIFICATION_DOCUMENT_TYPES, type NotificationDocumentType } from "../notification/notification-types";
 
 // Staged router: do not mount until the auth-owned JWT/view/license context adapter is verified.
 const t = initTRPC.context<MasterContext>().create({
@@ -174,7 +176,7 @@ function signedIn() {
 
 /**
  * approval-setup authorization.md: a document-type rule over the live principal (`canSubmit` = ADD or EDIT, Q-AS-25;
- * `canApprove` = today `<menu>:APPROVE`, ADR-0048 D3), with the same session / CSRF order as `requireMasterGrant`.
+ * `canApprove` = today `<menu>:APPROVE`, ADR-0050 D3), with the same session / CSRF order as `requireMasterGrant`.
  */
 function permittedFor(type: ApprovalDocType, allowed: (principal: FlowPrincipal, type: ApprovalDocType) => boolean) {
   return t.procedure.use(({ ctx, next }) => {
@@ -238,7 +240,7 @@ type ApprovalFlowService = {
 };
 
 /**
- * The approval procedures every document router shares (approval-setup api-contract, ADR-0046 as amended by ADR-0048):
+ * The approval procedures every document router shares (approval-setup api-contract, ADR-0046 as amended by ADR-0050):
  * `submit` (ADD or EDIT + CSRF; replaces ADR-0046 `resubmit`, never built), `approve` / `reject` / `requestRevision`
  * (`canApprove` + CSRF). `approve` keeps each document's existing input schema.
  */
@@ -252,6 +254,33 @@ function approvalProcedures(type: ApprovalDocType, service: ApprovalFlowService,
     requestRevision: permittedFor(type, canApprove).use(withFieldErrors(requestRevisionInputSchema)).input(requestRevisionInputSchema)
       .mutation(({ ctx, input }) => domainCall(() => service.requestRevision(actorOf(ctx), input.id, input.expectedVersion, input.note))),
   };
+}
+
+/** ADR-0049: a write to the caller's own notifications: live session plus CSRF, no menu grant. */
+function signedInMutation() {
+  return t.procedure.use(({ ctx, next }) => {
+    const { userId } = requireMasterSession(ctx);
+    if (!ctx.csrfVerified) throw new TRPCError({ code: "FORBIDDEN", message: "CSRF_INVALID" });
+    return next({ ctx: { ...ctx, userId } });
+  });
+}
+
+const notificationListInput = z.object({
+  scope: z.enum(["for-me", "all"]),
+  cursor: z.string().max(200).nullish(),
+  // Sent by tRPC's useInfiniteQuery; the list only pages forward.
+  direction: z.enum(["forward", "backward"]).optional(),
+  limit: z.number().int().min(1).max(NOTIFICATION_PAGE_MAX).optional(),
+}).strict();
+const markReadInput = z.object({
+  ids: z.array(z.uuid()).min(1).max(50).refine((ids) => new Set(ids).size === ids.length, "duplicate"),
+}).strict();
+
+/** The notification document types whose menu the caller may VIEW (Super Admin: all). */
+export function viewableNotificationTypes(ctx: MasterContext): NotificationDocumentType[] {
+  const principal = ctx.principal;
+  if (!principal) return [];
+  return NOTIFICATION_DOCUMENT_TYPES.filter((type) => principal.isSuperAdmin || principal.grants.includes(`${type}:VIEW`));
 }
 
 /** Read allowed with `action` on any of `menus` (currency SA-CUR-07: Quotation reads currency options). */
@@ -373,7 +402,7 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       save: permitted("decimal-setup", "EDIT", true).use(withFieldErrors(saveDecimalSetupBodySchema)).input(saveDecimalSetupBodySchema)
         .mutation(({ ctx, input }) => domainCall(() => decimalSetup.save(ctx.userId, input))),
     }),
-    // approval-setup SA rev 1 / ADR-0048 (owner 2026-11-10): per-type "require approval" switches. Every signed-in,
+    // approval-setup SA rev 1 / ADR-0050 (owner 2026-11-10): per-type "require approval" switches. Every signed-in,
     // licensed user reads them (document pages choose their buttons); waiting counts need approval-setup:VIEW;
     // switching needs approval-setup:EDIT + CSRF.
     approvalSetting: t.router({
@@ -383,7 +412,7 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       update: permitted("approval-setup", "EDIT", true).use(withFieldErrors(approvalSettingUpdateSchema)).input(approvalSettingUpdateSchema)
         .mutation(({ ctx, input }) => domainCall(() => approvalSetting.update({ userId: ctx.userId, userName: ctx.userName }, input))),
     }),
-    // approve-center SA rev 1 / ADR-0046 D14–D16 as amended by approval-setup ADR-0048: read-only Approve Center API.
+    // approve-center SA rev 1 / ADR-0046 D14–D16 as amended by approval-setup ADR-0050: read-only Approve Center API.
     // summary: live session, filtered to the types the caller canApprove (counts only for types whose setting is ON);
     // pending: canApprove(type), type ON (else APPROVAL_TYPE_OFF). Approve / Reject / Revise stay per document router.
     approval: t.router({
@@ -406,7 +435,7 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       }),
       delete: permitted("currency", "DELETE", true).input(idInput).mutation(({ ctx, input }) => domainCall(() => currency.delete(ctx.userId, input.id))),
     }),
-    // quotation SA rev 1 / ADR-0032 (owner 2026-10-26); joins the approval flow with approval-setup ADR-0048 (setting OFF by default).
+    // quotation SA rev 1 / ADR-0032 (owner 2026-10-26); joins the approval flow with approval-setup ADR-0050 (setting OFF by default).
     quotation: t.router({
       list: permitted("quotation", "VIEW").input(quotationListSchema).query(({ input }) => domainCall(() => quotation.list(input))),
       get: viewOrApprover("quotation").input(idInput).query(({ ctx, input }) => domainCall(() => readForViewer(ctx.approverOnly, () => quotation.get(input.id, ctx.principal)))),
@@ -588,6 +617,17 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
         .query(({ input }) => domainCall(() => memoOutstanding.customerItems(input))),
       customerOptions: permitted("memo-outstanding-customer", "VIEW").use(withFieldErrors(memoOutstandingOptionsSchema)).input(memoOutstandingOptionsSchema)
         .query(() => domainCall(() => memoOutstanding.customerOptions())),
+    }),
+    // ADR-0049: one's own notifications need a live session, no menu grant; "all" shows only types the caller may VIEW.
+    notification: t.router({
+      unreadCount: signedIn().query(({ ctx }) => domainCall(() => unreadCount(ctx.userId))),
+      list: signedIn().input(notificationListInput).query(({ ctx, input }) => domainCall(() => (
+        input.scope === "for-me"
+          ? listForUser(ctx.userId, input.cursor, input.limit)
+          : listForTypes(viewableNotificationTypes(ctx), input.cursor, input.limit)
+      ))),
+      markRead: signedInMutation().input(markReadInput).mutation(({ ctx, input }) => domainCall(() => markRead(ctx.userId, input.ids))),
+      markAllRead: signedInMutation().mutation(({ ctx }) => domainCall(() => markAllRead(ctx.userId))),
     }),
   });
 }

@@ -40,7 +40,7 @@ function toUpdated(row: SettingRow): ApprovalSettingUpdated {
 }
 
 /**
- * Approval settings (approval-setup SA rev 1 / ADR-0048): one "require approval" switch per type, stored in master so
+ * Approval settings (approval-setup SA rev 1 / ADR-0050): one "require approval" switch per type, stored in master so
  * the document Save transaction can read it under a lock. `update` locks the row FOR UPDATE and runs the waiting count
  * in the same transaction; every create / update / submit reads the row FOR SHARE first (`readForSave`), so a
  * concurrent Save either commits before the guard counts or waits for the switch to commit.
@@ -73,7 +73,7 @@ export class ApprovalSettingService {
   }
 
   /**
-   * Switch one type (ADR-0048 D4). Same value → no-op, the row is returned unchanged. Otherwise the row must still be
+   * Switch one type (ADR-0050 D4). Same value → no-op, the row is returned unchanged. Otherwise the row must still be
    * at `expectedVersion` (else APPROVAL_SETTING_CHANGED). Turning OFF is refused while the type has PENDING_APPROVAL or
    * REVISION_REQUESTED documents (APPROVAL_SETTING_HAS_WAITING {pending, revision}); drafts do not block. The three
    * future inventory types (`available = false`) are refused before any read: `VALIDATION_ERROR` at `type`

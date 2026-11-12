@@ -1,4 +1,4 @@
-# Testing: approval-setup (SA revision 1, 2026-11-10, approved with ADR-0048)
+# Testing: approval-setup (SA revision 1, 2026-11-10, approved with ADR-0050)
 
 Follows [automated-testing](../../../../workflow/automated-testing.md). Integration tests use the disposable PostgreSQL (`PARTNER_TEST_DATABASE_URL`). ADR-0046 tests (UT-AP-B*, IT-AP-B*) are updated where this bundle changes them (Pending locked, `submit` instead of `resubmit`).
 

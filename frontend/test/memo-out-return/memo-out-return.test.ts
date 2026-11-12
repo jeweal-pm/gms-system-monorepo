@@ -110,7 +110,7 @@ describe("form and mapping (UT-MOR-04)", () => {
     expect(paths(values({ lines: [{ ...filled, pcs: "0", weightCt: "0" }] }))).toEqual(["lines.0.pcs"]);
   });
 
-  it("sends the customer + both addresses and each row's Memo Out line, drops empty rows, never sends photos; loads a saved document back", () => {
+  it("sends the customer + both addresses and each row's Memo Out line, drops empty rows, sends no photos for a row without any; loads a saved document back", () => {
     const input = toMemoOutReturnInput(values());
     expect(input).toMatchObject({ customerId: ID, shippingAddressId: ID, invoiceAddressId: ID });
     expect(input).not.toHaveProperty("vendorId");
@@ -131,6 +131,11 @@ describe("form and mapping (UT-MOR-04)", () => {
       totals: { subtotal: "0.00", discountAmount: "0.00", priceBeforeTax: "0.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "0.00" },
       createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, ...FLOW_DETAIL,
     } satisfies MemoOutReturnDetail;
+    // ADR-0048 (owner 2026-11-11): saved photos load back in order, read from this document's own photo route.
+    expect(fromMemoOutReturn({ ...detail, lines: detail.lines.map((line) => ({ ...line, photoIds: ["p1", "p2"] })) } as typeof detail).lines[0]?.photos).toEqual([
+      { id: "p1", name: "Photo 1", url: "/api/v1/memo-out-return/photos/p1" },
+      { id: "p2", name: "Photo 2", url: "/api/v1/memo-out-return/photos/p2" },
+    ]);
     expect(fromMemoOutReturn(detail)).toMatchObject({
       id: ID, docNo: "MOR-1", version: 3, status: "APPROVED", customerId: ID, shippingAddressId: "", invoiceAddressId: ID,
       lines: [{ pcs: "1", stockId: "260002", memoOutLineId: ID, memoOutNo: "MO-1", outstandingPcs: "2", outstandingWeightCt: "1.500" }],

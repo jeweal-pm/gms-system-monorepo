@@ -5,7 +5,7 @@ import { isPrismaUnavailable, prismaCode } from "../common/persistence";
 /**
  * Domain errors of one trade document type (memo out `MEMO_OUT_*`, memo out return `MEMO_OUT_RETURN_*`, ADR-0033;
  * memo receive / memo return, memo-return SA rev 1), same codes and statuses as quotation's (api-contract "Errors").
- * approval-setup ADR-0048 adds `<CODE>_APPROVAL_OFF` (submit while the type's approval is OFF), `<CODE>_REVISE_LIMIT`
+ * approval-setup ADR-0050 adds `<CODE>_APPROVAL_OFF` (submit while the type's approval is OFF), `<CODE>_REVISE_LIMIT`
  * (a second Revise) and `<CODE>_IN_USE` (edit / delete of an auto-approved document another document uses; `details
  * {usedBy}` = that document's number when known).
  */

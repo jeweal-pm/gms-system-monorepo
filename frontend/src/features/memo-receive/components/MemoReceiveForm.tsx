@@ -60,7 +60,7 @@ export const MEMO_RECEIVE_HREF = "/memo/memo-receive";
 const APPROVAL_TYPE = "memo-receive";
 export const memoReceiveHref = (id: string) => `${MEMO_RECEIVE_HREF}/${id}`;
 
-/** ADR-0048 status badges (Draft, Pending Approval, Revise, Approved, Rejected). */
+/** ADR-0050 status badges (Draft, Pending Approval, Revise, Approved, Rejected). */
 export { FLOW_STATUS_LABELS as STATUS_LABELS } from "@/features/trade-document/flow-status";
 
 /** Row photos (rev 4, SA revision 2): the row panel uploads to and reads from the Memo Receive photo route. */
@@ -153,7 +153,7 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, flow:
     }
   }
 
-  // FE-AS-010 (ADR-0048): Save / Send to approve / Edit / Delete follow the approval setting and `Flow`.
+  // FE-AS-010 (ADR-0050): Save / Send to approve / Edit / Delete follow the approval setting and `Flow`.
   const approvalFlow = useDocumentFlow({
     type: APPROVAL_TYPE,
     saved,
@@ -173,7 +173,7 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, flow:
     onError: (error) => void showError(error),
   });
 
-  /** ADR-0048 codes first (in use, status, approval off), then the page's own mapping. */
+  /** ADR-0050 codes first (in use, status, approval off), then the page's own mapping. */
   const onWriteError = async (error: unknown, action: "save" | "delete") => {
     if (!(await approvalFlow.handleError(error, action))) await showError(error);
   };

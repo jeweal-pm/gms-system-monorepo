@@ -112,7 +112,7 @@ const actionClass = {
 
 /**
  * C-AP-13 (FE-AP-010 / FE-AS-013): Reject… (outline red), Revise… (outline amber; disabled with the info tooltip once the
- * document was sent back, ADR-0048), Approve (filled). Shared by the table rows and the preview modal footer.
+ * document was sent back, ADR-0050), Approve (filled). Shared by the table rows and the preview modal footer.
  */
 export function ReviewActions({ docNo, revisionCount, disabled, busy, approveIndex, describedBy, onReject, onRevise, onApprove }: {
   docNo: string;
@@ -194,7 +194,7 @@ export function ApprovalTable({ menu, rows, sort, onSort, selected, onToggleRow,
               </td>
               <td className={cx(td, "tabular-nums")}>{index + 1}</td>
               <td className={td}>
-                <button type="button" data-preview-id={row.id} aria-haspopup="dialog" onClick={() => onOpen(row)} className={cx("rounded-gms-sm font-medium text-gms-primary underline", focusRing)}>
+                <button type="button" data-preview-id={row.id} aria-haspopup="dialog" onClick={() => onOpen(row)} className={cx("rounded-gms-sm font-medium text-gms-text underline", focusRing)}>
                   {row.docNo}
                 </button>
                 <span className="block text-gms-label text-gms-text-secondary">{shortDate(row.docDate)}</span>

@@ -99,7 +99,7 @@ describe("errors", () => {
 });
 
 describe("permissions and status (SA-QT-02/03)", () => {
-  it("UT-QT-04 access follows quotation:<ACTION> (Edit / Delete now come from Flow, ADR-0048)", () => {
+  it("UT-QT-04 access follows quotation:<ACTION> (Edit / Delete now come from Flow, ADR-0050)", () => {
     expect(quotationAccess({ isSuperAdmin: false, permissions: ["quotation:VIEW", "quotation:CANCEL"] })).toMatchObject({ view: true, add: false, edit: false, cancel: true, approve: false });
     expect(quotationAccess({ isSuperAdmin: true, permissions: [] }).delete).toBe(true);
     expect(quotationAccess(undefined).view).toBe(false);

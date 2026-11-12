@@ -28,7 +28,7 @@ vi.mock("next/link", async () => {
 });
 
 /**
- * approval-setup FE-AS-010 / FE-AS-012 (ADR-0048) unit cases UT-AS-F01…F10: the shared document flow rules
+ * approval-setup FE-AS-010 / FE-AS-012 (ADR-0050) unit cases UT-AS-F01…F10: the shared document flow rules
  * (`flow-status.ts`), the header's status text, the Daybook dots / reason and `readDomainError().details`.
  */
 
@@ -135,7 +135,7 @@ describe("UT-AS-F03 messages", () => {
 });
 
 describe("UT-AS-F04 new error codes (error-handling.md)", () => {
-  it("maps every ADR-0048 code of each document type; other codes are left to the page", () => {
+  it("maps every ADR-0050 code of each document type; other codes are left to the page", () => {
     for (const [type, { code, menu }] of Object.entries(APPROVAL_DOCUMENTS) as [keyof typeof APPROVAL_DOCUMENTS, { code: string; menu: string }][]) {
       expect(mapFlowError(domainError(`${code}_APPROVAL_OFF`), type, "X-1", "submit")).toEqual({ message: `Approval is now off for ${menu}. Save to approve it.`, refetch: true, settingChanged: true });
       expect(mapFlowError(domainError(`${code}_IN_USE`, { usedBy: "MOR-7" }), type, "X-1", "save")).toEqual({ message: "X-1 can't be changed: its items are used in MOR-7.", refetch: true, settingChanged: false });
@@ -162,7 +162,7 @@ describe("UT-AS-F04 new error codes (error-handling.md)", () => {
   });
 });
 
-describe("UT-AS-F05 Daybook dots and reasons (FE-AS-012, ADR-0048 D6)", () => {
+describe("UT-AS-F05 Daybook dots and reasons (FE-AS-012, ADR-0050 D6)", () => {
   it("Draft grey, Pending / Revise orange, Approved green, Rejected red; approval OFF shows Drafts green", () => {
     expect(flowDot("DRAFT")).toEqual({ className: "bg-[#A9B1B9]", label: "Draft" });
     expect(flowDot("PENDING_APPROVAL")).toEqual({ className: "bg-[#F5A524]", label: "Pending approval" });

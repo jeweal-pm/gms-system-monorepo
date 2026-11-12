@@ -160,7 +160,7 @@ describe.runIf(canRun)("IT-QT quotation From Stock on PostgreSQL", () => {
     const updated = await quotation.update(ACTOR, saved.id, 1, quoteInput([stockLine(item.id, 10, "5")]));
     expect((await quotation.get(saved.id)).lines).toMatchObject([{ source: "STOCK", pcs: 10, weightCt: "5.000" }]);
     expect(await bucketsOf(item.id)).toEqual({ pending: [10, "5.000"], reserved: [0, "0.000"] });
-    // ADR-0048 D4: an auto-approved quotation (approval OFF) is soft deleted while unused (no document uses a quotation yet).
+    // ADR-0050 D4: an auto-approved quotation (approval OFF) is soft deleted while unused (no document uses a quotation yet).
     expect(updated).toMatchObject({ status: "APPROVED", autoApproved: true, canEdit: false });
     await expect(quotation.delete(ACTOR, saved.id, updated.version)).resolves.toEqual({ ok: true, version: updated.version + 1 });
     expect(await bucketsOf(item.id)).toEqual({ pending: [10, "5.000"], reserved: [0, "0.000"] });

@@ -62,7 +62,7 @@ vi.mock("../../src/database/prisma-client", () => {
   });
   const empty = { findMany: vi.fn(async () => []) };
   const tx = {
-    // Prisma.sql objects and tagged-template calls (the approval setting read, ADR-0048: no row → approval ON).
+    // Prisma.sql objects and tagged-template calls (the approval setting read, ADR-0050: no row → approval ON).
     $queryRaw: vi.fn(async (sql: { strings: string[]; values: unknown[] } | TemplateStringsArray, ...rest: unknown[]) => {
       const strings = Array.isArray(sql) ? [...sql] : (sql as { strings: string[] }).strings;
       const values = Array.isArray(sql) ? rest : (sql as { values: unknown[] }).values;
@@ -101,6 +101,9 @@ vi.mock("../../src/database/prisma-client", () => {
     memoOutReturn: document("memoOutReturn"),
     memoOutReturnLine: children("memoOutReturnLine"),
     memoOutReturnCharge: children("memoOutReturnCharge"),
+    // ADR-0049: a document created for approval records its notification in the same transaction.
+    notificationEvent: { create: vi.fn(async () => ({})) },
+    notificationRecipient: { createMany: vi.fn(async () => ({ count: 0 })) },
   };
   return { prisma: { ...tx, $transaction: vi.fn(async (fn: (client: typeof tx) => unknown) => fn(tx)) } };
 });
@@ -159,8 +162,9 @@ beforeEach(() => {
 });
 
 describe("schemas", () => {
-  it("UT-MO-B01 memo lines can't carry photos; each document takes only its own party fields", () => {
-    expect(createMemoOutSchema.safeParse({ ...outInput(), lines: [{ ...outInput().lines[0], photoIds: [STONE] }] }).success).toBe(false);
+  it("UT-MO-B01 memo lines take up to 5 distinct photos (ADR-0048); each document takes only its own party fields", () => {
+    expect(createMemoOutSchema.safeParse({ ...outInput(), lines: [{ ...outInput().lines[0], photoIds: [STONE] }] }).success).toBe(true);
+    expect(createMemoOutSchema.safeParse({ ...outInput(), lines: [{ ...outInput().lines[0], photoIds: [STONE, STONE] }] }).success).toBe(false);
     expect(createMemoOutSchema.safeParse({ ...outInput(), vendorId: VENDOR }).success).toBe(false);
     expect(createMemoOutReturnSchema.safeParse({ ...returnInput(), vendorId: VENDOR }).success).toBe(false);
     expect(createMemoOutReturnSchema.safeParse({ ...returnInput(), dueDate: "2026-10-01" }).success).toBe(false);
@@ -176,7 +180,7 @@ describe("schemas", () => {
 describe("numbering from Document Setup (SA-MO-04)", () => {
   it("UT-MO-B02 memo out reads key memo-out under a row lock; first number = start no, then max + 1", async () => {
     await expect(memoOut.create("actor", outInput())).resolves.toMatchObject({ docNo: "MO-2609001", version: 1 });
-    // ADR-0048: the approval setting is read FOR SHARE first (lock order: setting → numbering / header).
+    // ADR-0050: the approval setting is read FOR SHARE first (lock order: setting → numbering / header).
     expect(db.rawSql[0].text).toContain("approval_setting");
     expect(db.rawSql[0].text).toContain("FOR SHARE");
     expect(db.rawSql[0].values[0]).toBe("memo-out");
@@ -262,19 +266,19 @@ describe("update and delete (SA-MO-07)", () => {
     db.stored = { docNo: "MOR-1", status: "DRAFT", autoApproved: false, revisionCount: 0, version: 2, currencyCode: "THB", customerId: CUSTOMER, lines: [{ stoneCodeId: null, id: ID(50) }] };
     db.customer = { ...db.customer!, active: false };
     await expect(memoOutReturn.update("editor", DOC, 2, returnInput())).resolves.toMatchObject({ id: DOC, version: 3, status: "DRAFT", autoApproved: false });
-    // The header lock: one guarded version bump over the changeable statuses (ADR-0048 rule 2).
+    // The header lock: one guarded version bump over the changeable statuses (ADR-0050 rule 2).
     expect(db.updates[0]).toMatchObject({ where: { id: DOC, version: 2, status: { in: ["DRAFT", "REVISION_REQUESTED", "APPROVED"] }, deletedAt: null }, data: { version: { increment: 1 } } });
     db.writeCount = 0;
     db.stored = { ...db.stored, version: 5 };
     expect(await failure(memoOutReturn.update("editor", DOC, 2, returnInput()))).toMatchObject({ status: 409, code: "MEMO_OUT_RETURN_CHANGED" });
-    // Pending is locked (ADR-0048): status first, before the version.
+    // Pending is locked (ADR-0050): status first, before the version.
     db.stored = { ...db.stored, status: "PENDING_APPROVAL" };
     expect(await failure(memoOutReturn.update("editor", DOC, 2, returnInput()))).toMatchObject({ status: 409, code: "MEMO_OUT_RETURN_STATUS_INVALID" });
     db.stored = null;
     expect(await failure(memoOut.update("editor", DOC, 2, outInput()))).toMatchObject({ status: 404, code: "MEMO_OUT_NOT_FOUND" });
   });
 
-  it("UT-MO-B08 delete (now soft, ADR-0045 / ADR-0048) needs the current version of a draft memo out; a pending one is locked", async () => {
+  it("UT-MO-B08 delete (now soft, ADR-0045 / ADR-0050) needs the current version of a draft memo out; a pending one is locked", async () => {
     db.stored = { docNo: "MO-1", status: "DRAFT", autoApproved: false, revisionCount: 0, version: 1 };
     await expect(memoOut.delete("actor", DOC, 1)).resolves.toEqual({ ok: true, version: 2 });
     expect(db.updates[0]).toMatchObject({ where: { id: DOC, version: 1, status: { in: ["DRAFT", "REVISION_REQUESTED", "APPROVED"] }, deletedAt: null } });

@@ -5,7 +5,7 @@ import { purchaseListSchema } from "../../src/purchase/purchase.schemas";
 import { purchaseOrderListSchema } from "../../src/purchase-order/purchase-order.schemas";
 import { quotationListSchema, QUOTATION_STATUSES } from "../../src/quotation/quotation.schemas";
 
-/** UT-AP-B09 / UT-AS-B05 (ADR-0046 D2/D3 as amended by ADR-0048): status enums and review / submit inputs. */
+/** UT-AP-B09 / UT-AS-B05 (ADR-0046 D2/D3 as amended by ADR-0050): status enums and review / submit inputs. */
 
 const ID = "0b9f3c4e-1d2a-4b3c-8d4e-5f6a7b8c9d0e";
 const issues = (result: { success: boolean; error?: { issues: { path: PropertyKey[]; code: string }[] } }) =>
@@ -18,7 +18,7 @@ describe("approval schemas", () => {
     expect(issues(rejectInputSchema.safeParse({ id: ID, expectedVersion: 2, reason: "   " }))).toEqual([{ path: "reason", code: "too_small" }]);
     expect(issues(rejectInputSchema.safeParse({ id: ID, expectedVersion: 2, reason: "" }))).toEqual([{ path: "reason", code: "too_small" }]);
     expect(issues(requestRevisionInputSchema.safeParse({ id: ID, expectedVersion: 2, note: "x".repeat(501) }))).toEqual([{ path: "note", code: "too_big" }]);
-    // A reason is required for Revise as well as Reject (ADR-0048).
+    // A reason is required for Revise as well as Reject (ADR-0050).
     expect(issues(requestRevisionInputSchema.safeParse({ id: ID, expectedVersion: 2 }))).toEqual([{ path: "note", code: "invalid_type" }]);
     expect(issues(rejectInputSchema.safeParse({ id: ID, expectedVersion: 2 }))).toEqual([{ path: "reason", code: "invalid_type" }]);
   });

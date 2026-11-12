@@ -54,3 +54,14 @@ export function useSidebarCollapsed(): [collapsed: boolean, setCollapsed: (colla
   const setCollapsed = useCallback((next: boolean) => writeCollapsed(next), []);
   return [collapsed, setCollapsed];
 }
+
+/** Owner 2026-11-11: signing out forgets the preference, so the next sign-in starts with the sidebar open. */
+export function resetSidebarPreference() {
+  memoryValue = null;
+  try {
+    window.localStorage.removeItem(storageKey);
+  } catch {
+    // Nothing stored.
+  }
+  for (const listener of listeners) listener();
+}

@@ -1,6 +1,6 @@
 # 2026-11-12: Approval setup saves, and Approve follows the settings (frontend stage B)
 
-- Feature: `approval-setup` FE-AS-008, FE-AS-009, FE-AS-011 and FE-AS-013, with `approve-center` FE-AP-009 and FE-AP-010, on SA revision 1 ([ADR-0048](../adr/0048-approval-setting-draft-send-to-approve.md), ADR-0046). The owner started this on 2026-11-12 ("เริ่มทำ frontend ให้หน้าเว็บใช้ flow ใหม่"). Branch `feat/10-11-26-approval-api`, uncommitted. Stage A: [document pages](2026-11-12-approval-document-pages-frontend.md).
+- Feature: `approval-setup` FE-AS-008, FE-AS-009, FE-AS-011 and FE-AS-013, with `approve-center` FE-AP-009 and FE-AP-010, on SA revision 1 ([ADR-0050](../adr/0050-approval-setting-draft-send-to-approve.md), ADR-0046). The owner started this on 2026-11-12 ("เริ่มทำ frontend ให้หน้าเว็บใช้ flow ใหม่"). Branch `feat/10-11-26-approval-api`, uncommitted. Stage A: [document pages](2026-11-12-approval-document-pages-frontend.md).
 - **Setup › Approval saves the switches**
   - The page reads `approvalSetting.list` from the same cache as the document pages, so their buttons change after a switch.
   - Each switch calls `approvalSetting.update` with the version the page loaded. The switch shows a spinner until the server answers.

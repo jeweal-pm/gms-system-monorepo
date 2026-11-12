@@ -13,6 +13,8 @@ export type MasterContext = {
   authorization: "CURRENT" | "UNAVAILABLE";
   license: "ELIGIBLE" | "DENIED" | "UNAVAILABLE";
   csrfVerified: boolean;
+  /** Expiry (epoch ms) of the access token behind this request, when known (ADR-0049 D6). */
+  accessExpiresAt?: number | null;
 };
 
 type MasterPrincipal = NonNullable<MasterContext["principal"]>;

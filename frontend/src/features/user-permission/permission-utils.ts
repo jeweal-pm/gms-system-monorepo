@@ -1,5 +1,5 @@
 import type { CheckState } from "@/components/ui/checkbox";
-import type { CatalogNode, PermissionAction } from "./api";
+import { HIDDEN_MATRIX_ACTIONS, type CatalogNode, type PermissionAction } from "./api";
 
 export type { CheckState };
 export type PermissionValues = Record<string, boolean>;
@@ -64,9 +64,17 @@ export function editableKeys(keys: readonly string[], grantable: ReadonlySet<str
   return grantable ? keys.filter((key) => grantable.has(key)) : [...keys];
 }
 
-/** Number of checked cells that are applicable in the current catalog (stale keys are not counted). */
+/** Applicable keys of the columns the matrix shows (APPROVE is hidden, owner 2026-11-10). */
+export function matrixKeys(nodes: readonly CatalogNode[]): string[] {
+  return applicableKeys(nodes).filter((key) => !HIDDEN_MATRIX_ACTIONS.some((action) => key.endsWith(`:${action}`)));
+}
+
+/** "{on} of {total} permissions on": the shown columns only, so the numbers match what the user can see. */
+export const matrixApplicableCount = (nodes: readonly CatalogNode[]) => matrixKeys(nodes).length;
+
+/** Number of checked shown cells that are applicable in the current catalog (stale keys are not counted). */
 export function countEnabled(nodes: readonly CatalogNode[], values: PermissionValues) {
-  return applicableKeys(nodes).filter((key) => values[key]).length;
+  return matrixKeys(nodes).filter((key) => values[key]).length;
 }
 
 export function valuesFromKeys(keys: readonly string[]): PermissionValues {
@@ -121,4 +129,41 @@ export const DEFAULT_SUBTASK_VIEW: SubtaskView = "collapsed";
 /** Collapsed groups for a view; `flipped` holds the groups whose chevron was clicked against that view. */
 export function collapsedGroupIds(view: SubtaskView, groups: readonly string[], flipped: ReadonlySet<string>): Set<string> {
   return new Set(groups.filter((id) => (view === "collapsed") !== flipped.has(id)));
+}
+
+/* ---------- Approve field (Personal Information, owner 2026-11-10) ---------- */
+
+export type ApproveOption = { id: string; label: string };
+
+/**
+ * Documents the Approve field offers: the Approve menu's documents (sidebar order) whose catalog leaf has APPROVE.
+ * The matrix no longer shows APPROVE; this field grants `<leaf>:APPROVE` instead.
+ */
+export function approveOptions(nodes: readonly CatalogNode[], menus: readonly { leaf: string; label: string }[]): ApproveOption[] {
+  const approvable = new Set(leafNodes(nodes).filter((leaf) => leaf.actions.includes("APPROVE")).map((leaf) => leaf.id));
+  return menus.filter((menu) => approvable.has(menu.leaf)).map((menu) => ({ id: menu.leaf, label: menu.label }));
+}
+
+/** The chosen documents: options whose APPROVE is on. */
+export function approveSelection(values: PermissionValues, options: readonly ApproveOption[]): string[] {
+  return options.filter((option) => values[permissionKey(option.id, "APPROVE")]).map((option) => option.id);
+}
+
+/**
+ * Applies the field's new selection: a chosen document gets APPROVE and VIEW (VD-01); a removed one loses APPROVE
+ * only (VD-04). Documents the signed-in user may not grant (DA-02) keep their stored value.
+ */
+export function withApproveSelection(values: PermissionValues, chosen: readonly string[], options: readonly ApproveOption[], grantable: ReadonlySet<string> | null | undefined): PermissionValues {
+  const next = { ...values };
+  for (const option of options) {
+    const key = permissionKey(option.id, "APPROVE");
+    if (grantable && !grantable.has(key)) continue;
+    if (chosen.includes(option.id)) {
+      next[key] = true;
+      next[permissionKey(option.id, "VIEW")] = true;
+    } else {
+      delete next[key];
+    }
+  }
+  return next;
 }

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { partnerException } from "../../src/common/errors";
 import { ACTOR_PATTERN, approvePending, domainCodeOf, formatReport, GO_LIVE_ORDER, main, type RunReport } from "../../src/scripts/approve-pending";
 
-/** Go-live command units (approval-setup ADR-0048 D7, BE-AS-009): order, error classes, arguments, the final table. */
+/** Go-live command units (approval-setup ADR-0050 D7, BE-AS-009): order, error classes, arguments, the final table. */
 
 describe("approve-pending go-live command", () => {
   it("dependency order Memo Receive → Memo Return → Memo Out → Memo Out Return → Reserve → Purchase Order → Purchase → Quotation", () => {

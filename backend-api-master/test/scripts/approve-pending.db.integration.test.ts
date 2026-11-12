@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sendAndApprove, setApproval, submitted } from "../partner-shared/approval";
 
 /**
- * IT-AS-B12 (approval-setup ADR-0048 D7, BE-AS-009): the go-live command on real PostgreSQL.
+ * IT-AS-B12 (approval-setup ADR-0050 D7, BE-AS-009): the go-live command on real PostgreSQL.
  * - Dry run changes nothing (documents, Memo Stock) and predicts each document alone against the pre-run state, one
  *   rolled-back transaction per document (INV-20261111-002 H2); competing documents may still be deleted by apply.
  * - Apply approves in dependency order through the normal approve (stock effects), oldest first, regardless of the

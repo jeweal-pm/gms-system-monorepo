@@ -17,7 +17,7 @@
 - Auditor / mode / run ID: sec-auditor / focused pre-handoff review (guidance mode, static, read-only) / no full-audit run
 - Date and audit scope: review revision dated 2026-11-10 (record written 2026-11-11). Working-tree diff against `origin/dev`
   under `backend-api-master/` and `backend-api-auth/` (tracked changes plus untracked approval-setting, approval, scripts,
-  migrations and tests). Design: ADR-0046 as amended by ADR-0048, `document/apps/backend/master/approval-setup/*.md`
+  migrations and tests). Design: ADR-0046 as amended by ADR-0050, `document/apps/backend/master/approval-setup/*.md`
   (clarifications G1–G15), `document/apps/backend/master/approve-center/*.md`.
 - Source commit, dirty paths, and relevant content hashes: HEAD `e6da43b37a87208b6175611f021207ac0dca9ecc` on branch
   `feat/10-11-26-approval-api` plus the uncommitted working tree (72 dirty/untracked paths under the two services).
@@ -149,7 +149,7 @@ revisions, and sessions for the same cause. Do not allocate a fresh budget on ha
 - Owner: backend
 - Priority: awaiting user review
 - Auditor / mode / run ID: security-auditor / focused pre-handoff review / none (no full audit run)
-- Date and audit scope: 2026-11-11 (review requested 2026-11-10); working-tree diff `git diff origin/dev -- backend-api-master backend-api-auth` plus untracked files under those two services (approval backend, ADR-0046 amended by ADR-0048, clarifications G1–G15)
+- Date and audit scope: 2026-11-11 (review requested 2026-11-10); working-tree diff `git diff origin/dev -- backend-api-master backend-api-auth` plus untracked files under those two services (approval backend, ADR-0046 amended by ADR-0050, clarifications G1–G15)
 - Source commit, dirty paths, and relevant content hashes: HEAD `e6da43b37a87208b6175611f021207ac0dca9ecc` with uncommitted changes (57 tracked files, 2569+/968−, plus untracked `approval-setting/`, `approval/`, `scripts/approve-pending.ts`, `trade-document/document-totals.ts`, three master migrations, one auth migration); sha256 of the tracked diff (first 16 hex) `f0da39f62c8f4e70`. The tracked diff grew by 9 lines while the review ran; line numbers below were re-read at the end of the review.
 - Related ticket / root-cause fingerprint: `approval-auto-approved-soft-delete-no-dependent-lock`; related history INV-20261031-001 (pooled Reserve release), INV-20261031-002 (FK/FOR UPDATE deadlock)
 - Category: F1 vulnerability (data-integrity race); H1, H2 hardening

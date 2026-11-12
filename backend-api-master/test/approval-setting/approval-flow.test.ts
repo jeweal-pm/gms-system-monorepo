@@ -16,7 +16,7 @@ import {
 } from "../../src/approval-setting/approval-flow";
 import { APPROVAL_DOC_TYPES } from "../../src/approval-setting/approval-types";
 
-/** UT-AS-B01…B06, B08 (approval-setup SA rev 1 / ADR-0048): the pure status rules shared by the eight documents. */
+/** UT-AS-B01…B06, B08 (approval-setup SA rev 1 / ADR-0050): the pure status rules shared by the eight documents. */
 
 class Coded extends Error {
   constructor(readonly code: string, readonly usedBy?: string) { super(code); }

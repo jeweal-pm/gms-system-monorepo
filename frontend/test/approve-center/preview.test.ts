@@ -163,3 +163,11 @@ describe("UT-AP-18 modal body and footer", () => {
     expect(modal).toContain("dialog.showModal()");
   });
 });
+
+describe("UT-AP-19 document number colour (owner 2026-11-10)", () => {
+  it("the number is #1C252E (gms-text), not the primary teal", () => {
+    const source = readFileSync("src/features/approve-center/components/ApprovalTable.tsx", "utf8");
+    expect(source).toContain('className={cx("rounded-gms-sm font-medium text-gms-text underline", focusRing)}');
+    expect(readFileSync("src/app/globals.css", "utf8")).toMatch(/--color-gms-text:\s*#1c252e;/);
+  });
+});

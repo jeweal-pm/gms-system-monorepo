@@ -6,6 +6,7 @@ import { Prisma } from "../generated/prisma/client";
 import { CustomerStockDocument, type CustomerStockInput } from "./customer-stock-document";
 import type { DocumentActor } from "./document-engine";
 import type { MemoReceiveListInput } from "./memo-schemas";
+import { LINE_PHOTO_DOCUMENTS } from "./line-photos";
 
 /**
  * An auto-approved Memo Out is used once any Memo Out Return line names one of its lines (approval-setup "Effects and
@@ -25,7 +26,7 @@ export async function memoOutUsedBy(client: Tx | typeof prisma, id: string): Pro
 
 /**
  * memo-out SA rev 2 / ADR-0033 rev 2 (owner 2026-10-31): Document Setup key `memo-out` and the approval flow of
- * approval-setup ADR-0048. Lines picked From Stock name a Memo Stock item, and approval moves their quantity from pending
+ * approval-setup ADR-0050. Lines picked From Stock name a Memo Stock item, and approval moves their quantity from pending
  * into Reserve. Since memo-out rev 3 every line comes From Stock (the schema refuses a line without `memoStockId`). The
  * rules live in the shared customer stock document, also used by Reserve; Memo Out Return reuses its customer party and
  * options.
@@ -43,6 +44,7 @@ const memoOut = new CustomerStockDocument({
   parentKey: "memoOutId",
   approvalType: "memo-out",
   usedBy: memoOutUsedBy,
+  photos: LINE_PHOTO_DOCUMENTS.memoOut,
 });
 
 export const memoOutErrors = memoOut.errors;
@@ -80,7 +82,7 @@ export class MemoOutService {
     return memoOut.approve(actorId, id, expectedVersion);
   }
 
-  /** Go-live command (ADR-0048 D7): the same approve inside the caller's transaction. */
+  /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction. */
   approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
     return memoOut.approveWithin(tx, actorId, id, expectedVersion);
   }

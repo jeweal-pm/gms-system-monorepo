@@ -69,10 +69,13 @@ describe("purchase input (UT-PU-B01)", () => {
     expect(createPurchaseSchema.safeParse(input([manual({ itemNote: "x".repeat(501) })])).success).toBe(false);
   });
 
-  it("strict: unknown keys, photos, line ids on create, 0 or 201 lines and bad dates are refused", () => {
+  it("strict: unknown keys, more than 5 / duplicate photos, line ids on create, 0 or 201 lines and bad dates are refused", () => {
     expect(createPurchaseSchema.safeParse(input([manual({ pendingPcs: 3 })])).success).toBe(false);
     expect(createPurchaseSchema.safeParse(input([manual()], { customerId: ID(3) })).success).toBe(false);
-    expect(createPurchaseSchema.safeParse(input([manual({ photoIds: [ID(9)] })])).success).toBe(false);
+    // ADR-0048 (owner 2026-11-11): up to 5 distinct photos per line.
+    expect(createPurchaseSchema.safeParse(input([manual({ photoIds: [ID(9)] })])).success).toBe(true);
+    expect(createPurchaseSchema.safeParse(input([manual({ photoIds: [ID(9), ID(9)] })])).success).toBe(false);
+    expect(createPurchaseSchema.safeParse(input([manual({ photoIds: [1, 2, 3, 4, 5, 6].map((n) => ID(n)) })])).success).toBe(false);
     expect(paths(createPurchaseSchema.safeParse(input([manual({ id: ID(9) })])))).toEqual(["lines.0:unrecognized_keys"]);
     expect(createPurchaseSchema.safeParse(input([])).success).toBe(false);
     expect(createPurchaseSchema.safeParse(input(Array.from({ length: 200 }, () => manual()))).success).toBe(true);
@@ -89,7 +92,7 @@ describe("purchase input (UT-PU-B01)", () => {
 
   it("list: status enum, date range ≤ 366 days, limit ≤ 50", () => {
     expect(purchaseListSchema.parse({ status: "APPROVED" })).toMatchObject({ status: "APPROVED", limit: 50 });
-    // ADR-0048: DRAFT is a list status (BE-AP-006); a status outside the approval set is refused.
+    // ADR-0050: DRAFT is a list status (BE-AP-006); a status outside the approval set is refused.
     expect(purchaseListSchema.safeParse({ status: "DRAFT" }).success).toBe(true);
     expect(purchaseListSchema.safeParse({ status: "CANCELLED" }).success).toBe(false);
     expect(paths(purchaseListSchema.safeParse({ from: "2026-01-01", to: "2027-01-03" }))).toEqual(["to:range_too_long"]);

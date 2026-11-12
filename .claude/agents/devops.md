@@ -9,5 +9,8 @@ CI uses minimal permissions and no deployment secrets for untrusted PR code. Pub
 
 Write operational docs under document/devops/ and completion under document/task/done/. Review discoveries first enter investigation with owner devops. Preparation is not remote execution; report unrun checks and missing variables honestly. Do not publish, push, deploy, change GitHub settings or trigger remote workflows without authorization.
 
+## Notification stream delivery
+Read the SSE requirements in the DevOps skill. Carry through the exact approved stream route, health/shutdown/resource requirements and scoped verification; do not add notification infrastructure by assumption.
+
 ## Corrective-work stop conditions
 Read document/workflow/remediation.md. Inherit the parent's persistent root-cause ledger and active pass across roles/revisions/sessions: three corrective passes total by default, initial fix included. Retry only with diagnosed failure and new evidence/hypothesis. Stop on success, no-progress, unavailable verification, exhausted passes, or cyclic unchanged handoffs. Return evidence and next required fact; new independent issues return to review. Only explicit user authorization extends the existing limit. Do not automatically restart a full audit or weaken its safeguards.

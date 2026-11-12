@@ -200,7 +200,7 @@ describe.runIf(canRun)("IT-MRT memo return on PostgreSQL", () => {
       .toMatchObject({ status: 409, code: "MEMO_RETURN_PENDING_SHORT", fieldErrors: [{ path: "lines.0.pcs", code: "exceeds_pending" }, { path: "lines.0.weightCt", code: "exceeds_pending" }] });
     expect(await pendingOf(item.id)).toEqual([1, "0.500"]);
     expect(await memoReturn.get(second.id)).toMatchObject({ status: "PENDING_APPROVAL", version: 2 });
-    // ADR-0048: sent back once (reason required), edited down to what is left, sent again, it passes.
+    // ADR-0050: sent back once (reason required), edited down to what is left, sent again, it passes.
     await memoReturn.requestRevision({ id: "approver", name: "Approver" }, second.id, 2, "Only 1 left");
     await memoReturn.update(ACTOR, second.id, 3, returnInput(vendorA, [returnLine(item.id, 1, "0.5")]));
     await sendAndApprove(memoReturn, ACTOR, second.id, 4);

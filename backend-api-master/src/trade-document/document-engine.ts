@@ -16,6 +16,10 @@ import { peekApprovalSetting, readApprovalSetting } from "../approval-setting/ap
 import type { ApprovalDocType } from "../approval-setting/approval-types";
 import type { DocumentErrors } from "./document-errors";
 import { lineTotals } from "./document-totals";
+import { emitNotificationSignals } from "../notification/notification-hub";
+import { approverRecipients, creatorRecipient } from "../notification/notification-recipients";
+import { recordNotification } from "../notification/notification-store";
+import { isNotificationDocumentType, type NotificationDocumentType, type NotificationSignal } from "../notification/notification-types";
 
 /**
  * Shared document engine for reserve, memo out, memo out return (ADR-0033/0036), memo receive (ADR-0034), memo return,
@@ -24,7 +28,7 @@ import { lineTotals } from "./document-totals";
  * calculator, optimistic version. The party part (customer or vendor) comes from an adapter. An optional line hook adds
  * per-line columns (memo receive: kept line ids, Stock IDs and line photos, SA-MR-17; memo return: the Memo Stock item).
  *
- * Approval flow (approval-setup SA rev 1 / ADR-0048, amending approve-center ADR-0046), shared by the seven documents:
+ * Approval flow (approval-setup SA rev 1 / ADR-0050, amending approve-center ADR-0046), shared by the seven documents:
  * - every create / update / submit / restore reads the type's setting `FOR SHARE` first (lock order: setting → header →
  *   source header(s) `FOR SHARE` → memo_out_line rows → memo_stock rows → purchase_order_line rows; a dependent document
  *   locks its source headers before inserting lines or locking stock, INV-20261111-002 F1);
@@ -54,7 +58,7 @@ type DocDelegate = {
   update(args: unknown): Promise<unknown>;
 };
 
-/** The columns a guarded write reads to explain a miss (transaction-soft-delete D8; revise limit ADR-0048). */
+/** The columns a guarded write reads to explain a miss (transaction-soft-delete D8; revise limit ADR-0050). */
 export const MISS_SELECT = { status: true, version: true, deletedAt: true, revisionCount: true } as const;
 export type MissRow = { status: string; version: number; deletedAt: Date | null; revisionCount?: number } | null;
 
@@ -76,7 +80,7 @@ export function explainRestoreMiss(errors: Pick<DocumentErrors, "notFound" | "st
   throw errors.changed();
 }
 
-/** Review miss (D8 order + ADR-0048 revise limit): NOT_FOUND → DELETED → STATUS_INVALID → REVISE_LIMIT → CHANGED. */
+/** Review miss (D8 order + ADR-0050 revise limit): NOT_FOUND → DELETED → STATUS_INVALID → REVISE_LIMIT → CHANGED. */
 export function explainReviewMiss(errors: Pick<DocumentErrors, "notFound" | "deleted" | "statusInvalid" | "changed" | "reviseLimit">, row: MissRow, action: "REJECT" | "REVISE"): never {
   if (!row) throw errors.notFound();
   if (row.deletedAt) throw errors.deleted();
@@ -239,6 +243,39 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
     return (client as unknown as Record<string, DocDelegate>)[this.config.model];
   }
 
+  /** ADR-0049: the documents with an approval step notify; their Document Setup key is also their menu leaf. */
+  private get notificationType(): NotificationDocumentType | null {
+    return isNotificationDocumentType(this.config.transactionKey) ? this.config.transactionKey : null;
+  }
+
+  /** Display-only summary of a document (party, grand total, currency) for its notification. */
+  private async notificationSummary(tx: Tx, id: string) {
+    const row = await this.doc(tx).findUnique({ where: { id }, select: { [this.config.party.nameColumn]: true, grandTotal: true, currencyCode: true } });
+    if (!row) return {};
+    return { partyName: row[this.config.party.nameColumn] as string, amount: row.grandTotal == null ? undefined : money(row.grandTotal), currency: row.currencyCode as string };
+  }
+
+  /**
+   * ADR-0049 D3/D4: inside an approve transaction, records "document.approved" for the document's creator. Returns the
+   * signals to emit after commit (`emitNotificationSignals`).
+   */
+  async notifyApproved(tx: Tx, id: string, actorId: string): Promise<NotificationSignal[]> {
+    const documentType = this.notificationType;
+    if (!documentType) return [];
+    const row = await this.doc(tx).findUnique({ where: { id }, select: { docNo: true, createdBy: true } });
+    if (!row) return [];
+    const signal = await recordNotification(tx, {
+      type: "document.approved",
+      documentType,
+      documentId: id,
+      docNo: row.docNo as string,
+      actorId,
+      recipients: creatorRecipient(row.createdBy as string | null, actorId),
+      summary: await this.notificationSummary(tx, id),
+    });
+    return [signal];
+  }
+
   private child(client: Client, model: string): ChildDelegate {
     return (client as unknown as Record<string, ChildDelegate>)[model];
   }
@@ -289,7 +326,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
           grandTotal: money(row.grandTotal),
           updatedAt: (row.updatedAt as Date).toISOString(),
           deletedAt: isoOrNull(row.deletedAt),
-          // ADR-0048 D6 Daybook: latest status, auto-approved and the latest Revise / Reject reason.
+          // ADR-0050 D6 Daybook: latest status, auto-approved and the latest Revise / Reject reason.
           autoApproved: row.autoApproved as boolean,
           revisionCount: revisionCountOf(row),
           review: reviewOfRow(row),
@@ -349,7 +386,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
         const assigned = lineHook ? await lineHook.assign(tx, input, null) : null;
         const id = uuidV7();
         const now = new Date();
-        // ADR-0048: a DRAFT is not submitted (submitted_* stay null until `submit`).
+        // ADR-0050: a DRAFT is not submitted (submitted_* stay null until `submit`).
         await this.doc(tx).create({
           data: {
             id, numberingId, runningNo, docNo, ...header, ...lineTotals(input.lines), ...partyColumns, ...planData(plan, false, actorId, now),
@@ -372,7 +409,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
   }
 
   /**
-   * Save (update), allowed while DRAFT, REVISION_REQUESTED or auto-approved and not used (ADR-0048 rule 2). The header
+   * Save (update), allowed while DRAFT, REVISION_REQUESTED or auto-approved and not used (ADR-0050 rule 2). The header
    * is locked first by a guarded version bump (D8 miss order). DRAFT stays DRAFT (ON) or becomes APPROVED auto + effects
    * (OFF); REVISION_REQUESTED stays; an auto-approved document reverses its old effects before the new content is
    * validated and written, then applies the new effects — all in one transaction.
@@ -420,7 +457,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
   }
 
   /**
-   * Soft delete (ADR-0045 D4 as amended by ADR-0048): DRAFT / REVISION_REQUESTED, or auto-approved and not used (its
+   * Soft delete (ADR-0045 D4 as amended by ADR-0050): DRAFT / REVISION_REQUESTED, or auto-approved and not used (its
    * effects are reversed first, so the items it brought in leave with it). Pending, rejected and reviewed-approved
    * documents → STATUS_INVALID. The row keeps its Doc No., so the number is never reused (D5). The guarded version bump
    * locks the header (`FOR NO KEY UPDATE`) before `usedBy`, so a dependent holding it `FOR SHARE` (a Memo Out Return of
@@ -480,7 +517,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
   }
 
   /**
-   * Send to approve (ADR-0048): DRAFT / REVISION_REQUESTED → PENDING_APPROVAL with submitted_at / by / by_name and
+   * Send to approve (ADR-0050): DRAFT / REVISION_REQUESTED → PENDING_APPROVAL with submitted_at / by / by_name and
    * version + 1, after the full save validation on the stored document (party, currency, stone codes, amounts and the
    * type's line rules, e.g. Memo Stock availability). While the type's approval is OFF → `<CODE>_APPROVAL_OFF`.
    */
@@ -488,6 +525,10 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
     const { errors, event } = this.config;
     const now = new Date();
     let docNo: string;
+    // ADR-0049 as amended by ADR-0050: approvers hear about a document when it is sent to approve (no longer on create).
+    const documentType = this.notificationType;
+    const approvers = documentType ? await approverRecipients(documentType, actor.id) : [];
+    let signal: NotificationSignal | null = null;
     try {
       docNo = await prisma.$transaction(async (tx) => {
         const requireApproval = await readApprovalSetting(tx, this.config.approvalType);
@@ -497,11 +538,24 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
         });
         if (locked.count === 0) explainMiss(errors, await this.missRow(id, tx), SUBMITTABLE);
         if (!requireApproval) throw errors.approvalOff();
-        return this.validateStored(tx, id);
+        const storedDocNo = await this.validateStored(tx, id);
+        if (documentType) {
+          signal = await recordNotification(tx, {
+            type: "approval.pending",
+            documentType,
+            documentId: id,
+            docNo: storedDocNo,
+            actorId: actor.id,
+            recipients: approvers,
+            summary: await this.notificationSummary(tx, id),
+          });
+        }
+        return storedDocNo;
       }, WRITE_TX);
     } catch (error) {
       throw errors.map(error, "submit");
     }
+    emitNotificationSignals([signal]);
     const version = expectedVersion + 1;
     this.logger.log({ event: `${event}.submitted`, actorId: actor.id, id, docNo, version });
     return { id, version, status: PENDING as "PENDING_APPROVAL", submittedAt: now.toISOString() };
@@ -516,6 +570,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
     const { errors, event } = this.config;
     try {
       const approved = await prisma.$transaction((tx) => this.approveBody(tx, actorId, id, expectedVersion), WRITE_TX);
+      emitNotificationSignals(approved.signals);
       this.logger.log({ event: `${event}.approved`, actorId, id, docNo: approved.docNo, ...approved.log });
       return { id, version: expectedVersion + 1, status: "APPROVED" as const, ...approved.result };
     } catch (error) {
@@ -524,7 +579,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
   }
 
   /**
-   * The same approve inside the caller's transaction (go-live command `scripts/approve-pending.ts`, ADR-0048 D7: its
+   * The same approve inside the caller's transaction (go-live command `scripts/approve-pending.ts`, ADR-0050 D7: its
    * dry run approves each document in its own transaction that is rolled back at once, INV-20261111-002 H2). Errors are mapped like
    * `approve`; the caller owns commit / rollback and logging.
    */
@@ -546,7 +601,10 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
     if (updated.count === 0) explainMiss(this.config.errors, await this.missRow(id, tx), [PENDING]);
     const stored = (await this.doc(tx).findUnique({ where: { id }, select: { docNo: true } }))!;
     const applied = await this.effects.apply(tx, { id, docNo: stored.docNo as string }, actorId, now);
-    return { docNo: stored.docNo as string, ...applied };
+    // ADR-0049: the creator hears about the approval once the transaction commits (approve emits; the go-live command
+    // only records, its readers see the rows on their next fetch).
+    const signals = await this.notifyApproved(tx, id, actorId);
+    return { docNo: stored.docNo as string, signals, ...applied };
   }
 
   /** ADR-0046 D3: PENDING_APPROVAL → REJECTED (final) with the reason; no stock is touched. */
@@ -554,7 +612,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
     return this.review(actor, id, expectedVersion, "REJECT", reason);
   }
 
-  /** ADR-0046 D3 / ADR-0048: PENDING_APPROVAL → REVISION_REQUESTED once (`<CODE>_REVISE_LIMIT` after); no stock is touched. */
+  /** ADR-0046 D3 / ADR-0050: PENDING_APPROVAL → REVISION_REQUESTED once (`<CODE>_REVISE_LIMIT` after); no stock is touched. */
   requestRevision(actor: DocumentActor, id: string, expectedVersion: number, note: string) {
     return this.review(actor, id, expectedVersion, "REVISE", note);
   }
@@ -584,7 +642,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
       data: { version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
     });
     if (locked.count === 0) {
-      // Status first (as before ADR-0048): a document that left its editable state reports that, not a stale version.
+      // Status first (as before ADR-0050): a document that left its editable state reports that, not a stale version.
       const row = (await this.doc(tx).findUnique({ where: { id }, select: { ...MISS_SELECT, autoApproved: true } })) as (MissRow & { autoApproved?: boolean }) | null;
       const editable = row !== null && isEditableStatus({ status: row.status, autoApproved: row.autoApproved === true });
       explainMiss(this.config.errors, row, editable ? allowed : []);

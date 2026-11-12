@@ -59,6 +59,30 @@ For work approved against the new target architecture:
   when images are resized at upload. Propagate request IDs when supported, and display business dates explicitly in
   `Asia/Bangkok` with `th-TH` locale. Verify hydration is deterministic.
 
+## Notification frontend integration
+
+For an approved notification contract, implement both the live connection and the user-facing
+notification experience: unread badge/count, recent list/empty/loading/error states, optional
+toast, mark-read behavior, and authorized deep links. Open one native `EventSource` per owning
+service stream, not one per menu/module; for current GMS this means separate api-master and
+api-inventory streams when both are in scope. Keep API query/read state with TanStack Query and
+use the approved API client for the service (tRPC for master, typed REST for inventory unless
+a later approved contract says otherwise).
+
+Use same-origin `/api/...` URLs and the approved httpOnly-cookie auth contract. Browser
+`EventSource` cannot set arbitrary Authorization headers: never put tokens in query strings or
+localStorage. If the approved auth contract cannot authenticate EventSource safely, return to SA
+for an approved transport/auth design rather than inventing a workaround. Close streams on
+unmount/logout, avoid duplicate connections, and treat events as invalidation signals (ID/type);
+refetch authoritative data, deduplicate IDs, and refresh list/unread state on reconnect so missed
+events are recovered. Do not expose sensitive event details in toasts or browser logs.
+
+Implement aggregate UI without moving ownership: each service remains authoritative for its
+notifications/read state; document cross-service sort, pagination and aggregate counts in the
+approved contract. Add tests for stream lifecycle, multiple services, duplicates/reconnect,
+permission/error states, mark-read and navigation. Use native `EventSource`; add no client
+library unless an approved requirement proves it necessary.
+
 ## Resolve the work
 
 For “frontend ทำตาม Todo list ล่าสุด”, read `document/task/frontend-latest.md`, then

@@ -1,4 +1,4 @@
-# Error handling: approval-setup (SA revision 1, 2026-11-10, approved with ADR-0048)
+# Error handling: approval-setup (SA revision 1, 2026-11-10, approved with ADR-0050)
 
 Codes and HTTP mapping: [api-contract › Errors](api-contract.md#errors-new-or-widened). Logging: structured `{event, actorId, type, id, docNo, code}`; no reasons/notes in logs beyond length.
 

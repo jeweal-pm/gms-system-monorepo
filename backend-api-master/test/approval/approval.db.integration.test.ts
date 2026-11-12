@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sendAndApprove, setApproval, submitted } from "../partner-shared/approval";
 
 /**
- * Approve Center API on real PostgreSQL (approve-center SA rev 1 as amended by approval-setup SA rev 1 / ADR-0048):
+ * Approve Center API on real PostgreSQL (approve-center SA rev 1 as amended by approval-setup SA rev 1 / ADR-0050):
  * - IT-AP-B08: `summary` counts only live PENDING_APPROVAL (not drafts, not deleted), caps at 100 with 101 pending.
  * - IT-AS-B10: OFF types leave `items` (kept in `types` with requireApproval false), `pending` for an OFF type →
  *   APPROVAL_TYPE_OFF; Quotation appears when ON; rows carry `revisionCount`.

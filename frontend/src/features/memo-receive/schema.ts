@@ -3,7 +3,7 @@ import { DUE_BEFORE_DOC_MESSAGE, isFilledLine, lineSchema, lineStoneRule, servic
 import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
 
 /** Memo Receive (ADR-0033, ADR-0034): lines, discounts and totals use the Quotation shape (D6, rev 2). */
-/** ADR-0048: Draft, Pending Approval, Approved, Revise, Rejected. */
+/** ADR-0050: Draft, Pending Approval, Approved, Revise, Rejected. */
 export const MEMO_RECEIVE_STATUSES = APPROVAL_DOC_STATUSES;
 export type MemoReceiveStatus = (typeof MEMO_RECEIVE_STATUSES)[number];
 

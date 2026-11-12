@@ -10,7 +10,7 @@ export const quotationStatusInvalid = () => partnerException("QUOTATION_STATUS_I
 export const quotationDeleted = () => partnerException("QUOTATION_DELETED", HttpStatus.CONFLICT);
 export const quotationReferenceInvalid = (fieldErrors: FieldError[]) => partnerException("QUOTATION_REFERENCE_INVALID", HttpStatus.UNPROCESSABLE_ENTITY, fieldErrors);
 export const quotationPhotoInvalid = (path: string) => partnerException("QUOTATION_PHOTO_INVALID", HttpStatus.UNPROCESSABLE_ENTITY, [{ path, code: "invalid_photo" }]);
-/** approval-setup ADR-0048: submit while Quotation approval is OFF; a second Revise; (no document uses a quotation yet). */
+/** approval-setup ADR-0050: submit while Quotation approval is OFF; a second Revise; (no document uses a quotation yet). */
 export const quotationApprovalOff = () => partnerException("QUOTATION_APPROVAL_OFF", HttpStatus.CONFLICT);
 export const quotationReviseLimit = () => partnerException("QUOTATION_REVISE_LIMIT", HttpStatus.CONFLICT);
 export const quotationInUse = (usedBy: string | null = null) => partnerException("QUOTATION_IN_USE", HttpStatus.CONFLICT, null, usedBy === null ? undefined : { usedBy });

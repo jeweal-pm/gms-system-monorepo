@@ -3,7 +3,7 @@ import { hasMasterGrant } from "../master/authorization";
 import { APPROVAL_DOC_TYPE_INFO, APPROVAL_DOC_TYPES, type ApprovalDocType } from "./approval-types";
 
 /**
- * Shared status rules of the eight approval documents (approval-setup SA rev 1 / ADR-0048 "Key rules", amending
+ * Shared status rules of the eight approval documents (approval-setup SA rev 1 / ADR-0050 "Key rules", amending
  * approve-center ADR-0046). Pure functions: the services read the setting (`readForSave`, FOR SHARE), lock the header
  * and compute `isUsed`, then ask these helpers what is allowed and which status to write.
  *
@@ -36,7 +36,7 @@ export type FlowErrors = {
   reviseLimit(): Error;
 };
 
-/** Revise is allowed once per document (owner rule 2026-11-10, ADR-0048). */
+/** Revise is allowed once per document (owner rule 2026-11-10, ADR-0050). */
 export const REVISE_LIMIT = 1;
 
 const SUBMITTABLE: readonly string[] = ["DRAFT", "REVISION_REQUESTED"];
@@ -54,7 +54,7 @@ export function isEditableStatus(doc: Pick<FlowDoc, "status" | "autoApproved">):
 }
 
 /**
- * Status written by create (`current` null) or update (ADR-0048 rule 1, api-contract `<doc>.update`):
+ * Status written by create (`current` null) or update (ADR-0050 rule 1, api-contract `<doc>.update`):
  * ON create → DRAFT; OFF create → APPROVED auto + apply. DRAFT stays DRAFT (ON) or becomes APPROVED auto + apply (OFF).
  * REVISION_REQUESTED stays (turning OFF is refused while one exists). Auto-approved stays auto-approved: reverse + re-apply.
  * Call only after `assertEditable`; any other status is a programming error.
@@ -69,7 +69,7 @@ export function saveStatus(requireApproval: boolean, current: Pick<FlowDoc, "sta
 }
 
 /**
- * Edit / delete guard (ADR-0048 rule 2): deleted → `_DELETED`; Pending, Rejected, reviewed Approved (and Cancelled) →
+ * Edit / delete guard (ADR-0050 rule 2): deleted → `_DELETED`; Pending, Rejected, reviewed Approved (and Cancelled) →
  * `_STATUS_INVALID`; an auto-approved document that another document uses → `_IN_USE {usedBy}`.
  * `usedBy` = the first using document's number, or null when unused (only relevant for auto-approved documents).
  */
@@ -79,10 +79,10 @@ export function assertEditable(doc: FlowDoc, usedBy: string | null, errors: Pick
   if (doc.status === "APPROVED" && usedBy !== null) throw errors.inUse(usedBy);
 }
 
-/** Delete follows the edit rule exactly (ADR-0048 rule 2/3). */
+/** Delete follows the edit rule exactly (ADR-0050 rule 2/3). */
 export const assertDeletable = assertEditable;
 
-/** `submit` (ADR-0048): from DRAFT / REVISION_REQUESTED only, and only while the type's approval is ON. */
+/** `submit` (ADR-0050): from DRAFT / REVISION_REQUESTED only, and only while the type's approval is ON. */
 export function assertSubmittable(doc: FlowDoc, requireApproval: boolean, errors: Pick<FlowErrors, "deleted" | "statusInvalid" | "approvalOff">): void {
   if (doc.deletedAt) throw errors.deleted();
   if (!SUBMITTABLE.includes(doc.status)) throw errors.statusInvalid();
@@ -101,7 +101,7 @@ export function assertReviewable(doc: FlowDoc, action: "APPROVE" | "REJECT" | "R
 
 /**
  * Who may approve, reject and revise a type (authorization.md `canApprove`). Today: `<menu>:APPROVE` (Super Admin
- * always). ADR-0048 D3 later replaces this with the user's Approve multi-select; no other code checks APPROVE.
+ * always). ADR-0050 D3 later replaces this with the user's Approve multi-select; no other code checks APPROVE.
  */
 export function canApprove(principal: FlowPrincipal, type: ApprovalDocType): boolean {
   return hasMasterGrant(principal, APPROVAL_DOC_TYPE_INFO[type].menu, "APPROVE");

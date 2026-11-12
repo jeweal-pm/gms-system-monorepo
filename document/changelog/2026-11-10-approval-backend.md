@@ -1,4 +1,4 @@
-# 2026-11-10 — Approval backend (ADR-0046 as amended by ADR-0048), stage 3
+# 2026-11-10 — Approval backend (ADR-0046 as amended by ADR-0050), stage 3
 
 Branch `feat/10-11-26-approval-api`; owner "เริ่ม backend approval" (2026-11-10). Stages 1–2 (migrations, auth view, settings, document flow) are in the TODO evidence of [approval-setup](../task/todo/approval-setup.md) and [approve-center](../task/todo/approve-center.md).
 

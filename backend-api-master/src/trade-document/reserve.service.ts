@@ -3,11 +3,12 @@ import type { FlowPrincipal } from "../approval-setting/approval-flow";
 import type { Tx } from "../common/persistence";
 import { CustomerStockDocument, type CustomerStockInput } from "./customer-stock-document";
 import type { DocumentActor } from "./document-engine";
+import { LINE_PHOTO_DOCUMENTS } from "./line-photos";
 import type { MemoReceiveListInput } from "./memo-schemas";
 
 /**
  * reserve SA rev 1 / ADR-0036 (owner 2026-11-02): holds stones for a customer for a later Sale. Document Setup key
- * `reserve`, the approval flow of approval-setup ADR-0048 (DRAFT → Send to approve → APPROVED, or auto-approved while
+ * `reserve`, the approval flow of approval-setup ADR-0050 (DRAFT → Send to approve → APPROVED, or auto-approved while
  * the setting is OFF). Lines picked From Stock name a Memo Stock item, and approval moves their quantity from pending into
  * Reserve (SA-RS-07, Q-MOV-04). Rows keyed in by hand hold nothing (Q-RS-04). Never "used" until a Sale page exists.
  */
@@ -23,6 +24,7 @@ const reserve = new CustomerStockDocument({
   chargeModel: "reserveCharge",
   parentKey: "reserveId",
   approvalType: "reserve",
+  photos: LINE_PHOTO_DOCUMENTS.reserve,
 });
 
 export const reserveErrors = reserve.errors;
@@ -59,7 +61,7 @@ export class ReserveService {
     return reserve.approve(actorId, id, expectedVersion);
   }
 
-  /** Go-live command (ADR-0048 D7): the same approve inside the caller's transaction. */
+  /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction. */
   approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
     return reserve.approveWithin(tx, actorId, id, expectedVersion);
   }

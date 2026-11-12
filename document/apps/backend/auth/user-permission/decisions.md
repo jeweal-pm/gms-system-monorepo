@@ -85,3 +85,12 @@ approves every R below. To choose an alternative, name the conflict and letter
 2. **Permission catalog (Q-UP-13):** confirm the 34-menu list, and which cells do not apply (the source shows 53). Until answered, every leaf has all 6 actions. Correcting the list later is a code change with no migration.
 3. **Location:** accept a static placeholder list (`primary`) now (R), or defer the field (D)?
 4. **Existing `role = "user"` accounts** (dev seed only today) get **no** grants after migration (least privilege). The dev seed will grant the demo user VIEW on all menus. Accept?
+
+## Catalog follows the current modules (owner 2026-11-10)
+
+- Request (verbatim): "frontend backend User and Permission ให้เพิ่มหน้า menu ให้สอดคล้องกับ module ปัจจุบัน". Owner answers (AskUserQuestion, 2026-11-10): Approval = VIEW + EDIT only ("ให้สามารถ view กับ edit"); rename labels to the app names; Setup rows in the Setup tile order; "Approve and start".
+- New leaf `approval-setup` "Approval" (VIEW, EDIT) in SETUP between Document Setup and Decimal Setup. No grants are copied: only Super Admin / ALL hold it until granted. Catalog: 43 leaves, 362 applicable cells (was 42 / 360).
+- SETUP order now matches the Setup tiles: Company Profile, User and Permission, Notifications, Master Code, Document Setup, Approval, Decimal Setup.
+- Labels renamed to what the app shows; **keys unchanged, so stored grants are unaffected**: Memo Out-Return → Memo Out Return; Certificate Type → Certificate Master; Labor Name → Service Fee; Barcode → Barcode Printing; section PURCHASE → PURCHASE ORDER; Outstanding Payable / Receivable → O/S Payable / Receivable; Compare with costing → Compare With Costing.
+- No schema or migration change (grants are `<key>:<ACTION>` strings; `CATALOG_VERSION` stays 2 because the contract shape is unchanged). Frontend `SETUP_MENU_KEYS` / catalog leaf keys gain `approval-setup`, so the Setup › Approval tile follows `approval-setup:VIEW`.
+- Not in the catalog by design: the main-menu Approve (visible from the per-document APPROVE grants) and Stone Factory (no page).

@@ -3,7 +3,7 @@ import { readDomainError } from "@/lib/trpc-error";
 
 /**
  * Setup › Approval pure rules (approval-setup UI rev 1; phase 2 FE-AS-008/011 on `approvalSetting.list` / `update`,
- * ADR-0048). The rows are the Approve Center registry (sidebar order, Memo rows included).
+ * ADR-0050). The rows are the Approve Center registry (sidebar order, Memo rows included).
  */
 
 export const SETUP_ROWS: readonly ApproveMenu[] = APPROVE_MENUS;

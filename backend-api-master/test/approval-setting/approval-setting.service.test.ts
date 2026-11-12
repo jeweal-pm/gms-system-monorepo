@@ -5,7 +5,7 @@ import { approvalSettingUpdateSchema } from "../../src/approval-setting/approval
 import { APPROVAL_TYPES } from "../../src/approval-setting/approval-types";
 import { WRITE_TX } from "../../src/common/persistence";
 
-/** UT-AS-B07 (approval-setup SA rev 1 / ADR-0048): approvalSetting list / update / readForSave against a mocked Prisma. */
+/** UT-AS-B07 (approval-setup SA rev 1 / ADR-0050): approvalSetting list / update / readForSave against a mocked Prisma. */
 
 type Row = { type: string; requireApproval: boolean; version: number; updatedAt: Date; updatedBy: string | null; updatedByName: string | null };
 type RawCall = { sql: string; values: unknown[] };

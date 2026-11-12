@@ -15,6 +15,7 @@ import { TradeDocumentEngine, type DocumentActor, type DocumentEffects, type Lin
 import type { MemoOutInput, MemoReceiveListInput, MemoReceiveStatus } from "./memo-schemas";
 import { releaseToMemoStock, takeFromMemoStock } from "./memo-stock.service";
 import { completeFromMemoStock } from "./stock-lines";
+import { withLinePhotos, type LinePhotoDocument } from "./line-photos";
 
 /**
  * A customer document whose lines may come From Stock (memo-out SA rev 2 SA-MO-11…15; reserve SA rev 1 SA-RS-04…08):
@@ -131,6 +132,8 @@ export type CustomerStockConfig = {
   lineModel: string;
   chargeModel: string;
   parentKey: string;
+  /** Line photos (ADR-0048, owner 2026-11-11). */
+  photos: LinePhotoDocument;
 };
 
 /** The approval documents a customer stock document can be (registry key = permission menu). */
@@ -161,7 +164,7 @@ export class CustomerStockDocument {
       approvalType: config.approvalType,
       effects: this.effects(),
       prepare: completeStockLines(this.errors),
-      lineHook: stockLines,
+      lineHook: withLinePhotos(config.photos, stockLines),
       detailExtra: (row) => ({
         approvedAt: row.approvedAt ? (row.approvedAt as Date).toISOString() : null,
         approvedBy: (row.approvedBy as string | null) ?? null,
@@ -226,7 +229,7 @@ export class CustomerStockDocument {
     return this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED"; stockLineCount: number }>;
   }
 
-  /** Go-live command (ADR-0048 D7): the same approve inside the caller's transaction. */
+  /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction. */
   approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
     return this.engine.approveWithin(tx, actorId, id, expectedVersion);
   }

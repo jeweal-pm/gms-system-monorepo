@@ -183,6 +183,11 @@ describe("UT-PU-16 contract mapping and errors (SA-PU-26)", () => {
     const detail = savedPurchase({
       lines: [savedLine({ source: "STOCK", memoStockId: STOCK, memoGroup: "MERGED", stockId: "260003", stoneCodeId: null, discount: { type: "NONE", value: "0" }, memoReceive: { docNo: "MR-1001" }, pcs: 2, weightCt: "1.520", limitPcs: 2, limitWeightCt: "1.520", minPcs: 1, minWeightCt: "0.760", soldPartPcs: null, soldPartWeightCt: null })],
     });
+    // ADR-0048 (owner 2026-11-11): saved photos load back in order, read from this document's own photo route.
+    expect(fromPurchase({ ...detail, lines: detail.lines.map((line) => ({ ...line, photoIds: ["p1", "p2"] })) } as typeof detail).lines[0]?.photos).toEqual([
+      { id: "p1", name: "Photo 1", url: "/api/v1/purchase/photos/p1" },
+      { id: "p2", name: "Photo 2", url: "/api/v1/purchase/photos/p2" },
+    ]);
     expect(fromPurchase(detail).lines[0]).toMatchObject({ memoGroup: "MERGED", stockPendingPcs: "2", stockPendingWeightCt: "1.520", stockMinPcs: "1", stockMinWeightCt: "0.760" });
   });
 

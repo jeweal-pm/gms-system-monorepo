@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sendAndApprove, setApproval, submitted } from "../partner-shared/approval";
 
 /**
- * approval-setup SA rev 1 / ADR-0048 (with approve-center ADR-0046) document flows on real PostgreSQL, backend stage 2:
+ * approval-setup SA rev 1 / ADR-0050 (with approve-center ADR-0046) document flows on real PostgreSQL, backend stage 2:
  * - IT-AS-B02 / B03: approval ON — Save → DRAFT (no stock) → edit → submit → locked → Revise (once, reason) → edit →
  *   submit → second Revise refused → Reject → read-only; submit while OFF → `_APPROVAL_OFF`.
  * - IT-AS-B04: approval OFF — Save → APPROVED auto with today's effects; a shortage refuses the whole Save.
@@ -106,7 +106,7 @@ async function stock(lines: ReturnType<typeof receiveLine>[]) {
 const sell = (id: string, pcs: number, weight: string) => prisma.$executeRaw`UPDATE "partner"."memo_stock" SET pending_pcs = pending_pcs - ${pcs}, pending_weight_ct = pending_weight_ct - ${weight}::numeric,
   sold_pcs = sold_pcs + ${pcs}, sold_weight_ct = sold_weight_ct + ${weight}::numeric WHERE id = ${id}::uuid`;
 
-describe.runIf(canRun)("approval documents (ADR-0048 stage 2) on PostgreSQL", () => {
+describe.runIf(canRun)("approval documents (ADR-0050 stage 2) on PostgreSQL", () => {
   beforeAll(async () => {
     vi.stubEnv("PARTNER_DATABASE_URL", testUrl!);
     vi.stubEnv("DATABASE_URL", testUrl!);
@@ -168,9 +168,13 @@ describe.runIf(canRun)("approval documents (ADR-0048 stage 2) on PostgreSQL", ()
     const before = await buckets(item.id);
     const saved = await s.reserve.create(ACTOR, outInput([stockLine(item.id, 2, "1")]));
     expect(saved).toMatchObject({ version: 1, status: "DRAFT", autoApproved: false });
+    // ADR-0049 as amended by ADR-0050 (merge 2026-11-12): a draft notifies nobody; Send to approve does.
+    const events = (documentId: string) => prisma.notificationEvent.findMany({ where: { documentId }, orderBy: { createdAt: "asc" }, select: { type: true, documentType: true } });
+    expect(await events(saved.id)).toEqual([]);
     expect(await buckets(item.id)).toEqual(before);
     await s.reserve.update(ACTOR, saved.id, 1, outInput([stockLine(item.id, 3, "1.5")]));
     await expect(s.reserve.submit({ id: ACTOR, name: "Maker" }, saved.id, 2)).resolves.toMatchObject({ version: 3, status: "PENDING_APPROVAL", submittedAt: expect.any(String) });
+    expect(await events(saved.id)).toEqual([{ type: "approval.pending", documentType: "reserve" }]);
     // Pending is locked.
     expect(await failure(s.reserve.update(ACTOR, saved.id, 3, outInput([stockLine(item.id, 1, "0.5")])))).toMatchObject({ code: "RESERVE_STATUS_INVALID" });
     expect(await failure(s.reserve.delete(ACTOR, saved.id, 3))).toMatchObject({ code: "RESERVE_STATUS_INVALID" });
@@ -193,6 +197,7 @@ describe.runIf(canRun)("approval documents (ADR-0048 stage 2) on PostgreSQL", ()
     const second = await submitted(s.reserve, ACTOR, await s.reserve.create(ACTOR, outInput([stockLine(item.id, 2, "1")])));
     await s.reserve.requestRevision(APPROVER, second.id, 2, "x");
     await sendAndApprove(s.reserve, ACTOR, second.id, 3);
+    expect((await events(second.id)).map((event) => event.type)).toEqual(["approval.pending", "approval.pending", "document.approved"]);
     expect(await buckets(item.id)).toMatchObject({ pending: [8, "4.000"], reserved: [2, "1.000"] });
     // Send to approve while OFF (stale page) → APPROVAL_OFF; nothing changes.
     const draft = await s.reserve.create(ACTOR, outInput([stockLine(item.id, 1, "0.5")]));

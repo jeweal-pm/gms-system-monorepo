@@ -31,7 +31,7 @@ import { peekApprovalSetting, readApprovalSetting } from "../approval-setting/ap
 import { documentFlow, explainReviewMiss, MISS_SELECT, planData, restoreData, reviewOfRow, reviewUpdate, saveFlow, storedInput, type DocumentActor, type MissRow } from "../trade-document/document-engine";
 
 /**
- * Quotation follows the approval setting (approval-setup ADR-0048, Q-AS-28): OFF (seed default) → Save approves it
+ * Quotation follows the approval setting (approval-setup ADR-0050, Q-AS-28): OFF (seed default) → Save approves it
  * (`auto_approved`, editable while no later document uses it — none exists yet); ON → DRAFT → Send to approve →
  * PENDING_APPROVAL (locked) → Approve / Revise (once) / Reject. CANCELLED stays a quotation-only final status.
  * Edit / delete (soft, ADR-0045): DRAFT, REVISION_REQUESTED or auto-approved.
@@ -295,7 +295,7 @@ export class QuotationService {
           grandTotal: money(row.grandTotal),
           updatedAt: row.updatedAt.toISOString(),
           deletedAt: row.deletedAt?.toISOString() ?? null,
-          // ADR-0048 D6 Daybook.
+          // ADR-0050 D6 Daybook.
           autoApproved: row.autoApproved,
           revisionCount: (row.revisionCount >= 1 ? 1 : 0) as 0 | 1,
           review: reviewOfRow(row),
@@ -371,7 +371,7 @@ export class QuotationService {
   }
 
   /**
-   * Save (create), approval-setup ADR-0048: Quotation approval ON → DRAFT; OFF (the seed default) → APPROVED with
+   * Save (create), approval-setup ADR-0050: Quotation approval ON → DRAFT; OFF (the seed default) → APPROVED with
    * `auto_approved` (a quotation has no stock effects; it stays editable while no later document uses it).
    */
   async create(actorId: string, input: QuotationInput, viewer: FlowPrincipal | null = null) {
@@ -411,7 +411,7 @@ export class QuotationService {
   }
 
   /**
-   * Save (update), ADR-0048 rule 2: DRAFT, REVISION_REQUESTED or auto-approved (no document uses a quotation yet).
+   * Save (update), ADR-0050 rule 2: DRAFT, REVISION_REQUESTED or auto-approved (no document uses a quotation yet).
    * DRAFT stays DRAFT (ON) or is approved by this Save (OFF); REVISION_REQUESTED stays; auto-approved stays.
    * Pending, rejected, reviewed-approved and cancelled quotations → QUOTATION_STATUS_INVALID.
    */
@@ -453,7 +453,7 @@ export class QuotationService {
   }
 
   /**
-   * Send to approve (ADR-0048): DRAFT / REVISION_REQUESTED → PENDING_APPROVAL with submitted_* after the save validation
+   * Send to approve (ADR-0050): DRAFT / REVISION_REQUESTED → PENDING_APPROVAL with submitted_* after the save validation
    * on the stored quotation; Quotation approval OFF → QUOTATION_APPROVAL_OFF.
    */
   async submit(actor: DocumentActor, id: string, expectedVersion: number) {
@@ -490,7 +490,7 @@ export class QuotationService {
     return this.transition(actorId, id, expectedVersion, ["PENDING_APPROVAL"], "APPROVED", { approvedAt: new Date(), approvedBy: actorId, autoApproved: false }, "approved");
   }
 
-  /** Go-live command (ADR-0048 D7): the same approve inside the caller's transaction (no stock effects). */
+  /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction (no stock effects). */
   async approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
     try {
       const now = new Date();
@@ -510,7 +510,7 @@ export class QuotationService {
     return this.review(actor, id, expectedVersion, "REJECT", reason);
   }
 
-  /** ADR-0046 D3 / ADR-0048: PENDING_APPROVAL → REVISION_REQUESTED once (QUOTATION_REVISE_LIMIT after). */
+  /** ADR-0046 D3 / ADR-0050: PENDING_APPROVAL → REVISION_REQUESTED once (QUOTATION_REVISE_LIMIT after). */
   requestRevision(actor: DocumentActor, id: string, expectedVersion: number, note: string) {
     return this.review(actor, id, expectedVersion, "REVISE", note);
   }
@@ -533,7 +533,7 @@ export class QuotationService {
   }
 
   /**
-   * Soft delete (ADR-0045 D4 as amended by ADR-0048): DRAFT, REVISION_REQUESTED or auto-approved (never used); status,
+   * Soft delete (ADR-0045 D4 as amended by ADR-0050): DRAFT, REVISION_REQUESTED or auto-approved (never used); status,
    * lines, charges and photos stay. The Doc No. stays taken (D5), so the next save never reuses it.
    */
   async delete(actorId: string, id: string, expectedVersion: number) {

@@ -30,6 +30,7 @@ import {
   type MemoReturnOptions,
 } from "../api";
 import { MemoStockModal } from "@/features/trade-document/memo-stock-modal";
+import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 export { MEMO_RETURN_HREF };
 
@@ -66,6 +67,7 @@ function MemoReturnDaybook() {
  * waits as Pending Approval, and Approve takes the returned quantity off Memo Stock (Q-MR-15).
  */
 const CONFIG: DocumentFormConfig<MemoReturnFormValues, MemoReturnInput, MemoReturnOptions> = {
+  photos: DOCUMENT_PHOTOS.memoReturn,
   noun: "memo return",
   noLabel: "Memo Return No.:",
   newHref: MEMO_RETURN_HREF,

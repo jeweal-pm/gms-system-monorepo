@@ -109,7 +109,7 @@ const RELEASE_SQL = {
  * Moves quantity from `bucket` back to pending (`bucket -= q, pending += q`) under the same id-ordered `FOR UPDATE` lock
  * as `takeFromMemoStock`. Used by a Memo Out Return approval (Reserve → pending, memo-out-return SA-MOR-17) and by the
  * reversal of an auto-approved Memo Out / Reserve (reserved) or Memo Return (returned) edit or delete (approval-setup
- * ADR-0048 D4). An item with less in the bucket than the lines bring back → `short` (nothing changes);
+ * ADR-0050 D4). An item with less in the bucket than the lines bring back → `short` (nothing changes);
  * `memo_stock_balance` holds either way. Lines naming the same item are summed first (`totalPerItem`, INV-20261031-001).
  */
 export async function releaseToMemoStock(tx: Tx, puts: MemoStockTake[], short: (fields: FieldError[]) => Error, now: Date, bucket: keyof typeof RELEASE_SQL = "reserved"): Promise<void> {

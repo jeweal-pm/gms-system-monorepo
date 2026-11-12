@@ -12,7 +12,7 @@ export const approvalSettingUpdateSchema = z.object({
 }).strict();
 export type ApprovalSettingUpdateInput = z.output<typeof approvalSettingUpdateSchema>;
 
-/** Waiting counts are capped (ADR-0048 capacity: ≤ 100 per type; the client shows "100+"). */
+/** Waiting counts are capped (ADR-0050 capacity: ≤ 100 per type; the client shows "100+"). */
 export const WAITING_CAP = 100;
 
 export type ApprovalSettingItem = {

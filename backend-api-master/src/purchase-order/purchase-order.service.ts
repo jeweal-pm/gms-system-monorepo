@@ -64,7 +64,7 @@ const purchaseOrderEffects: DocumentEffects = {
 
 /**
  * purchase-order SA rev 1 / ADR-0041: Document Setup key `purchase-order`, vendor + address like Memo Receive, keyed-in
- * lines with stone code and location, the approval flow of ADR-0048. Approval writes no stock: each line then
+ * lines with stone code and location, the approval flow of ADR-0050. Approval writes no stock: each line then
  * waits to be purchased for its full quantity (`purchased_*` = 0, written later by Purchase only, SA-PO-04/05).
  */
 @Injectable()
@@ -141,7 +141,7 @@ export class PurchaseOrderService {
     return this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED"; lineCount: number }>;
   }
 
-  /** Go-live command (ADR-0048 D7): the same approve inside the caller's transaction. */
+  /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction. */
   approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
     return this.engine.approveWithin(tx, actorId, id, expectedVersion);
   }

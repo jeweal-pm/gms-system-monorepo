@@ -1,4 +1,4 @@
-# Dependencies: approval-setup (SA revision 1, 2026-11-10, approved with ADR-0048)
+# Dependencies: approval-setup (SA revision 1, 2026-11-10, approved with ADR-0050)
 
 - New packages: **none**. Uses installed NestJS, tRPC, zod, Prisma 7 (`backend-api-master`) and the auth catalog code (`backend-api-auth`).
 - [tech-stack.md](../../../../adr/tech-stack.md): unchanged.

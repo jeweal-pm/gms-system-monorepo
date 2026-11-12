@@ -46,7 +46,7 @@ vi.mock("@gms/storage", () => ({
 vi.mock("../../src/database/prisma-client", () => {
   const tx = {
     $queryRaw: vi.fn(async (sql: { strings: string[] } | TemplateStringsArray) => {
-      // ADR-0048: the approval setting read (tagged template, FOR SHARE) answers db.requireApproval; not recorded.
+      // ADR-0050: the approval setting read (tagged template, FOR SHARE) answers db.requireApproval; not recorded.
       if (Array.isArray(sql)) return [{ requireApproval: db.requireApproval }];
       db.rawSql.push((sql as { strings: string[] }).strings.join("?"));
       return db.numbering ? [db.numbering] : [];
@@ -146,7 +146,7 @@ beforeEach(() => {
 describe("numbering (SA-QT-04, owner Q-QT-03)", () => {
   it("UT-QT-B01 the first quotation of a numbering row gets its start number, under a row lock", async () => {
     await expect(service.create("actor", input())).resolves.toMatchObject({ docNo: "QT-26001", version: 1 });
-    // Quotation approval OFF (seed): Save approves it (auto-approved, ADR-0048).
+    // Quotation approval OFF (seed): Save approves it (auto-approved, ADR-0050).
     expect(db.created[0]).toMatchObject({ numberingId: NUMBERING, runningNo: 26001, docNo: "QT-26001", status: "APPROVED", autoApproved: true, approvedBy: "actor", createdBy: "actor" });
     expect(db.created[0].approvedAt).toBeInstanceOf(Date);
     expect(db.rawSql[0]).toContain("FOR UPDATE");
@@ -232,7 +232,7 @@ describe("create and references (SA-QT-06/07/08/10)", () => {
 describe("edit and status guards (SA-QT-03/09)", () => {
   const stored = (status: string, version = 3) => ({ status, version, customerId: CUSTOMER, shippingAddressId: SHIP, invoiceAddressId: INVOICE, lines: [{ stoneCodeId: STONE }] });
 
-  it("UT-QT-B15 update (ADR-0048): auto-approved stays approved; a DRAFT is approved by the Save while OFF and stays a DRAFT while ON; a stored inactive customer or stone code may stay", async () => {
+  it("UT-QT-B15 update (ADR-0050): auto-approved stays approved; a DRAFT is approved by the Save while OFF and stays a DRAFT while ON; a stored inactive customer or stone code may stay", async () => {
     db.stored = { ...stored("APPROVED"), autoApproved: true, revisionCount: 0 };
     db.customer = { ...db.customer!, active: false };
     db.stoneCodes = [{ id: STONE, active: false }];
@@ -296,7 +296,7 @@ describe("edit and status guards (SA-QT-03/09)", () => {
     expect(await failure(service.cancel("a", QT, 1, "x"))).toMatchObject({ code: "QUOTATION_NOT_FOUND" });
   });
 
-  it("UT-QT-B19 / UT-SD-08 delete (ADR-0045 / ADR-0048) is a soft delete of a DRAFT, REVISION_REQUESTED or auto-approved quotation at the expected version", async () => {
+  it("UT-QT-B19 / UT-SD-08 delete (ADR-0045 / ADR-0050) is a soft delete of a DRAFT, REVISION_REQUESTED or auto-approved quotation at the expected version", async () => {
     db.stored = { docNo: "QT-26001", status: "APPROVED", autoApproved: true, revisionCount: 0 };
     await expect(service.delete("actor", QT, 1)).resolves.toEqual({ ok: true, version: 2 });
     expect(db.updates[0]).toMatchObject({ where: { id: QT, version: 1, status: { in: ["DRAFT", "REVISION_REQUESTED", "APPROVED"] }, deletedAt: null }, data: { version: { increment: 1 }, updatedBy: "actor" } });

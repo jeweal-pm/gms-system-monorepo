@@ -43,6 +43,7 @@ import {
   type PurchaseOptions,
 } from "../api";
 import { MergeDialog } from "./merge-dialog";
+import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 export { PURCHASE_HREF };
 
@@ -238,6 +239,7 @@ export const PURCHASE_CONFIG: DocumentFormConfig<PurchaseFormValues, PurchaseInp
   itemTable: PurchaseItemTable,
   kind: PURCHASE_KIND,
   approvalType: "purchase",
+  photos: DOCUMENT_PHOTOS.purchase,
   noteMax: PURCHASE_NOTE_MAX,
   notePlaceholder: "e.g. Paid by transfer on delivery.",
   noteHint: PURCHASE_NOTE_HINT,

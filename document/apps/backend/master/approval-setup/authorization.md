@@ -1,4 +1,4 @@
-# Authorization: approval-setup (SA revision 1, 2026-11-10, approved with ADR-0048)
+# Authorization: approval-setup (SA revision 1, 2026-11-10, approved with ADR-0050)
 
 Existing model: per-user menu/action grants from `auth.current_authorization` (ADR-0016/0020/0031), checked in master per procedure; CSRF double-submit on mutations; license gate unchanged.
 
@@ -15,7 +15,7 @@ Existing model: per-user menu/action grants from `auth.current_authorization` (A
 
 ## `canApprove(actor, type)`
 
-One helper in `approval-flow.ts`. Today it returns `hasGrant(actor, <menu>, "APPROVE")`. ADR-0048 D3 (owner Q-AS-33, source 04) will replace it with the user's **Approve** multi-select (types), designed later with the user-permission UI revision; existing APPROVE grants become the initial selection. No other code checks APPROVE for these types.
+One helper in `approval-flow.ts`. Today it returns `hasGrant(actor, <menu>, "APPROVE")`. ADR-0050 D3 (owner Q-AS-33, source 04) will replace it with the user's **Approve** multi-select (types), designed later with the user-permission UI revision; existing APPROVE grants become the initial selection. No other code checks APPROVE for these types.
 
 ## Catalog change (auth)
 

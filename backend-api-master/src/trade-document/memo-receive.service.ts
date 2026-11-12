@@ -94,7 +94,7 @@ export function netUnitPrice(line: { priceUnit: string; pcs: number; weightCt: D
 
 /**
  * memo-receive SA rev 1 / ADR-0034: Document Setup key `memo-receive`, vendor + address like Memo Out Return,
- * the approval flow of approval-setup ADR-0048 (approval copies each line to Memo Stock), server-issued Stock IDs.
+ * the approval flow of approval-setup ADR-0050 (approval copies each line to Memo Stock), server-issued Stock IDs.
  */
 @Injectable()
 export class MemoReceiveService {
@@ -247,7 +247,7 @@ export class MemoReceiveService {
     return this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED"; memoStockCount: number }>;
   }
 
-  /** Go-live command (ADR-0048 D7): the same approve inside the caller's transaction. */
+  /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction. */
   approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
     return this.engine.approveWithin(tx, actorId, id, expectedVersion);
   }

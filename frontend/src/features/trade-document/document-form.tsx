@@ -23,6 +23,7 @@ import { LineOptionsContext, LinePhotoContext, type LineOptions } from "@/featur
 import { isFilledLine, type QuotationFormValues, type QuotationLine, type QuotationStatus } from "@/features/quotation/schema";
 import { useDocumentFlow } from "./approval-flow";
 import { clearNotice, DocumentDeletedBanner, handOverNotice, peekNotice, type DeletedInfo, type RestoreOutcome } from "./document-api";
+import type { DocumentPhotos } from "./document-photos";
 import { savedMessage, type DocFlow, type DocumentApprovalType } from "./flow-status";
 
 /** Everything the form needs from a document's API, read through the document's own hooks. */
@@ -99,12 +100,14 @@ export type DocumentFormConfig<V extends FieldValues & Saved, Input, Options ext
   /** A saved document in view mode shows this instead of the disabled header fields (memo return design, view). */
   viewHeader?: (args: { values: V; options: Options | undefined }) => ReactNode;
   /**
-   * The approval setting key (ADR-0048): status badge, Send to approve, Edit / Delete per `Flow`, read-only text. The
+   * The approval setting key (ADR-0050): status badge, Send to approve, Edit / Delete per `Flow`, read-only text. The
    * Approve button is no longer on a document page (Approve menu only).
    */
   approvalType: DocumentApprovalType;
   /** What the shared item table / row panel do differently (memo out: From Stock quantities); default Quotation. */
   kind?: DocumentKind;
+  /** Line photos (ADR-0048): upload / read routes of this document; without it the row panel says photos come later. */
+  photos?: DocumentPhotos;
   noteMax?: number;
   notePlaceholder: string;
   noteHint: string;
@@ -129,7 +132,7 @@ export function invalidSaveMessage(rowMessages: readonly (string | undefined)[])
   return index < 0 ? "Please complete the required fields" : `Row ${index + 1}: ${rowMessages[index]}`;
 }
 
-/** Status badges of every document page (ADR-0048: Draft, Pending Approval, Revise, Approved, Rejected). */
+/** Status badges of every document page (ADR-0050: Draft, Pending Approval, Revise, Approved, Rejected). */
 export { FLOW_STATUS_LABELS as APPROVAL_STATUS_LABELS } from "./flow-status";
 
 type ToolButton = { label: string; onClick: () => void };
@@ -177,7 +180,7 @@ export function ItemToolButtons({ primary, secondary, readOnly }: {
   );
 }
 
-/** Photos aren't available on the memo documents yet (ADR-0033 rev 1). */
+/** A document without its own photo routes: the row panel says photos come in a later update. */
 const NO_PHOTOS = { upload: null, url: (id: string) => id };
 
 /**
@@ -273,7 +276,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
     }
   }
 
-  /** ADR-0048 codes first (in use, status, approval off), then the page's own mapping. */
+  /** ADR-0050 codes first (in use, status, approval off), then the page's own mapping. */
   const onWriteError = async (error: unknown, action: "save" | "delete") => {
     if (!(await approvalFlow.handleError(error, action))) showError(error);
   };
@@ -424,11 +427,16 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
 
   const editorIndex = editorOpen && selectedIndex !== null && selectedIndex < lines.length ? selectedIndex : null;
   const Table = config.itemTable ?? ItemTable;
+  // ADR-0048: rows upload to this document's own photo route.
+  const kind = useMemo<DocumentKind>(() => {
+    const base = config.kind ?? QUOTATION_KIND;
+    return config.photos ? { ...base, uploadPhoto: config.photos.uploadPhoto } : base;
+  }, [config.kind, config.photos]);
 
   return (
-    <DocumentKindContext.Provider value={config.kind ?? QUOTATION_KIND}>
+    <DocumentKindContext.Provider value={kind}>
     <LineOptionsContext.Provider value={api.options}>
-      <LinePhotoContext.Provider value={NO_PHOTOS}>
+      <LinePhotoContext.Provider value={config.photos?.target ?? NO_PHOTOS}>
         <FormProvider {...form}>
           <div className="relative flex h-full bg-gms-page">
             <div className="min-w-0 flex-1 overflow-y-auto">

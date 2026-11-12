@@ -1,7 +1,7 @@
 # ADR-0046: Reject / Revise review status and the Approve Center API
 
 - Status: Accepted (2026-11-07)
-- Amended by: [ADR-0048](0048-approval-setting-draft-send-to-approve.md) (accepted 2026-11-10): adds `DRAFT` and Send to approve (`submit` replaces `resubmit`), Pending becomes locked (replaces D7), Revise once, reason required for Revise and Reject, Quotation joins, Approve Center follows per-type settings. Both ship in one release.
+- Amended by: [ADR-0050](0050-approval-setting-draft-send-to-approve.md) (accepted 2026-11-10): adds `DRAFT` and Send to approve (`submit` replaces `resubmit`), Pending becomes locked (replaces D7), Revise once, reason required for Revise and Reject, Quotation joins, Approve Center follows per-type settings. Both ship in one release.
 - Date: 2026-11-07
 - Feature / source UI revision: `approve-center` / UI revision 1 (approved by the owner 2026-11-07, as dispatched by the parent)
 - SA revision: 1 (approved 2026-11-07)

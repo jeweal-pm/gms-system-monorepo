@@ -16,7 +16,7 @@ import type { DocumentApprovalType } from "@/features/trade-document/flow-status
 
 /**
  * Approve Center menu registry (approve-center UI rev 1, FE-AP-002). Order follows the sidebar (owner Q-AP-03,
- * 2026-11-07). `availability`: `available` = a document type of `approval.pending` (approval-setup ADR-0048: the eight
+ * 2026-11-07). `availability`: `available` = a document type of `approval.pending` (approval-setup ADR-0050: the eight
  * document types, Quotation included, FE-AS-009); `not-available` = no document page or API yet (Q-AP-07). Whether a
  * type's approval is on is not fixed here: it comes from `approval.summary` (`types[].requireApproval`, G13).
  */
@@ -85,7 +85,7 @@ export const APPROVE_MENUS: readonly ApproveMenu[] = [
     proc: "quotation",
     documentBase: "/pre-sale/quotation",
     dueLabel: "Valid until",
-    // ADR-0048 Q-AS-28: an approved Quotation is read-only; approving moves no stock.
+    // ADR-0050 Q-AS-28: an approved Quotation is read-only; approving moves no stock.
     consequence: () => "It can no longer be edited.",
   },
   {

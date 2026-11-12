@@ -201,6 +201,11 @@ model StoredFile {
   quotationLinePhotos     QuotationLinePhoto[]
   memoReceiveLinePhotos   MemoReceiveLinePhoto[]
   purchaseOrderLinePhotos PurchaseOrderLinePhoto[]
+  reserveLinePhotos       ReserveLinePhoto[]
+  memoReturnLinePhotos    MemoReturnLinePhoto[]
+  memoOutLinePhotos       MemoOutLinePhoto[]
+  memoOutReturnLinePhotos MemoOutReturnLinePhoto[]
+  purchaseLinePhotos      PurchaseLinePhoto[]
 
   @@unique([bucket, objectKey], map: "stored_files_bucket_object_key_key")
   @@index([sourceType, sourceId], map: "stored_files_source_idx")
@@ -427,7 +432,7 @@ model DocumentSetup {
 /// Decimal Setup (decimal-setup SA rev 1, ADR-0040): one global row; display/entry places for weight and price.
 /// CHECKs (id = 1, version >= 1) live in migration 20261103090000_decimal_setup; weight/price 0..4 (owner Q-DEC-08)
 /// in 20261103120000_decimal_setup_places_max_4.
-/// approval-setup SA rev 1 / ADR-0048: per-type "require approval" switch (11 seeded rows, CHECK on the key).
+/// approval-setup SA rev 1 / ADR-0050: per-type "require approval" switch (11 seeded rows, CHECK on the key).
 /// Read FOR SHARE by every create / update / submit of its type; updated FOR UPDATE with the turn-OFF guard.
 model ApprovalSetting {
   type            String   @id @db.VarChar(32)
@@ -531,7 +536,7 @@ model Quotation {
   approvedBy              String?            @map("approved_by") @db.VarChar(64)
   deletedAt               DateTime?          @map("deleted_at") @db.Timestamp(3)
   deletedBy               String?            @map("deleted_by") @db.VarChar(64)
-  /// ADR-0046 D4 / ADR-0048: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
+  /// ADR-0046 D4 / ADR-0050: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
   submittedAt             DateTime?          @map("submitted_at") @db.Timestamp(3)
   submittedBy             String?            @map("submitted_by") @db.VarChar(64)
   /// Actor name snapshot from auth.current_authorization.user_name (ADR-0046 D5).
@@ -546,9 +551,9 @@ model Quotation {
   lineCount               Int                @map("line_count") @db.SmallInt
   totalPcs                Int                @map("total_pcs")
   totalWeightCt           Decimal            @map("total_weight_ct") @db.Decimal(15, 3)
-  /// ADR-0048: APPROVED by Save while approval was OFF (editable / deletable until used).
+  /// ADR-0050: APPROVED by Save while approval was OFF (editable / deletable until used).
   autoApproved            Boolean            @default(false) @map("auto_approved")
-  /// ADR-0048: Revise is allowed once (0..1).
+  /// ADR-0050: Revise is allowed once (0..1).
   revisionCount           Int                @default(0) @map("revision_count") @db.SmallInt
   numbering               DocumentNumbering? @relation(fields: [numberingId], references: [id], onDelete: Restrict)
   customer                Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
@@ -568,7 +573,7 @@ model Quotation {
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "quotation_deleted_list_idx")
   /// ADR-0046 D18: the Approve queue (summary counts, pending default sort).
   @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "quotation_pending_idx")
-  /// ADR-0048: sent-back documents (turn-OFF guard, Setup counts).
+  /// ADR-0050: sent-back documents (turn-OFF guard, Setup counts).
   @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "quotation_revision_idx")
   @@map("quotation")
   @@schema("partner")
@@ -708,7 +713,7 @@ model MemoOut {
   approvedBy              String?            @map("approved_by") @db.VarChar(64)
   deletedAt               DateTime?          @map("deleted_at") @db.Timestamp(3)
   deletedBy               String?            @map("deleted_by") @db.VarChar(64)
-  /// ADR-0046 D4 / ADR-0048: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
+  /// ADR-0046 D4 / ADR-0050: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
   submittedAt             DateTime?          @map("submitted_at") @db.Timestamp(3)
   submittedBy             String?            @map("submitted_by") @db.VarChar(64)
   /// Actor name snapshot from auth.current_authorization.user_name (ADR-0046 D5).
@@ -723,9 +728,9 @@ model MemoOut {
   lineCount               Int                @map("line_count") @db.SmallInt
   totalPcs                Int                @map("total_pcs")
   totalWeightCt           Decimal            @map("total_weight_ct") @db.Decimal(15, 3)
-  /// ADR-0048: APPROVED by Save while approval was OFF (editable / deletable until used).
+  /// ADR-0050: APPROVED by Save while approval was OFF (editable / deletable until used).
   autoApproved            Boolean            @default(false) @map("auto_approved")
-  /// ADR-0048: Revise is allowed once (0..1).
+  /// ADR-0050: Revise is allowed once (0..1).
   revisionCount           Int                @default(0) @map("revision_count") @db.SmallInt
   version                 Int                @default(1)
   createdAt               DateTime           @default(now()) @map("created_at") @db.Timestamp(3)
@@ -750,7 +755,7 @@ model MemoOut {
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "memo_out_deleted_list_idx")
   /// ADR-0046 D18: the Approve queue (summary counts, pending default sort).
   @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "memo_out_pending_idx")
-  /// ADR-0048: sent-back documents (turn-OFF guard, Setup counts).
+  /// ADR-0050: sent-back documents (turn-OFF guard, Setup counts).
   @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "memo_out_revision_idx")
   @@map("memo_out")
   @@schema("partner")
@@ -796,6 +801,9 @@ model MemoOutLine {
   returnedWeightCt     Decimal             @default(0) @map("returned_weight_ct") @db.Decimal(12, 3)
   memoStock            MemoStock?          @relation(fields: [memoStockId], references: [id], onDelete: Restrict)
   returnLines          MemoOutReturnLine[]
+
+  /// Line photos in order (ADR-0048, owner 2026-11-11).
+  photos MemoOutLinePhoto[]
 
   @@unique([memoOutId, position], map: "memo_out_line_position_key")
   @@unique([memoOutId, memoStockId], map: "memo_out_line_memo_stock_key")
@@ -858,7 +866,7 @@ model MemoOutReturn {
   approvedBy              String?               @map("approved_by") @db.VarChar(64)
   deletedAt               DateTime?             @map("deleted_at") @db.Timestamp(3)
   deletedBy               String?               @map("deleted_by") @db.VarChar(64)
-  /// ADR-0046 D4 / ADR-0048: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
+  /// ADR-0046 D4 / ADR-0050: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
   submittedAt             DateTime?             @map("submitted_at") @db.Timestamp(3)
   submittedBy             String?               @map("submitted_by") @db.VarChar(64)
   /// Actor name snapshot from auth.current_authorization.user_name (ADR-0046 D5).
@@ -873,9 +881,9 @@ model MemoOutReturn {
   lineCount               Int                   @map("line_count") @db.SmallInt
   totalPcs                Int                   @map("total_pcs")
   totalWeightCt           Decimal               @map("total_weight_ct") @db.Decimal(15, 3)
-  /// ADR-0048: APPROVED by Save while approval was OFF (editable / deletable until used).
+  /// ADR-0050: APPROVED by Save while approval was OFF (editable / deletable until used).
   autoApproved            Boolean               @default(false) @map("auto_approved")
-  /// ADR-0048: Revise is allowed once (0..1).
+  /// ADR-0050: Revise is allowed once (0..1).
   revisionCount           Int                   @default(0) @map("revision_count") @db.SmallInt
   version                 Int                   @default(1)
   createdAt               DateTime              @default(now()) @map("created_at") @db.Timestamp(3)
@@ -900,7 +908,7 @@ model MemoOutReturn {
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "memo_out_return_deleted_list_idx")
   /// ADR-0046 D18: the Approve queue (summary counts, pending default sort).
   @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "memo_out_return_pending_idx")
-  /// ADR-0048: sent-back documents (turn-OFF guard, Setup counts).
+  /// ADR-0050: sent-back documents (turn-OFF guard, Setup counts).
   @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "memo_out_return_revision_idx")
   @@map("memo_out_return")
   @@schema("partner")
@@ -941,6 +949,9 @@ model MemoOutReturnLine {
   document            MemoOutReturn @relation(fields: [memoOutReturnId], references: [id], onDelete: Cascade)
   stoneCode           StoneCode?    @relation(fields: [stoneCodeId], references: [id], onDelete: SetNull)
   memoOutLine         MemoOutLine   @relation(fields: [memoOutLineId], references: [id], onDelete: Restrict)
+
+  /// Line photos in order (ADR-0048, owner 2026-11-11).
+  photos MemoOutReturnLinePhoto[]
 
   @@unique([memoOutReturnId, position], map: "memo_out_return_line_position_key")
   @@unique([memoOutReturnId, memoOutLineId], map: "memo_out_return_line_memo_out_line_key")
@@ -1004,7 +1015,7 @@ model MemoReceive {
   approvedBy         String?             @map("approved_by") @db.VarChar(64)
   deletedAt          DateTime?           @map("deleted_at") @db.Timestamp(3)
   deletedBy          String?             @map("deleted_by") @db.VarChar(64)
-  /// ADR-0046 D4 / ADR-0048: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
+  /// ADR-0046 D4 / ADR-0050: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
   submittedAt        DateTime?           @map("submitted_at") @db.Timestamp(3)
   submittedBy        String?             @map("submitted_by") @db.VarChar(64)
   /// Actor name snapshot from auth.current_authorization.user_name (ADR-0046 D5).
@@ -1019,9 +1030,9 @@ model MemoReceive {
   lineCount          Int                 @map("line_count") @db.SmallInt
   totalPcs           Int                 @map("total_pcs")
   totalWeightCt      Decimal             @map("total_weight_ct") @db.Decimal(15, 3)
-  /// ADR-0048: APPROVED by Save while approval was OFF (editable / deletable until used).
+  /// ADR-0050: APPROVED by Save while approval was OFF (editable / deletable until used).
   autoApproved       Boolean             @default(false) @map("auto_approved")
-  /// ADR-0048: Revise is allowed once (0..1).
+  /// ADR-0050: Revise is allowed once (0..1).
   revisionCount      Int                 @default(0) @map("revision_count") @db.SmallInt
   version            Int                 @default(1)
   createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamp(3)
@@ -1045,7 +1056,7 @@ model MemoReceive {
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "memo_receive_deleted_list_idx")
   /// ADR-0046 D18: the Approve queue (summary counts, pending default sort).
   @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "memo_receive_pending_idx")
-  /// ADR-0048: sent-back documents (turn-OFF guard, Setup counts).
+  /// ADR-0050: sent-back documents (turn-OFF guard, Setup counts).
   @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "memo_receive_revision_idx")
   @@map("memo_receive")
   @@schema("partner")
@@ -1234,7 +1245,7 @@ model MemoReturn {
   approvedBy         String?            @map("approved_by") @db.VarChar(64)
   deletedAt          DateTime?          @map("deleted_at") @db.Timestamp(3)
   deletedBy          String?            @map("deleted_by") @db.VarChar(64)
-  /// ADR-0046 D4 / ADR-0048: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
+  /// ADR-0046 D4 / ADR-0050: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
   submittedAt        DateTime?          @map("submitted_at") @db.Timestamp(3)
   submittedBy        String?            @map("submitted_by") @db.VarChar(64)
   /// Actor name snapshot from auth.current_authorization.user_name (ADR-0046 D5).
@@ -1249,9 +1260,9 @@ model MemoReturn {
   lineCount          Int                @map("line_count") @db.SmallInt
   totalPcs           Int                @map("total_pcs")
   totalWeightCt      Decimal            @map("total_weight_ct") @db.Decimal(15, 3)
-  /// ADR-0048: APPROVED by Save while approval was OFF (editable / deletable until used).
+  /// ADR-0050: APPROVED by Save while approval was OFF (editable / deletable until used).
   autoApproved       Boolean            @default(false) @map("auto_approved")
-  /// ADR-0048: Revise is allowed once (0..1).
+  /// ADR-0050: Revise is allowed once (0..1).
   revisionCount      Int                @default(0) @map("revision_count") @db.SmallInt
   version            Int                @default(1)
   createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamp(3)
@@ -1274,7 +1285,7 @@ model MemoReturn {
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "memo_return_deleted_list_idx")
   /// ADR-0046 D18: the Approve queue (summary counts, pending default sort).
   @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "memo_return_pending_idx")
-  /// ADR-0048: sent-back documents (turn-OFF guard, Setup counts).
+  /// ADR-0050: sent-back documents (turn-OFF guard, Setup counts).
   @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "memo_return_revision_idx")
   @@map("memo_return")
   @@schema("partner")
@@ -1315,6 +1326,9 @@ model MemoReturnLine {
   itemNote            String     @default("") @map("item_note") @db.VarChar(500)
   document            MemoReturn @relation(fields: [memoReturnId], references: [id], onDelete: Cascade)
   memoStock           MemoStock  @relation(fields: [memoStockId], references: [id], onDelete: Restrict)
+
+  /// Line photos in order (ADR-0048, owner 2026-11-11).
+  photos MemoReturnLinePhoto[]
 
   @@unique([memoReturnId, position], map: "memo_return_line_position_key")
   @@unique([memoReturnId, memoStockId], map: "memo_return_line_memo_stock_key")
@@ -1379,7 +1393,7 @@ model Reserve {
   approvedBy              String?            @map("approved_by") @db.VarChar(64)
   deletedAt               DateTime?          @map("deleted_at") @db.Timestamp(3)
   deletedBy               String?            @map("deleted_by") @db.VarChar(64)
-  /// ADR-0046 D4 / ADR-0048: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
+  /// ADR-0046 D4 / ADR-0050: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
   submittedAt             DateTime?          @map("submitted_at") @db.Timestamp(3)
   submittedBy             String?            @map("submitted_by") @db.VarChar(64)
   /// Actor name snapshot from auth.current_authorization.user_name (ADR-0046 D5).
@@ -1394,9 +1408,9 @@ model Reserve {
   lineCount               Int                @map("line_count") @db.SmallInt
   totalPcs                Int                @map("total_pcs")
   totalWeightCt           Decimal            @map("total_weight_ct") @db.Decimal(15, 3)
-  /// ADR-0048: APPROVED by Save while approval was OFF (editable / deletable until used).
+  /// ADR-0050: APPROVED by Save while approval was OFF (editable / deletable until used).
   autoApproved            Boolean            @default(false) @map("auto_approved")
-  /// ADR-0048: Revise is allowed once (0..1).
+  /// ADR-0050: Revise is allowed once (0..1).
   revisionCount           Int                @default(0) @map("revision_count") @db.SmallInt
   version                 Int                @default(1)
   createdAt               DateTime           @default(now()) @map("created_at") @db.Timestamp(3)
@@ -1421,7 +1435,7 @@ model Reserve {
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "reserve_deleted_list_idx")
   /// ADR-0046 D18: the Approve queue (summary counts, pending default sort).
   @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "reserve_pending_idx")
-  /// ADR-0048: sent-back documents (turn-OFF guard, Setup counts).
+  /// ADR-0050: sent-back documents (turn-OFF guard, Setup counts).
   @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "reserve_revision_idx")
   @@map("reserve")
   @@schema("partner")
@@ -1463,6 +1477,9 @@ model ReserveLine {
   document             Reserve    @relation(fields: [reserveId], references: [id], onDelete: Cascade)
   stoneCode            StoneCode? @relation(fields: [stoneCodeId], references: [id], onDelete: SetNull)
   memoStock            MemoStock? @relation(fields: [memoStockId], references: [id], onDelete: Restrict)
+
+  /// Line photos in order (ADR-0048, owner 2026-11-11).
+  photos ReserveLinePhoto[]
 
   @@unique([reserveId, position], map: "reserve_line_position_key")
   @@unique([reserveId, memoStockId], map: "reserve_line_memo_stock_key")
@@ -1523,7 +1540,7 @@ model PurchaseOrder {
   approvedBy         String?               @map("approved_by") @db.VarChar(64)
   deletedAt          DateTime?             @map("deleted_at") @db.Timestamp(3)
   deletedBy          String?               @map("deleted_by") @db.VarChar(64)
-  /// ADR-0046 D4 / ADR-0048: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
+  /// ADR-0046 D4 / ADR-0050: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
   submittedAt        DateTime?             @map("submitted_at") @db.Timestamp(3)
   submittedBy        String?               @map("submitted_by") @db.VarChar(64)
   /// Actor name snapshot from auth.current_authorization.user_name (ADR-0046 D5).
@@ -1538,9 +1555,9 @@ model PurchaseOrder {
   lineCount          Int                   @map("line_count") @db.SmallInt
   totalPcs           Int                   @map("total_pcs")
   totalWeightCt      Decimal               @map("total_weight_ct") @db.Decimal(15, 3)
-  /// ADR-0048: APPROVED by Save while approval was OFF (editable / deletable until used).
+  /// ADR-0050: APPROVED by Save while approval was OFF (editable / deletable until used).
   autoApproved       Boolean               @default(false) @map("auto_approved")
-  /// ADR-0048: Revise is allowed once (0..1).
+  /// ADR-0050: Revise is allowed once (0..1).
   revisionCount      Int                   @default(0) @map("revision_count") @db.SmallInt
   version            Int                   @default(1)
   createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamp(3)
@@ -1563,7 +1580,7 @@ model PurchaseOrder {
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "purchase_order_deleted_list_idx")
   /// ADR-0046 D18: the Approve queue (summary counts, pending default sort).
   @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "purchase_order_pending_idx")
-  /// ADR-0048: sent-back documents (turn-OFF guard, Setup counts).
+  /// ADR-0050: sent-back documents (turn-OFF guard, Setup counts).
   @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "purchase_order_revision_idx")
   @@map("purchase_order")
   @@schema("partner")
@@ -1638,6 +1655,76 @@ model PurchaseOrderLinePhoto {
   @@schema("partner")
 }
 
+/// Reserve line photos (ADR-0048, owner 2026-11-11): like purchase_order_line_photo; position 1…5, first = Default.
+model ReserveLinePhoto {
+  lineId   String      @map("line_id") @db.Uuid
+  position Int         @db.SmallInt
+  fileId   String      @map("file_id") @db.Uuid
+  line     ReserveLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  file     StoredFile  @relation(fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@id([lineId, position])
+  @@index([fileId], map: "reserve_line_photo_file_idx")
+  @@map("reserve_line_photo")
+  @@schema("partner")
+}
+
+/// MemoReturn line photos (ADR-0048, owner 2026-11-11): like purchase_order_line_photo; position 1…5, first = Default.
+model MemoReturnLinePhoto {
+  lineId   String         @map("line_id") @db.Uuid
+  position Int            @db.SmallInt
+  fileId   String         @map("file_id") @db.Uuid
+  line     MemoReturnLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  file     StoredFile     @relation(fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@id([lineId, position])
+  @@index([fileId], map: "memo_return_line_photo_file_idx")
+  @@map("memo_return_line_photo")
+  @@schema("partner")
+}
+
+/// MemoOut line photos (ADR-0048, owner 2026-11-11): like purchase_order_line_photo; position 1…5, first = Default.
+model MemoOutLinePhoto {
+  lineId   String      @map("line_id") @db.Uuid
+  position Int         @db.SmallInt
+  fileId   String      @map("file_id") @db.Uuid
+  line     MemoOutLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  file     StoredFile  @relation(fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@id([lineId, position])
+  @@index([fileId], map: "memo_out_line_photo_file_idx")
+  @@map("memo_out_line_photo")
+  @@schema("partner")
+}
+
+/// MemoOutReturn line photos (ADR-0048, owner 2026-11-11): like purchase_order_line_photo; position 1…5, first = Default.
+model MemoOutReturnLinePhoto {
+  lineId   String            @map("line_id") @db.Uuid
+  position Int               @db.SmallInt
+  fileId   String            @map("file_id") @db.Uuid
+  line     MemoOutReturnLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  file     StoredFile        @relation(fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@id([lineId, position])
+  @@index([fileId], map: "memo_out_return_line_photo_file_idx")
+  @@map("memo_out_return_line_photo")
+  @@schema("partner")
+}
+
+/// Purchase line photos (ADR-0048, owner 2026-11-11): like purchase_order_line_photo; position 1…5, first = Default.
+model PurchaseLinePhoto {
+  lineId   String       @map("line_id") @db.Uuid
+  position Int          @db.SmallInt
+  fileId   String       @map("file_id") @db.Uuid
+  line     PurchaseLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  file     StoredFile   @relation(fields: [fileId], references: [id], onDelete: Restrict)
+
+  @@id([lineId, position])
+  @@index([fileId], map: "purchase_line_photo_file_idx")
+  @@map("purchase_line_photo")
+  @@schema("partner")
+}
+
 // ---- Purchase (purchase SA revision 1 / ADR-0042, owner 2026-11-04) ----
 // Shaped like Purchase Order. Lines come from Memo Stock (STOCK), an approved PO line (PURCHASE_ORDER) or are keyed in
 // (MANUAL). Save checks availability; Approve cuts memo_stock pending/sold/purchased and purchase_order_line.purchased_*
@@ -1682,7 +1769,7 @@ model Purchase {
   approvedBy         String?            @map("approved_by") @db.VarChar(64)
   deletedAt          DateTime?          @map("deleted_at") @db.Timestamp(3)
   deletedBy          String?            @map("deleted_by") @db.VarChar(64)
-  /// ADR-0046 D4 / ADR-0048: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
+  /// ADR-0046 D4 / ADR-0050: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
   submittedAt        DateTime?          @map("submitted_at") @db.Timestamp(3)
   submittedBy        String?            @map("submitted_by") @db.VarChar(64)
   /// Actor name snapshot from auth.current_authorization.user_name (ADR-0046 D5).
@@ -1697,9 +1784,9 @@ model Purchase {
   lineCount          Int                @map("line_count") @db.SmallInt
   totalPcs           Int                @map("total_pcs")
   totalWeightCt      Decimal            @map("total_weight_ct") @db.Decimal(15, 3)
-  /// ADR-0048: APPROVED by Save while approval was OFF (editable / deletable until used).
+  /// ADR-0050: APPROVED by Save while approval was OFF (editable / deletable until used).
   autoApproved       Boolean            @default(false) @map("auto_approved")
-  /// ADR-0048: Revise is allowed once (0..1).
+  /// ADR-0050: Revise is allowed once (0..1).
   revisionCount      Int                @default(0) @map("revision_count") @db.SmallInt
   version            Int                @default(1)
   createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamp(3)
@@ -1722,7 +1809,7 @@ model Purchase {
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "purchase_deleted_list_idx")
   /// ADR-0046 D18: the Approve queue (summary counts, pending default sort).
   @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "purchase_pending_idx")
-  /// ADR-0048: sent-back documents (turn-OFF guard, Setup counts).
+  /// ADR-0050: sent-back documents (turn-OFF guard, Setup counts).
   @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "purchase_revision_idx")
   @@map("purchase")
   @@schema("partner")
@@ -1770,6 +1857,9 @@ model PurchaseLine {
   memoStock           MemoStock?         @relation(fields: [memoStockId], references: [id], onDelete: Restrict)
   purchaseOrderLine   PurchaseOrderLine? @relation(fields: [purchaseOrderLineId], references: [id], onDelete: Restrict)
 
+  /// Line photos in order (ADR-0048, owner 2026-11-11).
+  photos PurchaseLinePhoto[]
+
   @@unique([purchaseId, position], map: "purchase_line_position_key")
   @@unique([purchaseId, memoStockId, memoGroup], map: "purchase_line_memo_stock_key")
   @@unique([purchaseId, purchaseOrderLineId], map: "purchase_line_po_line_key")
@@ -1789,5 +1879,38 @@ model PurchaseCharge {
 
   @@id([purchaseId, chargeType])
   @@map("purchase_charge")
+  @@schema("partner")
+}
+
+/// ADR-0049 (owner 2026-11-11): one row per notification event of a master document (approval.pending, document.approved,
+/// later document.rejected / document.revision_requested). `summary` is display-only (≤ 1 KB).
+model NotificationEvent {
+  id           String                  @id @db.Uuid
+  type         String                  @db.VarChar(40)
+  documentType String                  @map("document_type") @db.VarChar(40)
+  documentId   String                  @map("document_id") @db.Uuid
+  docNo        String                  @map("doc_no") @db.VarChar(40)
+  actorUserId  String                  @map("actor_user_id") @db.VarChar(64)
+  summary      Json                    @default("{}")
+  createdAt    DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  recipients   NotificationRecipient[]
+
+  @@index([documentType, createdAt(sort: Desc), id(sort: Desc)], map: "notification_event_type_created_idx")
+  @@index([createdAt], map: "notification_event_created_idx")
+  @@map("notification_event")
+  @@schema("partner")
+}
+
+/// ADR-0049: one row per addressed user; `read_at` null = unread. `created_at` copies the event time for the keyset.
+model NotificationRecipient {
+  eventId   String            @map("event_id") @db.Uuid
+  userId    String            @map("user_id") @db.VarChar(64)
+  createdAt DateTime          @map("created_at") @db.Timestamptz(6)
+  readAt    DateTime?         @map("read_at") @db.Timestamptz(6)
+  event     NotificationEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, userId])
+  @@index([userId, createdAt(sort: Desc), eventId(sort: Desc)], map: "notification_recipient_user_created_idx")
+  @@map("notification_recipient")
   @@schema("partner")
 }

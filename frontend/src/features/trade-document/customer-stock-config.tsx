@@ -16,6 +16,7 @@ import {
 import { type DocumentApi, type DocumentFormConfig, type SaveOutcome } from "./document-form";
 import type { RestoreOutcome } from "./document-api";
 import { MemoStockModal } from "./memo-stock-modal";
+import type { DocumentPhotos } from "./document-photos";
 
 type CustomerStockInput = ReturnType<typeof toCustomerStockInput>;
 
@@ -33,18 +34,20 @@ export type CustomerStockPageOptions = {
   mapRestoreError: (error: unknown) => RestoreOutcome;
   /** The From Stock dialog title (Reserve design: "Add From Stock"). */
   pickerTitle: string;
-  /** The approval setting key (ADR-0048). */
+  /** The approval setting key (ADR-0050). */
   approvalType: "reserve" | "memo-out";
   notePlaceholder: string;
   noteHint: string;
   daybook: ReactNode;
+  /** Line photo routes (ADR-0048). */
+  photos: DocumentPhotos;
 };
 
 /**
  * The shared document form settings of a customer document with From Stock rows:
  * - the Quotation header with a customer and both addresses;
  * - one From Stock button over Memo Stock (every vendor), whose rows take part or all of their item;
- * - the approval flow of its type (ADR-0048: Save, Send to approve, Edit / Delete per Flow).
+ * - the approval flow of its type (ADR-0050: Save, Send to approve, Edit / Delete per Flow).
  * Rows keyed in by hand hold nothing.
  */
 export function customerStockConfig(options: CustomerStockPageOptions): DocumentFormConfig<CustomerStockFormValues, CustomerStockInput, CustomerStockOptions> {
@@ -65,6 +68,7 @@ export function customerStockConfig(options: CustomerStockPageOptions): Document
     schema: customerStockSchema,
     empty: emptyCustomerStock,
     toInput: toCustomerStockInput,
+    photos: options.photos,
     useApi: options.useApi,
     partyId: (values) => values?.customerId,
     // These documents' options have the quotation options shape, so the quotation header fields read them as is.

@@ -2,12 +2,12 @@ import type { StatusLabels } from "@/features/quotation/components/header/Quotat
 import { readDomainError } from "@/lib/trpc-error";
 
 /**
- * approval-setup FE-AS-010 / FE-AS-012 (ADR-0048, api-contract "Shared types"): the document status model, the
+ * approval-setup FE-AS-010 / FE-AS-012 (ADR-0050, api-contract "Shared types"): the document status model, the
  * buttons it allows on a document page, its read-only text, the new error codes and the Daybook dots. Pure functions
  * only, shared by the eight document pages (the hook lives in `approval-flow.tsx`).
  */
 
-/** Statuses of the seven engine documents (ADR-0048 D2); Quotation adds CANCELLED. */
+/** Statuses of the seven engine documents (ADR-0050 D2); Quotation adds CANCELLED. */
 export const APPROVAL_DOC_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REVISION_REQUESTED", "REJECTED"] as const;
 export type ApprovalDocStatus = (typeof APPROVAL_DOC_STATUSES)[number];
 
@@ -56,7 +56,7 @@ export function flowOf(detail: DocFlow): DocFlow {
 
 const SUBMITTABLE = new Set(["DRAFT", "REVISION_REQUESTED"]);
 
-/** ADR-0048 rule 2: editable / deletable status (the server adds isUsed and the caller's grants). */
+/** ADR-0050 rule 2: editable / deletable status (the server adds isUsed and the caller's grants). */
 export function isChangeableStatus(flow: Pick<DocFlow, "status" | "autoApproved" | "usedBy">): boolean {
   if (SUBMITTABLE.has(flow.status)) return true;
   return flow.status === "APPROVED" && flow.autoApproved && flow.usedBy === null;
@@ -108,7 +108,7 @@ export type FlowActions = {
 /**
  * FE-AS-010: the document page buttons. Edit / Delete follow `Flow.canEdit / canDelete` (status rule + isUsed + grant)
  * and the caller's grant; Send to approve needs the type's setting ON (from `approvalSetting.list`, else the server's
- * `canSubmit`), status Draft / Revise and ADD or EDIT. No Approve button on a document page (ADR-0048 Q-AS-23).
+ * `canSubmit`), status Draft / Revise and ADD or EDIT. No Approve button on a document page (ADR-0050 Q-AS-23).
  */
 export function flowActions(input: {
   flow: DocFlow | null;
@@ -153,7 +153,7 @@ export function sendToApproveConfirm(docNo: string | undefined) {
   };
 }
 
-/** Restore goes back to Draft when approval is ON, or is approved again when OFF (ADR-0048 G3 / G10). */
+/** Restore goes back to Draft when approval is ON, or is approved again when OFF (ADR-0050 G3 / G10). */
 export function restoreStatusLabel(requireApproval: boolean | undefined): string {
   if (requireApproval === undefined) return "its saved status";
   return requireApproval ? "Draft" : "Approved";
@@ -168,7 +168,7 @@ export type FlowErrorOutcome = {
 };
 
 /**
- * The ADR-0048 codes of a document write (error-handling.md), or null for any other error (the page's own mapping).
+ * The ADR-0050 codes of a document write (error-handling.md), or null for any other error (the page's own mapping).
  * `docNo` names the document in the message.
  */
 export function mapFlowError(error: unknown, type: DocumentApprovalType, docNo: string | undefined, action: "save" | "delete" | "submit"): FlowErrorOutcome | null {
@@ -208,7 +208,7 @@ const DOTS: Record<string, DaybookDot> = {
 };
 
 /**
- * FE-AS-012 / ADR-0048 D6: Draft grey, Pending orange, Revise orange, Approved green, Rejected red. With the type's
+ * FE-AS-012 / ADR-0050 D6: Draft grey, Pending orange, Revise orange, Approved green, Rejected red. With the type's
  * approval OFF every saved document is approved, so an older Draft shows green too ("ถ้าไม่มี approve เป็นเขียวหมด").
  */
 export function flowDot(status: string, requireApproval?: boolean): DaybookDot {

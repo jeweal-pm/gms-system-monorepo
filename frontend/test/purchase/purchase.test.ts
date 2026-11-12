@@ -318,7 +318,7 @@ describe("UT-PU-06 contract mapping, errors and the approve text (FE-PU-003/005)
     expect(purchaseLoadError(gatewayError({ code: "FORBIDDEN", httpStatus: 403, domainCode: "PERMISSION_DENIED" }))).toBe("You don't have permission to view purchases.");
   });
 
-  it("the page has no Approve confirm any more (ADR-0048: Approve menu only); it follows the purchase approval setting", () => {
+  it("the page has no Approve confirm any more (ADR-0050: Approve menu only); it follows the purchase approval setting", () => {
     expect(PURCHASE_CONFIG).not.toHaveProperty("approval");
     expect(PURCHASE_CONFIG.approvalType).toBe("purchase");
   });
