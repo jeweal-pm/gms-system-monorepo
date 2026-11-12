@@ -1,0 +1,35 @@
+# 2026-11-12: Approval setup saves, and Approve follows the settings (frontend stage B)
+
+- Feature: `approval-setup` FE-AS-008, FE-AS-009, FE-AS-011 and FE-AS-013, with `approve-center` FE-AP-009 and FE-AP-010, on SA revision 1 ([ADR-0048](../adr/0048-approval-setting-draft-send-to-approve.md), ADR-0046). The owner started this on 2026-11-12 ("เริ่มทำ frontend ให้หน้าเว็บใช้ flow ใหม่"). Branch `feat/10-11-26-approval-api`, uncommitted. Stage A: [document pages](2026-11-12-approval-document-pages-frontend.md).
+- **Setup › Approval saves the switches**
+  - The page reads `approvalSetting.list` from the same cache as the document pages, so their buttons change after a switch.
+  - Each switch calls `approvalSetting.update` with the version the page loaded. The switch shows a spinner until the server answers.
+  - "Waiting for approval" now counts both Pending and Revise documents. It shows "100+" at the server's cap, and "—" when the user can't see counts.
+  - Turning approval off is refused while documents wait. The dialog says: "{n} {Menu} documents are still waiting for approval or sent back for revision. Finish them in the Approve menu (or have them sent again or deleted) first, then turn approval off."
+  - When the setting was changed by someone else, the type is not available yet, or permission is missing, the page shows a message and loads the settings again.
+  - The "Preview only" notice and the "Not saved yet." toast text are gone.
+- **Permission:** the `approval-setup` leaf opens Setup and the page. With VIEW only, the switches are read-only and the header says "(View only)"; EDIT is needed to switch.
+- **Approve menu**
+  - The counts in the panel, the sidebar badge and the landing page come from one `approval.summary` call.
+  - A type whose approval is off shows "off" and the page says "Approval is off for {Menu}."
+  - Quotation is a normal Approve menu when its approval is on.
+  - The list comes from `approval.pending`, sorted, searched and paged on the server. Rows now show pcs and carats, the number of lines, stone names, and the submitter's name and time. A document sent again after a Revise says so.
+  - Approve uses the version shown in the row and no longer loads the document first. Approve selected works the same way.
+  - Approvers no longer need VIEW to see the list or open a document.
+- **Reject… and Revise…**
+  - Both buttons work, in the table and in the document preview.
+  - Each opens a dialog that needs a reason of 1–500 characters. The Reject dialog's field is "Reason for reject".
+  - A document can be sent back only once. After that, Revise is disabled and its tooltip says "Already sent back once. Approve or reject it."
+  - If the document changed, was deleted, or is no longer pending, a message shows and the list reloads.
+- **Tests**
+  - Approve tests were rewritten for the new calls (9 files, 86 tests), and the Approval setup tests were updated.
+  - New `test/approval-setup/approval-setup.integration.test.ts` (IT-AS-S01/S02).
+  - Full suite: 97 files, 934 tests, all passed. `tsc` is clean for `src/` and `test/`. `eslint .` has no errors.
+- **Smoke test** on http://localhost:8080, with screenshots in `document/testing/screenshots/approval-setup/2026-11-12-stage-b-*.png`:
+  - turning Reserve off was blocked, first by 3 Pending documents, later by 1 Revise document;
+  - RS-3 was sent back with a reason, and its page shows "Revise: …";
+  - after RS-3 was sent again, its Revise button was disabled;
+  - RS-4 was rejected with a reason;
+  - RS-5 was approved.
+- **Test data left in dev (customer CM01):** Reserve RS-3 (Pending, sent back once), RS-4 (Rejected), RS-5 (Approved). They have Ref `SMOKE-FE-STAGE-B-1/2/3`. RS-3 keeps Reserve approval from being turned off until someone approves, rejects or deletes it.
+- **Not in this change:** the inventory Approve menus (FE-AP-011; those pages don't exist). The security reviews run once on the combined frontend diff.

@@ -14,7 +14,7 @@ import { authTrpc } from "@/lib/auth-trpc";
 import { masterTrpc } from "@/lib/master-trpc";
 import { daybookInput, daybookQueryOptions, deletedMessage, mapDocumentRestoreError } from "@/features/trade-document/document-api";
 import { isCallerLicenseCode, readDomainError, retryTransient } from "@/lib/trpc-error";
-import type { PurchaseOrderFormValues, PurchaseOrderStatus } from "./schema";
+import type { PurchaseOrderFormValues } from "./schema";
 
 export type PurchaseOrderDetail = InferQueryLikeData<typeof masterTrpc.purchaseOrder.get>;
 export type PurchaseOrderOptions = InferQueryLikeData<typeof masterTrpc.purchaseOrder.options>;
@@ -165,7 +165,7 @@ export function usePurchaseOrderWrites() {
   const create = masterTrpc.purchaseOrder.create.useMutation(writes);
   const update = masterTrpc.purchaseOrder.update.useMutation(writes);
   const remove = masterTrpc.purchaseOrder.delete.useMutation(writes);
-  const approve = masterTrpc.purchaseOrder.approve.useMutation(writes);
+  const submit = masterTrpc.purchaseOrder.submit.useMutation(writes);
   const restore = masterTrpc.purchaseOrder.restore.useMutation(writes);
   const invalidate = useCallback(
     () => Promise.all([utils.purchaseOrder.list.invalidate(), utils.purchaseOrder.get.invalidate(), utils.purchaseOrder.nextNumber.invalidate()]),
@@ -180,12 +180,11 @@ export function usePurchaseOrderWrites() {
     create: create.mutateAsync,
     update: update.mutateAsync,
     remove: remove.mutateAsync,
-    approve: approve.mutateAsync,
+    submit: submit.mutateAsync,
     restore: restore.mutateAsync,
     invalidate,
     reload,
-    busy: create.isPending || update.isPending || remove.isPending || approve.isPending || restore.isPending,
+    busy: create.isPending || update.isPending || remove.isPending || submit.isPending || restore.isPending,
   };
 }
 
-export const isPendingApproval = (status: PurchaseOrderStatus | undefined) => status === "PENDING_APPROVAL";

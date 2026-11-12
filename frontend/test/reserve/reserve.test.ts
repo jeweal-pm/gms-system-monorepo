@@ -1,3 +1,4 @@
+import { FLOW_DETAIL } from "../trade-document/flow-fixture";
 import { createElement, isValidElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FormProvider, useForm } from "react-hook-form";
@@ -27,7 +28,7 @@ const stockItem: MemoStockItem = {
 const noop = () => undefined;
 const config = customerStockConfig({
   noun: "reserve", title: "Reserve", newHref: RESERVE_HREF, detailHref: reserveHref, useApi: () => { throw new Error("not called"); },
-  mapSaveError: mapReserveSaveError, mapRestoreError: reserveRestoreError, pickerTitle: "Add From Stock", approvedStock: "held for the customer", noStock: "held",
+  mapSaveError: mapReserveSaveError, mapRestoreError: reserveRestoreError, pickerTitle: "Add From Stock", approvalType: "reserve",
   notePlaceholder: "", noteHint: "Printed on the reserve for the customer", daybook: null,
 });
 
@@ -53,10 +54,9 @@ describe("page settings (UT-RS-02, design 01/02)", () => {
     expect((picker as { props: { title: string; showPrice: boolean; vendorId?: string } }).props).toMatchObject({ title: "Add From Stock", showPrice: false });
     expect((picker as { props: { vendorId?: string } }).props.vendorId).toBeUndefined();
     expect(config.picker!.addedToast(2)).toBe("Added 2 items from Stock");
-    expect(config.approval).toMatchObject({ confirmTitle: "Approve Reserve", pendingStatus: "PENDING_APPROVAL" });
-    const stockRow = memoStockToStockLine(stockItem);
-    expect(config.approval!.confirmBody([stockRow])).toBe("Approve this Reserve? Its 1 stock item is held for the customer and it can no longer be edited.");
-    expect(config.approval!.confirmBody([])).toBe("Approve this Reserve? It has no stock items, so nothing is held. It can no longer be edited.");
+    // ADR-0048: no Approve confirm on the page; the reserve approval setting drives Save / Send to approve.
+    expect(config).not.toHaveProperty("approval");
+    expect(config.approvalType).toBe("reserve");
   });
 });
 
@@ -81,7 +81,7 @@ describe("mapping (UT-RS-03/04)", () => {
       lines: [{ ...base, source: "STOCK" as const, stone: "Tourmaline", location: "Memo", pcs: 1, weightCt: "0.680", unitPrice: "5000.00", amount: "3400.00", memoStockId: STOCK, stockId: "260003", stockPendingPcs: 2, stockPendingWeightCt: "1.360" }],
       discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "3400.00", discountAmount: "0.00", priceBeforeTax: "3400.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "3400.00" },
-      approvedAt: "2026-11-02T03:00:00.000Z", approvedBy: "u", createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null,
+      approvedAt: "2026-11-02T03:00:00.000Z", approvedBy: "u", createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, ...FLOW_DETAIL,
     } satisfies ReserveDetail;
     expect(fromReserve(detail)).toMatchObject({
       docNo: "RS-1", status: "APPROVED", invoiceAddressId: "",
@@ -122,7 +122,7 @@ describe("From Stock only (UT-RS-06, owner 2026-11-02: \"Reserve ไม่มี
     expect(reserveTable).not.toContain("Add row");
     expect(reserveTable).toContain("Empty row · click to pick From Stock");
     expect(renderTable(QUOTATION_KIND)).toContain("Add row");
-    const memoOut = customerStockConfig({ noun: "memo out", title: "Memo Out", newHref: "/memo/memo-out", detailHref: (id: string) => id, useApi: () => { throw new Error("not called"); }, mapSaveError: mapReserveSaveError, mapRestoreError: reserveRestoreError, pickerTitle: "From Stock", approvedStock: "cut from Memo Stock", noStock: "cut", notePlaceholder: "", noteHint: "", daybook: null });
+    const memoOut = customerStockConfig({ noun: "memo out", title: "Memo Out", newHref: "/memo/memo-out", detailHref: (id: string) => id, useApi: () => { throw new Error("not called"); }, mapSaveError: mapReserveSaveError, mapRestoreError: reserveRestoreError, pickerTitle: "From Stock", approvalType: "memo-out", notePlaceholder: "", noteHint: "", daybook: null });
     expect(memoOut.kind?.pickOnly).toBe(true);
     expect(renderTable(memoOut.kind!)).not.toContain("Add row");
   });

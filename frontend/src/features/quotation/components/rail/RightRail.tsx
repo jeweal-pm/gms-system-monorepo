@@ -3,7 +3,9 @@
 import type { ReactNode } from "react";
 import { DaybookIcon, SummaryValueIcon } from "@/components/ui/rail-icons";
 import { daybookLoadError, daybookState, DocumentDaybook, type DaybookDot } from "@/features/trade-document/document-api";
-import { useDaybook, type QuotationStatus } from "../../api";
+import { useApprovalSetting } from "@/features/trade-document/approval-flow";
+import { flowDot } from "@/features/trade-document/flow-status";
+import { useDaybook } from "../../api";
 import type { QuotationTotals } from "../../lib/calculate";
 import { SummaryValue } from "../summary/SummaryValue";
 import { cx, IconButton, SidePanel } from "../ui";
@@ -61,24 +63,18 @@ export function RailPanelView({
   );
 }
 
-const DOT: Record<QuotationStatus, DaybookDot> = {
-  // No approval step (owner 2026-10-27): older Draft/Pending rows show as approved.
-  DRAFT: { className: "bg-[#22C55E]", label: "DRAFT" },
-  PENDING_APPROVAL: { className: "bg-[#22C55E]", label: "PENDING_APPROVAL" },
-  APPROVED: { className: "bg-[#22C55E]", label: "APPROVED" },
-  REJECTED: { className: "bg-[#E5484D]", label: "REJECTED" },
-  CANCELLED: { className: "bg-[#D5DADF]", label: "CANCELLED" },
-};
-export const quotationDot = (status: string): DaybookDot => DOT[status as QuotationStatus] ?? DOT.APPROVED;
+/** FE-AS-012: Quotation uses the shared ADR-0048 dots (Draft grey, Pending / Revise orange, Approved green, Rejected red). */
+export const quotationDot = (status: string, requireApproval?: boolean): DaybookDot => flowDot(status, requireApproval);
 
 /** Quotations newest first, without cancelled ones (owner 2026-10-26, Q-QT-06); Active / Deleted (FE-SD-001). */
 function DaybookList() {
   const daybook = useDaybook();
+  const { requireApproval } = useApprovalSetting("quotation");
   return (
     <DocumentDaybook
       plural="quotations"
       href={(id) => `/pre-sale/quotation/${id}`}
-      dot={quotationDot}
+      requireApproval={requireApproval}
       emptyText="No results found."
       state={daybookState(daybook, (error) => daybookLoadError(error, "quotations"), (item) => String(item.customerName ?? ""))}
     />

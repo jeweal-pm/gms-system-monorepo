@@ -10,6 +10,8 @@ export type CurrentAuthorization = {
   account_role: string;
   permissions: string[];
   location_keys: string[];
+  /** ADR-0046 D5: the session owner's own User.name (never another user's); normalized by the auth context. */
+  user_name: string | null;
 };
 
 export function requireMasterAuthzDatabaseUrl(env: NodeJS.ProcessEnv = process.env): string {
@@ -39,7 +41,7 @@ export class MasterAuthzDatabase implements OnModuleInit, OnModuleDestroy {
 
   async read(userId: string, sessionId: string): Promise<CurrentAuthorization | null> {
     const rows = await this.client.$queryRaw<CurrentAuthorization[]>`
-      SELECT session_id, user_id, session_expires_at, account_active, account_role, permissions, location_keys
+      SELECT session_id, user_id, session_expires_at, account_active, account_role, permissions, location_keys, user_name
       FROM "auth"."current_authorization"
       WHERE user_id = ${userId} AND session_id = ${sessionId}
       LIMIT 1

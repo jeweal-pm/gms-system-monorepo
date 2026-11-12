@@ -11,20 +11,37 @@ import type { DocumentTransactionKey } from "../document-setup/document-setup.tr
 import type { Prisma } from "../generated/prisma/client";
 import { calculateTotals, oversizeAmounts } from "../quotation/quotation.calculate";
 import { CHARGE_TYPES, type LineInput } from "../quotation/quotation.schemas";
+import { assertEditable, flowFlags, isEditableStatus, REVISE_LIMIT, saveStatus, type FlowPrincipal, type SavePlan } from "../approval-setting/approval-flow";
+import { peekApprovalSetting, readApprovalSetting } from "../approval-setting/approval-setting.service";
+import type { ApprovalDocType } from "../approval-setting/approval-types";
 import type { DocumentErrors } from "./document-errors";
+import { lineTotals } from "./document-totals";
 
 /**
- * Shared document engine for memo out, memo out return (ADR-0033), memo receive (ADR-0034) and memo return
- * (memo-return SA rev 2): the quotation rules — Document Setup number (max + 1 under the numbering-row lock, plain
- * 1, 2, 3 … without a row), party + address snapshots, server totals with the quotation calculator, optimistic
- * version. The party part (customer or vendor) comes from an adapter. Status on create and the editable statuses are
- * per document (SA-MR-02): memo out / memo out return stay drafts; memo receive and memo return start
- * PENDING_APPROVAL. An optional line hook adds per-line columns (memo receive: kept line ids, Stock IDs and line
- * photos, SA-MR-17; memo return: the Memo Stock item).
+ * Shared document engine for reserve, memo out, memo out return (ADR-0033/0036), memo receive (ADR-0034), memo return,
+ * purchase order (ADR-0041) and purchase (ADR-0042): the quotation rules — Document Setup number (max + 1 under the
+ * numbering-row lock, plain 1, 2, 3 … without a row), party + address snapshots, server totals with the quotation
+ * calculator, optimistic version. The party part (customer or vendor) comes from an adapter. An optional line hook adds
+ * per-line columns (memo receive: kept line ids, Stock IDs and line photos, SA-MR-17; memo return: the Memo Stock item).
+ *
+ * Approval flow (approval-setup SA rev 1 / ADR-0048, amending approve-center ADR-0046), shared by the seven documents:
+ * - every create / update / submit / restore reads the type's setting `FOR SHARE` first (lock order: setting → header →
+ *   source header(s) `FOR SHARE` → memo_out_line rows → memo_stock rows → purchase_order_line rows; a dependent document
+ *   locks its source headers before inserting lines or locking stock, INV-20261111-002 F1);
+ * - ON: Save → DRAFT; `submit` → PENDING_APPROVAL (locked); `approve` → APPROVED with the document's effects;
+ *   `requestRevision` (once, reason) → REVISION_REQUESTED; `reject` (reason) → REJECTED (final);
+ * - OFF: Save → APPROVED with `auto_approved` and the effects in the same transaction (an effect failure refuses the
+ *   whole Save with the Approve error); an auto-approved document stays editable / deletable until used: edit reverses
+ *   the old effects and applies the new ones, delete reverses them.
+ * The effects (`apply` = today's approve body, `reverse` = its exact inverse, `usedBy`) come per document type.
  */
 
 const COMPANY_PROFILE_ID = 1;
-const DRAFT_ONLY = ["DRAFT"] as const;
+const PENDING = "PENDING_APPROVAL";
+/** Statuses that can pass the header lock of update / delete; `assertEditable` then decides (auto-approved, used). */
+const CHANGEABLE = ["DRAFT", "REVISION_REQUESTED", "APPROVED"] as const;
+const SUBMITTABLE = ["DRAFT", "REVISION_REQUESTED"] as const;
+const NO_GRANTS: FlowPrincipal = { isSuperAdmin: false, grants: [] };
 
 type Row = Record<string, unknown>;
 type Dec = Prisma.Decimal;
@@ -34,13 +51,12 @@ type DocDelegate = {
   count(args: unknown): Promise<number>;
   create(args: unknown): Promise<unknown>;
   updateMany(args: unknown): Promise<{ count: number }>;
-  /** One guarded `UPDATE … RETURNING` (soft delete / restore, ADR-0045 D4/D6). */
-  updateManyAndReturn(args: unknown): Promise<Row[]>;
+  update(args: unknown): Promise<unknown>;
 };
 
-/** The columns a guarded write reads to explain a miss (transaction-soft-delete D8). */
-export const MISS_SELECT = { status: true, version: true, deletedAt: true } as const;
-export type MissRow = { status: string; version: number; deletedAt: Date | null } | null;
+/** The columns a guarded write reads to explain a miss (transaction-soft-delete D8; revise limit ADR-0048). */
+export const MISS_SELECT = { status: true, version: true, deletedAt: true, revisionCount: true } as const;
+export type MissRow = { status: string; version: number; deletedAt: Date | null; revisionCount?: number } | null;
 
 /**
  * A guarded write (update / approve / delete) changed no row; throws the first match of D8:
@@ -59,8 +75,44 @@ export function explainRestoreMiss(errors: Pick<DocumentErrors, "notFound" | "st
   if (!row.deletedAt) throw errors.statusInvalid();
   throw errors.changed();
 }
+
+/** Review miss (D8 order + ADR-0048 revise limit): NOT_FOUND → DELETED → STATUS_INVALID → REVISE_LIMIT → CHANGED. */
+export function explainReviewMiss(errors: Pick<DocumentErrors, "notFound" | "deleted" | "statusInvalid" | "changed" | "reviseLimit">, row: MissRow, action: "REJECT" | "REVISE"): never {
+  if (!row) throw errors.notFound();
+  if (row.deletedAt) throw errors.deleted();
+  if (row.status !== PENDING) throw errors.statusInvalid();
+  if (action === "REVISE" && (row.revisionCount ?? 0) >= REVISE_LIMIT) throw errors.reviseLimit();
+  throw errors.changed();
+}
+
 type ChildDelegate = { createMany(args: unknown): Promise<unknown>; deleteMany(args: unknown): Promise<unknown> };
 type Client = Tx | typeof prisma;
+
+/** The acting user (context only, never input); `name` is the display-name snapshot (ADR-0046 D5). */
+export type DocumentActor = { id: string; name: string | null };
+
+/** The stored document an effect works on. */
+export type EffectDoc = { id: string; docNo: string };
+
+/**
+ * A document type's stock effects (approval-setup architecture "Effects and their reversal"). `apply` is today's
+ * `approve()` body after the status change: it reads the stored lines and moves stock under row locks, throwing the
+ * type's approve error (e.g. `<CODE>_PENDING_SHORT`) when short; `result` joins the approve output, `log` its log line.
+ * `reverse` is its exact inverse through the same helpers and lock order; a reversal a later document has made
+ * impossible throws `<CODE>_IN_USE`. `usedBy` = the number of the first document that uses this one, or null.
+ */
+export type DocumentEffects = {
+  apply(tx: Tx, doc: EffectDoc, actorId: string, now: Date): Promise<{ result: Row; log: Row }>;
+  reverse(tx: Tx, doc: EffectDoc, now: Date): Promise<void>;
+  usedBy(client: Client, id: string): Promise<string | null>;
+};
+
+/** A document type without stock effects (Purchase Order lines wait for Purchase; Quotation). */
+export const NO_EFFECTS: DocumentEffects = {
+  apply: async () => ({ result: {}, log: {} }),
+  reverse: async () => undefined,
+  usedBy: async () => null,
+};
 
 /** A line of any trade document; memo receive lines have no stone code id and no location (SA-MR-07). */
 export type EngineLine = Omit<LineInput, "stoneCodeId" | "location"> & { stoneCodeId?: string | null; location?: string };
@@ -106,17 +158,25 @@ export type EngineConfig<Input extends TradeDocumentInput, Out extends Row = Row
   parentKey: string;
   errors: DocumentErrors;
   party: PartyAdapter<Input, Out>;
+  /** Approval setting key and permission menu (approval-setup registry). */
+  approvalType: ApprovalDocType;
+  /** Stock effects of approval (default none). */
+  effects?: DocumentEffects;
   /** Lines keep an Outstanding quantity (memo out return UI rev 3); pcs / weightCt are then the Return quantity. */
   outstanding?: boolean;
   /**
-   * Runs first in the write transaction, after the status check on update (create: documentId null); returns the
-   * input to store, e.g. memo return lines completed from their Memo Stock items.
+   * Runs in the write transaction after the status checks (and, for an auto-approved edit, after the old effects were
+   * reversed); returns the input to store, e.g. memo return lines completed from their Memo Stock items. `submit` runs
+   * it on the stored content as the save validation (create: documentId null).
    */
   prepare?: (tx: Tx, input: Input, documentId: string | null) => Promise<Input>;
-  /** Status written on create (default `DRAFT`). */
-  createStatus?: string;
-  /** Statuses in which update and delete are allowed (default `[DRAFT]`). */
-  editableStatuses?: readonly string[];
+  /**
+   * A dependent document (Memo Out Return, Purchase) locks the source headers its input names `FOR SHARE`
+   * (`lockSourceHeaders`) before `prepare`, line writes and the old effects' reversal whenever the Save applies effects,
+   * so a concurrent soft delete / edit of the source serializes with it (INV-20261111-002 F1). `apply` re-locks and
+   * re-checks them (approve, restore, go-live).
+   */
+  lockSources?: (tx: Tx, input: Input) => Promise<void>;
   /** Line columns the line table does not have (memo receive: `stoneCodeId`, `location`). */
   lineOmit?: readonly ("stoneCodeId" | "location")[];
   /** Per-line columns assigned inside the save transaction (memo receive Stock IDs). */
@@ -157,22 +217,22 @@ export const documentListFields = {
   deleted: z.boolean().default(false),
 };
 export const documentListSchema = z.object(documentListFields).strict();
-/** `status` is accepted only by documents with more than one status (memo receive). */
+/** `status` is accepted by the documents with an approval flow (all seven). */
 export type DocumentListInput = z.output<typeof documentListSchema> & { status?: string };
 
 const cursorSchema = z.object({ d: z.iso.date(), c: z.iso.datetime(), i: z.uuid(), v: z.literal(1) }).strict();
 
 const money = (value: unknown) => (value as Dec).toFixed(2);
 const isoOrNull = (value: unknown) => (value instanceof Date ? value.toISOString() : null);
-const text = (value: unknown) => (value === null ? null : (value as Dec).toString());
+const text = (value: unknown) => (value === null || value === undefined ? null : (value as Dec).toString());
 
 export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends Row = Row, Status extends string = "DRAFT"> {
   private readonly logger: Logger;
-  private readonly editable: readonly string[];
+  private readonly effects: DocumentEffects;
 
   constructor(private readonly config: EngineConfig<Input, Out>) {
     this.logger = new Logger(config.event);
-    this.editable = config.editableStatuses ?? DRAFT_ONLY;
+    this.effects = config.effects ?? NO_EFFECTS;
   }
 
   private doc(client: Client): DocDelegate {
@@ -208,7 +268,10 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
           where: { ...where, AND: and },
           orderBy: [{ docDate: "desc" }, { createdAt: "desc" }, { id: "desc" }],
           take: input.limit + 1,
-          select: { id: true, docNo: true, status: true, docDate: true, dueDate: true, [party.nameColumn]: true, currencyCode: true, grandTotal: true, createdAt: true, updatedAt: true, deletedAt: true },
+          select: {
+            id: true, docNo: true, status: true, docDate: true, dueDate: true, [party.nameColumn]: true, currencyCode: true, grandTotal: true, createdAt: true, updatedAt: true, deletedAt: true,
+            autoApproved: true, revisionCount: true, reviewAction: true, reviewNote: true, reviewedAt: true, reviewedByName: true,
+          },
         }),
         this.doc(prisma).count({ where }),
       ]);
@@ -226,6 +289,10 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
           grandTotal: money(row.grandTotal),
           updatedAt: (row.updatedAt as Date).toISOString(),
           deletedAt: isoOrNull(row.deletedAt),
+          // ADR-0048 D6 Daybook: latest status, auto-approved and the latest Revise / Reject reason.
+          autoApproved: row.autoApproved as boolean,
+          revisionCount: revisionCountOf(row),
+          review: reviewOfRow(row),
         })),
         nextCursor: rows.length > input.limit && last
           ? encodeCursor(fromDbDate(last.docDate as Date), (last.createdAt as Date).toISOString(), last.id as string)
@@ -237,13 +304,18 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
     }
   }
 
-  async get(id: string) {
+  /** Detail plus `Flow` for `viewer` (its EDIT / DELETE / ADD grants decide the flags; no viewer = no grants). */
+  async get(id: string, viewer: FlowPrincipal | null = null) {
     const { errors } = this.config;
     try {
       const lineInclude = this.config.lineHook?.lineInclude;
       const row = await this.doc(prisma).findUnique({ where: { id }, include: { lines: { orderBy: { position: "asc" }, ...(lineInclude ? { include: lineInclude } : {}) }, charges: true } });
       if (!row) throw errors.notFound();
-      return this.toDetail(row);
+      const [requireApproval, usedBy] = await Promise.all([
+        peekApprovalSetting(prisma, this.config.approvalType),
+        isAutoApproved(row) && !row.deletedAt ? this.effects.usedBy(prisma, id) : Promise.resolve(null),
+      ]);
+      return { ...this.toDetail(row), ...documentFlow(row, this.config.approvalType, requireApproval, usedBy, viewer) };
     } catch (error) {
       throw errors.map(error, "get");
     }
@@ -258,10 +330,17 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
     }
   }
 
-  async create(actorId: string, rawInput: Input) {
+  /**
+   * Save (create): ON → DRAFT; OFF → APPROVED with `auto_approved` and the effects in the same transaction (an effect
+   * failure refuses the whole Save with the Approve error, nothing written).
+   */
+  async create(actorId: string, rawInput: Input, viewer: FlowPrincipal | null = null) {
     const { errors, event, lineHook } = this.config;
     try {
-      const created = await prisma.$transaction(async (tx) => {
+      const saved = await prisma.$transaction(async (tx) => {
+        const requireApproval = await readApprovalSetting(tx, this.config.approvalType);
+        const plan = saveStatus(requireApproval, null);
+        if (plan.effects !== "none") await this.config.lockSources?.(tx, rawInput);
         const input = this.config.prepare ? await this.config.prepare(tx, rawInput, null) : rawInput;
         const partyColumns = await this.checkReferences(tx, input, null);
         const { numberingId, runningNo, docNo } = await this.issueNumber(tx, input.docDate, true);
@@ -270,106 +349,260 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
         const assigned = lineHook ? await lineHook.assign(tx, input, null) : null;
         const id = uuidV7();
         const now = new Date();
+        // ADR-0048: a DRAFT is not submitted (submitted_* stay null until `submit`).
         await this.doc(tx).create({
-          data: { id, numberingId, runningNo, docNo, status: this.config.createStatus ?? "DRAFT", ...header, ...partyColumns, createdAt: now, createdBy: actorId, updatedAt: now, updatedBy: actorId },
+          data: {
+            id, numberingId, runningNo, docNo, ...header, ...lineTotals(input.lines), ...partyColumns, ...planData(plan, false, actorId, now),
+            createdAt: now, createdBy: actorId, updatedAt: now, updatedBy: actorId,
+          },
         });
         await this.writeChildren(tx, id, input, assigned);
-        return { id, docNo, version: 1, ...(assigned && lineHook ? lineHook.result(assigned) : {}) };
+        const applied = plan.effects === "none" ? null : await this.effects.apply(tx, { id, docNo }, actorId, now);
+        return {
+          created: { id, docNo, version: 1, ...(assigned && lineHook ? lineHook.result(assigned) : {}), ...saveFlow(this.config.approvalType, plan, 0, requireApproval, viewer) },
+          applied,
+        };
       }, WRITE_TX);
-      this.logger.log({ event: `${event}.created`, actorId, id: created.id, docNo: created.docNo });
+      const { created, applied } = saved;
+      this.logger.log({ event: `${event}.created`, actorId, id: created.id, docNo: created.docNo, status: created.status, ...applied?.log });
       return created;
     } catch (error) {
       throw errors.map(error, "create");
     }
   }
 
-  async update(actorId: string, id: string, expectedVersion: number, rawInput: Input) {
+  /**
+   * Save (update), allowed while DRAFT, REVISION_REQUESTED or auto-approved and not used (ADR-0048 rule 2). The header
+   * is locked first by a guarded version bump (D8 miss order). DRAFT stays DRAFT (ON) or becomes APPROVED auto + effects
+   * (OFF); REVISION_REQUESTED stays; an auto-approved document reverses its old effects before the new content is
+   * validated and written, then applies the new effects — all in one transaction.
+   */
+  async update(actorId: string, id: string, expectedVersion: number, rawInput: Input, viewer: FlowPrincipal | null = null) {
     const { errors, event, party, lineModel, chargeModel, parentKey, lineHook } = this.config;
     const storedLineSelect = { ...(this.config.lineOmit?.includes("stoneCodeId") ? {} : { stoneCodeId: true }), ...lineHook?.storedSelect };
     try {
       const saved = await prisma.$transaction(async (tx) => {
-        const stored = await this.doc(tx).findUnique({
+        const requireApproval = await readApprovalSetting(tx, this.config.approvalType);
+        const now = new Date();
+        await this.lockHeader(tx, id, expectedVersion, CHANGEABLE, actorId, now);
+        const stored = (await this.doc(tx).findUnique({
           where: { id },
-          select: { status: true, version: true, deletedAt: true, currencyCode: true, ...party.storedSelect, lines: { select: storedLineSelect } },
-        });
-        if (!stored) throw errors.notFound();
-        // D8: a soft-deleted document is read-only until restored; reported before status and version.
-        if (stored.deletedAt) throw errors.deleted();
-        // Status first: a document that left its editable status (memo receive APPROVED) reports that, not a stale version.
-        if (!this.editable.includes(stored.status as string)) throw errors.statusInvalid();
-        if (stored.version !== expectedVersion) throw errors.changed();
+          select: { docNo: true, status: true, autoApproved: true, revisionCount: true, currencyCode: true, ...party.storedSelect, lines: { select: storedLineSelect } },
+        }))!;
+        const auto = isAutoApproved(stored);
+        assertEditable(flowDoc(stored), auto ? await this.effects.usedBy(tx, id) : null, errors);
+        const plan = saveStatus(requireApproval, { status: stored.status as string, autoApproved: stored.autoApproved as boolean });
+        const target = { id, docNo: stored.docNo as string };
+        if (plan.effects !== "none") await this.config.lockSources?.(tx, rawInput);
+        if (plan.effects === "reapply") await this.effects.reverse(tx, target, now);
         const input = this.config.prepare ? await this.config.prepare(tx, rawInput, id) : rawInput;
         const partyColumns = await this.checkReferences(tx, input, stored);
         const header = this.headerData(input);
         const assigned = lineHook ? await lineHook.assign(tx, input, stored.lines as Row[]) : null;
-        const result = await this.doc(tx).updateMany({
-          where: { id, version: expectedVersion, status: { in: [...this.editable] }, deletedAt: null },
-          data: { ...header, ...partyColumns, version: { increment: 1 }, updatedAt: new Date(), updatedBy: actorId },
-        });
-        if (result.count === 0) throw errors.changed();
+        await this.doc(tx).update({ where: { id }, data: { ...header, ...lineTotals(input.lines), ...partyColumns, ...planData(plan, true, actorId, now) } });
         await this.child(tx, lineModel).deleteMany({ where: { [parentKey]: id } });
         await this.child(tx, chargeModel).deleteMany({ where: { [parentKey]: id } });
         await this.writeChildren(tx, id, input, assigned);
-        return { version: expectedVersion + 1, extra: assigned && lineHook ? lineHook.result(assigned) : {} };
+        const applied = plan.effects === "none" ? null : await this.effects.apply(tx, target, actorId, now);
+        return {
+          extra: assigned && lineHook ? lineHook.result(assigned) : {},
+          flow: saveFlow(this.config.approvalType, plan, stored.revisionCount as number, requireApproval, viewer),
+          applied,
+          reapplied: plan.effects === "reapply",
+        };
       }, WRITE_TX);
-      this.logger.log({ event: `${event}.updated`, actorId, id, version: saved.version });
-      return { id, version: saved.version, ...saved.extra };
+      const version = expectedVersion + 1;
+      this.logger.log({ event: `${event}.updated`, actorId, id, version, status: saved.flow.status, reapplied: saved.reapplied, ...saved.applied?.log });
+      return { id, version, ...saved.extra, ...saved.flow };
     } catch (error) {
       throw errors.map(error, "update");
     }
   }
 
   /**
-   * Soft delete (ADR-0045 D4): only editable documents (PENDING_APPROVAL drafts) in one guarded `UPDATE … RETURNING`
-   * that sets `deleted_at/by` and `version + 1`; status, lines, charges, photos and stock are untouched. The row keeps
-   * its Doc No., so the number is never reused (D5: `max + 1` still sees it).
+   * Soft delete (ADR-0045 D4 as amended by ADR-0048): DRAFT / REVISION_REQUESTED, or auto-approved and not used (its
+   * effects are reversed first, so the items it brought in leave with it). Pending, rejected and reviewed-approved
+   * documents → STATUS_INVALID. The row keeps its Doc No., so the number is never reused (D5). The guarded version bump
+   * locks the header (`FOR NO KEY UPDATE`) before `usedBy`, so a dependent holding it `FOR SHARE` (a Memo Out Return of
+   * this Memo Out, a Purchase of this PO) finishes first and is then seen by `usedBy` (INV-20261111-002 F1).
    */
   async delete(actorId: string, id: string, expectedVersion: number) {
     const { errors, event } = this.config;
-    let docNo: string;
+    let deleted: { docNo: string; reversed: boolean };
     try {
-      const now = new Date();
-      const rows = await this.doc(prisma).updateManyAndReturn({
-        where: { id, version: expectedVersion, status: { in: [...this.editable] }, deletedAt: null },
-        data: { deletedAt: now, deletedBy: actorId, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
-        select: { docNo: true },
-      });
-      if (rows.length === 0) explainMiss(errors, await this.missRow(id), this.editable);
-      docNo = rows[0].docNo as string;
+      deleted = await prisma.$transaction(async (tx) => {
+        const now = new Date();
+        await this.lockHeader(tx, id, expectedVersion, CHANGEABLE, actorId, now);
+        const stored = (await this.doc(tx).findUnique({ where: { id }, select: { docNo: true, status: true, autoApproved: true, revisionCount: true } }))!;
+        const auto = isAutoApproved(stored);
+        assertEditable(flowDoc(stored), auto ? await this.effects.usedBy(tx, id) : null, errors);
+        if (auto) await this.effects.reverse(tx, { id, docNo: stored.docNo as string }, now);
+        await this.doc(tx).update({ where: { id }, data: { deletedAt: now, deletedBy: actorId } });
+        return { docNo: stored.docNo as string, reversed: auto };
+      }, WRITE_TX);
     } catch (error) {
       throw errors.map(error, "delete");
     }
     const version = expectedVersion + 1;
-    this.logger.log({ event: `${event}.deleted`, actorId, id, docNo, version });
+    this.logger.log({ event: `${event}.deleted`, actorId, id, docNo: deleted.docNo, version, reversed: deleted.reversed });
     return { ok: true as const, version };
   }
 
   /**
-   * Restore (D6/D7): a deleted document back to its unchanged status (editable again) in one guarded
-   * `UPDATE … RETURNING`; content is not re-checked (the next Save / Approve does that).
+   * Restore (ADR-0045 D6/D7, clarification G3): a deleted document comes back as DRAFT (submitted_* and approval
+   * cleared; a kept Revise stays) while the type's approval is ON, or as auto-approved with its effects re-applied while
+   * OFF (refused with the effect error when stock is short). Legacy soft-deleted PENDING_APPROVAL rows follow the same rule.
    */
   async restore(actorId: string, id: string, expectedVersion: number) {
     const { errors, event } = this.config;
-    let restored: Row;
+    let restored: { docNo: string; status: string; applied: { log: Row } | null };
     try {
-      const now = new Date();
-      const rows = await this.doc(prisma).updateManyAndReturn({
-        where: { id, version: expectedVersion, deletedAt: { not: null } },
-        data: { deletedAt: null, deletedBy: null, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
-        select: { docNo: true, status: true },
-      });
-      if (rows.length === 0) explainRestoreMiss(errors, await this.missRow(id));
-      restored = rows[0];
+      restored = await prisma.$transaction(async (tx) => {
+        const requireApproval = await readApprovalSetting(tx, this.config.approvalType);
+        const now = new Date();
+        const locked = await this.doc(tx).updateMany({
+          where: { id, version: expectedVersion, deletedAt: { not: null } },
+          data: { deletedAt: null, deletedBy: null, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
+        });
+        if (locked.count === 0) explainRestoreMiss(errors, await this.missRow(id, tx));
+        const stored = (await this.doc(tx).findUnique({ where: { id }, select: { docNo: true } }))!;
+        const status = requireApproval ? "DRAFT" : "APPROVED";
+        await this.doc(tx).update({ where: { id }, data: restoreData(requireApproval, actorId, now) });
+        const applied = requireApproval ? null : await this.effects.apply(tx, { id, docNo: stored.docNo as string }, actorId, now);
+        return { docNo: stored.docNo as string, status, applied };
+      }, WRITE_TX);
     } catch (error) {
       throw errors.map(error, "restore");
     }
     const version = expectedVersion + 1;
-    this.logger.log({ event: `${event}.restored`, actorId, id, docNo: restored.docNo as string, version });
+    this.logger.log({ event: `${event}.restored`, actorId, id, docNo: restored.docNo, version, status: restored.status, ...restored.applied?.log });
     return { id, version, status: restored.status as Status };
   }
 
-  private async missRow(id: string): Promise<MissRow> {
-    return (await this.doc(prisma).findUnique({ where: { id }, select: MISS_SELECT })) as MissRow;
+  /**
+   * Send to approve (ADR-0048): DRAFT / REVISION_REQUESTED → PENDING_APPROVAL with submitted_at / by / by_name and
+   * version + 1, after the full save validation on the stored document (party, currency, stone codes, amounts and the
+   * type's line rules, e.g. Memo Stock availability). While the type's approval is OFF → `<CODE>_APPROVAL_OFF`.
+   */
+  async submit(actor: DocumentActor, id: string, expectedVersion: number) {
+    const { errors, event } = this.config;
+    const now = new Date();
+    let docNo: string;
+    try {
+      docNo = await prisma.$transaction(async (tx) => {
+        const requireApproval = await readApprovalSetting(tx, this.config.approvalType);
+        const locked = await this.doc(tx).updateMany({
+          where: { id, version: expectedVersion, status: { in: [...SUBMITTABLE] }, deletedAt: null },
+          data: { status: PENDING, submittedAt: now, submittedBy: actor.id, submittedByName: actor.name, version: { increment: 1 }, updatedAt: now, updatedBy: actor.id },
+        });
+        if (locked.count === 0) explainMiss(errors, await this.missRow(id, tx), SUBMITTABLE);
+        if (!requireApproval) throw errors.approvalOff();
+        return this.validateStored(tx, id);
+      }, WRITE_TX);
+    } catch (error) {
+      throw errors.map(error, "submit");
+    }
+    const version = expectedVersion + 1;
+    this.logger.log({ event: `${event}.submitted`, actorId: actor.id, id, docNo, version });
+    return { id, version, status: PENDING as "PENDING_APPROVAL", submittedAt: now.toISOString() };
+  }
+
+  /**
+   * PENDING_APPROVAL → APPROVED (approved_at / by, version + 1) in one guarded UPDATE that serializes approvals of the
+   * document, then the type's effects under their row locks (`<CODE>_PENDING_SHORT` etc. roll everything back).
+   * D8 miss order: NOT_FOUND → DELETED → STATUS_INVALID → CHANGED.
+   */
+  async approve(actorId: string, id: string, expectedVersion: number) {
+    const { errors, event } = this.config;
+    try {
+      const approved = await prisma.$transaction((tx) => this.approveBody(tx, actorId, id, expectedVersion), WRITE_TX);
+      this.logger.log({ event: `${event}.approved`, actorId, id, docNo: approved.docNo, ...approved.log });
+      return { id, version: expectedVersion + 1, status: "APPROVED" as const, ...approved.result };
+    } catch (error) {
+      throw errors.map(error, "approve");
+    }
+  }
+
+  /**
+   * The same approve inside the caller's transaction (go-live command `scripts/approve-pending.ts`, ADR-0048 D7: its
+   * dry run approves each document in its own transaction that is rolled back at once, INV-20261111-002 H2). Errors are mapped like
+   * `approve`; the caller owns commit / rollback and logging.
+   */
+  async approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
+    try {
+      const approved = await this.approveBody(tx, actorId, id, expectedVersion);
+      return { id, docNo: approved.docNo, version: expectedVersion + 1, status: "APPROVED" as const, ...approved.result };
+    } catch (error) {
+      throw this.config.errors.map(error, "approve");
+    }
+  }
+
+  private async approveBody(tx: Tx, actorId: string, id: string, expectedVersion: number) {
+    const now = new Date();
+    const updated = await this.doc(tx).updateMany({
+      where: { id, version: expectedVersion, status: PENDING, deletedAt: null },
+      data: { status: "APPROVED", approvedAt: now, approvedBy: actorId, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
+    });
+    if (updated.count === 0) explainMiss(this.config.errors, await this.missRow(id, tx), [PENDING]);
+    const stored = (await this.doc(tx).findUnique({ where: { id }, select: { docNo: true } }))!;
+    const applied = await this.effects.apply(tx, { id, docNo: stored.docNo as string }, actorId, now);
+    return { docNo: stored.docNo as string, ...applied };
+  }
+
+  /** ADR-0046 D3: PENDING_APPROVAL → REJECTED (final) with the reason; no stock is touched. */
+  reject(actor: DocumentActor, id: string, expectedVersion: number, reason: string) {
+    return this.review(actor, id, expectedVersion, "REJECT", reason);
+  }
+
+  /** ADR-0046 D3 / ADR-0048: PENDING_APPROVAL → REVISION_REQUESTED once (`<CODE>_REVISE_LIMIT` after); no stock is touched. */
+  requestRevision(actor: DocumentActor, id: string, expectedVersion: number, note: string) {
+    return this.review(actor, id, expectedVersion, "REVISE", note);
+  }
+
+  private async review(actor: DocumentActor, id: string, expectedVersion: number, action: "REJECT" | "REVISE", note: string) {
+    const { errors, event } = this.config;
+    const status = action === "REJECT" ? "REJECTED" : "REVISION_REQUESTED";
+    try {
+      const updated = await this.doc(prisma).updateMany(reviewUpdate(actor, id, expectedVersion, action, note, new Date()));
+      if (updated.count === 0) explainReviewMiss(errors, await this.missRow(id), action);
+    } catch (error) {
+      throw errors.map(error, action === "REJECT" ? "reject" : "requestRevision");
+    }
+    const version = expectedVersion + 1;
+    // D13: ids and the note length only, never the note.
+    this.logger.log({ event: `${event}.${action === "REJECT" ? "rejected" : "revision_requested"}`, actorId: actor.id, id, version, noteLength: note.length });
+    return { id, version, status: status as "REJECTED" | "REVISION_REQUESTED" };
+  }
+
+  /**
+   * Header lock of update / delete: one guarded version bump (`updated_at/by` too) that only a live document at
+   * `expectedVersion` in `allowed` passes; a miss is explained in D8 order. The caller's later checks roll it back.
+   */
+  private async lockHeader(tx: Tx, id: string, expectedVersion: number, allowed: readonly string[], actorId: string, now: Date) {
+    const locked = await this.doc(tx).updateMany({
+      where: { id, version: expectedVersion, status: { in: [...allowed] }, deletedAt: null },
+      data: { version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
+    });
+    if (locked.count === 0) {
+      // Status first (as before ADR-0048): a document that left its editable state reports that, not a stale version.
+      const row = (await this.doc(tx).findUnique({ where: { id }, select: { ...MISS_SELECT, autoApproved: true } })) as (MissRow & { autoApproved?: boolean }) | null;
+      const editable = row !== null && isEditableStatus({ status: row.status, autoApproved: row.autoApproved === true });
+      explainMiss(this.config.errors, row, editable ? allowed : []);
+    }
+  }
+
+  /** `submit`'s save validation on the stored content: the type's `prepare`, references and amount bounds. */
+  private async validateStored(tx: Tx, id: string): Promise<string> {
+    const row = (await this.doc(tx).findUnique({ where: { id }, include: { lines: { orderBy: { position: "asc" } }, charges: true } }))!;
+    const input = storedInput(row) as unknown as Input;
+    const prepared = this.config.prepare ? await this.config.prepare(tx, input, id) : input;
+    await this.checkReferences(tx, prepared, row);
+    this.headerData(prepared);
+    return row.docNo as string;
+  }
+
+  private async missRow(id: string, client: Client = prisma): Promise<MissRow> {
+    return (await this.doc(client).findUnique({ where: { id }, select: MISS_SELECT })) as MissRow;
   }
 
   /** Document Setup row in effect on the doc date: prefix + separator + max + 1; none → plain 1, 2, 3 … */
@@ -391,7 +624,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
   private async checkReferences(tx: Tx, input: Input, stored: Row | null): Promise<Row> {
     const { columns, errors } = await this.config.party.check(tx, input, stored);
     if (!(await isCurrencyAllowed(tx, input.currency, stored?.currencyCode as string | undefined))) errors.push({ path: "currency", code: "unknown" });
-    const storedStoneCodes = new Set(((stored?.lines as { stoneCodeId: string | null }[] | undefined) ?? []).flatMap((line) => (line.stoneCodeId ? [line.stoneCodeId] : [])));
+    const storedStoneCodes = new Set(((stored?.lines as { stoneCodeId?: string | null }[] | undefined) ?? []).flatMap((line) => (line.stoneCodeId ? [line.stoneCodeId] : [])));
     const stoneCodeIds = [...new Set(input.lines.flatMap((line) => (line.stoneCodeId ? [line.stoneCodeId] : [])))];
     if (stoneCodeIds.length > 0) {
       const found = await tx.stoneCode.findMany({ where: { id: { in: stoneCodeIds } }, select: { id: true, active: true } });
@@ -560,6 +793,110 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
   private lineOutput<T extends Row>(line: Row, base: T): T {
     return this.config.lineHook ? (this.config.lineHook.output(line, base) as T) : base;
   }
+}
+
+const CLEAR_REVIEW = { reviewAction: null, reviewNote: null, reviewedAt: null, reviewedBy: null, reviewedByName: null } as const;
+const CLEAR_SUBMITTED = { submittedAt: null, submittedBy: null, submittedByName: null } as const;
+
+const isAutoApproved = (row: Row) => row.status === "APPROVED" && row.autoApproved === true;
+const flowDoc = (row: Row) => ({ status: row.status as string, autoApproved: row.autoApproved as boolean, revisionCount: row.revisionCount as number, deletedAt: null });
+const revisionCountOf = (row: Row) => (((row.revisionCount as number | undefined) ?? 0) >= 1 ? 1 : 0) as 0 | 1;
+
+/**
+ * Columns a Save writes for its plan: a DRAFT stays a DRAFT; DRAFT → APPROVED (OFF) records the saver as approver,
+ * `auto_approved`, and (on update) clears a review kept from a restored revision (auto_approved_check); a reapply keeps
+ * the first approval; REVISION_REQUESTED stays unchanged.
+ */
+export function planData(plan: SavePlan, isUpdate: boolean, actorId: string, now: Date): Row {
+  if (plan.status === "DRAFT") return { status: "DRAFT", autoApproved: false };
+  if (plan.status === "REVISION_REQUESTED" || plan.effects === "reapply") return {};
+  return { status: "APPROVED", autoApproved: true, approvedAt: now, approvedBy: actorId, ...(isUpdate ? CLEAR_REVIEW : {}) };
+}
+
+/** G3: restore → DRAFT (approval ON) or auto-approved APPROVED (OFF); never pending, submitted_* always cleared. */
+export function restoreData(requireApproval: boolean, actorId: string, now: Date): Row {
+  return requireApproval
+    ? { status: "DRAFT", autoApproved: false, approvedAt: null, approvedBy: null, ...CLEAR_SUBMITTED }
+    : { status: "APPROVED", autoApproved: true, approvedAt: now, approvedBy: actorId, ...CLEAR_SUBMITTED, ...CLEAR_REVIEW };
+}
+
+/** One guarded review UPDATE (ADR-0046 D3): only a live PENDING_APPROVAL at `expectedVersion`; Revise also below the limit. */
+export function reviewUpdate(actor: DocumentActor, id: string, expectedVersion: number, action: "REJECT" | "REVISE", note: string, now: Date) {
+  return {
+    where: { id, version: expectedVersion, status: PENDING, deletedAt: null, ...(action === "REVISE" ? { revisionCount: { lt: REVISE_LIMIT } } : {}) },
+    data: {
+      status: action === "REJECT" ? "REJECTED" : "REVISION_REQUESTED",
+      reviewAction: action, reviewNote: note, reviewedAt: now, reviewedBy: actor.id, reviewedByName: actor.name,
+      ...(action === "REVISE" ? { revisionCount: { increment: 1 } } : {}),
+      version: { increment: 1 }, updatedAt: now, updatedBy: actor.id,
+    },
+  };
+}
+
+export function reviewOfRow(row: Row) {
+  const action = row.reviewAction;
+  if ((action !== "REVISE" && action !== "REJECT") || typeof row.reviewNote !== "string" || !(row.reviewedAt instanceof Date)) return null;
+  return { action: action as "REVISE" | "REJECT", note: row.reviewNote, at: row.reviewedAt.toISOString(), byName: (row.reviewedByName as string | null | undefined) ?? null };
+}
+
+/** `Flow` of a stored header row for `viewer` (api-contract "Shared types"), plus the ADR-0046 submitted fields. */
+export function documentFlow(row: Row, type: ApprovalDocType, requireApproval: boolean, usedBy: string | null, viewer: FlowPrincipal | null) {
+  const doc = {
+    status: row.status as string,
+    autoApproved: row.autoApproved as boolean,
+    revisionCount: row.revisionCount as number,
+    deletedAt: (row.deletedAt as Date | null | undefined) ?? null,
+    reviewAction: (row.reviewAction as string | null | undefined) ?? null,
+    reviewNote: (row.reviewNote as string | null | undefined) ?? null,
+    reviewedAt: (row.reviewedAt as Date | null | undefined) ?? null,
+    reviewedByName: (row.reviewedByName as string | null | undefined) ?? null,
+  };
+  return {
+    ...flowFlags({ doc, type, requireApproval, principal: viewer ?? NO_GRANTS, usedBy }),
+    submittedAt: isoOrNull(row.submittedAt),
+    submittedByName: (row.submittedByName as string | null | undefined) ?? null,
+  };
+}
+
+/** The `Flow` fields a create / update result carries (a document just saved is not used by another one; no review). */
+export function saveFlow(type: ApprovalDocType, plan: SavePlan, revisionCount: number, requireApproval: boolean, viewer: FlowPrincipal | null) {
+  const { review: _review, ...flow } = flowFlags({
+    doc: { status: plan.status, autoApproved: plan.autoApproved, revisionCount, deletedAt: null, reviewAction: null, reviewNote: null, reviewedAt: null, reviewedByName: null },
+    type, requireApproval, principal: viewer ?? NO_GRANTS, usedBy: null,
+  });
+  return flow;
+}
+
+const decText = (value: unknown, places?: number) => (value === null || value === undefined ? value : places === undefined ? (value as Dec).toString() : (value as Dec).toFixed(places));
+
+/**
+ * The stored document as a Save input (submit's validation): header fields, lines with their source columns and
+ * decimals as strings, charges and labor — what `prepare` and the reference checks read.
+ */
+export function storedInput(row: Row) {
+  const lines = (row.lines as Row[]).map((line) => ({
+    ...line,
+    stoneCode: line.stoneCodeSnapshot,
+    weightCt: decText(line.weightCt, 3),
+    unitPrice: decText(line.unitPrice, 2),
+    discount: { type: line.discountType, value: decText(line.discountValue) },
+    outstandingWeightCt: decText(line.outstandingWeightCt, 3),
+    photoIds: [],
+  }));
+  return {
+    ...row,
+    docDate: fromDbDate(row.docDate as Date),
+    dueDate: fromDbDate(row.dueDate as Date),
+    currency: row.currencyCode,
+    exchangeRate: text(row.exchangeRate),
+    discount: { type: row.discountType, value: decText(row.discountValue) },
+    tax: { enabled: row.taxEnabled, rate: decText(row.taxRate), includeInPrice: row.taxIncluded },
+    serviceCharges: ((row.charges as Row[] | undefined) ?? []).map((charge) => ({ type: charge.chargeType, amount: decText(charge.amount, 2) })),
+    labor: row.laborWork === null || row.laborBasis === null || row.laborQty === null || row.laborRate === null
+      ? null
+      : { work: row.laborWork, basis: row.laborBasis, qty: decText(row.laborQty), rate: decText(row.laborRate, 2) },
+    lines,
+  };
 }
 
 /** Totals with the quotation calculator; it reads only the price fields every engine line has. */

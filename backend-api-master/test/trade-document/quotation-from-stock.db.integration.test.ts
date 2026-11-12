@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { HttpException } from "@nestjs/common";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { sendAndApprove, setApproval } from "../partner-shared/approval";
 
 /**
  * IT-QT-01…03 (quotation SA rev 2 / ADR-0038, owner 2026-11-03) against real PostgreSQL:
@@ -78,7 +79,7 @@ async function approvedStock(lines: ReturnType<typeof receiveLine>[]) {
   const saved = await receive.create(ACTOR, {
     docDate: "2026-10-29", dueDate: "2026-11-29", currency: "THB", exchangeRate: null, ref: "", documentNote: "", ...money, lines, vendorId: vendor!.id, addressId: vendor!.addressId,
   });
-  await receive.approve(ACTOR, saved.id, saved.version);
+  await sendAndApprove(receive, ACTOR, saved.id, saved.version);
   return prisma.memoStock.findMany({ where: { memoReceiveId: saved.id }, orderBy: { stockId: "asc" } });
 }
 
@@ -121,6 +122,10 @@ describe.runIf(canRun)("IT-QT quotation From Stock on PostgreSQL", () => {
       addresses: { create: [{ ...address, id: customer.shipping, type: "SHIPPING" }, { ...address, id: customer.invoice, type: "INVOICE" }] },
     } });
     customerCreated = true;
+    await setApproval(prisma, "memo-receive", true);
+    await setApproval(prisma, "memo-out", true);
+    // Quotation approval OFF (seed default): Save approves it (auto-approved, editable / deletable until used).
+    await setApproval(prisma, "quotation", false);
   });
 
   afterAll(async () => {
@@ -155,9 +160,8 @@ describe.runIf(canRun)("IT-QT quotation From Stock on PostgreSQL", () => {
     const updated = await quotation.update(ACTOR, saved.id, 1, quoteInput([stockLine(item.id, 10, "5")]));
     expect((await quotation.get(saved.id)).lines).toMatchObject([{ source: "STOCK", pcs: 10, weightCt: "5.000" }]);
     expect(await bucketsOf(item.id)).toEqual({ pending: [10, "5.000"], reserved: [0, "0.000"] });
-    // transaction-soft-delete D2 (owner OQ-1): a quotation saved APPROVED can't be deleted; a DRAFT one is soft deleted.
-    expect(await failure(quotation.delete(ACTOR, saved.id, updated.version))).toMatchObject({ status: 409, code: "QUOTATION_STATUS_INVALID" });
-    await prisma.quotation.update({ where: { id: saved.id }, data: { status: "DRAFT" } });
+    // ADR-0048 D4: an auto-approved quotation (approval OFF) is soft deleted while unused (no document uses a quotation yet).
+    expect(updated).toMatchObject({ status: "APPROVED", autoApproved: true, canEdit: false });
     await expect(quotation.delete(ACTOR, saved.id, updated.version)).resolves.toEqual({ ok: true, version: updated.version + 1 });
     expect(await bucketsOf(item.id)).toEqual({ pending: [10, "5.000"], reserved: [0, "0.000"] });
   });
@@ -184,7 +188,7 @@ describe.runIf(canRun)("IT-QT quotation From Stock on PostgreSQL", () => {
     const [item] = await approvedStock([receiveLine({ pcs: 4, weightCt: "2" })]);
     const saved = await quotation.create(ACTOR, quoteInput([stockLine(item.id, 3, "1.5")]));
     const out = await memoOut.create(ACTOR, outInput([stockLine(item.id, 3, "1.5", { source: "MANUAL" })]));
-    await memoOut.approve(ACTOR, out.id, 1);
+    await sendAndApprove(memoOut, ACTOR, out.id, 1);
     expect(await bucketsOf(item.id)).toEqual({ pending: [1, "0.500"], reserved: [3, "1.500"] });
 
     // Unchanged quantity (a note edit) and a lowered one keep the stored snapshot.

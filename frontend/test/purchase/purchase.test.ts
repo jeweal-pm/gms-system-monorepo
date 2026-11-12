@@ -13,7 +13,6 @@ import {
   memoStockToPurchaseLine,
   pickedSourceKeys,
   PURCHASE_HREF,
-  purchaseApproveText,
   purchaseHref,
   purchaseLineSource,
   purchaseLoadError,
@@ -73,7 +72,7 @@ describe("UT-PU-03 routes, page settings and access", () => {
     expect(PURCHASE_CONFIG.noteMax).toBe(250);
     expect(PURCHASE_CONFIG.notePlaceholder).toBe("e.g. Paid by transfer on delivery.");
     expect(PURCHASE_CONFIG.partyId(valid())).toBe(ID);
-    expect(PURCHASE_CONFIG.approval).toMatchObject({ pendingStatus: "PENDING_APPROVAL", confirmTitle: "Approve Purchase" });
+    expect(PURCHASE_CONFIG.approvalType).toBe("purchase");
   });
 });
 
@@ -304,7 +303,7 @@ describe("UT-PU-06 contract mapping, errors and the approve text (FE-PU-003/005)
       message: "Row 2: more than the available quantity. Nothing was saved.",
     });
     const short = map("PURCHASE_PENDING_SHORT", [{ path: "lines.2.pcs", code: "exceeds_available" }, { path: "lines.0.weightCt", code: "exceeds_available" }, { path: "lines.3.purchaseOrderLineId", code: "invalid_reference" }]);
-    expect(short.message).toBe("Rows 1, 3, 4: not enough is available any more. Lower the quantity or remove the row, then save and approve again.");
+    expect(short.message).toBe("Rows 1, 3, 4: not enough is available any more. Lower the quantity or remove the row, then save again. Nothing was saved.");
     expect(short.fieldErrors).toContainEqual({ name: "lines.2.pcs", message: "More than the available quantity" });
     expect(short.fieldErrors).toContainEqual({ name: "lines.3.purchaseOrderLineId", message: "No longer available" });
     expect(map("PURCHASE_REFERENCE_INVALID", [{ path: "lines.0.memoStockId", code: "invalid_reference" }], 422)).toEqual({
@@ -319,13 +318,8 @@ describe("UT-PU-06 contract mapping, errors and the approve text (FE-PU-003/005)
     expect(purchaseLoadError(gatewayError({ code: "FORBIDDEN", httpStatus: 403, domainCode: "PERMISSION_DENIED" }))).toBe("You don't have permission to view purchases.");
   });
 
-  it("the Approve confirm names the stock effect (SA D2)", () => {
-    const memo = memoStockToPurchaseLine(memoRow());
-    const po = purchaseOrderLineToPurchaseLine(poRow());
-    expect(purchaseApproveText([memo, po])).toBe("Approve this Purchase? Its 2 items are taken off Memo Stock and the Purchase Orders, and it can no longer be edited.");
-    expect(purchaseApproveText([memo])).toBe("Approve this Purchase? Its 1 item is taken off Memo Stock, and it can no longer be edited.");
-    expect(purchaseApproveText([po, manualLine()])).toBe("Approve this Purchase? Its 2 items are taken off the Purchase Orders, and it can no longer be edited.");
-    expect(purchaseApproveText([manualLine()])).toBe("Approve this Purchase? Its 1 item is recorded as bought, and it can no longer be edited.");
-    expect(PURCHASE_CONFIG.approval?.confirmBody([memo])).toBe(purchaseApproveText([memo]));
+  it("the page has no Approve confirm any more (ADR-0048: Approve menu only); it follows the purchase approval setting", () => {
+    expect(PURCHASE_CONFIG).not.toHaveProperty("approval");
+    expect(PURCHASE_CONFIG.approvalType).toBe("purchase");
   });
 });

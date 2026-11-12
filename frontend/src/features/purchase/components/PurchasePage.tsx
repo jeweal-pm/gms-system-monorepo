@@ -1,12 +1,15 @@
 "use client";
 
+import { useApprovalSetting } from "@/features/trade-document/approval-flow";
+import { flowOf } from "@/features/trade-document/flow-status";
+
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { useFormContext } from "react-hook-form";
 import { ItemTable } from "@/features/quotation/components/items/ItemTable";
 import { Toast } from "@/features/quotation/components/ui";
 import { QUOTATION_KIND, type DocumentKind } from "@/features/quotation/document-kind";
 import { daybookLoadError, daybookState, deletedInfo, DocumentDaybook, documentAccess, useDocumentAccess } from "@/features/trade-document/document-api";
-import { APPROVAL_STATUS_LABELS, DocumentForm, type DocumentFormConfig } from "@/features/trade-document/document-form";
+import { DocumentForm, type DocumentFormConfig } from "@/features/trade-document/document-form";
 import { VendorDocumentInfoForm } from "@/features/trade-document/vendor-info-form";
 import { useConfirm } from "@/features/quotation/components/use-confirm";
 import {
@@ -22,7 +25,6 @@ import {
   pickedSourceKeys,
   PURCHASE_HREF,
   PURCHASE_NOTE_MAX,
-  purchaseApproveText,
   purchaseHref,
   purchaseLoadError,
   purchaseOrderLineToPurchaseLine,
@@ -178,8 +180,10 @@ export function MemoStockPickStep({ values, onClose, onAdd }: { values: Purchase
 /** R-01: saved purchases, newest first. */
 function PurchaseDaybook() {
   const daybook = usePurchaseDaybook();
+  const { requireApproval } = useApprovalSetting("purchase");
   return (
     <DocumentDaybook
+      requireApproval={requireApproval}
       plural="purchases"
       href={purchaseHref}
       state={daybookState(daybook, (error) => daybookLoadError(error, "purchases"), (item) => String(item.vendorName ?? ""))}
@@ -233,12 +237,7 @@ export const PURCHASE_CONFIG: DocumentFormConfig<PurchaseFormValues, PurchaseInp
   emptyRowText: PURCHASE_EMPTY_ROW_TEXT,
   itemTable: PurchaseItemTable,
   kind: PURCHASE_KIND,
-  approval: {
-    statusLabels: APPROVAL_STATUS_LABELS,
-    pendingStatus: "PENDING_APPROVAL",
-    confirmTitle: "Approve Purchase",
-    confirmBody: purchaseApproveText,
-  },
+  approvalType: "purchase",
   noteMax: PURCHASE_NOTE_MAX,
   notePlaceholder: "e.g. Paid by transfer on delivery.",
   noteHint: PURCHASE_NOTE_HINT,
@@ -253,7 +252,7 @@ export function PurchasePage() {
   const access = useDocumentAccess("purchase");
   if (!access) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{PURCHASE_DENIED}</p>;
-  return <DocumentForm config={PURCHASE_CONFIG} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
+  return <DocumentForm config={PURCHASE_CONFIG} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} />;
 }
 
 /** `/purchase-order/purchase/[id]` — a saved purchase; it remounts on every new server version. */
@@ -263,5 +262,5 @@ export function EditPurchasePage({ id }: { id: string }) {
   if (!access || (access.view && detail.isPending)) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{PURCHASE_DENIED}</p>;
   if (detail.isError || !detail.data) return <p className={message}>{detail.error ? purchaseLoadError(detail.error) : "Purchase not found."}</p>;
-  return <DocumentForm key={`${id}:${detail.data.version}`} config={PURCHASE_CONFIG} initial={fromPurchase(detail.data)} deleted={deletedInfo(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
+  return <DocumentForm key={`${id}:${detail.data.version}`} config={PURCHASE_CONFIG} initial={fromPurchase(detail.data)} deleted={deletedInfo(detail.data)} flow={flowOf(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} />;
 }

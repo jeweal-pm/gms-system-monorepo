@@ -1,5 +1,8 @@
 "use client";
 
+import { useApprovalSetting } from "@/features/trade-document/approval-flow";
+import { flowOf } from "@/features/trade-document/flow-status";
+
 import type { DocumentKind } from "@/features/quotation/document-kind";
 import { customerStockConfig } from "@/features/trade-document/customer-stock-config";
 import { daybookLoadError, daybookState, deletedInfo, DocumentDaybook, documentAccess, useDocumentAccess } from "@/features/trade-document/document-api";
@@ -15,8 +18,10 @@ export function canViewMemoOut(mine: Parameters<typeof documentAccess>[0]): bool
 
 function MemoOutDaybook() {
   const daybook = useMemoOutDaybook();
+  const { requireApproval } = useApprovalSetting("memo-out");
   return (
     <DocumentDaybook
+      requireApproval={requireApproval}
       plural="memo outs"
       href={memoOutHref}
       state={daybookState(daybook, (error) => daybookLoadError(error, "memo outs"), (item) => String(item.customerName ?? ""))}
@@ -38,8 +43,7 @@ const CONFIG = customerStockConfig({
   mapSaveError: mapMemoOutSaveError,
   mapRestoreError: memoOutRestoreError,
   pickerTitle: "From Stock",
-  approvedStock: "cut from Memo Stock",
-  noStock: "cut",
+  approvalType: "memo-out",
   notePlaceholder: "e.g. On memo until the due date. Return any stones not bought.",
   noteHint: "Printed on the memo out for the customer",
   daybook: <MemoOutDaybook />,
@@ -56,7 +60,7 @@ export function MemoOutPage() {
   const access = useDocumentAccess("memo-out");
   if (!access) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{DENIED}</p>;
-  return <DocumentForm config={CONFIG} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
+  return <DocumentForm config={CONFIG} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} />;
 }
 
 /** `/memo/memo-out/[id]` — a saved memo out. */
@@ -66,5 +70,5 @@ export function EditMemoOutPage({ id }: { id: string }) {
   if (!access || (access.view && detail.isPending)) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{DENIED}</p>;
   if (detail.isError || !detail.data) return <p className={message}>{detail.error ? memoOutLoadError(detail.error) : "Memo out not found."}</p>;
-  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromMemoOut(detail.data)} deleted={deletedInfo(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
+  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromMemoOut(detail.data)} deleted={deletedInfo(detail.data)} flow={flowOf(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} />;
 }

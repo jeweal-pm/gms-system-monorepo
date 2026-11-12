@@ -7,6 +7,7 @@ import { authClient } from "@/lib/auth-client";
 import { authTrpc } from "@/lib/auth-trpc";
 import { isCallerLicenseCode, readDomainError, retryTransient } from "@/lib/trpc-error";
 import type { SaveOutcome } from "./document-form";
+import { daybookNote, flowDot, type DaybookDot, type DocReview } from "./flow-status";
 
 /** Helpers shared by the memo documents (ADR-0033): permissions, error messages and the daybook list. */
 
@@ -125,9 +126,8 @@ export function formatDeletedAt(iso: string): string {
 
 export const deletedBannerText = (info: DeletedInfo, byName: string) => `Deleted by ${byName} on ${formatDeletedAt(info.at)}`;
 
-/** Status names in the Restore confirm (a restored document keeps its status). */
-const RESTORED_STATUS: Record<string, string> = { DRAFT: "Draft", PENDING_APPROVAL: "Pending Approval" };
-export const restoredStatusLabel = (status: string | undefined) => (status && RESTORED_STATUS[status]) || "its saved status";
+/** Restore confirm: ADR-0048 G3 / G10 — Draft while approval is ON, approved again while OFF (`useDocumentFlow().restoreLabel`). */
+export { restoreStatusLabel } from "./flow-status";
 
 /**
  * The API returns the user id only (like `createdBy`): the signed-in user's own deletions show their name, any other
@@ -204,7 +204,8 @@ export const daybookQueryOptions = {
   retry: retryTransient,
 };
 
-type DaybookItem = { id: string; docNo: string; docDate: string; status: string; name: string };
+/** `note`: the Revise / Reject reason shown under the party (ADR-0048 D6). */
+type DaybookItem = { id: string; docNo: string; docDate: string; status: string; name: string; note?: string };
 export type DaybookState = {
   isPending: boolean;
   isError: boolean;
@@ -215,7 +216,7 @@ export type DaybookState = {
   onLoadMore?: () => void;
 };
 
-type ListRow = { id: string; docNo: string; docDate: string; status: string };
+type ListRow = { id: string; docNo: string; docDate: string; status: string; review?: DocReview | null };
 type InfiniteList<T> = {
   isPending: boolean;
   isError: boolean;
@@ -233,7 +234,7 @@ export function daybookState<T extends ListRow>(list: InfiniteList<T>, loadError
     isError: list.isError,
     errorMessage: list.error ? loadError(list.error) : undefined,
     items: (list.data?.pages ?? []).flatMap((page) =>
-      page.items.map((item) => ({ id: item.id, docNo: item.docNo, docDate: item.docDate, status: item.status, name: name(item) })),
+      page.items.map((item) => ({ id: item.id, docNo: item.docNo, docDate: item.docDate, status: item.status, name: name(item), note: daybookNote(item) })),
     ),
     hasMore: list.hasNextPage,
     loadingMore: list.isFetchingNextPage,
@@ -241,24 +242,25 @@ export function daybookState<T extends ListRow>(list: InfiniteList<T>, loadError
   };
 }
 
-export type DaybookDot = { className: string; label: string };
+export type { DaybookDot };
 
-/** Daybook dot, as on Memo Receive (owner 2026-11-02): green once approved, amber while waiting for approval. */
-export const daybookDot = (status: string): DaybookDot =>
-  status === "APPROVED" ? { className: "bg-[#22C55E]", label: "Approved" } : { className: "bg-[#F5A524]", label: "Pending approval" };
+/** Daybook dot (FE-AS-012, ADR-0048 D6): Draft grey, Pending / Revise orange, Approved green, Rejected red. */
+export const daybookDot = (status: string, requireApproval?: boolean): DaybookDot => flowDot(status, requireApproval);
 
 
 /** Right-rail Daybook: the document's list, newest first (deleted documents left out), with Load more. */
-export function DocumentDaybook({ state, href, plural, dot = daybookDot, emptyText }: {
+export function DocumentDaybook({ state, href, plural, dot, emptyText, requireApproval }: {
   state: DaybookState;
   href: (id: string) => string;
   plural: string;
-  /** Quotation colors its own statuses. */
+  /** A document with its own colors; default the ADR-0048 dots. */
   dot?: (status: string) => DaybookDot;
   /** Empty text (default "No {plural} yet."). */
   emptyText?: string;
+  /** The type's approval setting (`useApprovalSetting`); OFF shows every saved document green. */
+  requireApproval?: boolean;
 }) {
-  return <DaybookBody state={state} href={href} empty={emptyText ?? `No ${plural} yet.`} dot={dot} />;
+  return <DaybookBody state={state} href={href} empty={emptyText ?? `No ${plural} yet.`} dot={dot ?? ((status) => daybookDot(status, requireApproval))} />;
 }
 
 function DaybookBody({ state, href, empty, dot }: { state: DaybookState; href: (id: string) => string; empty: string; dot: (status: string) => DaybookDot }) {
@@ -284,6 +286,9 @@ function DaybookBody({ state, href, empty, dot }: { state: DaybookState; href: (
               <span className="min-w-0 flex-1">
                 <span className="block font-medium text-[#1C252E]">{e.docNo}</span>
                 <span className="block truncate text-sm text-[#1C252E]">{e.name}</span>
+                {e.note && (
+                  <span className={`block text-xs break-words ${e.status === "REJECTED" ? "text-[#B42318]" : "text-[#B45309]"}`}>{e.note}</span>
+                )}
               </span>
               <span className="shrink-0 text-sm text-[#A9B1B9]">{formatDate(e.docDate)}</span>
             </Link>

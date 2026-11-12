@@ -45,7 +45,7 @@ export function useReserveApi(customerId: string | undefined, docDate: string, i
   const create = masterTrpc.reserve.create.useMutation(writes);
   const update = masterTrpc.reserve.update.useMutation(writes);
   const remove = masterTrpc.reserve.delete.useMutation(writes);
-  const approve = masterTrpc.reserve.approve.useMutation(writes);
+  const submit = masterTrpc.reserve.submit.useMutation(writes);
   const restore = masterTrpc.reserve.restore.useMutation(writes);
   return {
     options: options.data,
@@ -54,10 +54,10 @@ export function useReserveApi(customerId: string | undefined, docDate: string, i
     create: (input) => create.mutateAsync(input),
     update: (args) => update.mutateAsync(args),
     remove: (args) => remove.mutateAsync(args),
-    approve: (args) => approve.mutateAsync(args),
+    submit: (args) => submit.mutateAsync(args),
     restore: (args) => restore.mutateAsync(args),
     invalidate: () =>
       Promise.all([utils.reserve.list.invalidate(), utils.reserve.get.invalidate(), utils.reserve.nextNumber.invalidate(), utils.memoStock.list.invalidate()]),
-    busy: create.isPending || update.isPending || remove.isPending || approve.isPending || restore.isPending,
+    busy: create.isPending || update.isPending || remove.isPending || submit.isPending || restore.isPending,
   };
 }

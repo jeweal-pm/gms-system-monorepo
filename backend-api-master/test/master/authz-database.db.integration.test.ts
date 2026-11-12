@@ -81,7 +81,8 @@ describe("IT-MAUTH-DB master authz role safety", () => {
           sessions: { create: { id: sessionId, token: `reader-it-${randomUUID()}`, expiresAt: new Date(Date.now() + 60_000), createdAt: now, updatedAt: now } },
         },
       });
-      await expect(db.read(userId, sessionId)).resolves.toMatchObject({ user_id: userId, session_id: sessionId, account_active: true, permissions: ["customer:VIEW"] });
+      // ADR-0046 D5 / IT-AP-B12: the reader sees its caller's own name through the view column only.
+      await expect(db.read(userId, sessionId)).resolves.toMatchObject({ user_id: userId, session_id: sessionId, account_active: true, permissions: ["customer:VIEW"], user_name: "Master authz reader integration" });
       await prisma.user.update({ where: { id: userId }, data: { active: false } });
       await expect(db.read(userId, sessionId)).resolves.toMatchObject({ user_id: userId, account_active: false });
     } finally {

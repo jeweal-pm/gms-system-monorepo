@@ -1,7 +1,7 @@
+import { FLOW_DETAIL } from "../trade-document/flow-fixture";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fromQuotation,
-  isEditableStatus,
   loadErrorMessage,
   mapSaveError,
   PhotoUploadError,
@@ -47,7 +47,7 @@ const detail: QuotationDetail = {
   serviceCharges: [{ type: "SHIPPING", amount: "100.00" }],
   labor: null,
   totals: { subtotal: "72800.00", discountAmount: "100.00", priceBeforeTax: "72700.00", taxAmount: "5089.00", chargesAmount: "100.00", laborAmount: "0.00", grandTotal: "77889.00" },
-  statusReason: "Price too high", createdAt: "", createdBy: "u", updatedAt: "", approvedAt: null, approvedBy: null, deletedAt: null, deletedBy: null,
+  statusReason: "Price too high", createdAt: "", createdBy: "u", updatedAt: "", approvedAt: null, approvedBy: null, deletedAt: null, deletedBy: null, ...FLOW_DETAIL,
 };
 
 afterEach(() => vi.unstubAllGlobals());
@@ -99,12 +99,10 @@ describe("errors", () => {
 });
 
 describe("permissions and status (SA-QT-02/03)", () => {
-  it("UT-QT-04 access follows quotation:<ACTION>; only drafts and rejected quotations are editable", () => {
+  it("UT-QT-04 access follows quotation:<ACTION> (Edit / Delete now come from Flow, ADR-0048)", () => {
     expect(quotationAccess({ isSuperAdmin: false, permissions: ["quotation:VIEW", "quotation:CANCEL"] })).toMatchObject({ view: true, add: false, edit: false, cancel: true, approve: false });
     expect(quotationAccess({ isSuperAdmin: true, permissions: [] }).delete).toBe(true);
     expect(quotationAccess(undefined).view).toBe(false);
-    expect(["DRAFT", "REJECTED", "PENDING_APPROVAL", "APPROVED", "CANCELLED"].map((status) => isEditableStatus(status as never))).toEqual([true, true, true, true, false]);
-    expect(isEditableStatus(undefined)).toBe(false);
   });
 });
 

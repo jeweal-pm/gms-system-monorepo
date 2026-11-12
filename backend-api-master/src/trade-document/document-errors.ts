@@ -5,14 +5,18 @@ import { isPrismaUnavailable, prismaCode } from "../common/persistence";
 /**
  * Domain errors of one trade document type (memo out `MEMO_OUT_*`, memo out return `MEMO_OUT_RETURN_*`, ADR-0033;
  * memo receive / memo return, memo-return SA rev 1), same codes and statuses as quotation's (api-contract "Errors").
- * `<CODE>_IN_USE`: another document depends on this one (a memo receive whose lines were returned).
+ * approval-setup ADR-0048 adds `<CODE>_APPROVAL_OFF` (submit while the type's approval is OFF), `<CODE>_REVISE_LIMIT`
+ * (a second Revise) and `<CODE>_IN_USE` (edit / delete of an auto-approved document another document uses; `details
+ * {usedBy}` = that document's number when known).
  */
 export function documentErrors(code: string, logContext: string, event: string) {
   const logger = new Logger(logContext);
   const notFound = () => partnerException(`${code}_NOT_FOUND`, HttpStatus.NOT_FOUND);
   const changed = () => partnerException(`${code}_CHANGED`, HttpStatus.CONFLICT);
   const statusInvalid = () => partnerException(`${code}_STATUS_INVALID`, HttpStatus.CONFLICT);
-  const inUse = () => partnerException(`${code}_IN_USE`, HttpStatus.CONFLICT);
+  const inUse = (usedBy: string | null = null) => partnerException(`${code}_IN_USE`, HttpStatus.CONFLICT, null, usedBy === null ? undefined : { usedBy });
+  const approvalOff = () => partnerException(`${code}_APPROVAL_OFF`, HttpStatus.CONFLICT);
+  const reviseLimit = () => partnerException(`${code}_REVISE_LIMIT`, HttpStatus.CONFLICT);
   /** transaction-soft-delete D8: a write (other than restore) on a soft-deleted document. */
   const deleted = () => partnerException(`${code}_DELETED`, HttpStatus.CONFLICT);
   const referenceInvalid = (fieldErrors: FieldError[]) => partnerException(`${code}_REFERENCE_INVALID`, HttpStatus.UNPROCESSABLE_ENTITY, fieldErrors);
@@ -30,7 +34,7 @@ export function documentErrors(code: string, logContext: string, event: string) 
     }
     return error;
   };
-  return { notFound, changed, statusInvalid, inUse, deleted, referenceInvalid, map };
+  return { notFound, changed, statusInvalid, inUse, approvalOff, reviseLimit, deleted, referenceInvalid, map };
 }
 
 export type DocumentErrors = ReturnType<typeof documentErrors>;

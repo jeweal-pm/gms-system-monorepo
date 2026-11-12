@@ -9,19 +9,17 @@ import {
   headerCheckState,
   nextSort,
   pruneSelection,
-  REJECT_UNAVAILABLE,
-  REVISE_UNAVAILABLE,
+  RESUBMITTED_TEXT,
+  REVISE_LIMIT_REASON,
   rowsOf,
   selectedInOrder,
   selectionScope,
-  sortRows,
   toggleAll,
   toggleOne,
-  type ApprovalRow,
 } from "@/features/approve-center/model";
 import { page, RS1, RS2, sourceTwoItems } from "./fixtures";
 
-/** UT-AP-05 (FE-AP-004/006) table, sort and selection; UT-AP-09 (FE-AP-007) Reject / Revise disabled. */
+/** UT-AP-05 (FE-AP-004/006/009) table, sort and selection; UT-AP-09 (FE-AP-010 / FE-AS-013) Reject / Revise actions. */
 const reserve = approveMenuFor("reserve") as AvailableMenu;
 const rows = () => rowsOf([page(sourceTwoItems())]);
 const decoded = (html: string) => html.replaceAll("&#x27;", "'").replaceAll("&amp;", "&");
@@ -32,7 +30,7 @@ function render(patch: Partial<Parameters<typeof ApprovalTable>[0]> = {}) {
     renderToStaticMarkup(
       createElement(ApprovalTable, {
         menu: reserve,
-        rows: sortRows(rows(), DEFAULT_SORT),
+        rows: rows(),
         sort: DEFAULT_SORT,
         onSort: noop,
         selected: new Set<string>(),
@@ -42,6 +40,8 @@ function render(patch: Partial<Parameters<typeof ApprovalTable>[0]> = {}) {
         locked: false,
         errors: new Map(),
         onApprove: noop,
+        onReject: noop,
+        onRevise: noop,
         onOpen: noop,
         ...patch,
       }),
@@ -50,18 +50,11 @@ function render(patch: Partial<Parameters<typeof ApprovalTable>[0]> = {}) {
 }
 
 describe("UT-AP-05 sort", () => {
-  it("defaults to oldest submitted first (Q-AP-11)", () => {
-    expect(sortRows(rows(), DEFAULT_SORT).map((row) => row.docNo)).toEqual(["RS2611002", "RS2611003"]);
-    expect(sortRows(rows(), { key: "submitted", dir: "desc" }).map((row) => row.docNo)).toEqual(["RS2611003", "RS2611002"]);
-  });
-
-  it("sorts by document, detail and value; missing values (Qty in phase 1) keep doc no. order", () => {
-    expect(sortRows(rows(), { key: "document", dir: "desc" }).map((row) => row.docNo)).toEqual(["RS2611003", "RS2611002"]);
-    expect(sortRows(rows(), { key: "detail", dir: "asc" }).map((row) => row.partyName)).toEqual(["Bangkok Jewel House", "Siam Gems Co., Ltd."]);
-    expect(sortRows(rows(), { key: "value", dir: "asc" }).map((row) => row.grandTotal)).toEqual(["8450.50", "172020.00"]);
-    const mixed: ApprovalRow[] = [{ ...rows()[0], currency: "USD", grandTotal: "1" }, { ...rows()[1], currency: "THB", grandTotal: "9" }];
-    expect(sortRows(mixed, { key: "value", dir: "asc" }).map((row) => row.currency)).toEqual(["THB", "USD"]);
-    expect(sortRows(rows(), { key: "qty", dir: "desc" }).map((row) => row.docNo)).toEqual(["RS2611002", "RS2611003"]);
+  it("defaults to oldest submitted first (Q-AP-11); the table keeps the server's order (FE-AP-009)", () => {
+    expect(DEFAULT_SORT).toEqual({ key: "submitted", dir: "asc" });
+    const reversed = [...rows()].reverse();
+    const html = render({ rows: reversed });
+    expect(html.indexOf("RS2611003")).toBeLessThan(html.indexOf("RS2611002"));
   });
 
   it("header clicks flip the same column and start a new one ascending; aria-sort follows", () => {
@@ -84,7 +77,7 @@ describe("UT-AP-05 selection", () => {
   });
 
   it("keeps only listed rows, in table order, and is scoped to search + sort", () => {
-    const sorted = sortRows(rows(), DEFAULT_SORT);
+    const sorted = rows();
     expect([...pruneSelection(new Set([RS1, "gone"]), sorted)]).toEqual([RS1]);
     expect(selectedInOrder(sorted, new Set([RS2, RS1])).map((row) => row.docNo)).toEqual(["RS2611002", "RS2611003"]);
     expect(selectionScope(undefined, DEFAULT_SORT)).not.toBe(selectionScope("RS", DEFAULT_SORT));
@@ -103,18 +96,23 @@ describe("UT-AP-05 table markup (source 02)", () => {
     expect(html).toMatch(/<th scope="col"[^>]*>Action<\/th>/);
   });
 
-  it("renders the design cells: doc number (opens the preview, rev 2) + date, party + sub line, value with currency, last-saved time, Pending, '—' for Qty and submitter", () => {
+  it("renders the enriched cells (FE-AP-009): doc number + date, party + due / lines / stones, pcs + cts, value, submitter + time, Pending", () => {
     const html = render();
     expect(html).toContain(`data-preview-id="${RS1}"`);
     expect(html).not.toContain("href=");
     expect(html).toContain("01/11/26");
     expect(html).toContain("Siam Gems Co., Ltd.");
-    expect(html).toContain("Hold until 05/11/26");
+    expect(html).toContain("Hold until 05/11/26 · 2 lines · Sapphire");
+    expect(html).toContain("130 pcs");
+    expect(html).toContain("19.60 cts");
     expect(html).toContain("172,020.00 USD");
-    expect(html).toContain('title="Last saved"');
+    expect(html).toContain(">Mint<");
     expect(html).toContain("01/11/2026 11:20");
+    expect(html).not.toContain("Last saved");
     expect(html.match(/>Pending</g)).toHaveLength(2);
-    expect(html.match(/—/g)?.length).toBeGreaterThanOrEqual(6);
+    // RS2611003 has no submitter name and was sent again after a Revise.
+    expect(html).toContain(">—<");
+    expect(html.match(new RegExp(RESUBMITTED_TEXT, "g"))).toHaveLength(1);
     expect(html.indexOf("RS2611002")).toBeLessThan(html.indexOf("RS2611003"));
   });
 
@@ -125,9 +123,11 @@ describe("UT-AP-05 table markup (source 02)", () => {
     expect(html.match(/type="checkbox"[^>]*checked=""/g)).toHaveLength(1);
   });
 
-  it("a busy row's Approve is disabled; a lock disables every Approve; a row error is linked and may offer the document", () => {
+  it("a busy row's actions are disabled; a lock disables every action; a row error is linked and may offer the document", () => {
     const busy = render({ busyIds: new Set([RS1]) });
     expect(busy.match(/<button[^>]*data-approve-index[^>]*disabled=""/g)).toHaveLength(1);
+    expect(busy.match(/<button[^>]*aria-label="Reject RS2611002…"[^>]*disabled=""/g)).toHaveLength(1);
+    expect(busy.match(/<button[^>]*aria-label="Reject RS2611003…"[^>]*disabled=""/g)).toBeNull();
     expect(busy).toContain('aria-busy="true"');
     expect(render({ locked: true }).match(/<button[^>]*data-approve-index[^>]*disabled=""/g)).toHaveLength(2);
     const failed = render({ errors: new Map([[RS1, { message: "Some stock items no longer have enough pending. Open the document to fix it.", link: true }]]) });
@@ -137,18 +137,19 @@ describe("UT-AP-05 table markup (source 02)", () => {
   });
 });
 
-describe("UT-AP-09 Reject… / Revise… disabled", () => {
-  it("both render on every row as aria-disabled buttons with an info icon and a tooltip", () => {
+describe("UT-AP-09 Reject… / Revise… (FE-AP-010, FE-AS-013)", () => {
+  it("Reject… is enabled on every row; Revise… is enabled until the document was sent back once, then disabled with the info tooltip", () => {
     const html = render();
-    expect(html.match(/aria-disabled="true"[^>]*>Reject…</g)).toHaveLength(2);
-    expect(html.match(/aria-disabled="true"[^>]*>Revise…</g)).toHaveLength(2);
-    expect(html.match(new RegExp(`role="tooltip"[^>]*>${REJECT_UNAVAILABLE}<`, "g"))).toHaveLength(2);
-    expect(html.match(new RegExp(`role="tooltip"[^>]*>${REVISE_UNAVAILABLE}<`, "g"))).toHaveLength(2);
-    expect(REJECT_UNAVAILABLE).toMatch(/coming soon/i);
+    expect(html.match(/<button type="button" aria-haspopup="dialog" aria-label="Reject RS26110\d\d…"[^>]*>Reject…</g)).toHaveLength(2);
+    expect(html).toMatch(/<button type="button" aria-haspopup="dialog" aria-label="Revise RS2611002…"[^>]*>Revise…</);
+    expect(html).not.toContain('aria-label="Revise RS2611003…"');
+    expect(html.match(/aria-disabled="true"[^>]*>Revise…</g)).toHaveLength(1);
+    expect(html.match(new RegExp(`role="tooltip"[^>]*>${REVISE_LIMIT_REASON}<`, "g"))).toHaveLength(1);
+    expect(html).not.toContain("coming soon");
   });
 
-  it("stays focusable (no disabled attribute) and is described by its tooltip", () => {
-    const html = decoded(renderToStaticMarkup(createElement(UnavailableAction, { label: "Reject…", reason: REJECT_UNAVAILABLE })));
+  it("the disabled Revise stays focusable (no disabled attribute) and is described by its tooltip", () => {
+    const html = decoded(renderToStaticMarkup(createElement(UnavailableAction, { label: "Revise…", reason: REVISE_LIMIT_REASON })));
     const button = /<button[^>]*>/.exec(html)?.[0] ?? "";
     expect(button).not.toContain('disabled=""');
     expect(button).toContain('aria-describedby="');

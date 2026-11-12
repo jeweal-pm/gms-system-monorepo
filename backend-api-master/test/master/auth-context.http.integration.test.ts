@@ -70,6 +70,7 @@ async function startHttp(authReader = vi.fn(async () => ({
     stoneMaster: stoneMaster as unknown as StoneMasterService,
     documentSetup: { list: vi.fn(), get: vi.fn(), save: vi.fn() } as unknown as DocumentSetupService,
     decimalSetup: decimalSetup as unknown as DecimalSetupService,
+    approvalSetting: {} as never,
     currency: { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as unknown as CurrencyService,
     quotation: {} as unknown as QuotationService,
     memoOut: {} as unknown as MemoOutService,
@@ -81,6 +82,7 @@ async function startHttp(authReader = vi.fn(async () => ({
     reserve: {} as unknown as ReserveService,
     purchaseOrder: {} as never,
     purchase: purchase as never,
+    approval: {} as never,
   });
   const handler = createHTTPHandler({ router, createContext: ({ req }) => adapter.create(req) });
   const server = createServer(handler);

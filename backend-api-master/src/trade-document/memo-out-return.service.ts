@@ -1,6 +1,7 @@
-import { HttpStatus, Injectable, Logger } from "@nestjs/common";
+import { HttpStatus, Injectable } from "@nestjs/common";
 import { partnerException, validationException, type FieldError } from "../common/errors";
-import { escapeLike, WRITE_TX, type Tx } from "../common/persistence";
+import { escapeLike, type Tx } from "../common/persistence";
+import type { FlowPrincipal } from "../approval-setting/approval-flow";
 import { currencyOptions } from "../currency/currency-directory";
 import { prisma } from "../database/prisma-client";
 import { fromDbDate, toDbDate } from "../document-setup/document-setup.service";
@@ -8,10 +9,11 @@ import { Prisma } from "../generated/prisma/client";
 import { CHARGE_TYPES } from "../quotation/quotation.schemas";
 import { formatAddress, stoneLineOptions } from "../quotation/quotation.service";
 import { documentErrors, type DocumentErrors } from "./document-errors";
-import { explainMiss, MISS_SELECT, TradeDocumentEngine, type LineHook, type PartyAdapter, type TradeDocumentInput, type MissRow } from "./document-engine";
+import { TradeDocumentEngine, type DocumentActor, type DocumentEffects, type LineHook, type PartyAdapter, type TradeDocumentInput } from "./document-engine";
 import { customerDocumentOptions, customerParty, type CustomerOut } from "./memo-out.service";
 import type { MemoOutOutstandingInput, MemoOutReturnInput, MemoReceiveListInput, MemoReceiveStatus } from "./memo-schemas";
-import { releaseToMemoStock, type MemoStockTake } from "./memo-stock.service";
+import { latestStockUser, releaseToMemoStock, takeFromMemoStock, type MemoStockTake } from "./memo-stock.service";
+import { lockSourceHeaders } from "./source-lock";
 
 const Decimal = Prisma.Decimal;
 type Dec = Prisma.Decimal;
@@ -60,7 +62,6 @@ export function vendorParty<Input extends VendorInput>(documentErrors: DocumentE
 
 /** Status flow of memo out return (SA-MOR-12): the memo receive / memo out one. */
 type MemoOutReturnStatus = MemoReceiveStatus;
-const PENDING: MemoOutReturnStatus = "PENDING_APPROVAL";
 const APPROVED: MemoOutReturnStatus = "APPROVED";
 
 /** Approval found a Memo Out line with less outstanding than the return line (another return took it first). */
@@ -81,14 +82,14 @@ function netUnitPrice(line: { priceUnit: string; pcs: number; weightCt: Dec; uni
 async function completeReturnLines(tx: Tx, input: MemoOutReturnInput): Promise<MemoOutReturnInput> {
   const rows = await tx.memoOutLine.findMany({
     where: { id: { in: input.lines.map((line) => line.memoOutLineId) } },
-    include: { document: { select: { status: true, customerId: true, currencyCode: true } } },
+    include: { document: { select: { status: true, customerId: true, currencyCode: true, deletedAt: true } } },
   });
   const byId = new Map(rows.map((row) => [row.id, row]));
   const references: FieldError[] = [];
   const quantities: FieldError[] = [];
   const lines = input.lines.map((line, index) => {
     const row = byId.get(line.memoOutLineId);
-    if (!row || !row.memoStockId || row.document.status !== APPROVED || row.document.customerId !== input.customerId || row.document.currencyCode !== input.currency) {
+    if (!row || !row.memoStockId || row.document.status !== APPROVED || row.document.deletedAt || row.document.customerId !== input.customerId || row.document.currencyCode !== input.currency) {
       references.push({ path: `lines.${index}.memoOutLineId`, code: "invalid_reference" });
       return line;
     }
@@ -227,16 +228,111 @@ export function toOutstandingItem(row: OutstandingRow) {
   };
 }
 
+type ReturnLine = { memoOutLineId: string; pcs: number; weightCt: Dec };
+
+async function returnLines(tx: Tx, id: string): Promise<ReturnLine[]> {
+  return tx.memoOutReturnLine.findMany({ where: { memoOutReturnId: id }, orderBy: { position: "asc" }, select: { memoOutLineId: true, pcs: true, weightCt: true } });
+}
+
+/** Locks the Memo Out lines in id order (`FOR UPDATE`; lock order memo_out_line → memo_stock, as in approval). */
+async function lockOutLines(tx: Tx, lines: ReturnLine[]) {
+  const ids = lines.map((line) => line.memoOutLineId);
+  const locked = await tx.$queryRaw<OutLineLock[]>(Prisma.sql`
+    SELECT id::text AS id, pcs, weight_ct, returned_pcs, returned_weight_ct, memo_stock_id::text AS memo_stock_id
+    FROM "partner"."memo_out_line" WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR UPDATE`);
+  return new Map(locked.map((row) => [row.id, row]));
+}
+
+/** Adds `sign` × each line's Return to its Memo Out line's `returned_*` (one bound `UPDATE … FROM (VALUES …)`). */
+async function addReturned(tx: Tx, lines: ReturnLine[], sign: 1 | -1) {
+  if (lines.length === 0) return;
+  const values = lines.map((line) => Prisma.sql`(${line.memoOutLineId}::uuid, ${sign * line.pcs}::int, ${(sign === 1 ? line.weightCt : line.weightCt.negated()).toFixed(3)}::numeric)`);
+  await tx.$executeRaw(Prisma.sql`
+    UPDATE "partner"."memo_out_line" AS l
+    SET returned_pcs = l.returned_pcs + r.pcs, returned_weight_ct = l.returned_weight_ct + r.weight
+    FROM (VALUES ${Prisma.join(values)}) AS r(id, pcs, weight)
+    WHERE l.id = r.id`);
+}
+
+class ReversalShort extends Error {}
+
+/**
+ * Effects (SA-MOR-17; approval-setup "Effects and their reversal"). Apply: the Memo Out lines are locked in id order and
+ * re-checked (`MEMO_OUT_RETURN_OUTSTANDING_SHORT`, nothing changes), their `returned_*` grow by the Return, and each Memo
+ * Stock item moves the quantity from Reserve back to pending. Reverse (auto-approved edit / delete): the same locks, the
+ * Memo Out lines' `returned_*` shrink and the items move the quantity from pending into Reserve again; when the stock was
+ * taken again (pending short) → `MEMO_OUT_RETURN_IN_USE {usedBy}` with the newest document that names the item.
+ */
+const memoOutReturnEffects: DocumentEffects = {
+  apply: async (tx, doc, _actorId, now) => {
+    const lines = await returnLines(tx, doc.id);
+    // INV-20261111-002 F1: the Memo Outs stay APPROVED and live under FOR SHARE until this transaction ends.
+    const sources = await lockSourceHeaders(tx, "memoOut", lines.map((line) => line.memoOutLineId));
+    const gone = lines.flatMap((line, index) => (sources.get(line.memoOutLineId)?.live ? [] : [{ path: `lines.${index}.memoOutLineId`, code: "invalid_reference" }]));
+    if (gone.length > 0) throw memoOutReturnErrors.referenceInvalid(gone);
+    const outLines = await lockOutLines(tx, lines);
+    const short: FieldError[] = [];
+    const puts: MemoStockTake[] = [];
+    lines.forEach((line, index) => {
+      const out = outLines.get(line.memoOutLineId);
+      if (!out || line.pcs > Number(out.pcs) - Number(out.returned_pcs)) short.push({ path: `lines.${index}.pcs`, code: "exceeds_outstanding" });
+      if (!out || line.weightCt.gt(dec(out.weight_ct).minus(dec(out.returned_weight_ct)))) short.push({ path: `lines.${index}.weightCt`, code: "exceeds_outstanding" });
+      if (out?.memo_stock_id) puts.push({ memoStockId: out.memo_stock_id, pcs: line.pcs, weightCt: line.weightCt, index });
+    });
+    if (short.length > 0) throw memoOutReturnOutstandingShort(short);
+    await addReturned(tx, lines, 1);
+    await releaseToMemoStock(tx, puts, memoOutReturnOutstandingShort, now);
+    return { result: {}, log: { lineCount: lines.length } };
+  },
+  reverse: async (tx, doc, now) => {
+    const lines = await returnLines(tx, doc.id);
+    const outLines = await lockOutLines(tx, lines);
+    const takes: MemoStockTake[] = [];
+    lines.forEach((line, index) => {
+      const out = outLines.get(line.memoOutLineId);
+      if (!out || line.pcs > Number(out.returned_pcs) || line.weightCt.gt(dec(out.returned_weight_ct))) throw memoOutReturnErrors.inUse(null);
+      if (out.memo_stock_id) takes.push({ memoStockId: out.memo_stock_id, pcs: line.pcs, weightCt: line.weightCt, index });
+    });
+    await addReturned(tx, lines, -1);
+    try {
+      await takeFromMemoStock(tx, takes, "reserved", () => new ReversalShort(), now);
+    } catch (error) {
+      if (!(error instanceof ReversalShort)) throw error;
+      throw memoOutReturnErrors.inUse(await memoOutReturnUsedBy(tx, doc.id));
+    }
+  },
+  usedBy: (client, id) => memoOutReturnUsedBy(client, id),
+};
+
+/**
+ * An auto-approved Memo Out Return is used when its reversal would break a balance: a Memo Stock item it gave back to
+ * pending has less pending now than the return brought back (another document took it again). Returns the newest
+ * live document naming such an item (other than the Memo Outs being returned), else its Stock ID, else null.
+ */
+export async function memoOutReturnUsedBy(client: Tx | typeof prisma, id: string): Promise<string | null> {
+  const short = await client.$queryRaw<{ memo_stock_id: string; stock_id: string; memo_out_ids: string[] }[]>(Prisma.sql`
+    SELECT s.id::text AS memo_stock_id, s.stock_id, array_agg(DISTINCT o.memo_out_id::text) AS memo_out_ids
+    FROM "partner"."memo_out_return_line" l
+    JOIN "partner"."memo_out_line" o ON o.id = l.memo_out_line_id
+    JOIN "partner"."memo_stock" s ON s.id = o.memo_stock_id
+    WHERE l.memo_out_return_id = ${id}::uuid
+    GROUP BY s.id, s.stock_id, s.pending_pcs, s.pending_weight_ct
+    HAVING sum(l.pcs) > s.pending_pcs OR sum(l.weight_ct) > s.pending_weight_ct
+    ORDER BY s.id
+    LIMIT 200`);
+  if (short.length === 0) return null;
+  const user = await latestStockUser(client, short.map((row) => row.memo_stock_id), short.flatMap((row) => row.memo_out_ids));
+  return user ?? short[0].stock_id;
+}
+
 /**
  * memo-out-return SA rev 2 / ADR-0033 rev 3 (owner 2026-10-31, "อนุมัติ memo-out-return revision 4"): the customer
- * brings back what a Memo Out lent. Document Setup key `memo-out-return`; PENDING_APPROVAL → APPROVED. Lines come only
+ * brings back what a Memo Out lent. Document Setup key `memo-out-return`; the approval flow of ADR-0048. Lines come only
  * from the customer's approved Memo Out From Stock lines (Memo Outstanding); approval adds to those lines' returned and
  * moves the Memo Stock items from Reserve back to pending.
  */
 @Injectable()
 export class MemoOutReturnService {
-  private readonly logger = new Logger("memo_out_return");
-
   private readonly engine = new TradeDocumentEngine<MemoOutReturnInput, CustomerOut, MemoOutReturnStatus>({
     document: "memoOutReturn",
     transactionKey: "memo-out-return",
@@ -247,10 +343,13 @@ export class MemoOutReturnService {
     parentKey: "memoOutReturnId",
     errors: memoOutReturnErrors,
     party: customerParty<MemoOutReturnInput>(memoOutReturnErrors),
-    createStatus: PENDING,
-    editableStatuses: [PENDING],
+    approvalType: "memo-out-return",
+    effects: memoOutReturnEffects,
     outstanding: true,
     prepare: completeReturnLines,
+    lockSources: async (tx, input) => {
+      await lockSourceHeaders(tx, "memoOut", input.lines.map((line) => line.memoOutLineId));
+    },
     lineHook: memoOutLines,
     detailExtra: (row) => ({
       approvedAt: row.approvedAt ? (row.approvedAt as Date).toISOString() : null,
@@ -261,24 +360,42 @@ export class MemoOutReturnService {
   list(input: MemoReceiveListInput) {
     return this.engine.list(input);
   }
-  get(id: string) {
-    return this.engine.get(id) as Promise<unknown> as Promise<MemoOutReturnDetail>;
+  get(id: string, viewer: FlowPrincipal | null = null) {
+    return this.engine.get(id, viewer) as Promise<unknown> as Promise<MemoOutReturnDetail>;
   }
   nextNumber(docDate: string) {
     return this.engine.nextNumber(docDate);
   }
-  create(actorId: string, input: MemoOutReturnInput) {
-    return this.engine.create(actorId, input);
+  create(actorId: string, input: MemoOutReturnInput, viewer: FlowPrincipal | null = null) {
+    return this.engine.create(actorId, input, viewer);
   }
-  update(actorId: string, id: string, expectedVersion: number, input: MemoOutReturnInput) {
-    return this.engine.update(actorId, id, expectedVersion, input);
+  update(actorId: string, id: string, expectedVersion: number, input: MemoOutReturnInput, viewer: FlowPrincipal | null = null) {
+    return this.engine.update(actorId, id, expectedVersion, input, viewer);
   }
   delete(actorId: string, id: string, expectedVersion: number) {
     return this.engine.delete(actorId, id, expectedVersion);
   }
-  /** transaction-soft-delete D6: a deleted document back to its unchanged status. */
+  /** transaction-soft-delete D6 / approval-setup G3. */
   restore(actorId: string, id: string, expectedVersion: number) {
     return this.engine.restore(actorId, id, expectedVersion);
+  }
+  submit(actor: DocumentActor, id: string, expectedVersion: number) {
+    return this.engine.submit(actor, id, expectedVersion);
+  }
+  /** PENDING_APPROVAL → APPROVED with the moves above (SA-MOR-17). */
+  approve(actorId: string, id: string, expectedVersion: number) {
+    return this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED" }>;
+  }
+
+  /** Go-live command (ADR-0048 D7): the same approve inside the caller's transaction. */
+  approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
+    return this.engine.approveWithin(tx, actorId, id, expectedVersion);
+  }
+  reject(actor: DocumentActor, id: string, expectedVersion: number, reason: string) {
+    return this.engine.reject(actor, id, expectedVersion, reason);
+  }
+  requestRevision(actor: DocumentActor, id: string, expectedVersion: number, note: string) {
+    return this.engine.requestRevision(actor, id, expectedVersion, note);
   }
 
   /** The `memoOut.options` shape (customers with Shipping / Invoice addresses), Document Setup key `memo-out-return`. */
@@ -297,7 +414,7 @@ export class MemoOutReturnService {
    */
   async outstanding(input: MemoOutOutstandingInput) {
     const filters: Prisma.Sql[] = [
-      Prisma.sql`o.status = 'APPROVED'`,
+      Prisma.sql`o.status = 'APPROVED' AND o.deleted_at IS NULL`,
       Prisma.sql`o.customer_id = ${input.customerId}::uuid`,
       Prisma.sql`o.currency_code = ${input.currency}::char(3)`,
       Prisma.sql`l.memo_stock_id IS NOT NULL AND (l.returned_pcs < l.pcs OR l.returned_weight_ct < l.weight_ct)`,
@@ -337,59 +454,6 @@ export class MemoOutReturnService {
     }
   }
 
-  /**
-   * PENDING_APPROVAL → APPROVED in one transaction (SA-MOR-17): the guarded UPDATE serializes approvals of this document;
-   * the Memo Out lines are locked in id order and re-checked (`MEMO_OUT_RETURN_OUTSTANDING_SHORT`, 409, nothing changes);
-   * their `returned_*` grow by the Return; then each Memo Stock item moves the quantity from Reserve back to pending.
-   */
-  async approve(actorId: string, id: string, expectedVersion: number) {
-    const errors = memoOutReturnErrors;
-    try {
-      const approved = await prisma.$transaction(async (tx) => {
-        const now = new Date();
-        const updated = await tx.memoOutReturn.updateMany({
-          where: { id, version: expectedVersion, status: PENDING, deletedAt: null },
-          data: { status: APPROVED, approvedAt: now, approvedBy: actorId, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
-        });
-        if (updated.count === 0) {
-          // D8: NOT_FOUND → DELETED → STATUS_INVALID → CHANGED.
-          explainMiss(errors, (await tx.memoOutReturn.findUnique({ where: { id }, select: MISS_SELECT })) as MissRow, [PENDING]);
-        }
-        const document = await tx.memoOutReturn.findUniqueOrThrow({
-          where: { id },
-          select: { docNo: true, lines: { orderBy: { position: "asc" }, select: { memoOutLineId: true, pcs: true, weightCt: true } } },
-        });
-        const ids = document.lines.map((line) => line.memoOutLineId);
-        const locked = await tx.$queryRaw<OutLineLock[]>(Prisma.sql`
-          SELECT id::text AS id, pcs, weight_ct, returned_pcs, returned_weight_ct, memo_stock_id::text AS memo_stock_id
-          FROM "partner"."memo_out_line" WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR UPDATE`);
-        const outLines = new Map(locked.map((row) => [row.id, row]));
-        const short: FieldError[] = [];
-        const puts: MemoStockTake[] = [];
-        document.lines.forEach((line, index) => {
-          const out = outLines.get(line.memoOutLineId);
-          if (!out || line.pcs > Number(out.pcs) - Number(out.returned_pcs)) short.push({ path: `lines.${index}.pcs`, code: "exceeds_outstanding" });
-          if (!out || line.weightCt.gt(dec(out.weight_ct).minus(dec(out.returned_weight_ct)))) short.push({ path: `lines.${index}.weightCt`, code: "exceeds_outstanding" });
-          if (out?.memo_stock_id) puts.push({ memoStockId: out.memo_stock_id, pcs: line.pcs, weightCt: line.weightCt, index });
-        });
-        if (short.length > 0) throw memoOutReturnOutstandingShort(short);
-        if (document.lines.length > 0) {
-          const values = document.lines.map((line) => Prisma.sql`(${line.memoOutLineId}::uuid, ${line.pcs}::int, ${line.weightCt.toFixed(3)}::numeric)`);
-          await tx.$executeRaw(Prisma.sql`
-            UPDATE "partner"."memo_out_line" AS l
-            SET returned_pcs = l.returned_pcs + r.pcs, returned_weight_ct = l.returned_weight_ct + r.weight
-            FROM (VALUES ${Prisma.join(values)}) AS r(id, pcs, weight)
-            WHERE l.id = r.id`);
-        }
-        await releaseToMemoStock(tx, puts, memoOutReturnOutstandingShort, now);
-        return { docNo: document.docNo, lineCount: document.lines.length };
-      }, WRITE_TX);
-      this.logger.log({ event: "memo_out_return.approved", actorId, id, docNo: approved.docNo, lineCount: approved.lineCount });
-      return { id, version: expectedVersion + 1, status: APPROVED as "APPROVED" };
-    } catch (error) {
-      throw errors.map(error, "approve");
-    }
-  }
 }
 
 type OutLineLock = { id: string; pcs: number; weight_ct: Dec | string; returned_pcs: number; returned_weight_ct: Dec | string; memo_stock_id: string | null };

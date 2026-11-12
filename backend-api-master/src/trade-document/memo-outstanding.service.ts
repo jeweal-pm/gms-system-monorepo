@@ -97,7 +97,7 @@ const buckets = (row: BucketSums) => ({
 
 /** Header filters on `memo_receive r` (SA-MOV-04): approved only, escaped ILIKE, vendor ids, doc date range. */
 function receiveFilters(input: MemoOutstandingFilters): Prisma.Sql {
-  const filters: Prisma.Sql[] = [Prisma.sql`r.status = ${APPROVED}`];
+  const filters: Prisma.Sql[] = [Prisma.sql`r.status = ${APPROVED} AND r.deleted_at IS NULL`];
   if (input.q) {
     const pattern = `%${escapeLike(input.q)}%`;
     filters.push(Prisma.sql`(r.doc_no ILIKE ${pattern} OR r.vendor_name_snapshot ILIKE ${pattern})`);
@@ -237,7 +237,7 @@ const customerBuckets = (row: CustomerSums) => ({
 
 /** Header filters on `memo_out o` (SA-MOC-03): approved only, escaped ILIKE, customer ids, doc date range. */
 function memoOutFilters(input: MemoOutstandingCustomerFilters): Prisma.Sql {
-  const filters: Prisma.Sql[] = [Prisma.sql`o.status = ${APPROVED}`];
+  const filters: Prisma.Sql[] = [Prisma.sql`o.status = ${APPROVED} AND o.deleted_at IS NULL`];
   if (input.q) {
     const pattern = `%${escapeLike(input.q)}%`;
     filters.push(Prisma.sql`(o.doc_no ILIKE ${pattern} OR o.customer_name_snapshot ILIKE ${pattern})`);
@@ -358,7 +358,7 @@ export class MemoOutstandingService {
         FROM "partner"."memo_stock" s
         JOIN "partner"."memo_receive" r ON r.id = s.memo_receive_id
         JOIN "partner"."memo_receive_line" l ON l.id = s.memo_receive_line_id
-        WHERE r.status = ${APPROVED} AND r.id IN (${Prisma.join(ids)})
+        WHERE r.status = ${APPROVED} AND r.deleted_at IS NULL AND r.id IN (${Prisma.join(ids)})
           AND EXISTS (SELECT 1 FROM "partner"."memo_stock" o WHERE o.memo_receive_id = r.id
             AND (o.pending_pcs > 0 OR o.pending_weight_ct > 0 OR o.reserved_pcs > 0 OR o.reserved_weight_ct > 0))
         ORDER BY r.doc_no ASC, r.id ASC, l.position ASC`);
@@ -490,7 +490,7 @@ export class MemoOutstandingService {
           ${CUSTOMER_OPEN_VALUE} AS open_value, l.price_unit, ${CUSTOMER_NET_PRICE} AS net_unit_price, o.currency_code
         FROM "partner"."memo_out_line" l
         JOIN "partner"."memo_out" o ON o.id = l.memo_out_id
-        WHERE o.status = ${APPROVED} AND o.id IN (${Prisma.join(ids)}) AND ${STOCK_LINE}
+        WHERE o.status = ${APPROVED} AND o.deleted_at IS NULL AND o.id IN (${Prisma.join(ids)}) AND ${STOCK_LINE}
           AND EXISTS (SELECT 1 FROM "partner"."memo_out_line" x WHERE x.memo_out_id = o.id AND x.memo_stock_id IS NOT NULL
             AND (x.returned_pcs < x.pcs OR x.returned_weight_ct < x.weight_ct))
         ORDER BY o.doc_no ASC, o.id ASC, l.position ASC`);
@@ -530,7 +530,7 @@ export class MemoOutstandingService {
       const rows = await prisma.$queryRaw<{ id: string; code: string; name: string }[]>(Prisma.sql`
         SELECT c.id::text AS id, c.code, c.name
         FROM "partner"."customer" c
-        WHERE EXISTS (SELECT 1 FROM "partner"."memo_out" o WHERE o.customer_id = c.id AND o.status = ${APPROVED})
+        WHERE EXISTS (SELECT 1 FROM "partner"."memo_out" o WHERE o.customer_id = c.id AND o.status = ${APPROVED} AND o.deleted_at IS NULL)
         ORDER BY c.name_key ASC, c.id ASC
         LIMIT ${MEMO_OUTSTANDING_CUSTOMER_OPTIONS_MAX}`);
       return { customers: rows.map((row) => ({ id: row.id, code: row.code, name: row.name })) };
@@ -633,7 +633,7 @@ export class MemoOutstandingService {
         FROM "partner"."memo_stock" s
         JOIN "partner"."memo_receive" r ON r.id = s.memo_receive_id
         JOIN "partner"."memo_receive_line" l ON l.id = s.memo_receive_line_id
-        WHERE r.status = ${APPROVED} AND r.id IN (${Prisma.join(ids)})
+        WHERE r.status = ${APPROVED} AND r.deleted_at IS NULL AND r.id IN (${Prisma.join(ids)})
           AND EXISTS (SELECT 1 FROM "partner"."memo_stock" o WHERE o.memo_receive_id = r.id
             AND (o.received_pcs - o.returned_pcs - o.purchased_pcs > 0 OR o.received_weight_ct - o.returned_weight_ct - o.purchased_weight_ct > 0))
         ORDER BY r.doc_no ASC, r.id ASC, l.position ASC`);
@@ -679,7 +679,7 @@ export class MemoOutstandingService {
       const rows = await prisma.$queryRaw<{ id: string; code: string; name: string }[]>(Prisma.sql`
         SELECT v.id::text AS id, v.code, v.name
         FROM "partner"."vendor" v
-        WHERE EXISTS (SELECT 1 FROM "partner"."memo_receive" r WHERE r.vendor_id = v.id AND r.status = ${APPROVED})
+        WHERE EXISTS (SELECT 1 FROM "partner"."memo_receive" r WHERE r.vendor_id = v.id AND r.status = ${APPROVED} AND r.deleted_at IS NULL)
         ORDER BY v.name_key ASC, v.id ASC
         LIMIT ${MEMO_OUTSTANDING_VENDOR_OPTIONS_MAX}`);
       return { vendors: rows.map((row) => ({ id: row.id, code: row.code, name: row.name })) };

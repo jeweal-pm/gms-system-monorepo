@@ -80,6 +80,35 @@ const messages: Record<string, string> = {
   MEMO_OUT_RETURN_DELETED: "The memo out return was deleted",
   PURCHASE_ORDER_DELETED: "The purchase order was deleted",
   PURCHASE_DELETED: "The purchase was deleted",
+  // approval-setup SA rev 1 / ADR-0048.
+  APPROVAL_SETTING_HAS_WAITING: "Documents are still waiting for approval or sent back for revision",
+  APPROVAL_SETTING_CHANGED: "The approval setting was changed by someone else",
+  APPROVAL_TYPE_OFF: "Approval is off for this document type",
+  // approval-setup SA rev 1 / ADR-0048: submit while OFF, second Revise, edit / delete of a used auto-approved document.
+  QUOTATION_APPROVAL_OFF: "Approval is off for this document type",
+  QUOTATION_REVISE_LIMIT: "The quotation was already sent back for revision once",
+  QUOTATION_IN_USE: "The quotation is used by another document",
+  RESERVE_APPROVAL_OFF: "Approval is off for this document type",
+  RESERVE_REVISE_LIMIT: "The reserve was already sent back for revision once",
+  RESERVE_IN_USE: "The reserve is used by another document",
+  MEMO_RECEIVE_APPROVAL_OFF: "Approval is off for this document type",
+  MEMO_RECEIVE_REVISE_LIMIT: "The memo receive was already sent back for revision once",
+  MEMO_RECEIVE_IN_USE: "The memo receive is used by another document",
+  MEMO_RETURN_APPROVAL_OFF: "Approval is off for this document type",
+  MEMO_RETURN_REVISE_LIMIT: "The memo return was already sent back for revision once",
+  MEMO_RETURN_IN_USE: "The memo return is used by another document",
+  MEMO_OUT_APPROVAL_OFF: "Approval is off for this document type",
+  MEMO_OUT_REVISE_LIMIT: "The memo out was already sent back for revision once",
+  MEMO_OUT_IN_USE: "The memo out is used by another document",
+  MEMO_OUT_RETURN_APPROVAL_OFF: "Approval is off for this document type",
+  MEMO_OUT_RETURN_REVISE_LIMIT: "The memo out return was already sent back for revision once",
+  MEMO_OUT_RETURN_IN_USE: "The memo out return is used by another document",
+  PURCHASE_ORDER_APPROVAL_OFF: "Approval is off for this document type",
+  PURCHASE_ORDER_REVISE_LIMIT: "The purchase order was already sent back for revision once",
+  PURCHASE_ORDER_IN_USE: "The purchase order is used by another document",
+  PURCHASE_APPROVAL_OFF: "Approval is off for this document type",
+  PURCHASE_REVISE_LIMIT: "The purchase was already sent back for revision once",
+  PURCHASE_IN_USE: "The purchase is used by another document",
   CONFLICT: "The company profile was changed by someone else",
   PAYLOAD_TOO_LARGE: "The request body is too large",
   UNSUPPORTED_MEDIA_TYPE: "The request content type is not supported",
@@ -88,19 +117,26 @@ const messages: Record<string, string> = {
   INTERNAL_SERVER_ERROR: "The request could not be completed",
 };
 
-export function errorBody(code: string, fieldErrors?: FieldError[] | null) {
+/**
+ * Small, non-sensitive facts a client needs to explain a refusal (approval-setup api-contract: `HAS_WAITING {pending,
+ * revision}`, `<CODE>_IN_USE {usedBy}`). Counts and document numbers only; never notes, names or input echoes.
+ */
+export type ErrorDetails = Readonly<Record<string, string | number>>;
+
+export function errorBody(code: string, fieldErrors?: FieldError[] | null, details?: ErrorDetails) {
   return {
     error: {
       code,
       message: messages[code] ?? messages.INTERNAL_SERVER_ERROR,
       ...(fieldErrors && fieldErrors.length > 0 ? { fieldErrors: fieldErrors.slice(0, MAX_FIELD_ERRORS) } : {}),
+      ...(details ? { details } : {}),
     },
   };
 }
 
-/** Partner envelope `{error:{code, message, fieldErrors?}}` (error-handling.md). */
-export function partnerException(code: string, status: HttpStatus, fieldErrors?: FieldError[] | null) {
-  return new HttpException(errorBody(code, fieldErrors), status);
+/** Partner envelope `{error:{code, message, fieldErrors?, details?}}` (error-handling.md). */
+export function partnerException(code: string, status: HttpStatus, fieldErrors?: FieldError[] | null, details?: ErrorDetails) {
+  return new HttpException(errorBody(code, fieldErrors, details), status);
 }
 
 export function validationException(fieldErrors: FieldError[]) {

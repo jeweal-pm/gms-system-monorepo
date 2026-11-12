@@ -12,6 +12,8 @@ import type { DocumentSetupService } from "../document-setup/document-setup.serv
 import { saveDocumentSetupBodySchema, transactionKeySchema } from "../document-setup/document-setup.schemas";
 import type { DecimalSetupService } from "../decimal-setup/decimal-setup.service";
 import { saveDecimalSetupBodySchema } from "../decimal-setup/decimal-setup.schemas";
+import type { ApprovalSettingService } from "../approval-setting/approval-setting.service";
+import { approvalSettingListSchema, approvalSettingUpdateSchema } from "../approval-setting/approval-setting.schemas";
 import { bodySchemasFor, optionsQuerySchema } from "../stone-master/stone-master.schemas";
 import type { StoneKind } from "../stone-master/stone-master.kinds";
 import type { CurrencyService } from "../currency/currency.service";
@@ -77,7 +79,12 @@ import {
 } from "../quotation/quotation.schemas";
 import { LIST_LIMIT_MAX } from "../common/partner-schemas";
 import { validationException, zodFieldErrors } from "../common/errors";
-import { requireAnyMasterGrant, requireMasterGrant, requireMasterSession, type MasterAction, type MasterContext, type MasterMenu } from "./authorization";
+import { hasMasterGrant, requireAnyMasterGrant, requireMasterGrant, requireMasterSession, type MasterAction, type MasterContext, type MasterMenu } from "./authorization";
+import { canApprove, canSubmit, permittedApprovalTypes, type FlowPrincipal } from "../approval-setting/approval-flow";
+import { APPROVAL_DOC_TYPE_INFO, APPROVAL_DOC_TYPES, type ApprovalDocType } from "../approval-setting/approval-types";
+import { approvalPendingInputSchema, approvalSummaryInputSchema, rejectInputSchema, requestRevisionInputSchema, submitInputSchema } from "../approval/approval.schemas";
+import type { ApprovalService } from "../approval/approval.service";
+import type { DocumentActor } from "../trade-document/document-engine";
 
 // Staged router: do not mount until the auth-owned JWT/view/license context adapter is verified.
 const t = initTRPC.context<MasterContext>().create({
@@ -85,13 +92,15 @@ const t = initTRPC.context<MasterContext>().create({
     const cause = error.cause;
     const envelope = cause instanceof HttpException ? cause.getResponse() : null;
     const detail = typeof envelope === "object" && envelope !== null && "error" in envelope
-      ? (envelope as { error?: { code?: unknown; fieldErrors?: unknown } }).error : undefined;
+      ? (envelope as { error?: { code?: unknown; fieldErrors?: unknown; details?: unknown } }).error : undefined;
     return {
       ...shape,
       data: {
         ...shape.data,
         domainCode: typeof detail?.code === "string" ? detail.code : error.code === "BAD_REQUEST" ? "VALIDATION_ERROR" : error.message,
         fieldErrors: Array.isArray(detail?.fieldErrors) ? detail.fieldErrors : undefined,
+        // approval-setup api-contract: e.g. APPROVAL_SETTING_HAS_WAITING → details { pending, revision }.
+        details: typeof detail?.details === "object" && detail.details !== null && !Array.isArray(detail.details) ? (detail.details as Record<string, string | number>) : undefined,
       },
     };
   },
@@ -137,22 +146,112 @@ async function domainCall<T>(operation: () => T | Promise<T>): Promise<T> {
   try { return await operation(); } catch (error) { return mapDomainError(error); }
 }
 
+/** The caller's own display name for snapshots (ADR-0046 D5); context only, never input. */
+function userNameOf(ctx: MasterContext): string | null {
+  return ctx.principal?.displayName ?? null;
+}
+
 function permitted(menu: MasterMenu, action: MasterAction, mutation = false) {
   return t.procedure.use(({ ctx, next }) => {
     const userId = requireMasterGrant(ctx, menu, action, mutation);
-    return next({ ctx: { ...ctx, userId } });
+    return next({ ctx: { ...ctx, userId, userName: userNameOf(ctx) } });
   });
 }
 
 /**
  * Signed in, current authorization and an eligible license; no menu grant and no CSRF (queries only).
- * decimal-setup SA rev 1: used only by `decimalSetup.get`; another use needs SA review.
+ * Used by `decimalSetup.get` (decimal-setup SA rev 1), `approvalSetting.list` (approval-setup SA rev 1
+ * authorization.md: 11 non-sensitive booleans; counts need approval-setup:VIEW) and `approval.summary` (approve-center
+ * SA rev 1 D11/D15 as amended by approval-setup: the result is filtered to the types the caller `canApprove`).
+ * Another use needs SA review.
  */
 function signedIn() {
   return t.procedure.use(({ ctx, next }) => {
     const { userId } = requireMasterSession(ctx);
-    return next({ ctx: { ...ctx, userId } });
+    return next({ ctx: { ...ctx, userId, userName: userNameOf(ctx) } });
   });
+}
+
+/**
+ * approval-setup authorization.md: a document-type rule over the live principal (`canSubmit` = ADD or EDIT, Q-AS-25;
+ * `canApprove` = today `<menu>:APPROVE`, ADR-0048 D3), with the same session / CSRF order as `requireMasterGrant`.
+ */
+function permittedFor(type: ApprovalDocType, allowed: (principal: FlowPrincipal, type: ApprovalDocType) => boolean) {
+  return t.procedure.use(({ ctx, next }) => {
+    const principal = requireMasterSession(ctx);
+    if (!ctx.csrfVerified) throw new TRPCError({ code: "FORBIDDEN", message: "CSRF_INVALID" });
+    if (!allowed(principal, type)) throw new TRPCError({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+    return next({ ctx: { ...ctx, userId: principal.userId, userName: userNameOf(ctx) } });
+  });
+}
+
+const permissionDenied = () => new TRPCError({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+
+/**
+ * `<doc>.get` (approval-setup authorization.md, clarification G11): `<menu>:VIEW`, or `canApprove(type)` for a document
+ * in PENDING_APPROVAL (the Approve menu opens it read-only). The grant is checked before the read; an approver without
+ * VIEW (`approverOnly`) gets PERMISSION_DENIED for any other status or a deleted document after the read.
+ */
+function viewOrApprover(type: ApprovalDocType) {
+  return t.procedure.use(({ ctx, next }) => {
+    const principal = requireMasterSession(ctx);
+    const canView = hasMasterGrant(principal, APPROVAL_DOC_TYPE_INFO[type].menu, "VIEW");
+    if (!canView && !canApprove(principal, type)) throw permissionDenied();
+    return next({ ctx: { ...ctx, userId: principal.userId, userName: userNameOf(ctx), approverOnly: !canView } });
+  });
+}
+
+async function readForViewer<T>(approverOnly: boolean, read: () => Promise<T>): Promise<T> {
+  const detail = await read();
+  const row = detail as { status?: unknown; deletedAt?: unknown };
+  if (approverOnly && (row.status !== "PENDING_APPROVAL" || row.deletedAt)) throw permissionDenied();
+  return detail;
+}
+
+/**
+ * `approval.pending` (approval-setup authorization.md: `canApprove` replaces ADR-0046's APPROVE + VIEW). Checked on the
+ * raw input before validation and before any query: no approvable type at all, or a known type the caller cannot
+ * approve → PERMISSION_DENIED; an unknown type then fails validation (VALIDATION_ERROR type).
+ */
+function approverOfInputType() {
+  return t.procedure.use(async ({ ctx, next, getRawInput }) => {
+    const principal = requireMasterSession(ctx);
+    const permitted = permittedApprovalTypes(principal);
+    const raw = await getRawInput();
+    const type = typeof raw === "object" && raw !== null ? (raw as { type?: unknown }).type : undefined;
+    const known = typeof type === "string" && (APPROVAL_DOC_TYPES as readonly string[]).includes(type);
+    if (permitted.length === 0 || (known && !permitted.includes(type as ApprovalDocType))) throw permissionDenied();
+    return next({ ctx: { ...ctx, userId: principal.userId, userName: userNameOf(ctx) } });
+  });
+}
+
+/** The acting user for snapshots (ADR-0046 D5): context only, never input. */
+function actorOf(ctx: { userId: string; userName: string | null }): DocumentActor {
+  return { id: ctx.userId, name: ctx.userName };
+}
+
+type ApprovalFlowService = {
+  submit(actor: DocumentActor, id: string, expectedVersion: number): Promise<unknown>;
+  approve(actorId: string, id: string, expectedVersion: number): Promise<unknown>;
+  reject(actor: DocumentActor, id: string, expectedVersion: number, reason: string): Promise<unknown>;
+  requestRevision(actor: DocumentActor, id: string, expectedVersion: number, note: string): Promise<unknown>;
+};
+
+/**
+ * The approval procedures every document router shares (approval-setup api-contract, ADR-0046 as amended by ADR-0048):
+ * `submit` (ADD or EDIT + CSRF; replaces ADR-0046 `resubmit`, never built), `approve` / `reject` / `requestRevision`
+ * (`canApprove` + CSRF). `approve` keeps each document's existing input schema.
+ */
+function approvalProcedures(type: ApprovalDocType, service: ApprovalFlowService, approveInput: z.ZodType<{ id: string; expectedVersion: number }>) {
+  return {
+    submit: permittedFor(type, canSubmit).use(withFieldErrors(submitInputSchema)).input(submitInputSchema)
+      .mutation(({ ctx, input }) => domainCall(() => service.submit(actorOf(ctx), input.id, input.expectedVersion))),
+    approve: permittedFor(type, canApprove).input(approveInput).mutation(({ ctx, input }) => domainCall(() => service.approve(ctx.userId, input.id, input.expectedVersion))),
+    reject: permittedFor(type, canApprove).use(withFieldErrors(rejectInputSchema)).input(rejectInputSchema)
+      .mutation(({ ctx, input }) => domainCall(() => service.reject(actorOf(ctx), input.id, input.expectedVersion, input.reason))),
+    requestRevision: permittedFor(type, canApprove).use(withFieldErrors(requestRevisionInputSchema)).input(requestRevisionInputSchema)
+      .mutation(({ ctx, input }) => domainCall(() => service.requestRevision(actorOf(ctx), input.id, input.expectedVersion, input.note))),
+  };
 }
 
 /** Read allowed with `action` on any of `menus` (currency SA-CUR-07: Quotation reads currency options). */
@@ -185,6 +284,7 @@ export type MasterServices = Pick<{
   stoneMaster: StoneMasterService;
   documentSetup: DocumentSetupService;
   decimalSetup: DecimalSetupService;
+  approvalSetting: ApprovalSettingService;
   currency: CurrencyService;
   quotation: QuotationService;
   memoOut: MemoOutService;
@@ -196,7 +296,8 @@ export type MasterServices = Pick<{
   reserve: ReserveService;
   purchaseOrder: PurchaseOrderService;
   purchase: PurchaseService;
-}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "decimalSetup" | "currency" | "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoStock" | "memoReturn" | "memoOutstanding" | "reserve" | "purchaseOrder" | "purchase">;
+  approval: ApprovalService;
+}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "decimalSetup" | "approvalSetting" | "currency" | "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoStock" | "memoReturn" | "memoOutstanding" | "reserve" | "purchaseOrder" | "purchase" | "approval">;
 
 function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
   const schemas = bodySchemasFor(kind);
@@ -213,7 +314,7 @@ function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
 }
 
 /** Direct service calls preserve IDs, transaction behavior and existing partner/stone schemas. */
-export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, decimalSetup, currency, quotation, memoOut, memoOutReturn, memoReceive, memoStock, memoReturn, memoOutstanding, reserve, purchaseOrder, purchase }: MasterServices) {
+export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, decimalSetup, approvalSetting, currency, quotation, memoOut, memoOutReturn, memoReceive, memoStock, memoReturn, memoOutstanding, reserve, purchaseOrder, purchase, approval }: MasterServices) {
   return t.router({
     customer: t.router({
       list: permitted("customer", "VIEW").input(listInput).query(({ input }) => domainCall(() => customer.list(toListQuery(input)))),
@@ -272,6 +373,26 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       save: permitted("decimal-setup", "EDIT", true).use(withFieldErrors(saveDecimalSetupBodySchema)).input(saveDecimalSetupBodySchema)
         .mutation(({ ctx, input }) => domainCall(() => decimalSetup.save(ctx.userId, input))),
     }),
+    // approval-setup SA rev 1 / ADR-0048 (owner 2026-11-10): per-type "require approval" switches. Every signed-in,
+    // licensed user reads them (document pages choose their buttons); waiting counts need approval-setup:VIEW;
+    // switching needs approval-setup:EDIT + CSRF.
+    approvalSetting: t.router({
+      list: signedIn().input(approvalSettingListSchema).query(({ ctx }) => domainCall(() => approvalSetting.list({
+        withCounts: ctx.principal !== null && hasMasterGrant(ctx.principal, "approval-setup", "VIEW"),
+      }))),
+      update: permitted("approval-setup", "EDIT", true).use(withFieldErrors(approvalSettingUpdateSchema)).input(approvalSettingUpdateSchema)
+        .mutation(({ ctx, input }) => domainCall(() => approvalSetting.update({ userId: ctx.userId, userName: ctx.userName }, input))),
+    }),
+    // approve-center SA rev 1 / ADR-0046 D14–D16 as amended by approval-setup ADR-0048: read-only Approve Center API.
+    // summary: live session, filtered to the types the caller canApprove (counts only for types whose setting is ON);
+    // pending: canApprove(type), type ON (else APPROVAL_TYPE_OFF). Approve / Reject / Revise stay per document router.
+    approval: t.router({
+      summary: signedIn().input(approvalSummaryInputSchema).query(({ ctx }) => domainCall(() => approval.summary(ctx.principal!))),
+      pending: approverOfInputType().use(withFieldErrors(approvalPendingInputSchema)).input(approvalPendingInputSchema).query(({ ctx, input }) => domainCall(() => {
+        if (!canApprove(ctx.principal!, input.type)) throw permissionDenied();
+        return approval.pending(input);
+      })),
+    }),
     // currency SA rev 1 (owner 2026-10-26): currency master; rates are against the Company Profile currency.
     currency: t.router({
       list: permitted("currency", "VIEW").input(listInput).query(({ input }) => domainCall(() => currency.list({ q: input.q, cursor: input.cursor, limit: input.limit }))),
@@ -285,21 +406,19 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       }),
       delete: permitted("currency", "DELETE", true).input(idInput).mutation(({ ctx, input }) => domainCall(() => currency.delete(ctx.userId, input.id))),
     }),
-    // quotation SA rev 1 / ADR-0032 (owner 2026-10-26). Quotation has no approval (owner 2026-10-26); the status procedures stay unused by the UI.
+    // quotation SA rev 1 / ADR-0032 (owner 2026-10-26); joins the approval flow with approval-setup ADR-0048 (setting OFF by default).
     quotation: t.router({
       list: permitted("quotation", "VIEW").input(quotationListSchema).query(({ input }) => domainCall(() => quotation.list(input))),
-      get: permitted("quotation", "VIEW").input(idInput).query(({ input }) => domainCall(() => quotation.get(input.id))),
+      get: viewOrApprover("quotation").input(idInput).query(({ ctx, input }) => domainCall(() => readForViewer(ctx.approverOnly, () => quotation.get(input.id, ctx.principal)))),
       nextNumber: permitted("quotation", "VIEW").input(nextNumberSchema).query(({ input }) => domainCall(() => quotation.nextNumber(input.docDate))),
       options: permitted("quotation", "VIEW").input(z.object({ customerId: z.uuid().optional() }).strict())
         .query(({ input }) => domainCall(() => quotation.options(input.customerId))),
-      create: permitted("quotation", "ADD", true).input(createQuotationSchema).mutation(({ ctx, input }) => domainCall(() => quotation.create(ctx.userId, input))),
+      create: permitted("quotation", "ADD", true).input(createQuotationSchema).mutation(({ ctx, input }) => domainCall(() => quotation.create(ctx.userId, input, ctx.principal))),
       update: permitted("quotation", "EDIT", true).input(updateQuotationSchema).mutation(({ ctx, input }) => {
         const { id, expectedVersion, ...body } = input;
-        return domainCall(() => quotation.update(ctx.userId, id, expectedVersion, body));
+        return domainCall(() => quotation.update(ctx.userId, id, expectedVersion, body, ctx.principal));
       }),
-      submit: permitted("quotation", "EDIT", true).input(versionedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.submit(ctx.userId, input.id, input.expectedVersion))),
-      approve: permitted("quotation", "APPROVE", true).input(versionedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.approve(ctx.userId, input.id, input.expectedVersion))),
-      reject: permitted("quotation", "APPROVE", true).input(reasonedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.reject(ctx.userId, input.id, input.expectedVersion, input.reason))),
+      ...approvalProcedures("quotation", quotation, versionedIdSchema),
       cancel: permitted("quotation", "CANCEL", true).input(reasonedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.cancel(ctx.userId, input.id, input.expectedVersion, input.reason))),
       delete: permitted("quotation", "DELETE", true).input(versionedIdSchema).mutation(({ ctx, input }) => domainCall(() => quotation.delete(ctx.userId, input.id, input.expectedVersion))),
       // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).
@@ -308,75 +427,75 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
     // memo-out / memo-out-return SA rev 1 / ADR-0033 (owner 2026-10-28): numbers from Document Setup, drafts only.
     memoOut: t.router({
       list: permitted("memo-out", "VIEW").input(memoOutListSchema).query(({ input }) => domainCall(() => memoOut.list(input))),
-      get: permitted("memo-out", "VIEW").input(idInput).query(({ input }) => domainCall(() => memoOut.get(input.id))),
+      get: viewOrApprover("memo-out").input(idInput).query(({ ctx, input }) => domainCall(() => readForViewer(ctx.approverOnly, () => memoOut.get(input.id, ctx.principal)))),
       nextNumber: permitted("memo-out", "VIEW").input(memoNextNumberSchema).query(({ input }) => domainCall(() => memoOut.nextNumber(input.docDate))),
       options: permitted("memo-out", "VIEW").input(z.object({ customerId: z.uuid().optional() }).strict())
         .query(({ input }) => domainCall(() => memoOut.options(input.customerId))),
-      create: permitted("memo-out", "ADD", true).input(createMemoOutSchema).mutation(({ ctx, input }) => domainCall(() => memoOut.create(ctx.userId, input))),
+      create: permitted("memo-out", "ADD", true).input(createMemoOutSchema).mutation(({ ctx, input }) => domainCall(() => memoOut.create(ctx.userId, input, ctx.principal))),
       update: permitted("memo-out", "EDIT", true).input(updateMemoOutSchema).mutation(({ ctx, input }) => {
         const { id, expectedVersion, ...body } = input;
-        return domainCall(() => memoOut.update(ctx.userId, id, expectedVersion, body));
+        return domainCall(() => memoOut.update(ctx.userId, id, expectedVersion, body, ctx.principal));
       }),
       delete: permitted("memo-out", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOut.delete(ctx.userId, input.id, input.expectedVersion))),
       // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).
       restore: permitted("memo-out", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOut.restore(ctx.userId, input.id, input.expectedVersion))),
       // memo-out SA rev 2 (SA-MO-14): approval cuts the stock lines into Memo Stock Reserve; APPROVE is checked on every call.
-      approve: permitted("memo-out", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOut.approve(ctx.userId, input.id, input.expectedVersion))),
+      ...approvalProcedures("memo-out", memoOut, memoVersionedIdSchema),
     }),
     // reserve SA rev 1 / ADR-0036 (owner 2026-11-02): holds stones for a later Sale; approval moves the stock lines into
     // Memo Stock Reserve (SA-RS-07). APPROVE is checked on every call.
     reserve: t.router({
       list: permitted("reserve", "VIEW").input(reserveListSchema).query(({ input }) => domainCall(() => reserve.list(input))),
-      get: permitted("reserve", "VIEW").input(idInput).query(({ input }) => domainCall(() => reserve.get(input.id))),
+      get: viewOrApprover("reserve").input(idInput).query(({ ctx, input }) => domainCall(() => readForViewer(ctx.approverOnly, () => reserve.get(input.id, ctx.principal)))),
       nextNumber: permitted("reserve", "VIEW").input(memoNextNumberSchema).query(({ input }) => domainCall(() => reserve.nextNumber(input.docDate))),
       options: permitted("reserve", "VIEW").input(z.object({ customerId: z.uuid().optional() }).strict())
         .query(({ input }) => domainCall(() => reserve.options(input.customerId))),
-      create: permitted("reserve", "ADD", true).input(createReserveSchema).mutation(({ ctx, input }) => domainCall(() => reserve.create(ctx.userId, input))),
+      create: permitted("reserve", "ADD", true).input(createReserveSchema).mutation(({ ctx, input }) => domainCall(() => reserve.create(ctx.userId, input, ctx.principal))),
       update: permitted("reserve", "EDIT", true).input(updateReserveSchema).mutation(({ ctx, input }) => {
         const { id, expectedVersion, ...body } = input;
-        return domainCall(() => reserve.update(ctx.userId, id, expectedVersion, body));
+        return domainCall(() => reserve.update(ctx.userId, id, expectedVersion, body, ctx.principal));
       }),
       delete: permitted("reserve", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => reserve.delete(ctx.userId, input.id, input.expectedVersion))),
       // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).
       restore: permitted("reserve", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => reserve.restore(ctx.userId, input.id, input.expectedVersion))),
-      approve: permitted("reserve", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => reserve.approve(ctx.userId, input.id, input.expectedVersion))),
+      ...approvalProcedures("reserve", reserve, memoVersionedIdSchema),
     }),
     memoOutReturn: t.router({
       list: permitted("memo-out-return", "VIEW").input(memoOutListSchema).query(({ input }) => domainCall(() => memoOutReturn.list(input))),
-      get: permitted("memo-out-return", "VIEW").input(idInput).query(({ input }) => domainCall(() => memoOutReturn.get(input.id))),
+      get: viewOrApprover("memo-out-return").input(idInput).query(({ ctx, input }) => domainCall(() => readForViewer(ctx.approverOnly, () => memoOutReturn.get(input.id, ctx.principal)))),
       nextNumber: permitted("memo-out-return", "VIEW").input(memoNextNumberSchema).query(({ input }) => domainCall(() => memoOutReturn.nextNumber(input.docDate))),
       options: permitted("memo-out-return", "VIEW").input(z.object({ customerId: z.uuid().optional() }).strict())
         .query(({ input }) => domainCall(() => memoOutReturn.options(input.customerId))),
       // memo-out-return SA rev 2 (SA-MOR-15): the Memo Outstanding dialog, the customer's open Memo Out From Stock lines.
       outstanding: permitted("memo-out-return", "VIEW").input(memoOutOutstandingSchema).query(({ input }) => domainCall(() => memoOutReturn.outstanding(input))),
-      create: permitted("memo-out-return", "ADD", true).input(createMemoOutReturnSchema).mutation(({ ctx, input }) => domainCall(() => memoOutReturn.create(ctx.userId, input))),
+      create: permitted("memo-out-return", "ADD", true).input(createMemoOutReturnSchema).mutation(({ ctx, input }) => domainCall(() => memoOutReturn.create(ctx.userId, input, ctx.principal))),
       update: permitted("memo-out-return", "EDIT", true).input(updateMemoOutReturnSchema).mutation(({ ctx, input }) => {
         const { id, expectedVersion, ...body } = input;
-        return domainCall(() => memoOutReturn.update(ctx.userId, id, expectedVersion, body));
+        return domainCall(() => memoOutReturn.update(ctx.userId, id, expectedVersion, body, ctx.principal));
       }),
       delete: permitted("memo-out-return", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOutReturn.delete(ctx.userId, input.id, input.expectedVersion))),
       // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).
       restore: permitted("memo-out-return", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOutReturn.restore(ctx.userId, input.id, input.expectedVersion))),
       // SA-MOR-17: approval adds to the Memo Out lines' returned and moves Memo Stock Reserve back to pending.
-      approve: permitted("memo-out-return", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoOutReturn.approve(ctx.userId, input.id, input.expectedVersion))),
+      ...approvalProcedures("memo-out-return", memoOutReturn, memoVersionedIdSchema),
     }),
     // memo-receive SA rev 1 / ADR-0034 (owner 2026-10-29): PENDING_APPROVAL → APPROVED; approval fills Memo Stock.
     memoReceive: t.router({
       list: permitted("memo-receive", "VIEW").input(memoReceiveListSchema).query(({ input }) => domainCall(() => memoReceive.list(input))),
-      get: permitted("memo-receive", "VIEW").input(idInput).query(({ input }) => domainCall(() => memoReceive.get(input.id))),
+      get: viewOrApprover("memo-receive").input(idInput).query(({ ctx, input }) => domainCall(() => readForViewer(ctx.approverOnly, () => memoReceive.get(input.id, ctx.principal)))),
       nextNumber: permitted("memo-receive", "VIEW").input(memoNextNumberSchema).query(({ input }) => domainCall(() => memoReceive.nextNumber(input.docDate))),
       options: permitted("memo-receive", "VIEW").input(z.object({ vendorId: z.uuid().optional() }).strict())
         .query(({ input }) => domainCall(() => memoReceive.options(input.vendorId))),
-      create: permitted("memo-receive", "ADD", true).input(createMemoReceiveSchema).mutation(({ ctx, input }) => domainCall(() => memoReceive.create(ctx.userId, input))),
+      create: permitted("memo-receive", "ADD", true).input(createMemoReceiveSchema).mutation(({ ctx, input }) => domainCall(() => memoReceive.create(ctx.userId, input, ctx.principal))),
       update: permitted("memo-receive", "EDIT", true).input(updateMemoReceiveSchema).mutation(({ ctx, input }) => {
         const { id, expectedVersion, ...body } = input;
-        return domainCall(() => memoReceive.update(ctx.userId, id, expectedVersion, body));
+        return domainCall(() => memoReceive.update(ctx.userId, id, expectedVersion, body, ctx.principal));
       }),
       delete: permitted("memo-receive", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoReceive.delete(ctx.userId, input.id, input.expectedVersion))),
       // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).
       restore: permitted("memo-receive", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoReceive.restore(ctx.userId, input.id, input.expectedVersion))),
       // The creator may approve (like quotation Q-QT-02); the server checks APPROVE on every call.
-      approve: permitted("memo-receive", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoReceive.approve(ctx.userId, input.id, input.expectedVersion))),
+      ...approvalProcedures("memo-receive", memoReceive, memoVersionedIdSchema),
     }),
     // Memo Stock list (SA-MR-11): Memo Return "Add Memo Stock" (its vendor) and Memo Out "From Stock" (every vendor, SA-MO-15).
     memoStock: t.router({
@@ -385,59 +504,59 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
     // memo-return SA rev 2 (owner 2026-10-29): Memo Stock items back to their vendor; approval reduces pending (Q-MR-15).
     memoReturn: t.router({
       list: permitted("memo-return", "VIEW").input(memoReturnListSchema).query(({ input }) => domainCall(() => memoReturn.list(input))),
-      get: permitted("memo-return", "VIEW").input(idInput).query(({ input }) => domainCall(() => memoReturn.get(input.id))),
+      get: viewOrApprover("memo-return").input(idInput).query(({ ctx, input }) => domainCall(() => readForViewer(ctx.approverOnly, () => memoReturn.get(input.id, ctx.principal)))),
       nextNumber: permitted("memo-return", "VIEW").input(memoNextNumberSchema).query(({ input }) => domainCall(() => memoReturn.nextNumber(input.docDate))),
       options: permitted("memo-return", "VIEW").input(z.object({ vendorId: z.uuid().optional() }).strict())
         .query(({ input }) => domainCall(() => memoReturn.options(input.vendorId))),
-      create: permitted("memo-return", "ADD", true).input(createMemoReturnSchema).mutation(({ ctx, input }) => domainCall(() => memoReturn.create(ctx.userId, input))),
+      create: permitted("memo-return", "ADD", true).input(createMemoReturnSchema).mutation(({ ctx, input }) => domainCall(() => memoReturn.create(ctx.userId, input, ctx.principal))),
       update: permitted("memo-return", "EDIT", true).input(updateMemoReturnSchema).mutation(({ ctx, input }) => {
         const { id, expectedVersion, ...body } = input;
-        return domainCall(() => memoReturn.update(ctx.userId, id, expectedVersion, body));
+        return domainCall(() => memoReturn.update(ctx.userId, id, expectedVersion, body, ctx.principal));
       }),
       delete: permitted("memo-return", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoReturn.delete(ctx.userId, input.id, input.expectedVersion))),
       // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).
       restore: permitted("memo-return", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoReturn.restore(ctx.userId, input.id, input.expectedVersion))),
-      approve: permitted("memo-return", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => memoReturn.approve(ctx.userId, input.id, input.expectedVersion))),
+      ...approvalProcedures("memo-return", memoReturn, memoVersionedIdSchema),
     }),
     // purchase-order SA rev 1 / ADR-0041 (owner 2026-11-04): keyed-in vendor document; Approve on the page sends its
     // lines to Purchase (no stock written). The creator may approve; the server checks APPROVE on every call.
     purchaseOrder: t.router({
       list: permitted("purchase-order", "VIEW").input(purchaseOrderListSchema).query(({ input }) => domainCall(() => purchaseOrder.list(input))),
-      get: permitted("purchase-order", "VIEW").input(idInput).query(({ input }) => domainCall(() => purchaseOrder.get(input.id))),
+      get: viewOrApprover("purchase-order").input(idInput).query(({ ctx, input }) => domainCall(() => readForViewer(ctx.approverOnly, () => purchaseOrder.get(input.id, ctx.principal)))),
       nextNumber: permitted("purchase-order", "VIEW").input(memoNextNumberSchema).query(({ input }) => domainCall(() => purchaseOrder.nextNumber(input.docDate))),
       options: permitted("purchase-order", "VIEW").input(z.object({ vendorId: z.uuid().optional() }).strict())
         .query(({ input }) => domainCall(() => purchaseOrder.options(input.vendorId))),
-      create: permitted("purchase-order", "ADD", true).input(createPurchaseOrderSchema).mutation(({ ctx, input }) => domainCall(() => purchaseOrder.create(ctx.userId, input))),
+      create: permitted("purchase-order", "ADD", true).input(createPurchaseOrderSchema).mutation(({ ctx, input }) => domainCall(() => purchaseOrder.create(ctx.userId, input, ctx.principal))),
       update: permitted("purchase-order", "EDIT", true).input(updatePurchaseOrderSchema).mutation(({ ctx, input }) => {
         const { id, expectedVersion, ...body } = input;
-        return domainCall(() => purchaseOrder.update(ctx.userId, id, expectedVersion, body));
+        return domainCall(() => purchaseOrder.update(ctx.userId, id, expectedVersion, body, ctx.principal));
       }),
       delete: permitted("purchase-order", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchaseOrder.delete(ctx.userId, input.id, input.expectedVersion))),
       // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).
       restore: permitted("purchase-order", "DELETE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchaseOrder.restore(ctx.userId, input.id, input.expectedVersion))),
-      approve: permitted("purchase-order", "APPROVE", true).input(memoVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchaseOrder.approve(ctx.userId, input.id, input.expectedVersion))),
+      ...approvalProcedures("purchase-order", purchaseOrder, memoVersionedIdSchema),
     }),
     // purchase SA rev 1 / ADR-0042 (owner 2026-11-04): Memo Stock / PO / manual lines; Save checks, Approve cuts the stock
     // (SA default D2). Grants per authorization.md; input is validated after the grant with contract field errors.
     purchase: t.router({
       list: permitted("purchase", "VIEW").use(withFieldErrors(purchaseListSchema)).input(purchaseListSchema).query(({ input }) => domainCall(() => purchase.list(input))),
-      get: permitted("purchase", "VIEW").input(idInput).query(({ input }) => domainCall(() => purchase.get(input.id))),
+      get: viewOrApprover("purchase").input(idInput).query(({ ctx, input }) => domainCall(() => readForViewer(ctx.approverOnly, () => purchase.get(input.id, ctx.principal)))),
       nextNumber: permitted("purchase", "VIEW").input(purchaseNextNumberSchema).query(({ input }) => domainCall(() => purchase.nextNumber(input.docDate))),
       options: permitted("purchase", "VIEW").input(purchaseOptionsSchema).query(({ input }) => domainCall(() => purchase.options(input.vendorId))),
       // SA-PU-12/13 pickers (D9: purchase:VIEW alone; memoStock.list is not opened to purchase).
       memoStock: permitted("purchase", "VIEW").use(withFieldErrors(purchaseMemoStockSchema)).input(purchaseMemoStockSchema).query(({ input }) => domainCall(() => purchase.memoStock(input))),
       purchaseOrderLines: permitted("purchase", "VIEW").use(withFieldErrors(purchaseOrderLinesSchema)).input(purchaseOrderLinesSchema)
         .query(({ input }) => domainCall(() => purchase.purchaseOrderLines(input))),
-      create: permitted("purchase", "ADD", true).use(withFieldErrors(createPurchaseSchema)).input(createPurchaseSchema).mutation(({ ctx, input }) => domainCall(() => purchase.create(ctx.userId, input))),
+      create: permitted("purchase", "ADD", true).use(withFieldErrors(createPurchaseSchema)).input(createPurchaseSchema).mutation(({ ctx, input }) => domainCall(() => purchase.create(ctx.userId, input, ctx.principal))),
       update: permitted("purchase", "EDIT", true).use(withFieldErrors(updatePurchaseSchema)).input(updatePurchaseSchema).mutation(({ ctx, input }) => {
         const { id, expectedVersion, ...body } = input;
-        return domainCall(() => purchase.update(ctx.userId, id, expectedVersion, body));
+        return domainCall(() => purchase.update(ctx.userId, id, expectedVersion, body, ctx.principal));
       }),
       delete: permitted("purchase", "DELETE", true).input(purchaseVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchase.delete(ctx.userId, input.id, input.expectedVersion))),
       // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).
       restore: permitted("purchase", "DELETE", true).use(withFieldErrors(purchaseVersionedIdSchema)).input(purchaseVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchase.restore(ctx.userId, input.id, input.expectedVersion))),
       // SA-PU-09: the stock cut; the creator may approve; APPROVE + CSRF on every call.
-      approve: permitted("purchase", "APPROVE", true).input(purchaseVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchase.approve(ctx.userId, input.id, input.expectedVersion))),
+      ...approvalProcedures("purchase", purchase, purchaseVersionedIdSchema),
     }),
     // Memo Outstanding From Vendor report (memo-outstanding-vendor SA-MOV-01/10): read-only, VIEW on its own menu.
     // Purchase Outstanding (purchase-outstanding SA-POS-05, ADR-0044): read-only, VIEW on its own menu.

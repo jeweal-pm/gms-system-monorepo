@@ -130,7 +130,7 @@ export function mapPurchaseSaveError(error: unknown): SaveOutcome {
       const all = [...short, ...lost, ...soldRules];
       return {
         fieldErrors: [...onRows(short, PURCHASE_AVAILABLE_SHORT), ...onRows(lost, "No longer available"), ...soldRuleRows],
-        message: `${all.length > 0 ? rowsText(all) : "Some rows"}: not enough is available any more. Lower the quantity or remove the row, then save and approve again.`,
+        message: `${all.length > 0 ? rowsText(all) : "Some rows"}: not enough is available any more. Lower the quantity or remove the row, then save again. Nothing was saved.`,
       };
     }
     case "VALIDATION_ERROR":
@@ -192,7 +192,7 @@ export function usePurchaseApi(vendorId: string | undefined, docDate: string, is
   const create = masterTrpc.purchase.create.useMutation(writes);
   const update = masterTrpc.purchase.update.useMutation(writes);
   const remove = masterTrpc.purchase.delete.useMutation(writes);
-  const approve = masterTrpc.purchase.approve.useMutation(writes);
+  const submit = masterTrpc.purchase.submit.useMutation(writes);
   const restore = masterTrpc.purchase.restore.useMutation(writes);
   return {
     options: options.data,
@@ -201,9 +201,9 @@ export function usePurchaseApi(vendorId: string | undefined, docDate: string, is
     create: (input) => create.mutateAsync(input),
     update: (args) => update.mutateAsync(args),
     remove: (args) => remove.mutateAsync(args),
-    approve: (args) => approve.mutateAsync(args),
+    submit: (args) => submit.mutateAsync(args),
     restore: (args) => restore.mutateAsync(args),
     invalidate: () => invalidateAfterPurchaseWrite(utils),
-    busy: create.isPending || update.isPending || remove.isPending || approve.isPending || restore.isPending,
+    busy: create.isPending || update.isPending || remove.isPending || submit.isPending || restore.isPending,
   };
 }

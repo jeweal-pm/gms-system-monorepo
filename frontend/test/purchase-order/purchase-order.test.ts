@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ComponentProps, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -15,9 +17,9 @@ import {
   type PurchaseOrderDetail,
   type PurchaseOrderOptions,
 } from "@/features/purchase-order/api";
-import { approveMessage, canApprovePurchaseOrder, PURCHASE_ORDER_HREF, purchaseOrderHref, STATUS_LABELS } from "@/features/purchase-order/components/PurchaseOrderForm";
+import { PURCHASE_ORDER_HREF, purchaseOrderHref, STATUS_LABELS } from "@/features/purchase-order/components/PurchaseOrderForm";
 import { emptyPurchaseOrder, PURCHASE_ORDER_KIND } from "@/features/purchase-order/defaults";
-import { isEditablePurchaseOrder, purchaseOrderSchema, type PurchaseOrderFormValues } from "@/features/purchase-order/schema";
+import { purchaseOrderSchema, type PurchaseOrderFormValues } from "@/features/purchase-order/schema";
 import { ItemEditorPanel } from "@/features/quotation/components/items/ItemEditorPanel";
 import { ItemTable, itemColumns } from "@/features/quotation/components/items/ItemTable";
 import { DocumentKindContext, QUOTATION_KIND, type DocumentKind } from "@/features/quotation/document-kind";
@@ -129,19 +131,13 @@ describe("UT-PO-02 page setting: keyed-in rows, Stone Code, typed Location, no S
 });
 
 describe("UT-PO-03 Approve and form ↔ contract", () => {
-  it("Approve only for a saved Pending Approval PO with no unsaved changes and the grant; Approved is read-only", () => {
-    const base = { saved: true, status: "PENDING_APPROVAL" as const, editing: false, dirty: false, approve: true };
-    expect(canApprovePurchaseOrder(base)).toBe(true);
-    expect(canApprovePurchaseOrder({ ...base, saved: false })).toBe(false);
-    expect(canApprovePurchaseOrder({ ...base, editing: true })).toBe(false);
-    expect(canApprovePurchaseOrder({ ...base, dirty: true })).toBe(false);
-    expect(canApprovePurchaseOrder({ ...base, approve: false })).toBe(false);
-    expect(canApprovePurchaseOrder({ ...base, status: "APPROVED" })).toBe(false);
-    expect(isEditablePurchaseOrder("PENDING_APPROVAL")).toBe(true);
-    expect(isEditablePurchaseOrder("APPROVED")).toBe(false);
+  it("ADR-0048: no Approve button on the PO page; badges cover Draft / Revise", () => {
     expect(STATUS_LABELS.APPROVED?.label).toBe("Approved");
-    expect(approveMessage(2)).toBe("Approve this Purchase Order? Its 2 items are sent to Purchase and it can no longer be edited.");
-    expect(approveMessage(1)).toContain("Its 1 item is sent");
+    expect(STATUS_LABELS.DRAFT?.label).toBe("Draft");
+    expect(STATUS_LABELS.REVISION_REQUESTED?.label).toBe("Revise");
+    const src = readFileSync(join(process.cwd(), "src/features/purchase-order/components/PurchaseOrderForm.tsx"), "utf8");
+    expect(src).not.toMatch(/writes\.approve|> Approve</);
+    expect(src).toContain("extraActions={approvalFlow.sendButton}");
   });
 
   it("sends keyed-in MANUAL lines with stone code, location and photos, never From Stock fields; empty rows dropped", () => {

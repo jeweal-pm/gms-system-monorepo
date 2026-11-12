@@ -68,7 +68,7 @@ describe("IT-MAUTH-07 mounted Express tRPC adapter", () => {
     const currency = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as unknown as CurrencyService;
     const decimalSetup = { get: vi.fn(async () => ({ setup: { weightPlaces: 2, pricePlaces: 2, version: 1, updatedAt: "2026-11-03T02:00:00.000Z", updatedBy: null } })), save: vi.fn() } as unknown as DecimalSetupService;
     const purchase = { purchaseOrderLines: vi.fn(async () => ({ items: [], nextCursor: null, counts: { all: 0, open: 0, partlyPurchased: 0 } })) } as unknown as PurchaseService;
-    const handler = new MasterTrpcHandler(customer, vendor, companyProfile, stoneMaster, authz, license, documentSetup, currency, {} as unknown as QuotationService, {} as unknown as MemoOutService, {} as unknown as MemoOutReturnService, {} as unknown as MemoReceiveService, {} as unknown as MemoStockService, {} as unknown as MemoReturnService, {} as unknown as MemoOutstandingService, {} as unknown as ReserveService, decimalSetup, {} as never, purchase);
+    const handler = new MasterTrpcHandler(customer, vendor, companyProfile, stoneMaster, authz, license, documentSetup, currency, {} as unknown as QuotationService, {} as unknown as MemoOutService, {} as unknown as MemoOutReturnService, {} as unknown as MemoReceiveService, {} as unknown as MemoStockService, {} as unknown as MemoReturnService, {} as unknown as MemoOutstandingService, {} as unknown as ReserveService, decimalSetup, {} as never, purchase, {} as never, {} as never);
     const app = express();
     app.use(express.json({ limit: "256kb" }));
     app.use("/api/master/trpc", handler.handle.bind(handler));

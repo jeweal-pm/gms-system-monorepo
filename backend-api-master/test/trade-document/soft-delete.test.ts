@@ -109,47 +109,58 @@ beforeEach(() => {
   Object.assign(db, { stored: null, writeCount: 1, returned: [{ docNo: "D-1", status: "PENDING_APPROVAL" }], rows: [], calls: [] });
 });
 
-describe("soft delete (D4)", () => {
-  it.each(documents)("UT-SD-01 $name delete is one guarded updateManyAndReturn (never deleteMany) and returns the new version", async ({ service, model }) => {
+const draftRow = (patch: Row = {}) => ({ docNo: "D-1", status: "DRAFT", autoApproved: false, revisionCount: 0, version: 3, deletedAt: null, ...patch });
+
+describe("soft delete (D4, as amended by ADR-0048)", () => {
+  it.each(documents)("UT-SD-01 $name delete of a DRAFT: a guarded header lock, then one update setting deleted_at / by (never deleteMany)", async ({ service, model }) => {
+    db.stored = draftRow();
     await expect(service.delete("actor", DOC, 3)).resolves.toEqual({ ok: true, version: 4 });
     expect(db.calls.filter((call) => call.op === "deleteMany")).toHaveLength(0);
-    const [write] = callsOf("updateManyAndReturn");
-    expect(write).toMatchObject({
+    const [lock] = callsOf("updateMany");
+    expect(lock).toMatchObject({
       model,
-      args: {
-        where: { id: DOC, version: 3, status: { in: ["PENDING_APPROVAL"] }, deletedAt: null },
-        data: { deletedBy: "actor", version: { increment: 1 }, updatedBy: "actor" },
-      },
+      args: { where: { id: DOC, version: 3, status: { in: ["DRAFT", "REVISION_REQUESTED", "APPROVED"] }, deletedAt: null }, data: { version: { increment: 1 }, updatedBy: "actor" } },
     });
+    const [write] = callsOf("update");
+    expect(write).toMatchObject({ model, args: { where: { id: DOC }, data: { deletedBy: "actor" } } });
     const data = write.args.data as Row;
     expect(data.deletedAt).toBeInstanceOf(Date);
-    expect(data.updatedAt).toEqual(data.deletedAt);
+    expect((lock.args.data as Row).updatedAt).toEqual(data.deletedAt);
     expect(data).not.toHaveProperty("status");
   });
 
-  it.each(documents)("UT-SD-02 $name delete miss order: missing → NOT_FOUND, deleted → DELETED, APPROVED → STATUS_INVALID, else CHANGED", async ({ service, code }) => {
+  it.each(documents)("UT-SD-02 $name delete miss order: missing → NOT_FOUND, deleted → DELETED, PENDING / reviewed APPROVED → STATUS_INVALID, else CHANGED", async ({ service, code }) => {
     db.writeCount = 0;
     db.stored = null;
     expect(await failure(service.delete("a", DOC, 1))).toEqual({ status: 404, code: `${code}_NOT_FOUND` });
-    db.stored = { status: "PENDING_APPROVAL", version: 2, deletedAt: new Date() };
+    db.stored = { status: "DRAFT", version: 2, deletedAt: new Date() };
     expect(await failure(service.delete("a", DOC, 1))).toEqual({ status: 409, code: `${code}_DELETED` });
-    db.stored = { status: "APPROVED", version: 1, deletedAt: null };
+    db.stored = { status: "APPROVED", autoApproved: false, version: 1, deletedAt: null };
     expect(await failure(service.delete("a", DOC, 1))).toEqual({ status: 409, code: `${code}_STATUS_INVALID` });
-    db.stored = { status: "PENDING_APPROVAL", version: 5, deletedAt: null };
+    db.stored = { status: "PENDING_APPROVAL", version: 1, deletedAt: null };
+    expect(await failure(service.delete("a", DOC, 1))).toEqual({ status: 409, code: `${code}_STATUS_INVALID` });
+    db.stored = { status: "DRAFT", version: 5, deletedAt: null };
     expect(await failure(service.delete("a", DOC, 1))).toEqual({ status: 409, code: `${code}_CHANGED` });
     expect(callsOf("findUnique")[0].args).toMatchObject({ where: { id: DOC }, select: { status: true, version: true, deletedAt: true } });
+    // A reviewed APPROVED document that passes the lock is still refused (only an auto-approved one is deletable).
+    db.writeCount = 1;
+    db.stored = draftRow({ status: "APPROVED", autoApproved: false });
+    expect(await failure(service.delete("a", DOC, 3))).toEqual({ status: 409, code: `${code}_STATUS_INVALID` });
   });
 });
 
 describe("restore (D6)", () => {
-  it.each(documents)("UT-SD-03 $name restore clears both columns under {id, version, deleted}, keeps the status; misses explain", async ({ service, model, code }) => {
-    await expect(service.restore("restorer", DOC, 4)).resolves.toEqual({ id: DOC, version: 5, status: "PENDING_APPROVAL" });
-    const [write] = callsOf("updateManyAndReturn");
+  it.each(documents)("UT-SD-03 $name restore clears both columns under {id, version, deleted}; approval ON → DRAFT with submitted_* cleared (G3); misses explain", async ({ service, model, code }) => {
+    db.stored = draftRow({ status: "PENDING_APPROVAL" });
+    await expect(service.restore("restorer", DOC, 4)).resolves.toEqual({ id: DOC, version: 5, status: "DRAFT" });
+    // The setting is read FOR SHARE first (the fake returns no row → approval ON).
+    expect(db.calls[0]).toMatchObject({ op: "$queryRaw" });
+    const [write] = callsOf("updateMany");
     expect(write).toMatchObject({
       model,
       args: { where: { id: DOC, version: 4, deletedAt: { not: null } }, data: { deletedAt: null, deletedBy: null, version: { increment: 1 }, updatedBy: "restorer" } },
     });
-    expect(write.args.data).not.toHaveProperty("status");
+    expect(callsOf("update")[0]).toMatchObject({ model, args: { where: { id: DOC }, data: { status: "DRAFT", autoApproved: false, approvedAt: null, submittedAt: null, submittedBy: null, submittedByName: null } } });
     db.writeCount = 0;
     db.stored = null;
     expect(await failure(service.restore("a", DOC, 4))).toEqual({ status: 404, code: `${code}_NOT_FOUND` });
@@ -189,9 +200,12 @@ describe("list and get (D9, D10)", () => {
 
 describe("writes on a deleted document (D8)", () => {
   it.each(documents)("UT-SD-06 $name update on a deleted row → DELETED before STATUS_INVALID / CHANGED; nothing written", async ({ service, code }) => {
+    db.writeCount = 0;
     db.stored = { status: "APPROVED", version: 9, deletedAt: new Date(), lines: [] };
     expect(await failure((service.update as (a: string, i: string, v: number, input: unknown) => Promise<unknown>)("a", DOC, 1, {}))).toEqual({ status: 409, code: `${code}_DELETED` });
-    expect(callsOf("updateMany")).toHaveLength(0);
+    // Only the guarded header lock ran (it matched nothing); no line, charge or header write.
+    expect(callsOf("updateMany")).toHaveLength(1);
+    expect(callsOf("update")).toHaveLength(0);
     expect(callsOf("deleteMany")).toHaveLength(0);
     expect(callsOf("createMany")).toHaveLength(0);
   });
@@ -257,12 +271,13 @@ describe("helpers, schemas, messages, logs", () => {
     const log = vi.spyOn(Logger.prototype, "log");
     try {
       const purchase = new PurchaseService();
+      db.stored = draftRow();
       await purchase.delete("actor", DOC, 1);
-      db.returned = [{ docNo: "PU-7", status: "PENDING_APPROVAL" }];
+      db.stored = draftRow({ docNo: "PU-7" });
       await purchase.restore("restorer", DOC, 2);
       expect(log.mock.calls.map(([entry]) => entry)).toEqual([
-        { event: "purchase.deleted", actorId: "actor", id: DOC, docNo: "D-1", version: 2 },
-        { event: "purchase.restored", actorId: "restorer", id: DOC, docNo: "PU-7", version: 3 },
+        { event: "purchase.deleted", actorId: "actor", id: DOC, docNo: "D-1", version: 2, reversed: false },
+        { event: "purchase.restored", actorId: "restorer", id: DOC, docNo: "PU-7", version: 3, status: "DRAFT" },
       ]);
     } finally {
       log.mockRestore();

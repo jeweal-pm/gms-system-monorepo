@@ -1,5 +1,8 @@
 "use client";
 
+import { useApprovalSetting } from "@/features/trade-document/approval-flow";
+import { flowOf } from "@/features/trade-document/flow-status";
+
 import { customerStockConfig } from "@/features/trade-document/customer-stock-config";
 import { daybookLoadError, daybookState, deletedInfo, DocumentDaybook, documentAccess, useDocumentAccess } from "@/features/trade-document/document-api";
 import { DocumentForm } from "@/features/trade-document/document-form";
@@ -14,8 +17,10 @@ export function canViewReserve(mine: Parameters<typeof documentAccess>[0]): bool
 
 function ReserveDaybook() {
   const daybook = useReserveDaybook();
+  const { requireApproval } = useApprovalSetting("reserve");
   return (
     <DocumentDaybook
+      requireApproval={requireApproval}
       plural="reserves"
       href={reserveHref}
       state={daybookState(daybook, (error) => daybookLoadError(error, "reserves"), (item) => String(item.customerName ?? ""))}
@@ -38,8 +43,7 @@ const CONFIG = customerStockConfig({
   mapSaveError: mapReserveSaveError,
   mapRestoreError: reserveRestoreError,
   pickerTitle: "Add From Stock",
-  approvedStock: "held for the customer",
-  noStock: "held",
+  approvalType: "reserve",
   notePlaceholder: "e.g. Held until the due date. 50% deposit, balance before delivery.",
   noteHint: "Printed on the reserve for the customer",
   daybook: <ReserveDaybook />,
@@ -53,7 +57,7 @@ export function ReservePage() {
   const access = useDocumentAccess("reserve");
   if (!access) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{DENIED}</p>;
-  return <DocumentForm config={CONFIG} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
+  return <DocumentForm config={CONFIG} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} />;
 }
 
 /** `/pre-sale/reserve/[id]` — a saved reserve. */
@@ -63,5 +67,5 @@ export function EditReservePage({ id }: { id: string }) {
   if (!access || (access.view && detail.isPending)) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{DENIED}</p>;
   if (detail.isError || !detail.data) return <p className={message}>{detail.error ? reserveLoadError(detail.error) : "Reserve not found."}</p>;
-  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromReserve(detail.data)} deleted={deletedInfo(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
+  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromReserve(detail.data)} deleted={deletedInfo(detail.data)} flow={flowOf(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} />;
 }

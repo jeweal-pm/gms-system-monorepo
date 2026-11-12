@@ -24,6 +24,8 @@ const STATUS_LABEL: StatusLabels = {
   CANCELLED: { label: "Cancelled", tone: "bg-[#EEF0F2] text-[#6B7480] line-through" },
 };
 
+const NOTE_TONE = { warning: "text-[#B45309]", danger: "text-[#B42318]", muted: "text-[#6B7480]" } as const;
+
 export function QuotationHeader({
   docNo,
   isPreview,
@@ -43,6 +45,7 @@ export function QuotationHeader({
   extraActions,
   hideEditDelete = false,
   hideDelete = false,
+  statusNote,
 }: {
   docNo: string;
   isPreview: boolean;
@@ -67,6 +70,8 @@ export function QuotationHeader({
   hideEditDelete?: boolean;
   /** Hides only Delete (a Quotation past approval can't be deleted, transaction-soft-delete OQ-1). */
   hideDelete?: boolean;
+  /** approval-setup FE-AS-010: the Revise / Reject reason or why the document is read-only, under the badge. */
+  statusNote?: { text: string; tone: "warning" | "danger" | "muted" } | null;
 }) {
   const editing = mode === "edit";
   const badge = status ? statusLabels[status] : undefined;
@@ -85,7 +90,10 @@ export function QuotationHeader({
           </IconButton>
         </div>
         {isPreview && <p className="mt-1 text-xs text-[#6B7480]">{previewNote}</p>}
-        {statusReason && (status === "REJECTED" || status === "CANCELLED") && (
+        {statusNote && (
+          <p className={cx("mt-1 max-w-xl text-xs break-words", NOTE_TONE[statusNote.tone])}>{statusNote.text}</p>
+        )}
+        {!statusNote && statusReason && (status === "REJECTED" || status === "CANCELLED") && (
           <p className="mt-1 max-w-xl text-xs break-words text-[#B42318]">Reason: {statusReason}</p>
         )}
       </div>

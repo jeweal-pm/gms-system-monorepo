@@ -427,6 +427,21 @@ model DocumentSetup {
 /// Decimal Setup (decimal-setup SA rev 1, ADR-0040): one global row; display/entry places for weight and price.
 /// CHECKs (id = 1, version >= 1) live in migration 20261103090000_decimal_setup; weight/price 0..4 (owner Q-DEC-08)
 /// in 20261103120000_decimal_setup_places_max_4.
+/// approval-setup SA rev 1 / ADR-0048: per-type "require approval" switch (11 seeded rows, CHECK on the key).
+/// Read FOR SHARE by every create / update / submit of its type; updated FOR UPDATE with the turn-OFF guard.
+model ApprovalSetting {
+  type            String   @id @db.VarChar(32)
+  requireApproval Boolean  @map("require_approval")
+  version         Int      @default(1)
+  updatedAt       DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+  /// null = seeded by the migration.
+  updatedBy       String?  @map("updated_by") @db.VarChar(64)
+  updatedByName   String?  @map("updated_by_name") @db.VarChar(200)
+
+  @@map("approval_setting")
+  @@schema("partner")
+}
+
 model DecimalSetup {
   id           Int      @id @default(1) @db.SmallInt
   weightPlaces Int      @default(2) @map("weight_places") @db.SmallInt
@@ -516,6 +531,25 @@ model Quotation {
   approvedBy              String?            @map("approved_by") @db.VarChar(64)
   deletedAt               DateTime?          @map("deleted_at") @db.Timestamp(3)
   deletedBy               String?            @map("deleted_by") @db.VarChar(64)
+  /// ADR-0046 D4 / ADR-0048: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
+  submittedAt             DateTime?          @map("submitted_at") @db.Timestamp(3)
+  submittedBy             String?            @map("submitted_by") @db.VarChar(64)
+  /// Actor name snapshot from auth.current_authorization.user_name (ADR-0046 D5).
+  submittedByName         String?            @map("submitted_by_name") @db.VarChar(200)
+  /// ADR-0046 D3: latest Reject / Revise (REJECT | REVISE), note 1..500; all five null or all set (CHECK <t>_review_check).
+  reviewAction            String?            @map("review_action") @db.VarChar(10)
+  reviewNote              String?            @map("review_note") @db.VarChar(500)
+  reviewedAt              DateTime?          @map("reviewed_at") @db.Timestamp(3)
+  reviewedBy              String?            @map("reviewed_by") @db.VarChar(64)
+  reviewedByName          String?            @map("reviewed_by_name") @db.VarChar(200)
+  /// ADR-0046 D17: header totals written on every create / update from the stored lines.
+  lineCount               Int                @map("line_count") @db.SmallInt
+  totalPcs                Int                @map("total_pcs")
+  totalWeightCt           Decimal            @map("total_weight_ct") @db.Decimal(15, 3)
+  /// ADR-0048: APPROVED by Save while approval was OFF (editable / deletable until used).
+  autoApproved            Boolean            @default(false) @map("auto_approved")
+  /// ADR-0048: Revise is allowed once (0..1).
+  revisionCount           Int                @default(0) @map("revision_count") @db.SmallInt
   numbering               DocumentNumbering? @relation(fields: [numberingId], references: [id], onDelete: Restrict)
   customer                Customer           @relation(fields: [customerId], references: [id], onDelete: Restrict)
   shippingAddress         CustomerAddress?   @relation("QuotationShippingAddress", fields: [shippingAddressId], references: [id], onDelete: SetNull)
@@ -532,6 +566,10 @@ model Quotation {
   @@index([invoiceAddressId], map: "quotation_invoice_address_idx")
   /// ADR-0045 D12: only deleted drafts (the Deleted list view).
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "quotation_deleted_list_idx")
+  /// ADR-0046 D18: the Approve queue (summary counts, pending default sort).
+  @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "quotation_pending_idx")
+  /// ADR-0048: sent-back documents (turn-OFF guard, Setup counts).
+  @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "quotation_revision_idx")
   @@map("quotation")
   @@schema("partner")
 }
@@ -670,6 +708,25 @@ model MemoOut {
   approvedBy              String?            @map("approved_by") @db.VarChar(64)
   deletedAt               DateTime?          @map("deleted_at") @db.Timestamp(3)
   deletedBy               String?            @map("deleted_by") @db.VarChar(64)
+  /// ADR-0046 D4 / ADR-0048: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
+  submittedAt             DateTime?          @map("submitted_at") @db.Timestamp(3)
+  submittedBy             String?            @map("submitted_by") @db.VarChar(64)
+  /// Actor name snapshot from auth.current_authorization.user_name (ADR-0046 D5).
+  submittedByName         String?            @map("submitted_by_name") @db.VarChar(200)
+  /// ADR-0046 D3: latest Reject / Revise (REJECT | REVISE), note 1..500; all five null or all set (CHECK <t>_review_check).
+  reviewAction            String?            @map("review_action") @db.VarChar(10)
+  reviewNote              String?            @map("review_note") @db.VarChar(500)
+  reviewedAt              DateTime?          @map("reviewed_at") @db.Timestamp(3)
+  reviewedBy              String?            @map("reviewed_by") @db.VarChar(64)
+  reviewedByName          String?            @map("reviewed_by_name") @db.VarChar(200)
+  /// ADR-0046 D17: header totals written on every create / update from the stored lines.
+  lineCount               Int                @map("line_count") @db.SmallInt
+  totalPcs                Int                @map("total_pcs")
+  totalWeightCt           Decimal            @map("total_weight_ct") @db.Decimal(15, 3)
+  /// ADR-0048: APPROVED by Save while approval was OFF (editable / deletable until used).
+  autoApproved            Boolean            @default(false) @map("auto_approved")
+  /// ADR-0048: Revise is allowed once (0..1).
+  revisionCount           Int                @default(0) @map("revision_count") @db.SmallInt
   version                 Int                @default(1)
   createdAt               DateTime           @default(now()) @map("created_at") @db.Timestamp(3)
   createdBy               String             @map("created_by") @db.VarChar(64)
@@ -691,6 +748,10 @@ model MemoOut {
   @@index([invoiceAddressId], map: "memo_out_invoice_address_idx")
   /// ADR-0045 D12: only deleted drafts (the Deleted list view).
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "memo_out_deleted_list_idx")
+  /// ADR-0046 D18: the Approve queue (summary counts, pending default sort).
+  @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "memo_out_pending_idx")
+  /// ADR-0048: sent-back documents (turn-OFF guard, Setup counts).
+  @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "memo_out_revision_idx")
   @@map("memo_out")
   @@schema("partner")
 }
@@ -797,6 +858,25 @@ model MemoOutReturn {
   approvedBy              String?               @map("approved_by") @db.VarChar(64)
   deletedAt               DateTime?             @map("deleted_at") @db.Timestamp(3)
   deletedBy               String?               @map("deleted_by") @db.VarChar(64)
+  /// ADR-0046 D4 / ADR-0048: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
+  submittedAt             DateTime?             @map("submitted_at") @db.Timestamp(3)
+  submittedBy             String?               @map("submitted_by") @db.VarChar(64)
+  /// Actor name snapshot from auth.current_authorization.user_name (ADR-0046 D5).
+  submittedByName         String?               @map("submitted_by_name") @db.VarChar(200)
+  /// ADR-0046 D3: latest Reject / Revise (REJECT | REVISE), note 1..500; all five null or all set (CHECK <t>_review_check).
+  reviewAction            String?               @map("review_action") @db.VarChar(10)
+  reviewNote              String?               @map("review_note") @db.VarChar(500)
+  reviewedAt              DateTime?             @map("reviewed_at") @db.Timestamp(3)
+  reviewedBy              String?               @map("reviewed_by") @db.VarChar(64)
+  reviewedByName          String?               @map("reviewed_by_name") @db.VarChar(200)
+  /// ADR-0046 D17: header totals written on every create / update from the stored lines.
+  lineCount               Int                   @map("line_count") @db.SmallInt
+  totalPcs                Int                   @map("total_pcs")
+  totalWeightCt           Decimal               @map("total_weight_ct") @db.Decimal(15, 3)
+  /// ADR-0048: APPROVED by Save while approval was OFF (editable / deletable until used).
+  autoApproved            Boolean               @default(false) @map("auto_approved")
+  /// ADR-0048: Revise is allowed once (0..1).
+  revisionCount           Int                   @default(0) @map("revision_count") @db.SmallInt
   version                 Int                   @default(1)
   createdAt               DateTime              @default(now()) @map("created_at") @db.Timestamp(3)
   createdBy               String                @map("created_by") @db.VarChar(64)
@@ -818,6 +898,10 @@ model MemoOutReturn {
   @@index([invoiceAddressId], map: "memo_out_return_invoice_address_idx")
   /// ADR-0045 D12: only deleted drafts (the Deleted list view).
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "memo_out_return_deleted_list_idx")
+  /// ADR-0046 D18: the Approve queue (summary counts, pending default sort).
+  @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "memo_out_return_pending_idx")
+  /// ADR-0048: sent-back documents (turn-OFF guard, Setup counts).
+  @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "memo_out_return_revision_idx")
   @@map("memo_out_return")
   @@schema("partner")
 }
@@ -920,6 +1004,25 @@ model MemoReceive {
   approvedBy         String?             @map("approved_by") @db.VarChar(64)
   deletedAt          DateTime?           @map("deleted_at") @db.Timestamp(3)
   deletedBy          String?             @map("deleted_by") @db.VarChar(64)
+  /// ADR-0046 D4 / ADR-0048: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
+  submittedAt        DateTime?           @map("submitted_at") @db.Timestamp(3)
+  submittedBy        String?             @map("submitted_by") @db.VarChar(64)
+  /// Actor name snapshot from auth.current_authorization.user_name (ADR-0046 D5).
+  submittedByName    String?             @map("submitted_by_name") @db.VarChar(200)
+  /// ADR-0046 D3: latest Reject / Revise (REJECT | REVISE), note 1..500; all five null or all set (CHECK <t>_review_check).
+  reviewAction       String?             @map("review_action") @db.VarChar(10)
+  reviewNote         String?             @map("review_note") @db.VarChar(500)
+  reviewedAt         DateTime?           @map("reviewed_at") @db.Timestamp(3)
+  reviewedBy         String?             @map("reviewed_by") @db.VarChar(64)
+  reviewedByName     String?             @map("reviewed_by_name") @db.VarChar(200)
+  /// ADR-0046 D17: header totals written on every create / update from the stored lines.
+  lineCount          Int                 @map("line_count") @db.SmallInt
+  totalPcs           Int                 @map("total_pcs")
+  totalWeightCt      Decimal             @map("total_weight_ct") @db.Decimal(15, 3)
+  /// ADR-0048: APPROVED by Save while approval was OFF (editable / deletable until used).
+  autoApproved       Boolean             @default(false) @map("auto_approved")
+  /// ADR-0048: Revise is allowed once (0..1).
+  revisionCount      Int                 @default(0) @map("revision_count") @db.SmallInt
   version            Int                 @default(1)
   createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamp(3)
   createdBy          String              @map("created_by") @db.VarChar(64)
@@ -940,6 +1043,10 @@ model MemoReceive {
   @@index([addressId], map: "memo_receive_address_idx")
   /// ADR-0045 D12: only deleted drafts (the Deleted list view).
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "memo_receive_deleted_list_idx")
+  /// ADR-0046 D18: the Approve queue (summary counts, pending default sort).
+  @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "memo_receive_pending_idx")
+  /// ADR-0048: sent-back documents (turn-OFF guard, Setup counts).
+  @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "memo_receive_revision_idx")
   @@map("memo_receive")
   @@schema("partner")
 }
@@ -1127,6 +1234,25 @@ model MemoReturn {
   approvedBy         String?            @map("approved_by") @db.VarChar(64)
   deletedAt          DateTime?          @map("deleted_at") @db.Timestamp(3)
   deletedBy          String?            @map("deleted_by") @db.VarChar(64)
+  /// ADR-0046 D4 / ADR-0048: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
+  submittedAt        DateTime?          @map("submitted_at") @db.Timestamp(3)
+  submittedBy        String?            @map("submitted_by") @db.VarChar(64)
+  /// Actor name snapshot from auth.current_authorization.user_name (ADR-0046 D5).
+  submittedByName    String?            @map("submitted_by_name") @db.VarChar(200)
+  /// ADR-0046 D3: latest Reject / Revise (REJECT | REVISE), note 1..500; all five null or all set (CHECK <t>_review_check).
+  reviewAction       String?            @map("review_action") @db.VarChar(10)
+  reviewNote         String?            @map("review_note") @db.VarChar(500)
+  reviewedAt         DateTime?          @map("reviewed_at") @db.Timestamp(3)
+  reviewedBy         String?            @map("reviewed_by") @db.VarChar(64)
+  reviewedByName     String?            @map("reviewed_by_name") @db.VarChar(200)
+  /// ADR-0046 D17: header totals written on every create / update from the stored lines.
+  lineCount          Int                @map("line_count") @db.SmallInt
+  totalPcs           Int                @map("total_pcs")
+  totalWeightCt      Decimal            @map("total_weight_ct") @db.Decimal(15, 3)
+  /// ADR-0048: APPROVED by Save while approval was OFF (editable / deletable until used).
+  autoApproved       Boolean            @default(false) @map("auto_approved")
+  /// ADR-0048: Revise is allowed once (0..1).
+  revisionCount      Int                @default(0) @map("revision_count") @db.SmallInt
   version            Int                @default(1)
   createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamp(3)
   createdBy          String             @map("created_by") @db.VarChar(64)
@@ -1146,6 +1272,10 @@ model MemoReturn {
   @@index([addressId], map: "memo_return_address_idx")
   /// ADR-0045 D12: only deleted drafts (the Deleted list view).
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "memo_return_deleted_list_idx")
+  /// ADR-0046 D18: the Approve queue (summary counts, pending default sort).
+  @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "memo_return_pending_idx")
+  /// ADR-0048: sent-back documents (turn-OFF guard, Setup counts).
+  @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "memo_return_revision_idx")
   @@map("memo_return")
   @@schema("partner")
 }
@@ -1249,6 +1379,25 @@ model Reserve {
   approvedBy              String?            @map("approved_by") @db.VarChar(64)
   deletedAt               DateTime?          @map("deleted_at") @db.Timestamp(3)
   deletedBy               String?            @map("deleted_by") @db.VarChar(64)
+  /// ADR-0046 D4 / ADR-0048: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
+  submittedAt             DateTime?          @map("submitted_at") @db.Timestamp(3)
+  submittedBy             String?            @map("submitted_by") @db.VarChar(64)
+  /// Actor name snapshot from auth.current_authorization.user_name (ADR-0046 D5).
+  submittedByName         String?            @map("submitted_by_name") @db.VarChar(200)
+  /// ADR-0046 D3: latest Reject / Revise (REJECT | REVISE), note 1..500; all five null or all set (CHECK <t>_review_check).
+  reviewAction            String?            @map("review_action") @db.VarChar(10)
+  reviewNote              String?            @map("review_note") @db.VarChar(500)
+  reviewedAt              DateTime?          @map("reviewed_at") @db.Timestamp(3)
+  reviewedBy              String?            @map("reviewed_by") @db.VarChar(64)
+  reviewedByName          String?            @map("reviewed_by_name") @db.VarChar(200)
+  /// ADR-0046 D17: header totals written on every create / update from the stored lines.
+  lineCount               Int                @map("line_count") @db.SmallInt
+  totalPcs                Int                @map("total_pcs")
+  totalWeightCt           Decimal            @map("total_weight_ct") @db.Decimal(15, 3)
+  /// ADR-0048: APPROVED by Save while approval was OFF (editable / deletable until used).
+  autoApproved            Boolean            @default(false) @map("auto_approved")
+  /// ADR-0048: Revise is allowed once (0..1).
+  revisionCount           Int                @default(0) @map("revision_count") @db.SmallInt
   version                 Int                @default(1)
   createdAt               DateTime           @default(now()) @map("created_at") @db.Timestamp(3)
   createdBy               String             @map("created_by") @db.VarChar(64)
@@ -1270,6 +1419,10 @@ model Reserve {
   @@index([invoiceAddressId], map: "reserve_invoice_address_idx")
   /// ADR-0045 D12: only deleted drafts (the Deleted list view).
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "reserve_deleted_list_idx")
+  /// ADR-0046 D18: the Approve queue (summary counts, pending default sort).
+  @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "reserve_pending_idx")
+  /// ADR-0048: sent-back documents (turn-OFF guard, Setup counts).
+  @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "reserve_revision_idx")
   @@map("reserve")
   @@schema("partner")
 }
@@ -1370,6 +1523,25 @@ model PurchaseOrder {
   approvedBy         String?               @map("approved_by") @db.VarChar(64)
   deletedAt          DateTime?             @map("deleted_at") @db.Timestamp(3)
   deletedBy          String?               @map("deleted_by") @db.VarChar(64)
+  /// ADR-0046 D4 / ADR-0048: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
+  submittedAt        DateTime?             @map("submitted_at") @db.Timestamp(3)
+  submittedBy        String?               @map("submitted_by") @db.VarChar(64)
+  /// Actor name snapshot from auth.current_authorization.user_name (ADR-0046 D5).
+  submittedByName    String?               @map("submitted_by_name") @db.VarChar(200)
+  /// ADR-0046 D3: latest Reject / Revise (REJECT | REVISE), note 1..500; all five null or all set (CHECK <t>_review_check).
+  reviewAction       String?               @map("review_action") @db.VarChar(10)
+  reviewNote         String?               @map("review_note") @db.VarChar(500)
+  reviewedAt         DateTime?             @map("reviewed_at") @db.Timestamp(3)
+  reviewedBy         String?               @map("reviewed_by") @db.VarChar(64)
+  reviewedByName     String?               @map("reviewed_by_name") @db.VarChar(200)
+  /// ADR-0046 D17: header totals written on every create / update from the stored lines.
+  lineCount          Int                   @map("line_count") @db.SmallInt
+  totalPcs           Int                   @map("total_pcs")
+  totalWeightCt      Decimal               @map("total_weight_ct") @db.Decimal(15, 3)
+  /// ADR-0048: APPROVED by Save while approval was OFF (editable / deletable until used).
+  autoApproved       Boolean               @default(false) @map("auto_approved")
+  /// ADR-0048: Revise is allowed once (0..1).
+  revisionCount      Int                   @default(0) @map("revision_count") @db.SmallInt
   version            Int                   @default(1)
   createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamp(3)
   createdBy          String                @map("created_by") @db.VarChar(64)
@@ -1389,6 +1561,10 @@ model PurchaseOrder {
   @@index([addressId], map: "purchase_order_address_idx")
   /// ADR-0045 D12: only deleted drafts (the Deleted list view).
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "purchase_order_deleted_list_idx")
+  /// ADR-0046 D18: the Approve queue (summary counts, pending default sort).
+  @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "purchase_order_pending_idx")
+  /// ADR-0048: sent-back documents (turn-OFF guard, Setup counts).
+  @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "purchase_order_revision_idx")
   @@map("purchase_order")
   @@schema("partner")
 }
@@ -1506,6 +1682,25 @@ model Purchase {
   approvedBy         String?            @map("approved_by") @db.VarChar(64)
   deletedAt          DateTime?          @map("deleted_at") @db.Timestamp(3)
   deletedBy          String?            @map("deleted_by") @db.VarChar(64)
+  /// ADR-0046 D4 / ADR-0048: set by submit; null while DRAFT and on auto-approved rows (CHECK <t>_submitted_check).
+  submittedAt        DateTime?          @map("submitted_at") @db.Timestamp(3)
+  submittedBy        String?            @map("submitted_by") @db.VarChar(64)
+  /// Actor name snapshot from auth.current_authorization.user_name (ADR-0046 D5).
+  submittedByName    String?            @map("submitted_by_name") @db.VarChar(200)
+  /// ADR-0046 D3: latest Reject / Revise (REJECT | REVISE), note 1..500; all five null or all set (CHECK <t>_review_check).
+  reviewAction       String?            @map("review_action") @db.VarChar(10)
+  reviewNote         String?            @map("review_note") @db.VarChar(500)
+  reviewedAt         DateTime?          @map("reviewed_at") @db.Timestamp(3)
+  reviewedBy         String?            @map("reviewed_by") @db.VarChar(64)
+  reviewedByName     String?            @map("reviewed_by_name") @db.VarChar(200)
+  /// ADR-0046 D17: header totals written on every create / update from the stored lines.
+  lineCount          Int                @map("line_count") @db.SmallInt
+  totalPcs           Int                @map("total_pcs")
+  totalWeightCt      Decimal            @map("total_weight_ct") @db.Decimal(15, 3)
+  /// ADR-0048: APPROVED by Save while approval was OFF (editable / deletable until used).
+  autoApproved       Boolean            @default(false) @map("auto_approved")
+  /// ADR-0048: Revise is allowed once (0..1).
+  revisionCount      Int                @default(0) @map("revision_count") @db.SmallInt
   version            Int                @default(1)
   createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamp(3)
   createdBy          String             @map("created_by") @db.VarChar(64)
@@ -1525,6 +1720,10 @@ model Purchase {
   @@index([addressId], map: "purchase_address_idx")
   /// ADR-0045 D12: only deleted drafts (the Deleted list view).
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], where: raw("(deleted_at IS NOT NULL)"), map: "purchase_deleted_list_idx")
+  /// ADR-0046 D18: the Approve queue (summary counts, pending default sort).
+  @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "purchase_pending_idx")
+  /// ADR-0048: sent-back documents (turn-OFF guard, Setup counts).
+  @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "purchase_revision_idx")
   @@map("purchase")
   @@schema("partner")
 }

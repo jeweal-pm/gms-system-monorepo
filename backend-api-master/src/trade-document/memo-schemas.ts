@@ -3,6 +3,7 @@ import { Prisma } from "../generated/prisma/client";
 import { lineAmount, lineGross } from "../quotation/quotation.calculate";
 import { LINES_MAX, decimal, lineInputSchema, tradeDocumentFields, tradeDocumentRules } from "../quotation/quotation.schemas";
 import { documentListFields } from "./document-engine";
+import { DOC_STATUSES } from "../approval/approval.schemas";
 
 /**
  * Inputs of memo out and memo out return (both customer + shipping/invoice address since memo-out-return rev 4), ADR-0033:
@@ -121,7 +122,8 @@ export const updateMemoReceiveSchema = z.object({ ...memoReceiveFields, ...versi
 export type MemoReceiveInput = z.output<typeof updateMemoReceiveSchema> extends infer U ? Omit<U, "id" | "expectedVersion"> : never;
 export type MemoReceiveLineInput = z.output<typeof receiveLineSchema>;
 
-export const MEMO_RECEIVE_STATUSES = ["PENDING_APPROVAL", "APPROVED"] as const;
+/** List status filter (ADR-0046 D2 + ADR-0048 DRAFT): every status the approval documents can hold. */
+export const MEMO_RECEIVE_STATUSES = DOC_STATUSES;
 export type MemoReceiveStatus = (typeof MEMO_RECEIVE_STATUSES)[number];
 export const memoReceiveListSchema = z.object({ ...documentListFields, status: z.enum(MEMO_RECEIVE_STATUSES).optional() }).strict();
 export type MemoReceiveListInput = z.output<typeof memoReceiveListSchema>;

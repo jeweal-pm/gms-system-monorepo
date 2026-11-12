@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-export const QUOTATION_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "CANCELLED"] as const;
+/** ADR-0048: Quotation joins the approval flow (Draft → Send to approve → Pending → Approved / Revise / Rejected); CANCELLED is its own. */
+export const QUOTATION_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REVISION_REQUESTED", "REJECTED", "CANCELLED"] as const;
 export type QuotationStatus = (typeof QUOTATION_STATUSES)[number];
 
 /** Owner 2026-10-26 (Figma "Up to 5 photos per item"). */

@@ -89,7 +89,9 @@ describe("purchase input (UT-PU-B01)", () => {
 
   it("list: status enum, date range ≤ 366 days, limit ≤ 50", () => {
     expect(purchaseListSchema.parse({ status: "APPROVED" })).toMatchObject({ status: "APPROVED", limit: 50 });
-    expect(purchaseListSchema.safeParse({ status: "DRAFT" }).success).toBe(false);
+    // ADR-0048: DRAFT is a list status (BE-AP-006); a status outside the approval set is refused.
+    expect(purchaseListSchema.safeParse({ status: "DRAFT" }).success).toBe(true);
+    expect(purchaseListSchema.safeParse({ status: "CANCELLED" }).success).toBe(false);
     expect(paths(purchaseListSchema.safeParse({ from: "2026-01-01", to: "2027-01-03" }))).toEqual(["to:range_too_long"]);
     expect(purchaseListSchema.safeParse({ from: "2026-01-01", to: "2027-01-02" }).success).toBe(true);
     expect(purchaseListSchema.safeParse({ limit: 51 }).success).toBe(false);

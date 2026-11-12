@@ -1,21 +1,19 @@
-import { HttpStatus, Injectable, Logger } from "@nestjs/common";
+import { HttpStatus, Injectable } from "@nestjs/common";
 import { partnerException, validationException, type FieldError } from "../common/errors";
-import { WRITE_TX, type Tx } from "../common/persistence";
-import { prisma } from "../database/prisma-client";
+import type { Tx } from "../common/persistence";
+import type { FlowPrincipal } from "../approval-setting/approval-flow";
 import { Prisma } from "../generated/prisma/client";
 import { documentErrors } from "./document-errors";
-import { explainMiss, MISS_SELECT, TradeDocumentEngine, type LineHook, type MissRow } from "./document-engine";
+import { TradeDocumentEngine, type DocumentActor, type DocumentEffects, type LineHook } from "./document-engine";
 import { vendorDocumentOptions, vendorParty, type VendorOut } from "./memo-out-return.service";
 import type { MemoReceiveListInput, MemoReceiveStatus, MemoReturnInput } from "./memo-schemas";
-import { takeFromMemoStock } from "./memo-stock.service";
+import { releaseToMemoStock, takeFromMemoStock } from "./memo-stock.service";
 
 export const memoReturnErrors = documentErrors("MEMO_RETURN", "MemoReturn", "memo_return");
 /** Approval found a Memo Stock item with less pending than the line returns (another return took it first). */
 export const memoReturnPendingShort = (fields: FieldError[]) => partnerException("MEMO_RETURN_PENDING_SHORT", HttpStatus.CONFLICT, fields);
 
 type MemoReturnStatus = MemoReceiveStatus;
-const PENDING: MemoReturnStatus = "PENDING_APPROVAL";
-const APPROVED: MemoReturnStatus = "APPROVED";
 
 /**
  * Completes memo return lines from their Memo Stock items inside the save transaction (engine `prepare`): each item
@@ -86,10 +84,38 @@ const memoStockLines: LineHook<MemoReturnInput> = {
  * memo-return SA rev 2 (owner 2026-10-29): Memo Stock items sent back to their vendor. Document Setup key
  * `memo-return`; PENDING_APPROVAL → APPROVED, and approval reduces the items' pending pcs / weight (Q-MR-15).
  */
+/** Return lines as Memo Stock moves, in position order (error paths `lines.N`). */
+async function returnTakes(tx: Tx, id: string) {
+  const lines = await tx.memoReturnLine.findMany({ where: { memoReturnId: id }, orderBy: { position: "asc" }, select: { memoStockId: true, pcs: true, weightCt: true } });
+  return lines.map((line, index) => ({ memoStockId: line.memoStockId, pcs: line.pcs, weightCt: line.weightCt, index }));
+}
+
+/**
+ * Effects (memo-outstanding-vendor SA-MOV-02, CHECK memo_stock_balance; approval-setup "Effects and their reversal"):
+ * the returned pcs / weight move from each Memo Stock item's pending into its Return bucket under the id-ordered lock, so
+ * two returns of the same item can't both pass; short → `MEMO_RETURN_PENDING_SHORT` (409, the short line fields). The
+ * reversal gives the Return bucket back to pending through the same lock. Nothing else references a Memo Return, so it
+ * is never "used"; the balance CHECK stays the final guard.
+ */
+const memoReturnEffects: DocumentEffects = {
+  apply: async (tx, doc, _actorId, now) => {
+    const takes = await returnTakes(tx, doc.id);
+    await takeFromMemoStock(tx, takes, "returned", memoReturnPendingShort, now);
+    return { result: {}, log: { lineCount: takes.length } };
+  },
+  reverse: async (tx, doc, now) => {
+    await releaseToMemoStock(tx, await returnTakes(tx, doc.id), () => memoReturnErrors.inUse(null), now, "returned");
+  },
+  usedBy: async () => null,
+};
+
+/**
+ * memo-return SA rev 2 (owner 2026-10-29): Memo Stock items sent back to their vendor. Document Setup key
+ * `memo-return`; the approval flow of approval-setup ADR-0048, and approval reduces the items' pending pcs / weight
+ * (Q-MR-15).
+ */
 @Injectable()
 export class MemoReturnService {
-  private readonly logger = new Logger("memo_return");
-
   private readonly engine = new TradeDocumentEngine<MemoReturnInput, VendorOut, MemoReturnStatus>({
     document: "memoReturn",
     transactionKey: "memo-return",
@@ -100,8 +126,8 @@ export class MemoReturnService {
     parentKey: "memoReturnId",
     errors: memoReturnErrors,
     party: vendorParty<MemoReturnInput>(memoReturnErrors),
-    createStatus: PENDING,
-    editableStatuses: [PENDING],
+    approvalType: "memo-return",
+    effects: memoReturnEffects,
     outstanding: true,
     lineOmit: ["stoneCodeId"],
     prepare: completeReturnLines,
@@ -115,24 +141,42 @@ export class MemoReturnService {
   list(input: MemoReceiveListInput) {
     return this.engine.list(input);
   }
-  get(id: string) {
-    return this.engine.get(id) as Promise<unknown> as Promise<MemoReturnDetail>;
+  get(id: string, viewer: FlowPrincipal | null = null) {
+    return this.engine.get(id, viewer) as Promise<unknown> as Promise<MemoReturnDetail>;
   }
   nextNumber(docDate: string) {
     return this.engine.nextNumber(docDate);
   }
-  create(actorId: string, input: MemoReturnInput) {
-    return this.engine.create(actorId, input);
+  create(actorId: string, input: MemoReturnInput, viewer: FlowPrincipal | null = null) {
+    return this.engine.create(actorId, input, viewer);
   }
-  update(actorId: string, id: string, expectedVersion: number, input: MemoReturnInput) {
-    return this.engine.update(actorId, id, expectedVersion, input);
+  update(actorId: string, id: string, expectedVersion: number, input: MemoReturnInput, viewer: FlowPrincipal | null = null) {
+    return this.engine.update(actorId, id, expectedVersion, input, viewer);
   }
   delete(actorId: string, id: string, expectedVersion: number) {
     return this.engine.delete(actorId, id, expectedVersion);
   }
-  /** transaction-soft-delete D6: a deleted document back to its unchanged status. */
+  /** transaction-soft-delete D6 / approval-setup G3. */
   restore(actorId: string, id: string, expectedVersion: number) {
     return this.engine.restore(actorId, id, expectedVersion);
+  }
+  submit(actor: DocumentActor, id: string, expectedVersion: number) {
+    return this.engine.submit(actor, id, expectedVersion);
+  }
+  /** PENDING_APPROVAL → APPROVED with the Return move above; a short item changes nothing. */
+  approve(actorId: string, id: string, expectedVersion: number) {
+    return this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED" }>;
+  }
+
+  /** Go-live command (ADR-0048 D7): the same approve inside the caller's transaction. */
+  approveWithin(tx: Tx, actorId: string, id: string, expectedVersion: number) {
+    return this.engine.approveWithin(tx, actorId, id, expectedVersion);
+  }
+  reject(actor: DocumentActor, id: string, expectedVersion: number, reason: string) {
+    return this.engine.reject(actor, id, expectedVersion, reason);
+  }
+  requestRevision(actor: DocumentActor, id: string, expectedVersion: number, note: string) {
+    return this.engine.requestRevision(actor, id, expectedVersion, note);
   }
 
   async options(includeVendorId?: string) {
@@ -140,41 +184,6 @@ export class MemoReturnService {
       return await vendorDocumentOptions(includeVendorId);
     } catch (error) {
       throw memoReturnErrors.map(error, "options");
-    }
-  }
-
-  /**
-   * PENDING_APPROVAL → APPROVED and the returned pcs / weight move from each Memo Stock item's pending into its Return
-   * bucket (memo-outstanding-vendor SA-MOV-02, CHECK memo_stock_balance), in one transaction. The
-   * guarded UPDATE serializes approvals of this document; the items are locked in id order (`FOR UPDATE`) so two
-   * returns of the same item can't both pass. An item with less pending than the line → `MEMO_RETURN_PENDING_SHORT`
-   * (409, the short line fields) and nothing changes.
-   */
-  async approve(actorId: string, id: string, expectedVersion: number) {
-    const errors = memoReturnErrors;
-    try {
-      const approved = await prisma.$transaction(async (tx) => {
-        const now = new Date();
-        const updated = await tx.memoReturn.updateMany({
-          where: { id, version: expectedVersion, status: PENDING, deletedAt: null },
-          data: { status: APPROVED, approvedAt: now, approvedBy: actorId, version: { increment: 1 }, updatedAt: now, updatedBy: actorId },
-        });
-        if (updated.count === 0) {
-          // D8: NOT_FOUND → DELETED → STATUS_INVALID → CHANGED.
-          explainMiss(errors, (await tx.memoReturn.findUnique({ where: { id }, select: MISS_SELECT })) as MissRow, [PENDING]);
-        }
-        const document = await tx.memoReturn.findUniqueOrThrow({
-          where: { id },
-          select: { docNo: true, lines: { orderBy: { position: "asc" }, select: { memoStockId: true, pcs: true, weightCt: true } } },
-        });
-        const takes = document.lines.map((line, index) => ({ memoStockId: line.memoStockId, pcs: line.pcs, weightCt: line.weightCt, index }));
-        await takeFromMemoStock(tx, takes, "returned", memoReturnPendingShort, now);
-        return { docNo: document.docNo, lineCount: document.lines.length };
-      }, WRITE_TX);
-      this.logger.log({ event: "memo_return.approved", actorId, id, docNo: approved.docNo, lineCount: approved.lineCount });
-      return { id, version: expectedVersion + 1, status: APPROVED as "APPROVED" };
-    } catch (error) {
-      throw errors.map(error, "approve");
     }
   }
 }

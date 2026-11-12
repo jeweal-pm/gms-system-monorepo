@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { HttpException } from "@nestjs/common";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { sendAndApprove, setApproval, submitted } from "../partner-shared/approval";
 
 /**
  * IT-MO-01…05 (memo-out SA rev 2 / ADR-0033 rev 2, owner 2026-10-31) against real PostgreSQL:
@@ -89,7 +90,7 @@ async function approvedStock(vendor: Vendor, lines: ReturnType<typeof receiveLin
   const saved = await receive.create(ACTOR, {
     docDate: "2026-10-29", dueDate: "2026-11-29", currency: "THB", exchangeRate: null, ref: "", documentNote: "", ...money, lines, vendorId: vendor.id, addressId: vendor.addressId,
   });
-  await receive.approve(ACTOR, saved.id, saved.version);
+  await sendAndApprove(receive, ACTOR, saved.id, saved.version);
   return prisma.memoStock.findMany({ where: { memoReceiveId: saved.id }, orderBy: { stockId: "asc" } });
 }
 
@@ -127,6 +128,8 @@ describe.runIf(canRun)("IT-MO memo out From Stock on PostgreSQL", () => {
       addresses: { create: [{ ...address, id: customer.shipping, type: "SHIPPING" }, { ...address, id: customer.invoice, type: "INVOICE" }] },
     } });
     customerCreated = true;
+    await setApproval(prisma, "memo-receive", true);
+    await setApproval(prisma, "memo-out", true);
   });
 
   afterAll(async () => {
@@ -148,7 +151,7 @@ describe.runIf(canRun)("IT-MO memo out From Stock on PostgreSQL", () => {
     const saved = await memoOut.create(ACTOR, outInput([stockLine(item.id, 4, "2")]));
     expect(saved).toMatchObject({ docNo: expect.any(String), version: 1 });
     const detail = await memoOut.get(saved.id);
-    expect(detail).toMatchObject({ status: "PENDING_APPROVAL", approvedAt: null, approvedBy: null });
+    expect(detail).toMatchObject({ status: "DRAFT", approvedAt: null, approvedBy: null });
     expect(detail.lines[0]).toMatchObject({
       source: "STOCK", memoStockId: item.id, stockId: item.stockId, stoneCodeId: null, stoneCode: "", stone: "Ruby", lot: "LOT-A", location: "Memo",
       cerType: "GIA", cerNo: "C-1", priceUnit: "PER_CT", pcs: 4, weightCt: "2.000", unitPrice: "2500.00", amount: "5000.00", itemNote: "for viewing",
@@ -177,37 +180,38 @@ describe.runIf(canRun)("IT-MO memo out From Stock on PostgreSQL", () => {
   it("IT-MO-03 approve moves pending into Reserve; the memo out is then read-only", async () => {
     const [item] = await approvedStock(vendorA, [receiveLine()]);
     const saved = await memoOut.create(ACTOR, outInput([stockLine(item.id, 4, "2")]));
-    const updated = await memoOut.update(ACTOR, saved.id, 1, outInput([stockLine(item.id, 6, "3")]));
+    const updated = await submitted(memoOut, ACTOR, await memoOut.update(ACTOR, saved.id, 1, outInput([stockLine(item.id, 6, "3")])));
     expect(await failure(memoOut.approve(ACTOR, saved.id, 1))).toMatchObject({ status: 409, code: "MEMO_OUT_CHANGED" });
-    await expect(memoOut.approve(ACTOR, saved.id, updated.version)).resolves.toEqual({ id: saved.id, version: 3, status: "APPROVED", stockLineCount: 1 });
+    await expect(memoOut.approve(ACTOR, saved.id, updated.version)).resolves.toEqual({ id: saved.id, version: 4, status: "APPROVED", stockLineCount: 1 });
     expect(await bucketsOf(item.id)).toEqual({ pending: [4, "2.000"], reserved: [6, "3.000"] });
     expect(await memoOut.get(saved.id)).toMatchObject({ status: "APPROVED", approvedBy: ACTOR, approvedAt: expect.any(String) });
-    expect(await failure(memoOut.approve(ACTOR, saved.id, 3))).toMatchObject({ status: 409, code: "MEMO_OUT_STATUS_INVALID" });
-    expect(await failure(memoOut.update(ACTOR, saved.id, 3, outInput([stockLine(item.id, 1, "0.5")])))).toMatchObject({ status: 409, code: "MEMO_OUT_STATUS_INVALID" });
-    expect(await failure(memoOut.delete(ACTOR, saved.id, 3))).toMatchObject({ status: 409, code: "MEMO_OUT_STATUS_INVALID" });
+    expect(await failure(memoOut.approve(ACTOR, saved.id, 4))).toMatchObject({ status: 409, code: "MEMO_OUT_STATUS_INVALID" });
+    expect(await failure(memoOut.update(ACTOR, saved.id, 4, outInput([stockLine(item.id, 1, "0.5")])))).toMatchObject({ status: 409, code: "MEMO_OUT_STATUS_INVALID" });
+    expect(await failure(memoOut.delete(ACTOR, saved.id, 4))).toMatchObject({ status: 409, code: "MEMO_OUT_STATUS_INVALID" });
     expect((await memoOut.list({ partyId: customer.id, status: "APPROVED", limit: 50, deleted: false })).items.map((row) => row.id)).toContain(saved.id);
   });
 
   it("IT-MO-04 over-pull guard: of two memo outs that together take more than pending, only the first approval passes", async () => {
     const [item] = await approvedStock(vendorA, [receiveLine({ pcs: 3, weightCt: "1.5" })]);
-    const first = await memoOut.create(ACTOR, outInput([stockLine(item.id, 2, "1")]));
-    const second = await memoOut.create(ACTOR, outInput([stockLine(item.id, 2, "1")]));
-    await memoOut.approve(ACTOR, first.id, 1);
-    expect(await failure(memoOut.approve(ACTOR, second.id, 1)))
+    const first = await submitted(memoOut, ACTOR, await memoOut.create(ACTOR, outInput([stockLine(item.id, 2, "1")])));
+    const second = await submitted(memoOut, ACTOR, await memoOut.create(ACTOR, outInput([stockLine(item.id, 2, "1")])));
+    await memoOut.approve(ACTOR, first.id, 2);
+    expect(await failure(memoOut.approve(ACTOR, second.id, 2)))
       .toMatchObject({ status: 409, code: "MEMO_OUT_PENDING_SHORT", fieldErrors: [{ path: "lines.0.pcs", code: "exceeds_pending" }, { path: "lines.0.weightCt", code: "exceeds_pending" }] });
     expect(await bucketsOf(item.id)).toEqual({ pending: [1, "0.500"], reserved: [2, "1.000"] });
-    expect(await memoOut.get(second.id)).toMatchObject({ status: "PENDING_APPROVAL", version: 1 });
-    // Edited down to what is left, it passes; the item then leaves From Stock.
-    await memoOut.update(ACTOR, second.id, 1, outInput([stockLine(item.id, 1, "0.5")]));
-    await memoOut.approve(ACTOR, second.id, 2);
+    expect(await memoOut.get(second.id)).toMatchObject({ status: "PENDING_APPROVAL", version: 2 });
+    // Sent back once, edited down to what is left, sent again: it passes; the item then leaves From Stock.
+    await memoOut.requestRevision({ id: "approver", name: null }, second.id, 2, "Only 1 left");
+    await memoOut.update(ACTOR, second.id, 3, outInput([stockLine(item.id, 1, "0.5")]));
+    await sendAndApprove(memoOut, ACTOR, second.id, 4);
     expect(await bucketsOf(item.id)).toEqual({ pending: [0, "0.000"], reserved: [3, "1.500"] });
     expect((await stock.list({ limit: 50 })).items.map((row) => row.id)).not.toContain(item.id);
   });
 
   it("IT-MO-05 parallel approvals of the same item never take more than pending", async () => {
     const [item] = await approvedStock(vendorB, [receiveLine({ pcs: 2, weightCt: "1" })]);
-    const outs = await Promise.all([1, 2, 3].map(() => memoOut.create(ACTOR, outInput([stockLine(item.id, 1, "0.6")]))));
-    const results = await Promise.allSettled(outs.map((saved) => memoOut.approve(ACTOR, saved.id, 1)));
+    const outs = await Promise.all([1, 2, 3].map(async () => submitted(memoOut, ACTOR, await memoOut.create(ACTOR, outInput([stockLine(item.id, 1, "0.6")])))));
+    const results = await Promise.allSettled(outs.map((saved) => memoOut.approve(ACTOR, saved.id, 2)));
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(await bucketsOf(item.id)).toEqual({ pending: [1, "0.400"], reserved: [1, "0.600"] });
   });

@@ -2,22 +2,25 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { DISCARD_CHANGES_CONFIRM, deleteDocumentConfirm, restoreDocumentConfirm, useConfirm } from "@/features/quotation/components/use-confirm";
-import { CircleCheck, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useDocumentFlow } from "@/features/trade-document/approval-flow";
+import { flowOf, savedMessage, type DocFlow } from "@/features/trade-document/flow-status";
 import {
   daybookLoadError,
   daybookState,
   deletedInfo,
   DocumentDaybook,
   DocumentDeletedBanner,
-  restoredStatusLabel,
+  clearNotice,
+  handOverNotice,
+  peekNotice,
   type DeletedInfo,
 } from "@/features/trade-document/document-api";
 import { useTabDirty, useTabDocument, useTabReplace } from "@/features/home/tabs/tab-host";
 import { FormProvider, useFieldArray, useForm, useWatch } from "react-hook-form";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ScanIcon } from "@/components/ui/scan-icon";
-import { QuotationHeader, type StatusLabels } from "@/features/quotation/components/header/QuotationHeader";
+import { QuotationHeader } from "@/features/quotation/components/header/QuotationHeader";
 import { ItemEditorPanel } from "@/features/quotation/components/items/ItemEditorPanel";
 import { ItemPhotoBox } from "@/features/quotation/components/items/ItemPhotoBox";
 import { ItemTable, type RowAction } from "@/features/quotation/components/items/ItemTable";
@@ -31,10 +34,8 @@ import { emptyLine, newKey } from "@/features/quotation/lib/defaults";
 import { LinePhotoContext, type LinePhotoTarget } from "@/features/quotation/options-context";
 import { isFilledLine } from "@/features/quotation/schema";
 import { invalidSaveMessage, lineErrorMessages, type LineErrors } from "@/features/trade-document/document-form";
-import { readDomainError } from "@/lib/trpc-error";
 import {
   fromMemoReceive,
-  isPendingApproval,
   mapMemoReceiveError,
   memoReceiveLoadError,
   memoReceiveRestoreError,
@@ -52,34 +53,22 @@ import {
   type MemoReceiveDetail,
 } from "../api";
 import { emptyMemoReceive, MEMO_RECEIVE_KIND } from "../defaults";
-import { isEditableMemo, MAX_MEMO_LINES, memoReceiveSchema, type MemoReceiveFormValues } from "../schema";
+import { MAX_MEMO_LINES, memoReceiveSchema, type MemoReceiveFormValues } from "../schema";
 import { MemoReceiveInfoForm } from "./MemoReceiveInfoForm";
 
 export const MEMO_RECEIVE_HREF = "/memo/memo-receive";
+const APPROVAL_TYPE = "memo-receive";
 export const memoReceiveHref = (id: string) => `${MEMO_RECEIVE_HREF}/${id}`;
 
-/** Saving sends the document to approval (Q-MR-05); Approve makes it read-only (rev 3). */
-export const STATUS_LABELS: StatusLabels = {
-  PENDING_APPROVAL: { label: "Pending Approval", tone: "bg-[#FFF4E0] text-[#B45309]" },
-  APPROVED: { label: "Approved", tone: "bg-[#E7F7EE] text-[#15803D]" },
-};
+/** ADR-0048 status badges (Draft, Pending Approval, Revise, Approved, Rejected). */
+export { FLOW_STATUS_LABELS as STATUS_LABELS } from "@/features/trade-document/flow-status";
 
 /** Row photos (rev 4, SA revision 2): the row panel uploads to and reads from the Memo Receive photo route. */
 export const MEMO_RECEIVE_PHOTOS: LinePhotoTarget = { upload: uploadMemoReceivePhoto, url: memoReceivePhotoUrl };
 
-/**
- * Approve shows for a saved Pending Approval document with no unsaved changes, to users with `memo-receive:APPROVE`
- * (ui-spec rev 3; UX only, the server checks every call).
- */
-export function canApproveMemo(args: { saved: boolean; status: MemoReceiveFormValues["status"]; editing: boolean; dirty: boolean; approve: boolean }): boolean {
-  return args.saved && isPendingApproval(args.status) && !args.editing && !args.dirty && args.approve;
-}
-
-export const approveMessage = (count: number) =>
-  `Approve this Memo Receive? Its ${count} ${count === 1 ? "item moves" : "items move"} to Memo Stock and it can no longer be edited.`;
 
 /** One Memo Receive document (ADR-0033/0034): Quotation's layout and components, Memo Receive's data. */
-export function MemoReceiveForm({ initial, deleted: initialDeleted = null, access }: { initial?: MemoReceiveFormValues; deleted?: DeletedInfo | null; access: MemoReceiveAccess }) {
+export function MemoReceiveForm({ initial, deleted: initialDeleted = null, flow: initialFlow = null, access }: { initial?: MemoReceiveFormValues; deleted?: DeletedInfo | null; flow?: DocFlow | null; access: MemoReceiveAccess }) {
   const replaceTab = useTabReplace();
   const [saved, setSaved] = useState<MemoReceiveFormValues | undefined>(initial);
   // transaction-soft-delete D10: a deleted memo receive is read-only with the banner.
@@ -89,9 +78,11 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
   const [editorOpen, setEditorOpen] = useState(false);
   const [railPanel, setRailPanel] = useState<RailPanel>(null);
   const [checkedKeys, setCheckedKeys] = useState<Set<string>>(new Set());
-  const [toast, setToast] = useState<string | null>(null);
+  // A message handed over from a create (the new document opens on its own page).
+  const [toast, setToast] = useState<string | null>(() => peekNotice(initial?.id));
+  // FE-AS-010: the saved document's `Flow` (status, Edit / Delete / Send to approve flags), refreshed on every reload.
+  const [flow, setFlow] = useState<DocFlow | null>(initialFlow);
   const { confirm, dialog: confirmDialog } = useConfirm();
-  const [approving, setApproving] = useState(false);
 
   const form = useForm<MemoReceiveFormValues>({ resolver: zodResolver(memoReceiveSchema), defaultValues: initial ?? emptyMemoReceive() });
   const { control, reset, trigger, getValues, handleSubmit, formState, setError } = form;
@@ -107,8 +98,7 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
   useEffect(() => {
     if (formState.isSubmitted && filledCount > 0) void trigger("lines");
   }, [filledCount, formState.isSubmitted, trigger]);
-  const status = saved?.status;
-  const editable = Boolean(saved?.id) && isEditableMemo(status);
+  const status = (flow?.status ?? saved?.status) as MemoReceiveFormValues["status"];
   const options = useMemoReceiveOptions(saved?.vendorId);
   const next = useNextMemoReceiveNo(values.docDate ?? "", !saved?.id);
   const writes = useMemoReceiveWrites();
@@ -117,7 +107,6 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
   // app-shell-tabs T-03 / Q-TAB-03: the tab shows the document number and a dot while edits are unsaved.
   useTabDocument(saved?.docNo);
   useTabDirty(formState.isDirty && !readOnly);
-  const showApprove = !isDeleted && canApproveMemo({ saved: Boolean(saved?.id), status, editing: !readOnly, dirty: formState.isDirty, approve: access.approve });
 
   // Rev 3: the mock store is gone; drop what it left in this browser.
   useEffect(() => removeLegacyStore(), []);
@@ -133,6 +122,7 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
     const latest = fromMemoReceive(detail);
     setSaved(latest);
     setDeleted(deletedInfo(detail));
+    setFlow(flowOf(detail));
     reset(latest);
     setMode("view");
     setEditorOpen(false);
@@ -148,7 +138,9 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
     }
   };
 
-  const showError = async (error: unknown) => {
+  useEffect(() => clearNotice(initial?.id), [initial?.id]);
+
+  async function showError(error: unknown) {
     const outcome = mapMemoReceiveError(error);
     for (const field of outcome.fieldErrors) setError(field.name as never, { type: "server", message: field.message });
     setToast(outcome.message);
@@ -159,6 +151,31 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
       await reloadSaved();
       setToast(outcome.message);
     }
+  }
+
+  // FE-AS-010 (ADR-0048): Save / Send to approve / Edit / Delete follow the approval setting and `Flow`.
+  const approvalFlow = useDocumentFlow({
+    type: APPROVAL_TYPE,
+    saved,
+    flow,
+    deleted: isDeleted,
+    access,
+    editing: !readOnly,
+    dirty: formState.isDirty,
+    busy: writes.busy,
+    submit: writes.submit,
+    confirm,
+    toast: setToast,
+    reload: async (message) => {
+      await reloadSaved();
+      setToast(message);
+    },
+    onError: (error) => void showError(error),
+  });
+
+  /** ADR-0048 codes first (in use, status, approval off), then the page's own mapping. */
+  const onWriteError = async (error: unknown, action: "save" | "delete") => {
+    if (!(await approvalFlow.handleError(error, action))) await showError(error);
   };
 
   /* ---------- document actions ---------- */
@@ -167,16 +184,17 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
     async (input) => {
       try {
         if (saved?.id && saved.version) {
-          await writes.update({ ...toMemoReceiveInput(input, savedLineIds(saved)), id: saved.id, expectedVersion: saved.version });
+          const result = await writes.update({ ...toMemoReceiveInput(input, savedLineIds(saved)), id: saved.id, expectedVersion: saved.version });
           show(await writes.reload(saved.id));
-          setToast(`Saved ${saved.docNo ?? ""}`.trim());
+          setToast(savedMessage(saved.docNo, result));
         } else {
           const created = await writes.create(toMemoReceiveInput(input));
+          handOverNotice(created.id, savedMessage(created.docNo, created));
           await writes.invalidate();
           replaceTab(memoReceiveHref(created.id));
         }
       } catch (error) {
-        await showError(error);
+        await onWriteError(error, "save");
       }
     },
     (errors) => setToast(invalidSaveMessage(lineErrorMessages(errors.lines as unknown as LineErrors, lines.length))),
@@ -197,32 +215,13 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
       await writes.invalidate();
       replaceTab(MEMO_RECEIVE_HREF);
     } catch (error) {
-      await showError(error);
-    }
-  };
-
-  const onApprove = async () => {
-    if (!saved?.id || !saved.version) return;
-    try {
-      await writes.approve({ id: saved.id, expectedVersion: saved.version });
-      show(await writes.reload(saved.id));
-      setApproving(false);
-      setToast("Approved");
-    } catch (error) {
-      setApproving(false);
-      const { domainCode } = readDomainError(error);
-      if (domainCode === "MEMO_RECEIVE_CHANGED") {
-        await reloadSaved();
-        setToast("This memo receive changed. Check it and approve again.");
-        return;
-      }
-      await showError(error);
+      await onWriteError(error, "delete");
     }
   };
 
   /** FE-SD-002: a deleted memo receive back to its status; the reloaded copy is editable again. */
   const onRestore = async () => {
-    if (!saved?.id || !saved.version || !(await confirm(restoreDocumentConfirm(saved.docNo, restoredStatusLabel(saved.status))))) return;
+    if (!saved?.id || !saved.version || !(await confirm(restoreDocumentConfirm(saved.docNo, approvalFlow.restoreLabel)))) return;
     try {
       await writes.restore({ id: saved.id, expectedVersion: saved.version });
       show(await writes.reload(saved.id));
@@ -299,7 +298,6 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
   };
 
   const editorIndex = editorOpen && selectedIndex !== null && selectedIndex < lines.length ? selectedIndex : null;
-  const itemCount = (saved?.lines ?? []).filter(isFilledLine).length;
 
   return (
     <DocumentKindContext.Provider value={kind}>
@@ -311,7 +309,8 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
               <QuotationHeader
                 noLabel="Memo Receive No.:"
                 newHref={MEMO_RECEIVE_HREF}
-                statusLabels={STATUS_LABELS}
+                statusLabels={approvalFlow.statusLabels}
+                statusNote={approvalFlow.statusNote}
                 docNo={docNo}
                 isPreview={!saved?.docNo}
                 status={status}
@@ -319,16 +318,10 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
                 saving={writes.busy}
                 canSave={!isDeleted && (saved?.id ? access.edit : access.add)}
                 canCreate={access.add}
-                canEdit={editable && access.edit && !isDeleted}
-                canDelete={editable && access.delete && !isDeleted}
-                hideEditDelete={status === "APPROVED" || isDeleted}
-                extraActions={
-                  showApprove && (
-                    <Button variant="primary" onClick={() => setApproving(true)} disabled={writes.busy} className="min-w-24">
-                      <CircleCheck className="size-4" /> Approve
-                    </Button>
-                  )
-                }
+                canEdit={approvalFlow.canEdit}
+                canDelete={approvalFlow.canDelete}
+                hideEditDelete={approvalFlow.hideEditDelete}
+                extraActions={approvalFlow.sendButton}
                 actions={{
                   onCancel: () => void onCancel(),
                   onSave: () => void onSave(),
@@ -421,17 +414,6 @@ export function MemoReceiveForm({ initial, deleted: initialDeleted = null, acces
               </fieldset>
             )}
           </div>
-          <ConfirmDialog
-            open={approving}
-            title="Approve Memo Receive"
-            body={approveMessage(itemCount)}
-            cancelLabel="Cancel"
-            confirmLabel="Approve"
-            pendingLabel="Approving…"
-            pending={writes.busy}
-            onCancel={() => setApproving(false)}
-            onConfirm={() => void onApprove()}
-          />
           {confirmDialog}
           {toast && <Toast message={toast} onClose={() => setToast(null)} />}
         </FormProvider>

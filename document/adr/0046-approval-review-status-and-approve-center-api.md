@@ -1,6 +1,7 @@
 # ADR-0046: Reject / Revise review status and the Approve Center API
 
 - Status: Accepted (2026-11-07)
+- Amended by: [ADR-0048](0048-approval-setting-draft-send-to-approve.md) (accepted 2026-11-10): adds `DRAFT` and Send to approve (`submit` replaces `resubmit`), Pending becomes locked (replaces D7), Revise once, reason required for Revise and Reject, Quotation joins, Approve Center follows per-type settings. Both ship in one release.
 - Date: 2026-11-07
 - Feature / source UI revision: `approve-center` / UI revision 1 (approved by the owner 2026-11-07, as dispatched by the parent)
 - SA revision: 1 (approved 2026-11-07)
@@ -24,7 +25,7 @@ Bundle: [decisions](../apps/backend/master/approve-center/decisions.md), [api-co
 4. **Procedures** per document router: `reject` and `requestRevision` (`<menu>` APPROVE + CSRF), `resubmit` (`<menu>` EDIT + CSRF). Errors reuse `<CODE>_NOT_FOUND/_DELETED/_STATUS_INVALID/_CHANGED` and `VALIDATION_ERROR`.
 5. **Approve Center API** in `backend-api-master`: a read-only `approval` router. `approval.summary` returns capped (≤ 100) pending counts for the types the caller may APPROVE and VIEW, in one SQL statement. `approval.pending` returns ≤ 50 enriched rows of one type per page (version, party, value, line count, Σ pcs, Σ weight, ≤ 3 stone names, submitter, last Revise), sorted server-side (default oldest submitted first) with a keyset cursor, and searched by doc no., party, ref, line stone name and Stock ID. Approve/Reject/Revise stay per-document procedures. No polling, push, cache or worker.
 6. **Indexes**: one partial index per table `(submitted_at, id) WHERE status='PENDING_APPROVAL' AND deleted_at IS NULL`.
-7. **Display names**: `auth.current_authorization` gains `user_name` (the session owner's own `User.name`) through an auth migration; master snapshots the actor's name when it writes `submitted_*` / `reviewed_*`. This amends ADR-0031 item 5 ("no schema table/view change") for this one appended column; the reader role, grants and pool are unchanged. No role/position is returned (none exists).
+7. **Display names**: `auth.current_authorization` gains `user_name` (the session owner's own `User.name`) through an auth migration; master snapshots the actor's name when it writes `submitted_*` / `reviewed_*`. This amends ADR-0031 item 5 ("no schema table/view change") for this one appended column; the reader role, grants and pool are unchanged. No role/position is returned (none exists). The view has no row filter: the reader role can read the display names of all users with a session row, as it already reads their ids and grants; master queries only its caller's row (wording corrected and risk accepted 2026-11-12, INV-20261111-002 H1).
 8. **Convention** for Load to Stock, Merge/Split Stock and Transfer Location: adopt items 1–4 and 6 and register in the approval type registry when they are designed.
 
 No package, service, container, network or storage change; [tech-stack.md](tech-stack.md) is unchanged.

@@ -1,8 +1,9 @@
 /**
  * Permission catalog v2 (ADR-0020 §3, user-permission SA revision 2).
- * 42 grantable leaves: Dashboard has VIEW/APPROVE/PRICE/PRINT/EXCEL, Document Setup has VIEW/EDIT
+ * 43 grantable leaves: Dashboard has VIEW/APPROVE/PRICE/PRINT/EXCEL, Document Setup has VIEW/EDIT
  * (document-setup SA rev 1, 2026-10-23), Decimal Setup has VIEW/EDIT (decimal-setup SA rev 1 / ADR-0040,
- * 2026-11-03), every other leaf has all nine actions, so 5 + 2 + 2 + 39 x 9 = 360 applicable cells
+ * 2026-11-03), Approval has VIEW/EDIT (approval-setup SA rev 1 / ADR-0048, 2026-11-10), every other leaf has all
+ * nine actions, so 5 + 2 + 2 + 2 + 39 x 9 = 362 applicable cells
  * (Currency added by currency SA rev 1, 2026-10-26). Sections and groups are UI structure only
  * and are never stored as grants. Changing the catalog is a code change; stored grants for
  * removed cells are ignored (filtered on read).
@@ -37,6 +38,8 @@ export const PERMISSION_CATALOG: readonly CatalogNode[] = [
     leaf("document-setup", "Document Setup", ["VIEW", "EDIT"]),
     // Grants copied once from Document Setup by migration 20261103090000_decimal_setup_grants (owner Q-DEC-14).
     leaf("decimal-setup", "Decimal Setup", ["VIEW", "EDIT"]),
+    // approval-setup SA rev 1 / ADR-0048 (owner 2026-11-10): per-type approval switch; no grant migration (Super Admin / ALL until granted).
+    leaf("approval-setup", "Approval", ["VIEW", "EDIT"]),
     group("master-code", "Master Code", [
       leaf("vendor", "Vendor"),
       leaf("customer", "Customer"),

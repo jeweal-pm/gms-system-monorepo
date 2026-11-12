@@ -9,11 +9,11 @@ import { useNumberFormat } from "@/features/decimal-setup/number-format-provider
 import type { ApproveMenu, AvailableMenu } from "../menus";
 import {
   ariaSort,
-  DASH,
+  canRevise,
   detailSubLine,
   headerCheckState,
-  REJECT_UNAVAILABLE,
-  REVISE_UNAVAILABLE,
+  RESUBMITTED_TEXT,
+  REVISE_LIMIT_REASON,
   shortDate,
   submittedTime,
   submitterText,
@@ -103,6 +103,58 @@ export function UnavailableAction({ label, reason }: { label: string; reason: st
 
 export type RowError = { message: string; link: boolean };
 
+const actionBase = "inline-flex h-9 min-w-[95px] items-center justify-center gap-2 rounded-gms-md px-4 text-gms-body font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60";
+const actionClass = {
+  reject: cx(actionBase, "border border-gms-danger bg-gms-surface text-gms-danger hover:bg-gms-danger-subtle", focusRing),
+  revise: cx(actionBase, "border border-gms-warning-text bg-gms-surface text-gms-warning-text hover:bg-gms-warning-subtle", focusRing),
+  approve: cx(actionBase, "bg-gms-primary text-gms-on-primary hover:bg-gms-primary-strong", focusRing),
+};
+
+/**
+ * C-AP-13 (FE-AP-010 / FE-AS-013): Reject… (outline red), Revise… (outline amber; disabled with the info tooltip once the
+ * document was sent back, ADR-0048), Approve (filled). Shared by the table rows and the preview modal footer.
+ */
+export function ReviewActions({ docNo, revisionCount, disabled, busy, approveIndex, describedBy, onReject, onRevise, onApprove }: {
+  docNo: string;
+  revisionCount: number;
+  disabled: boolean;
+  busy: boolean;
+  /** The table row index (`data-approve-index`, focus after a row leaves); omitted in the modal. */
+  approveIndex?: number;
+  describedBy?: string;
+  onReject: () => void;
+  onRevise: () => void;
+  onApprove: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-[9px]">
+      <button type="button" aria-haspopup="dialog" aria-label={`Reject ${docNo}…`} disabled={disabled} onClick={onReject} className={actionClass.reject}>
+        Reject…
+      </button>
+      {canRevise({ revisionCount }) ? (
+        <button type="button" aria-haspopup="dialog" aria-label={`Revise ${docNo}…`} disabled={disabled} onClick={onRevise} className={actionClass.revise}>
+          Revise…
+        </button>
+      ) : (
+        <UnavailableAction label="Revise…" reason={REVISE_LIMIT_REASON} />
+      )}
+      <button
+        type="button"
+        data-approve-index={approveIndex}
+        aria-label={`Approve ${docNo}`}
+        disabled={disabled}
+        aria-busy={busy || undefined}
+        aria-describedby={describedBy}
+        onClick={onApprove}
+        className={actionClass.approve}
+      >
+        {busy && <LoaderCircle aria-hidden size={16} className="animate-spin" />}
+        Approve
+      </button>
+    </div>
+  );
+}
+
 type TableProps = {
   menu: AvailableMenu;
   rows: readonly ApprovalRow[];
@@ -117,12 +169,14 @@ type TableProps = {
   locked: boolean;
   errors: ReadonlyMap<string, RowError>;
   onApprove: (row: ApprovalRow, index: number) => void;
+  onReject: (row: ApprovalRow, index: number) => void;
+  onRevise: (row: ApprovalRow, index: number) => void;
   /** Rev 2 (FE-AP-013, Q-AP-19): the document number opens the preview modal; it no longer navigates. */
   onOpen: (row: ApprovalRow) => void;
 };
 
 /** C-AP-06: semantic table of the loaded pending rows (FE-AP-004…007). */
-export function ApprovalTable({ menu, rows, sort, onSort, selected, onToggleRow, onToggleAll, busyIds, locked, errors, onApprove, onOpen }: TableProps) {
+export function ApprovalTable({ menu, rows, sort, onSort, selected, onToggleRow, onToggleAll, busyIds, locked, errors, onApprove, onReject, onRevise, onOpen }: TableProps) {
   const format = useNumberFormat();
   return (
     <table className="w-full border-separate border-spacing-0 text-gms-body text-gms-text">
@@ -150,42 +204,32 @@ export function ApprovalTable({ menu, rows, sort, onSort, selected, onToggleRow,
                 <span className="block text-gms-label text-gms-text-secondary">{detailSubLine(menu, row)}</span>
               </td>
               <td className={cx(td, "text-right tabular-nums")}>
-                {row.totalPcs === undefined ? DASH : `${row.totalPcs} pcs`}
-                <span className="block text-gms-label text-gms-text-secondary">{row.totalWeightCt === undefined ? DASH : `${format.weight(row.totalWeightCt)} cts`}</span>
+                {`${row.totalPcs} pcs`}
+                <span className="block text-gms-label text-gms-text-secondary">{`${format.weight(row.totalWeightCt)} cts`}</span>
               </td>
               <td className={cx(td, "text-right whitespace-nowrap tabular-nums")}>
                 {format.money(row.grandTotal)} {row.currency}
               </td>
               <td className={td}>
                 <span className="block whitespace-nowrap">{submitterText(row)}</span>
-                <span className="block text-gms-label whitespace-nowrap text-gms-text-secondary" title={row.submittedAtIsLastSaved ? "Last saved" : undefined}>
-                  {row.submittedAtIsLastSaved && <span className="sr-only">Last saved </span>}
-                  {submittedTime(row.submittedAt)}
-                </span>
+                <span className="block text-gms-label whitespace-nowrap text-gms-text-secondary">{submittedTime(row.submittedAt)}</span>
+                {row.revisionCount >= 1 && <span className="block text-gms-label whitespace-nowrap text-gms-warning-text">{RESUBMITTED_TEXT}</span>}
               </td>
               <td className={td}>
                 <span className="inline-flex h-6 min-w-[60px] items-center justify-center rounded-gms-sm bg-gms-warning-subtle px-2 text-gms-label font-medium text-gms-warning-text">Pending</span>
               </td>
               <td className={cx(td, "sticky right-0 bg-gms-surface")}>
-                <div className="flex items-center gap-[9px]">
-                  <UnavailableAction label="Reject…" reason={REJECT_UNAVAILABLE} />
-                  <UnavailableAction label="Revise…" reason={REVISE_UNAVAILABLE} />
-                  <button
-                    type="button"
-                    data-approve-index={index}
-                    disabled={busy || locked}
-                    aria-busy={busy || undefined}
-                    aria-describedby={error ? errorId : undefined}
-                    onClick={() => onApprove(row, index)}
-                    className={cx(
-                      "inline-flex h-9 min-w-[95px] items-center justify-center gap-2 rounded-gms-md bg-gms-primary px-4 text-gms-body font-medium text-gms-on-primary transition-colors hover:bg-gms-primary-strong disabled:cursor-not-allowed disabled:opacity-60",
-                      focusRing,
-                    )}
-                  >
-                    {busy && <LoaderCircle aria-hidden size={16} className="animate-spin" />}
-                    Approve
-                  </button>
-                </div>
+                <ReviewActions
+                  docNo={row.docNo}
+                  revisionCount={row.revisionCount}
+                  disabled={busy || locked}
+                  busy={busy}
+                  approveIndex={index}
+                  describedBy={error ? errorId : undefined}
+                  onReject={() => onReject(row, index)}
+                  onRevise={() => onRevise(row, index)}
+                  onApprove={() => onApprove(row, index)}
+                />
                 {error && (
                   <p id={errorId} className="mt-1 max-w-[320px] text-gms-label text-gms-danger">
                     {error.message}

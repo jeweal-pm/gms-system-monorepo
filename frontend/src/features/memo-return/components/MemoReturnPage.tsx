@@ -1,8 +1,11 @@
 "use client";
 
+import { useApprovalSetting } from "@/features/trade-document/approval-flow";
+import { flowOf } from "@/features/trade-document/flow-status";
+
 import { useFormContext } from "react-hook-form";
 import { daybookLoadError, daybookState, deletedInfo, DocumentDaybook, useDocumentAccess } from "@/features/trade-document/document-api";
-import { APPROVAL_STATUS_LABELS, DocumentForm, type DocumentFormConfig } from "@/features/trade-document/document-form";
+import { DocumentForm, type DocumentFormConfig } from "@/features/trade-document/document-form";
 import { returnItemTable } from "@/features/trade-document/return-item-table";
 import { VendorDocumentDetails, VendorDocumentInfoForm } from "@/features/trade-document/vendor-info-form";
 import { isFilledLine } from "@/features/quotation/schema";
@@ -45,8 +48,10 @@ function MemoReturnInfoForm({ options }: { options: MemoReturnOptions | undefine
 
 function MemoReturnDaybook() {
   const daybook = useMemoReturnDaybook();
+  const { requireApproval } = useApprovalSetting("memo-return");
   return (
     <DocumentDaybook
+      requireApproval={requireApproval}
       plural="memo returns"
       href={memoReturnHref}
       state={daybookState(daybook, (error) => daybookLoadError(error, "memo returns"), (item) => String(item.vendorName ?? ""))}
@@ -95,12 +100,7 @@ const CONFIG: DocumentFormConfig<MemoReturnFormValues, MemoReturnInput, MemoRetu
     ),
     addedToast: (count) => `Added ${count} item${count === 1 ? "" : "s"} from Memo Stock`,
   },
-  approval: {
-    statusLabels: APPROVAL_STATUS_LABELS,
-    pendingStatus: "PENDING_APPROVAL",
-    confirmTitle: "Approve Memo Return",
-    confirmBody: ({ length: count }) => `Approve this Memo Return? Its ${count} ${count === 1 ? "item goes" : "items go"} back to the vendor and come off Memo Stock. It can no longer be edited.`,
-  },
+  approvalType: "memo-return",
   noteMax: MEMO_RETURN_NOTE_MAX,
   notePlaceholder: "e.g. Returned in good condition.",
   noteHint: "Printed on the memo return for the vendor",
@@ -115,7 +115,7 @@ export function MemoReturnPage() {
   const access = useDocumentAccess("memo-return");
   if (!access) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{DENIED}</p>;
-  return <DocumentForm config={CONFIG} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
+  return <DocumentForm config={CONFIG} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} />;
 }
 
 /** `/memo/memo-return/[id]` — a saved memo return. */
@@ -125,5 +125,5 @@ export function EditMemoReturnPage({ id }: { id: string }) {
   if (!access || (access.view && detail.isPending)) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{DENIED}</p>;
   if (detail.isError || !detail.data) return <p className={message}>{detail.error ? memoReturnLoadError(detail.error) : "Memo return not found."}</p>;
-  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromMemoReturn(detail.data)} deleted={deletedInfo(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} canApprove={access.approve} />;
+  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromMemoReturn(detail.data)} deleted={deletedInfo(detail.data)} flow={flowOf(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} />;
 }

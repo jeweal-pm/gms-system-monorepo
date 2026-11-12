@@ -4,6 +4,7 @@ import { add, dec, mul, toFixed } from "@/features/quotation/lib/decimal";
 import { emptyLine, emptyQuotation, newKey } from "@/features/quotation/lib/defaults";
 import { isFilledLine, lineSchema, tradeDocumentRules, tradeDocumentShape, type QuotationLine } from "@/features/quotation/schema";
 import type { masterTrpc } from "@/lib/master-trpc";
+import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
 
 /**
  * Purchase (PU) form: UI rev 1 + rev 2 (owner 2026-11-04) on SA rev 1 (ADR-0042). A row is keyed in (MANUAL), picked from
@@ -17,8 +18,8 @@ export const purchaseHref = (id: string) => `${PURCHASE_HREF}/${id}`;
 export const PURCHASE_NOTE_MAX = 250;
 /** A document holds at most 200 lines (C `LINES_MAX`). */
 export const PURCHASE_LINES_MAX = 200;
-/** Q-PU-06: a saved purchase waits as Pending Approval; Approve makes it read-only. */
-export const PURCHASE_STATUSES = ["PENDING_APPROVAL", "APPROVED"] as const;
+/** ADR-0048: Draft, Pending Approval, Approved, Revise, Rejected. */
+export const PURCHASE_STATUSES = APPROVAL_DOC_STATUSES;
 
 /** `purchase.memoStock` row (SA-PU-12): SOLD rows first, then IN_STOCK; `sale` / `locationType` are null (D6). */
 export type PurchaseMemoStockRow = InferQueryLikeData<typeof masterTrpc.purchase.memoStock>["items"][number];
@@ -102,7 +103,7 @@ export const emptyPurchaseLine = (): PurchaseLine => ({ ...emptyLine(), ...NO_SO
 export function emptyPurchase(): PurchaseFormValues {
   const q = emptyQuotation();
   return {
-    status: "PENDING_APPROVAL",
+    status: "DRAFT",
     docDate: q.docDate,
     dueDate: q.dueDate,
     vendorId: "",
@@ -330,18 +331,4 @@ export function purchaseTableLine<T extends QuotationLine>(line: T): T {
   // R3-02 + INV-20261107-003: a Memo Stock row names its part (Sold / In stock / both), so separate rows of one Stock ID differ.
   const from = row.purchaseOrderLineId ? ` · from ${row.sourceDocNo}` : row.memoGroup ? ` · ${MEMO_GROUP_TAG[row.memoGroup]}` : "";
   return { ...line, stockId: `${line.stockId || "Auto"}${from}`, locationId: line.locationId || "—" };
-}
-
-/**
- * Approve confirm (FE-PU-005, SA D2): names the stock effect of the rows. Memo Stock rows come off Memo Stock, PO rows
- * off the Purchase Orders' open quantity; manual rows move nothing.
- */
-export function purchaseApproveText(lines: readonly QuotationLine[]): string {
-  const count = lines.length;
-  const sources = new Set(lines.map((line) => purchaseLineSource(line as Partial<PurchaseLine>)));
-  const items = `${count} ${count === 1 ? "item is" : "items are"}`;
-  const from = [sources.has("STOCK") && "Memo Stock", sources.has("PURCHASE_ORDER") && "the Purchase Orders"].filter(Boolean).join(" and ");
-  return from
-    ? `Approve this Purchase? Its ${items} taken off ${from}, and it can no longer be edited.`
-    : `Approve this Purchase? Its ${items} recorded as bought, and it can no longer be edited.`;
 }

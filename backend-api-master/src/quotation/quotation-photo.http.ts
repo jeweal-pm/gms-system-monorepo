@@ -2,7 +2,9 @@ import type { RequestHandler, Response } from "express";
 import { TRPCError } from "@trpc/server";
 import { getHTTPStatusCodeFromError } from "@trpc/server/http";
 import { errorBody } from "../common/errors";
-import { requireMasterGrant, type MasterContext, type MasterMenu } from "../master/authorization";
+import { canApprove } from "../approval-setting/approval-flow";
+import { APPROVAL_DOC_TYPES, type ApprovalDocType } from "../approval-setting/approval-types";
+import { hasMasterGrant, requireMasterGrant, requireMasterSession, type MasterContext, type MasterMenu } from "../master/authorization";
 import type { MasterTrpcHandler } from "../master/trpc-handler";
 
 export const QUOTATION_PHOTO_ROUTE = "/api/v1/quotation/photos";
@@ -73,13 +75,25 @@ export function photoUploaderId(context: MasterContext, menu: MasterMenu): strin
 }
 
 /**
- * Live user authorization of `menu` (POST: ADD or EDIT + CSRF; GET: VIEW), then a concurrency slot, both before any
+ * Photo read grant (approval-setup clarification G14, same rule as G11 `<doc>.get`): `<menu>:VIEW`, or `canApprove` of
+ * the menu's approval type. `approverOnly` = the second case; the photo must then belong to a line of a live
+ * PENDING_APPROVAL document of that type (checked by `streamPhoto` before the file is looked up).
+ */
+export function photoReader(context: MasterContext, menu: MasterMenu): { userId: string; approverOnly: boolean } {
+  const principal = requireMasterSession(context);
+  if (hasMasterGrant(principal, menu, "VIEW")) return { userId: principal.userId, approverOnly: false };
+  if ((APPROVAL_DOC_TYPES as readonly string[]).includes(menu) && canApprove(principal, menu as ApprovalDocType)) return { userId: principal.userId, approverOnly: true };
+  throw new TRPCError({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+}
+
+/**
+ * Live user authorization of `menu` (POST: ADD or EDIT + CSRF; GET: VIEW, or canApprove per `photoReader`), then a concurrency slot, both before any
  * body is buffered (same pattern as the company logo route).
  */
 export function createPhotoAccessCheck(masterTrpc: MasterTrpcHandler, menu: MasterMenu, limiters: PhotoLimiters): RequestHandler {
   return (request, response, next) => {
     void masterTrpc.createContext(request).then((context) => {
-      if (request.method === "GET") requireMasterGrant(context, menu, "VIEW", false);
+      if (request.method === "GET") photoReader(context, menu);
       else photoUploaderId(context, menu);
       // The client left while authorization ran: "close" already fired, so a slot would never be released.
       if (response.closed || response.destroyed) return;

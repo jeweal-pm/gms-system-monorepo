@@ -2,6 +2,7 @@ import { z } from "zod";
 import { LINES_MAX, lineInputSchema, tradeDocumentFields, tradeDocumentRules } from "../quotation/quotation.schemas";
 import { documentListFields } from "../trade-document/document-engine";
 import { discountBoundRules } from "../trade-document/memo-schemas";
+import { DOC_STATUSES } from "../approval/approval.schemas";
 
 /**
  * purchase SA rev 1 / ADR-0042 (api-contract.md "Input rules"): the Purchase Order header (vendor + address, SA-PO-07)
@@ -95,7 +96,8 @@ export const purchaseVersionedIdSchema = z.object(versioned).strict();
 export const purchaseNextNumberSchema = z.object({ docDate: z.iso.date() }).strict();
 export const purchaseOptionsSchema = z.object({ vendorId: uuid.optional() }).strict();
 
-export const PURCHASE_STATUSES = ["PENDING_APPROVAL", "APPROVED"] as const;
+/** List status filter (ADR-0046 D2 + ADR-0048 DRAFT). */
+export const PURCHASE_STATUSES = DOC_STATUSES;
 export type PurchaseStatus = (typeof PURCHASE_STATUSES)[number];
 
 const DAY_MS = 86_400_000;

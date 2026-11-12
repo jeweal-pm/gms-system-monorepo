@@ -1,6 +1,7 @@
 "use client";
 
 import { deletedInfo } from "@/features/trade-document/document-api";
+import { flowOf } from "@/features/trade-document/flow-status";
 import { fromMemoReceive, memoReceiveLoadError, useMemoReceiveAccess, useMemoReceiveDetail } from "../api";
 import { MemoReceiveForm } from "./MemoReceiveForm";
 
@@ -22,5 +23,5 @@ export function EditMemoReceivePage({ id }: { id: string }) {
   if (!access || (access.view && detail.isPending)) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{denied}</p>;
   if (detail.isError || !detail.data) return <p className={message}>{detail.error ? memoReceiveLoadError(detail.error) : "This Memo Receive no longer exists."}</p>;
-  return <MemoReceiveForm key={id} access={access} initial={fromMemoReceive(detail.data)} deleted={deletedInfo(detail.data)} />;
+  return <MemoReceiveForm key={id} access={access} initial={fromMemoReceive(detail.data)} deleted={deletedInfo(detail.data)} flow={flowOf(detail.data)} />;
 }

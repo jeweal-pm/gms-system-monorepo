@@ -1,3 +1,4 @@
+import { FLOW_DETAIL } from "../trade-document/flow-fixture";
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FormProvider, useForm } from "react-hook-form";
@@ -127,8 +128,9 @@ describe("Memo Stock and form rules (UT-MRT-03/04)", () => {
     expect(paths(values({ lines: [picked({ pcs: "", weightCt: "1.5" })] }))).toEqual([]);
     expect(paths(values({ lines: [picked({ pcs: "11", weightCt: "3.3" })] }))).toEqual(["lines.0.pcs", "lines.0.weightCt"]);
     expect(paths(values({ documentNote: "x".repeat(MEMO_RETURN_NOTE_MAX + 1) }))).toEqual(["documentNote"]);
-    expect(emptyMemoReturn().status).toBe("PENDING_APPROVAL");
-    expect(paths(values({ status: "DRAFT" as never }))).toEqual(["status"]);
+    expect(emptyMemoReturn().status).toBe("DRAFT");
+    expect(paths(values({ status: "REVISION_REQUESTED" }))).toEqual([]);
+    expect(paths(values({ status: "BOGUS" as never }))).toEqual(["status"]);
   });
 });
 
@@ -149,7 +151,7 @@ describe("mapping and errors (UT-MRT-05/06)", () => {
       }],
       discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "40320.00", discountAmount: "0.00", priceBeforeTax: "40320.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "40320.00" },
-      approvedAt: null, approvedBy: null, createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null,
+      approvedAt: null, approvedBy: null, createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, ...FLOW_DETAIL,
     } satisfies MemoReturnDetail;
     expect(fromMemoReturn(detail)).toMatchObject({
       docNo: "MRT-1", version: 2, status: "PENDING_APPROVAL", vendorId: ID,

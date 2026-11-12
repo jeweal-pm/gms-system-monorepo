@@ -195,7 +195,7 @@ describe("UT-PU-16 contract mapping and errors (SA-PU-26)", () => {
     expect(err("VALIDATION_ERROR", [{ path: "lines.0.weightCt", code: "must_equal_sold" }]).fieldErrors).toEqual([{ name: "lines.0.weightCt", message: "A sold item is purchased whole" }]);
     expect(err("VALIDATION_ERROR", [{ path: "lines.0.memoStockId", code: "not_mergeable" }]).message).toBe("Row 1: this item has nothing left in stock to merge. Remove the row and choose again.");
     const short = err("PURCHASE_PENDING_SHORT", [{ path: "lines.1.pcs", code: "exceeds_available" }, { path: "lines.2.pcs", code: "below_sold" }]);
-    expect(short.message).toBe("Rows 2, 3: not enough is available any more. Lower the quantity or remove the row, then save and approve again.");
+    expect(short.message).toBe("Rows 2, 3: not enough is available any more. Lower the quantity or remove the row, then save again. Nothing was saved.");
     expect(short.fieldErrors).toEqual([
       { name: "lines.1.pcs", message: "More than the available quantity" },
       { name: "lines.2.pcs", message: "At least the quantity already sold to customers" },

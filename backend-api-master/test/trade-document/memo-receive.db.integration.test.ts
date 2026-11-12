@@ -6,6 +6,7 @@ import { Writable } from "node:stream";
 import { HttpException } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { sendAndApprove, setApproval, submitted } from "../partner-shared/approval";
 
 /**
  * IT-MR-01…08 (memo-receive SA rev 1 / ADR-0034, owner 2026-10-29) against real PostgreSQL: Document Setup numbers,
@@ -104,8 +105,8 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     setupService = new DocumentSetupService();
     const unused = {} as never;
     router = createMasterRouter({
-      customer: unused, vendor: unused, companyProfile: unused, stoneMaster: unused, documentSetup: unused, decimalSetup: unused, currency: unused, quotation: unused,
-      memoOut: unused, memoOutReturn: unused, memoReceive: receive, memoStock: stock, memoReturn: unused, memoOutstanding: unused, reserve: unused, purchaseOrder: unused, purchase: unused,
+      customer: unused, vendor: unused, companyProfile: unused, stoneMaster: unused, documentSetup: unused, decimalSetup: unused, approvalSetting: unused, currency: unused, quotation: unused,
+      memoOut: unused, memoOutReturn: unused, memoReceive: receive, memoStock: stock, memoReturn: unused, memoOutstanding: unused, reserve: unused, purchaseOrder: unused, purchase: unused, approval: unused,
     });
 
     // A concurrent DB integration file may create the same shared fixture first (P2002): keep its row.
@@ -127,6 +128,9 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     await prisma.memoStockIdCounter.deleteMany({ where: { year: { in: YEARS } } });
     vendorA = await vendorFixture("MR IT Vendor A");
     vendorB = await vendorFixture("MR IT Vendor B");
+    // ADR-0048: these tests follow the approval-ON flow (Save → DRAFT → Send to approve → Approve).
+    await setApproval(prisma, "memo-receive", true);
+    await setApproval(prisma, "memo-out", true);
   });
 
   beforeEach(() => {
@@ -153,12 +157,12 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     vi.unstubAllEnvs();
   });
 
-  it("IT-MR-01 create → PENDING_APPROVAL, Document Setup / plain number, Stock IDs YY0001… in line order, server totals", async () => {
+  it("IT-MR-01 create → DRAFT (approval ON), Document Setup / plain number, Stock IDs YY0001… in line order, server totals", async () => {
     const lines = [line(), line({ priceUnit: "PER_PCS", pcs: 3, unitPrice: "250", discount: { type: "PERCENT", value: "10" } })];
     const result = await receive.create(ACTOR, input(vendorA, lines));
     expect(result).toMatchObject({ docNo: expect.stringMatching(/^MR-\d+$/), version: 1, stockIds: ["500001", "500002"] });
     const detail = await receive.get(result.id);
-    expect(detail).toMatchObject({ status: "PENDING_APPROVAL", approvedAt: null, approvedBy: null, vendorId: vendorA.id, vendor: { name: "MR IT Vendor A" } });
+    expect(detail).toMatchObject({ status: "DRAFT", autoApproved: false, submittedAt: null, approvedAt: null, approvedBy: null, vendorId: vendorA.id, vendor: { name: "MR IT Vendor A" } });
     expect(detail.lines.map((entry) => entry.stockId)).toEqual(["500001", "500002"]);
     expect(detail.lines[0]).not.toHaveProperty("location");
     expect(detail.lines[0]).not.toHaveProperty("stoneCodeId");
@@ -173,9 +177,9 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     expect(plain.docNo).toMatch(/^\d+$/);
     expect(plain.stockIds).toEqual(["500003"]);
     expect((await receive.nextNumber("2026-10-29")).docNo).toMatch(/^MR-\d+$/);
-    const listed = await receive.list({ partyId: vendorA.id, status: "PENDING_APPROVAL", limit: 50, deleted: false });
+    const listed = await receive.list({ partyId: vendorA.id, status: "DRAFT", limit: 50, deleted: false });
     expect(listed.items.map((item) => item.id)).toEqual(expect.arrayContaining([result.id, plain.id]));
-    expect(listed.items[0]).toMatchObject({ status: "PENDING_APPROVAL", vendorName: "MR IT Vendor A" });
+    expect(listed.items[0]).toMatchObject({ status: "DRAFT", vendorName: "MR IT Vendor A", autoApproved: false, review: null });
     expect((await receive.list({ partyId: vendorA.id, status: "APPROVED", limit: 50, deleted: false })).items.map((item) => item.id)).not.toContain(result.id);
   });
 
@@ -209,7 +213,7 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     const updated = await receive.update(ACTOR, doc.id, 1, input(vendorA, [
       { ...line({ lot: "L1b" }), id: saved[0].id }, line({ lot: "NEW" }), { ...line({ lot: "L3" }), id: saved[2].id },
     ]));
-    expect(updated).toEqual({ id: doc.id, version: 2, stockIds: ["550001", "550004", "550003"] });
+    expect(updated).toMatchObject({ id: doc.id, version: 2, stockIds: ["550001", "550004", "550003"], status: "DRAFT", autoApproved: false });
     const after = (await receive.get(doc.id)).lines;
     expect(after.map((entry) => [entry.id, entry.stockId, entry.lot])).toEqual([[saved[0].id, "550001", "L1b"], [after[1].id, "550004", "NEW"], [saved[2].id, "550003", "L3"]]);
     expect(after[1].id).not.toBe(saved[1].id);
@@ -224,31 +228,39 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     expect((await prisma.memoStockIdCounter.findUnique({ where: { year: 55 } }))?.lastNo).toBe(6);
   });
 
-  it("IT-MR-04 stale version → CHANGED; update / delete of an APPROVED document → STATUS_INVALID; pending delete works", async () => {
+  it("IT-MR-04 stale version → CHANGED; update / delete of a PENDING or reviewed APPROVED document → STATUS_INVALID; draft delete works", async () => {
     const doc = await receive.create(ACTOR, input(vendorA, [line()]));
     expect(await failure(receive.update(ACTOR, doc.id, 7, input(vendorA, [line()])))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_CHANGED" });
     expect(await failure(receive.delete(ACTOR, doc.id, 7))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_CHANGED" });
-    await receive.approve(ACTOR, doc.id, 1);
+    await submitted(receive, ACTOR, doc);
+    // ADR-0048: Pending is locked.
     expect(await failure(receive.update(ACTOR, doc.id, 2, input(vendorA, [line()])))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
-    expect(await failure(receive.update(ACTOR, doc.id, 1, input(vendorA, [line()])))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
     expect(await failure(receive.delete(ACTOR, doc.id, 2))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
+    await receive.approve(ACTOR, doc.id, 2);
+    expect(await failure(receive.update(ACTOR, doc.id, 3, input(vendorA, [line()])))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
+    expect(await failure(receive.update(ACTOR, doc.id, 1, input(vendorA, [line()])))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
+    expect(await failure(receive.delete(ACTOR, doc.id, 3))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
     expect((await receive.get(doc.id)).status).toBe("APPROVED");
 
     const pending = await receive.create(ACTOR, input(vendorA, [line()]));
     await expect(receive.delete(ACTOR, pending.id, 1)).resolves.toEqual({ ok: true, version: 2 });
     // transaction-soft-delete (ADR-0045): kept and readable; every write is refused with MEMO_RECEIVE_DELETED.
-    expect(await receive.get(pending.id)).toMatchObject({ status: "PENDING_APPROVAL", deletedBy: ACTOR });
+    expect(await receive.get(pending.id)).toMatchObject({ status: "DRAFT", deletedBy: ACTOR, canEdit: false, canSubmit: false });
     expect(await failure(receive.approve(ACTOR, pending.id, 2))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_DELETED" });
+    expect(await failure(receive.submit({ id: ACTOR, name: null }, pending.id, 2))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_DELETED" });
     expect(await prisma.memoStock.count({ where: { memoReceiveId: pending.id } })).toBe(0);
   });
 
   it("IT-MR-05 approve → APPROVED + approved_at/by + version+1 + one Memo Stock row per line; repeat → STATUS_INVALID; parallel → one wins", async () => {
     const lines = [line({ discount: { type: "AMOUNT", value: "100" } }), line({ priceUnit: "PER_PCS", pcs: 4, weightCt: "2.2", unitPrice: "300" })];
     const doc = await receive.create(ACTOR, input(vendorA, lines));
+    // A DRAFT is not in the Approve queue.
+    expect(await failure(receive.approve(ACTOR, doc.id, 1))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
+    await submitted(receive, ACTOR, doc);
     expect(await failure(receive.approve(ACTOR, doc.id, 9))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_CHANGED" });
-    await expect(receive.approve("approver-1", doc.id, 1)).resolves.toEqual({ id: doc.id, version: 2, status: "APPROVED", memoStockCount: 2 });
+    await expect(receive.approve("approver-1", doc.id, 2)).resolves.toEqual({ id: doc.id, version: 3, status: "APPROVED", memoStockCount: 2 });
     const detail = await receive.get(doc.id);
-    expect(detail).toMatchObject({ status: "APPROVED", version: 2, approvedBy: "approver-1", approvedAt: expect.any(String) });
+    expect(detail).toMatchObject({ status: "APPROVED", version: 3, autoApproved: false, approvedBy: "approver-1", approvedAt: expect.any(String), submittedByName: "IT Tester" });
     const rows = await prisma.memoStock.findMany({ where: { memoReceiveId: doc.id }, orderBy: { stockId: "asc" } });
     expect(rows.map((row) => row.stockId)).toEqual(doc.stockIds);
     expect(rows.map((row) => row.memoReceiveLineId)).toEqual(detail.lines.map((entry) => entry.id));
@@ -261,12 +273,12 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     expect([rows[0].unitPrice.toFixed(2), rows[0].lineAmount.toFixed(2), rows[0].netUnitPrice.toFixed(4)]).toEqual(["1000.00", "1400.00", "933.3333"]);
     expect([rows[1].lineAmount.toFixed(2), rows[1].netUnitPrice.toFixed(4)]).toEqual(["1200.00", "300.0000"]);
 
+    expect(await failure(receive.approve(ACTOR, doc.id, 3))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
     expect(await failure(receive.approve(ACTOR, doc.id, 2))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
-    expect(await failure(receive.approve(ACTOR, doc.id, 1))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
     expect(await prisma.memoStock.count({ where: { memoReceiveId: doc.id } })).toBe(2);
 
-    const race = await receive.create(ACTOR, input(vendorA, [line(), line(), line()]));
-    const outcomes = await Promise.allSettled([receive.approve(ACTOR, race.id, 1), receive.approve(ACTOR, race.id, 1)]);
+    const race = await submitted(receive, ACTOR, await receive.create(ACTOR, input(vendorA, [line(), line(), line()])));
+    const outcomes = await Promise.allSettled([receive.approve(ACTOR, race.id, 2), receive.approve(ACTOR, race.id, 2)]);
     expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
     const rejected = outcomes.find((outcome) => outcome.status === "rejected") as PromiseRejectedResult;
     expect(await failure(Promise.reject(rejected.reason))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
@@ -277,7 +289,7 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     receive.clock = clockAt(2056);
     const approve = async (docDate: string, lines: Line[]) => {
       const doc = await receive.create(ACTOR, input(vendorB, lines, { docDate, dueDate: "2026-12-31" }));
-      await receive.approve(ACTOR, doc.id, 1);
+      await sendAndApprove(receive, ACTOR, doc.id, 1);
       return doc;
     };
     const jan = await approve("2026-01-10", [line({ lot: "JAN-1" }), line({ lot: "JAN-2", discount: { type: "PERCENT", value: "10" } })]);
@@ -435,8 +447,8 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     expect((await receive.get(created.id)).lines.map((entry) => entry.photoIds)).toEqual([[ids[1], ids[2]], [ids[0]]]);
 
     // Approved → read-only (existing status guard); photo links stay and a linked file can't be deleted (RESTRICT).
-    await receive.approve(ACTOR, created.id, 2);
-    expect(await failure(receive.update(ACTOR, created.id, 3, input(vendor, [{ ...line(), id: first.id }])))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
+    await sendAndApprove(receive, ACTOR, created.id, 2);
+    expect(await failure(receive.update(ACTOR, created.id, 4, input(vendor, [{ ...line(), id: first.id }])))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
     expect((await receive.get(created.id)).lines[0].photoIds).toEqual([ids[1], ids[2]]);
     await expect(prisma.storedFile.delete({ where: { id: ids[1] } })).rejects.toThrow();
   });
@@ -457,9 +469,9 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     const { vendorId: _vendorId, addressId: _addressId, ...shared } = input(vendorA, [{ ...line(), stoneCodeId: null, location: "Shelf 1" } as never]);
     const out = await memoOut.create(ACTOR, { ...shared, customerId, shippingAddressId: shipping, invoiceAddressId: invoice } as never);
     const detail = await memoOut.get(out.id);
-    // memo-out SA rev 2 (SA-MO-11/12): Memo Out now starts PENDING_APPROVAL; a manual line has no Memo Stock item.
-    expect(detail).toMatchObject({ status: "PENDING_APPROVAL", version: 1, lines: [expect.objectContaining({ location: "Shelf 1", stoneCodeId: null, source: "MANUAL", memoStockId: null, stockId: null })] });
-    await expect(memoOut.update(ACTOR, out.id, 1, { ...shared, customerId, shippingAddressId: shipping, invoiceAddressId: invoice } as never)).resolves.toEqual({ id: out.id, version: 2 });
+    // ADR-0048: Memo Out starts as a DRAFT (approval ON); a manual line has no Memo Stock item.
+    expect(detail).toMatchObject({ status: "DRAFT", version: 1, lines: [expect.objectContaining({ location: "Shelf 1", stoneCodeId: null, source: "MANUAL", memoStockId: null, stockId: null })] });
+    await expect(memoOut.update(ACTOR, out.id, 1, { ...shared, customerId, shippingAddressId: shipping, invoiceAddressId: invoice } as never)).resolves.toMatchObject({ id: out.id, version: 2, status: "DRAFT" });
     await expect(memoOut.delete(ACTOR, out.id, 2)).resolves.toEqual({ ok: true, version: 3 });
   });
 });

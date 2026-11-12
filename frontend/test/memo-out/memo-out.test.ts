@@ -1,3 +1,4 @@
+import { FLOW_DETAIL } from "../trade-document/flow-fixture";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -81,7 +82,7 @@ describe("mapping (UT-MO-03)", () => {
       currency: "THB", exchangeRate: null, ref: "", documentNote: "", lines: [], discount: { type: "NONE", value: "0" },
       tax: { enabled: true, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "0.00", discountAmount: "0.00", priceBeforeTax: "0.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "0.00" },
-      approvedAt: null, approvedBy: null, createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null,
+      approvedAt: null, approvedBy: null, createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, ...FLOW_DETAIL,
     } satisfies MemoOutDetail;
     expect(fromMemoOut(detail)).toMatchObject({ docNo: "MO-2609001", version: 2, status: "PENDING_APPROVAL", customerId: ID, shippingAddressId: ID, invoiceAddressId: "" });
   });
@@ -113,7 +114,9 @@ describe("From Stock rows (UT-MO-201…205, memo-out rev 2)", () => {
     expect(issues(values({ lines: [picked({ pcs: "0", weightCt: "0" })] }))).toEqual(["lines.0.pcs:Enter the quantity"]);
     expect(issues(values({ lines: [picked({ unitPrice: "" })] }))).toEqual(["lines.0.unitPrice:Enter the sale price"]);
     expect(issues(values({ lines: [manual({ unitPrice: "" })] }))).toEqual([]);
-    expect(issues(values({ status: "DRAFT" as never }))).toContain("status:Invalid option: expected one of \"PENDING_APPROVAL\"|\"APPROVED\"");
+    // ADR-0048: every flow status is a valid saved status; anything else is refused.
+    expect(issues(values({ status: "DRAFT" })).filter((issue) => issue.startsWith("status:"))).toEqual([]);
+    expect(issues(values({ status: "BOGUS" as never })).some((issue) => issue.startsWith("status:"))).toBe(true);
   });
 
   it("UT-MO-203 sends the Memo Stock item of a stock row and none for a manual row; loads both back", () => {
@@ -131,7 +134,7 @@ describe("From Stock rows (UT-MO-201…205, memo-out rev 2)", () => {
       ],
       discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "77800.00", discountAmount: "0.00", priceBeforeTax: "77800.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "77800.00" },
-      approvedAt: "2026-10-31T03:00:00.000Z", approvedBy: "u", createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null,
+      approvedAt: "2026-10-31T03:00:00.000Z", approvedBy: "u", createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, ...FLOW_DETAIL,
     } satisfies MemoOutDetail;
     const loaded = fromMemoOut(detail);
     expect(loaded.status).toBe("APPROVED");
@@ -145,7 +148,7 @@ describe("From Stock rows (UT-MO-201…205, memo-out rev 2)", () => {
   });
 
   it("UT-MO-205 the approval badges and a new memo out waiting for approval", () => {
-    expect(emptyMemoOut()).toMatchObject({ status: "PENDING_APPROVAL" });
+    expect(emptyMemoOut()).toMatchObject({ status: "DRAFT" });
     expect(header({ status: "PENDING_APPROVAL", statusLabels: { PENDING_APPROVAL: { label: "Pending Approval", tone: "" } } })).toContain("Pending Approval");
   });
 });

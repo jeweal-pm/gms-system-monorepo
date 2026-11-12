@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { HttpException } from "@nestjs/common";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { sendAndApprove, setApproval } from "../partner-shared/approval";
 
 /**
  * IT-SD-01…10 (transaction-soft-delete SA rev 1 / ADR-0045, owner 2026-11-06) against real PostgreSQL: the migration's
@@ -135,6 +136,8 @@ describe.runIf(canRun)("IT-SD transaction soft delete on PostgreSQL", () => {
       addresses: { create: [{ ...address, id: customer.shipping, type: "SHIPPING" }, { ...address, id: customer.invoice, type: "INVOICE" }] },
     } });
     customerCreated = true;
+    for (const type of ["memo-receive", "memo-out", "purchase-order"] as const) await setApproval(prisma, type, true);
+    await setApproval(prisma, "quotation", false);
   });
 
   afterAll(async () => {
@@ -179,7 +182,7 @@ describe.runIf(canRun)("IT-SD transaction soft delete on PostgreSQL", () => {
 
   it("IT-SD-02 CHECK: deleted columns on an APPROVED row, on a cancelled quotation, or only one of the two columns, are refused", async () => {
     const saved = await s.receive.create(ACTOR, receiveInput(vendorA, [receiveLine()]));
-    await s.receive.approve(ACTOR, saved.id, saved.version);
+    await sendAndApprove(s.receive, ACTOR, saved.id, saved.version);
     await expect(prisma.$executeRaw`UPDATE "partner"."memo_receive" SET deleted_at = now(), deleted_by = 'x' WHERE id = ${saved.id}::uuid`).rejects.toThrow();
     const pending = await s.receive.create(ACTOR, receiveInput(vendorA, [receiveLine()]));
     await expect(prisma.$executeRaw`UPDATE "partner"."memo_receive" SET deleted_at = now() WHERE id = ${pending.id}::uuid`).rejects.toThrow();
@@ -187,7 +190,7 @@ describe.runIf(canRun)("IT-SD transaction soft delete on PostgreSQL", () => {
     const quote = await s.quotation.create(ACTOR, { ...header(), lines: [quotationLine()], customerId: customer.id, shippingAddressId: customer.shipping, invoiceAddressId: customer.invoice } as never);
     await prisma.quotation.update({ where: { id: quote.id }, data: { status: "CANCELLED" } });
     await expect(prisma.$executeRaw`UPDATE "partner"."quotation" SET deleted_at = now(), deleted_by = 'x' WHERE id = ${quote.id}::uuid`).rejects.toThrow();
-    await prisma.quotation.update({ where: { id: quote.id }, data: { status: "DRAFT" } });
+    await prisma.quotation.update({ where: { id: quote.id }, data: { status: "DRAFT", autoApproved: false, approvedAt: null, approvedBy: null } });
     await expect(prisma.$executeRaw`UPDATE "partner"."quotation" SET deleted_at = now(), deleted_by = 'x' WHERE id = ${quote.id}::uuid`).resolves.toBe(1);
     await prisma.$executeRaw`UPDATE "partner"."quotation" SET deleted_at = NULL, deleted_by = NULL, status = 'CANCELLED' WHERE id = ${quote.id}::uuid`;
   });
@@ -200,7 +203,7 @@ describe.runIf(canRun)("IT-SD transaction soft delete on PostgreSQL", () => {
 
     await expect(s.receive.delete(DELETER, saved.id, 1)).resolves.toEqual({ ok: true, version: 2 });
     const deleted = await s.receive.get(saved.id);
-    expect(deleted).toMatchObject({ status: "PENDING_APPROVAL", version: 2, deletedBy: DELETER, docNo: before.docNo });
+    expect(deleted).toMatchObject({ status: "DRAFT", version: 2, deletedBy: DELETER, docNo: before.docNo });
     expect(deleted.deletedAt).toEqual(expect.any(String));
     expect(deleted.lines.map((line) => [line.stockId, line.photoIds])).toEqual(before.lines.map((line) => [line.stockId, line.photoIds]));
     expect(deleted.lines[0].photoIds).toEqual([p1, p2]);
@@ -221,7 +224,7 @@ describe.runIf(canRun)("IT-SD transaction soft delete on PostgreSQL", () => {
 
     // Restore misses, then restore.
     expect(await failure(s.receive.restore(ACTOR, saved.id, 1))).toEqual({ status: 409, code: "MEMO_RECEIVE_CHANGED" });
-    await expect(s.receive.restore(ACTOR, saved.id, 2)).resolves.toEqual({ id: saved.id, version: 3, status: "PENDING_APPROVAL" });
+    await expect(s.receive.restore(ACTOR, saved.id, 2)).resolves.toEqual({ id: saved.id, version: 3, status: "DRAFT" });
     expect(await failure(s.receive.restore(ACTOR, saved.id, 3))).toEqual({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
     const restored = await s.receive.get(saved.id);
     expect(restored).toMatchObject({ deletedAt: null, deletedBy: null, version: 3 });
@@ -230,9 +233,9 @@ describe.runIf(canRun)("IT-SD transaction soft delete on PostgreSQL", () => {
     // IT-SD-07: editable again; save keeps the Stock IDs; approve fills Memo Stock.
     const updated = await s.receive.update(ACTOR, saved.id, 3, receiveInput(vendorA, before.lines.map((line) => receiveLine({ id: line.id, lot: line.lot, photoIds: line.photoIds }))) as never);
     expect(updated.stockIds).toEqual(before.lines.map((line) => line.stockId));
-    await expect(s.receive.approve(ACTOR, saved.id, 4)).resolves.toMatchObject({ status: "APPROVED", memoStockCount: 2 });
+    await expect(sendAndApprove(s.receive, ACTOR, saved.id, 4)).resolves.toMatchObject({ status: "APPROVED", memoStockCount: 2 });
     expect((await prisma.memoStock.findMany({ where: { memoReceiveId: saved.id }, orderBy: { stockId: "asc" } })).map((item) => item.stockId)).toEqual(before.lines.map((line) => line.stockId).sort());
-    expect(await failure(s.receive.delete(ACTOR, saved.id, 5))).toEqual({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
+    expect(await failure(s.receive.delete(ACTOR, saved.id, 6))).toEqual({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
   });
 
   it("IT-SD-04/05 Purchase Order: the Deleted view pages > 50 rows in order; the normal list and total drop; the number is never reused; Document Setup used", async () => {
@@ -284,7 +287,7 @@ describe.runIf(canRun)("IT-SD transaction soft delete on PostgreSQL", () => {
   it("IT-SD-08 Memo Out: a deleted pending Memo Out holds nothing and is never in the Memo Out Return outstanding list; restore → approve moves stock", async () => {
     const vendor = await vendorFixture("SD IT Vendor MO");
     const saved = await s.receive.create(ACTOR, receiveInput(vendor, [receiveLine({ lot: "LOT-MO" })]));
-    await s.receive.approve(ACTOR, saved.id, saved.version);
+    await sendAndApprove(s.receive, ACTOR, saved.id, saved.version);
     const [item] = await prisma.memoStock.findMany({ where: { memoReceiveId: saved.id } });
     const out = await s.memoOut.create(ACTOR, schemas.createMemoOutSchema.parse({
       ...header(), customerId: customer.id, shippingAddressId: customer.shipping, invoiceAddressId: customer.invoice,
@@ -299,41 +302,46 @@ describe.runIf(canRun)("IT-SD transaction soft delete on PostgreSQL", () => {
     expect((await s.memoOut.list(schemas.memoOutListSchema.parse({ partyId: customer.id }))).items.map((row) => row.id)).not.toContain(out.id);
     expect((await s.memoOut.list(schemas.memoOutListSchema.parse({ partyId: customer.id, deleted: true }))).items.map((row) => row.id)).toEqual([out.id]);
 
-    await s.memoOut.restore(ACTOR, out.id, 2);
-    await expect(s.memoOut.approve(ACTOR, out.id, 3)).resolves.toMatchObject({ status: "APPROVED", stockLineCount: 1 });
+    await expect(s.memoOut.restore(ACTOR, out.id, 2)).resolves.toMatchObject({ status: "DRAFT" });
+    await expect(sendAndApprove(s.memoOut, ACTOR, out.id, 3)).resolves.toMatchObject({ status: "APPROVED", stockLineCount: 1 });
     expect(await prisma.memoStock.findUniqueOrThrow({ where: { id: item.id } })).toMatchObject({ pendingPcs: 3, reservedPcs: 1 });
   });
 
-  it("IT-SD-03/06 Quotation (OQ-1): created APPROVED can't be deleted; a DRAFT can; read-only while deleted; restore keeps its status", async () => {
+  it("IT-SD-03/06 Quotation (ADR-0048): auto-approved (OFF) can be deleted while unused; a reviewed APPROVED can't; read-only while deleted; restore → DRAFT when ON", async () => {
     const body = { ...header(), lines: [quotationLine()], customerId: customer.id, shippingAddressId: customer.shipping, invoiceAddressId: customer.invoice } as never;
-    const approved = await s.quotation.create(ACTOR, body);
-    expect(await failure(s.quotation.delete(ACTOR, approved.id, 1))).toEqual({ status: 409, code: "QUOTATION_STATUS_INVALID" });
+    const auto = await s.quotation.create(ACTOR, body);
+    expect(auto).toMatchObject({ status: "APPROVED", autoApproved: true });
+    await expect(s.quotation.delete(ACTOR, auto.id, 1)).resolves.toEqual({ ok: true, version: 2 });
+    await setApproval(prisma, "quotation", true);
+    const reviewed = await s.quotation.create(ACTOR, body);
+    await sendAndApprove(s.quotation, ACTOR, reviewed.id, 1);
+    expect(await failure(s.quotation.delete(ACTOR, reviewed.id, 3))).toEqual({ status: 409, code: "QUOTATION_STATUS_INVALID" });
     const draft = await s.quotation.create(ACTOR, body);
-    await prisma.quotation.update({ where: { id: draft.id }, data: { status: "DRAFT" } });
     await expect(s.quotation.delete(DELETER, draft.id, 1)).resolves.toEqual({ ok: true, version: 2 });
     expect(await s.quotation.get(draft.id)).toMatchObject({ status: "DRAFT", deletedBy: DELETER, lines: [{ stone: "Emerald" }] });
     expect(await failure(s.quotation.update(ACTOR, draft.id, 2, body))).toEqual({ status: 409, code: "QUOTATION_DELETED" });
-    expect(await failure(s.quotation.submit(ACTOR, draft.id, 2))).toEqual({ status: 409, code: "QUOTATION_DELETED" });
+    expect(await failure(s.quotation.submit({ id: ACTOR, name: null }, draft.id, 2))).toEqual({ status: 409, code: "QUOTATION_DELETED" });
     expect(await failure(s.quotation.cancel(ACTOR, draft.id, 2, "x"))).toEqual({ status: 409, code: "QUOTATION_DELETED" });
     const listed = await s.quotation.list({ customerId: customer.id, limit: 50, deleted: false });
     expect(listed.items.map((item) => item.id)).not.toContain(draft.id);
-    expect((await s.quotation.list({ customerId: customer.id, limit: 50, deleted: true })).items.map((item) => item.id)).toEqual([draft.id]);
+    expect((await s.quotation.list({ customerId: customer.id, limit: 50, deleted: true })).items.map((item) => item.id).sort()).toEqual([auto.id, draft.id].sort());
     await expect(s.quotation.restore(ACTOR, draft.id, 2)).resolves.toEqual({ id: draft.id, version: 3, status: "DRAFT" });
-    await expect(s.quotation.submit(ACTOR, draft.id, 3)).resolves.toMatchObject({ status: "PENDING_APPROVAL" });
+    await expect(s.quotation.submit({ id: ACTOR, name: null }, draft.id, 3)).resolves.toMatchObject({ status: "PENDING_APPROVAL" });
+    await setApproval(prisma, "quotation", false);
   });
 
-  it("IT-SD-09 race: delete and approve with the same version → exactly one wins; the CHECK holds", async () => {
+  it("IT-SD-09 race: delete and Send to approve with the same version → exactly one wins; the CHECK holds", async () => {
     const vendor = await vendorFixture("SD IT Vendor Race");
     for (let round = 0; round < 5; round += 1) {
       const doc = await s.po.create(ACTOR, { ...header(), lines: [poLine()], vendorId: vendor.id, addressId: vendor.addressId });
-      const results = await Promise.allSettled([s.po.delete(DELETER, doc.id, 1), s.po.approve(ACTOR, doc.id, 1)]);
+      const results = await Promise.allSettled([s.po.delete(DELETER, doc.id, 1), s.po.submit({ id: ACTOR, name: null }, doc.id, 1)]);
       expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
       const loser = results.find((result) => result.status === "rejected") as PromiseRejectedResult;
       expect(["PURCHASE_ORDER_CHANGED", "PURCHASE_ORDER_DELETED", "PURCHASE_ORDER_STATUS_INVALID"]).toContain(((loser.reason as HttpException).getResponse() as { error: { code: string } }).error.code);
       const row = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: doc.id }, select: { status: true, deletedAt: true, version: true } });
       expect(row.version).toBe(2);
-      expect(row.status === "APPROVED" ? row.deletedAt : "deleted-pending").toBe(row.status === "APPROVED" ? null : "deleted-pending");
-      if (row.deletedAt) expect(row.status).toBe("PENDING_APPROVAL");
+      expect(row.status === "PENDING_APPROVAL" ? row.deletedAt : "deleted-draft").toBe(row.status === "PENDING_APPROVAL" ? null : "deleted-draft");
+      if (row.deletedAt) expect(row.status).toBe("DRAFT");
     }
   });
 });

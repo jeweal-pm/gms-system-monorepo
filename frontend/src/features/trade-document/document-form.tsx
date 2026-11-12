@@ -2,14 +2,13 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { DISCARD_CHANGES_CONFIRM, deleteDocumentConfirm, restoreDocumentConfirm, useConfirm } from "@/features/quotation/components/use-confirm";
-import { CircleCheck, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { useTabDirty, useTabDocument, useTabReplace } from "@/features/home/tabs/tab-host";
 import { FormProvider, useFieldArray, useForm, useWatch, type DefaultValues, type FieldValues, type Path, type Resolver } from "react-hook-form";
 import type { z } from "zod";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ScanIcon } from "@/components/ui/scan-icon";
-import { QuotationHeader, type StatusLabels } from "@/features/quotation/components/header/QuotationHeader";
+import { QuotationHeader } from "@/features/quotation/components/header/QuotationHeader";
 import { ItemEditorPanel } from "@/features/quotation/components/items/ItemEditorPanel";
 import { ItemPhotoBox } from "@/features/quotation/components/items/ItemPhotoBox";
 import { ItemTable, type RowAction } from "@/features/quotation/components/items/ItemTable";
@@ -22,7 +21,9 @@ import { emptyLine, newKey } from "@/features/quotation/lib/defaults";
 import { DocumentKindContext, QUOTATION_KIND, type DocumentKind } from "@/features/quotation/document-kind";
 import { LineOptionsContext, LinePhotoContext, type LineOptions } from "@/features/quotation/options-context";
 import { isFilledLine, type QuotationFormValues, type QuotationLine, type QuotationStatus } from "@/features/quotation/schema";
-import { clearNotice, DocumentDeletedBanner, handOverNotice, peekNotice, restoredStatusLabel, type DeletedInfo, type RestoreOutcome } from "./document-api";
+import { useDocumentFlow } from "./approval-flow";
+import { clearNotice, DocumentDeletedBanner, handOverNotice, peekNotice, type DeletedInfo, type RestoreOutcome } from "./document-api";
+import { savedMessage, type DocFlow, type DocumentApprovalType } from "./flow-status";
 
 /** Everything the form needs from a document's API, read through the document's own hooks. */
 export type DocumentApi<Input, Options extends LineOptions = LineOptions> = {
@@ -31,11 +32,12 @@ export type DocumentApi<Input, Options extends LineOptions = LineOptions> = {
   companyCurrency: string | null | undefined;
   /** Number preview for a new document (Document Setup). */
   nextDocNo: string | undefined;
-  create(input: Input): Promise<{ id: string }>;
-  update(args: Input & { id: string; expectedVersion: number }): Promise<unknown>;
+  /** The result carries the saved status (`Flow`): DRAFT with approval ON, APPROVED + autoApproved with it OFF. */
+  create(input: Input): Promise<{ id: string; docNo?: string; status?: string; autoApproved?: boolean }>;
+  update(args: Input & { id: string; expectedVersion: number }): Promise<{ status?: string; autoApproved?: boolean }>;
   remove(args: { id: string; expectedVersion: number }): Promise<unknown>;
-  /** Documents with an approval step (memo return). */
-  approve?(args: { id: string; expectedVersion: number }): Promise<unknown>;
+  /** approval-setup FE-AS-010: Send to approve (`<doc>.submit`), Draft / Revise -> Pending Approval. */
+  submit(args: { id: string; expectedVersion: number }): Promise<unknown>;
   /** transaction-soft-delete: a deleted document back to its status (`<doc>.restore`, DELETE grant). */
   restore(args: { id: string; expectedVersion: number }): Promise<unknown>;
   invalidate(): Promise<unknown>;
@@ -97,16 +99,10 @@ export type DocumentFormConfig<V extends FieldValues & Saved, Input, Options ext
   /** A saved document in view mode shows this instead of the disabled header fields (memo return design, view). */
   viewHeader?: (args: { values: V; options: Options | undefined }) => ReactNode;
   /**
-   * Saved documents wait for approval (memo return, Q-MR-15): a status badge, an Approve button for a saved pending
-   * document in view mode, and Edit / Delete only while pending.
+   * The approval setting key (ADR-0048): status badge, Send to approve, Edit / Delete per `Flow`, read-only text. The
+   * Approve button is no longer on a document page (Approve menu only).
    */
-  approval?: {
-    statusLabels: StatusLabels;
-    pendingStatus: QuotationStatus;
-    confirmTitle: string;
-    /** The confirm text from the document's filled rows (memo out counts its stock rows). */
-    confirmBody: (lines: QuotationLine[]) => string;
-  };
+  approvalType: DocumentApprovalType;
   /** What the shared item table / row panel do differently (memo out: From Stock quantities); default Quotation. */
   kind?: DocumentKind;
   noteMax?: number;
@@ -133,11 +129,8 @@ export function invalidSaveMessage(rowMessages: readonly (string | undefined)[])
   return index < 0 ? "Please complete the required fields" : `Row ${index + 1}: ${rowMessages[index]}`;
 }
 
-/** Status badges of documents with an approval step (Memo Receive colors: orange pending, green approved). */
-export const APPROVAL_STATUS_LABELS: StatusLabels = {
-  PENDING_APPROVAL: { label: "Pending Approval", tone: "bg-[#FFF4E0] text-[#B45309]" },
-  APPROVED: { label: "Approved", tone: "bg-[#E7F7EE] text-[#15803D]" },
-};
+/** Status badges of every document page (ADR-0048: Draft, Pending Approval, Revise, Approved, Rejected). */
+export { FLOW_STATUS_LABELS as APPROVAL_STATUS_LABELS } from "./flow-status";
 
 type ToolButton = { label: string; onClick: () => void };
 
@@ -192,7 +185,7 @@ const NO_PHOTOS = { upload: null, url: (id: string) => id };
  * document type supplies its schema, header fields, API hooks and wording. A saved document is remounted with
  * the new server version after every write (its page keys on id + version).
  */
-export function DocumentForm<V extends FieldValues & Saved, Input, Options extends LineOptions = LineOptions>({ config, initial, deleted: initialDeleted = null, canAdd, canEdit, canDelete, canApprove = false }: {
+export function DocumentForm<V extends FieldValues & Saved, Input, Options extends LineOptions = LineOptions>({ config, initial, deleted: initialDeleted = null, flow = null, canAdd, canEdit, canDelete }: {
   config: DocumentFormConfig<V, Input, Options>;
   initial?: V;
   /** A soft-deleted document (ADR-0045 D10): read-only with the banner, Restore with DELETE. */
@@ -200,7 +193,8 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   canAdd: boolean;
   canEdit: boolean;
   canDelete: boolean;
-  canApprove?: boolean;
+  /** `Flow` of the saved document (`<doc>.get`); null for a new one. */
+  flow?: DocFlow | null;
 }) {
   const replaceTab = useTabReplace();
   const [saved, setSaved] = useState<V | undefined>(initial);
@@ -215,7 +209,6 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   const { confirm, dialog: confirmDialog } = useConfirm();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [secondaryOpen, setSecondaryOpen] = useState(false);
-  const [approving, setApproving] = useState(false);
 
   const form = useForm<V>({ resolver: zodResolver(config.schema as never) as unknown as Resolver<V>, defaultValues: (initial ?? config.empty()) as DefaultValues<V> });
   const { control, reset, resetField, getValues, handleSubmit, formState, setError } = form;
@@ -228,11 +221,28 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   const readOnly = mode === "view" || isDeleted;
   const api = config.useApi(config.partyId(saved), values.docDate ?? "", !saved?.docNo);
   const docNo = saved?.docNo ?? api.nextDocNo ?? "—";
-  const { approval } = config;
-  const status = approval && saved?.docNo ? (saved.status as QuotationStatus | undefined) : undefined;
-  /** An approved document is read-only (approval documents edit only while pending). */
-  const locked = Boolean(approval && status && status !== approval.pendingStatus);
-  const showApprove = Boolean(approval && api.approve && saved?.id && status === approval.pendingStatus && readOnly && !isDeleted && !formState.isDirty && canApprove);
+  const status = saved?.docNo ? ((flow?.status ?? saved.status) as QuotationStatus | undefined) : undefined;
+  /** FE-AS-010: the remounted copy shows the server's latest status; a reload hands its message over. */
+  const reload = async (message: string) => {
+    if (saved?.id) handOverNotice(saved.id, message);
+    setMode("view");
+    await api.invalidate();
+  };
+  const approvalFlow = useDocumentFlow({
+    type: config.approvalType,
+    saved,
+    flow,
+    deleted: isDeleted,
+    access: { add: canAdd, edit: canEdit, delete: canDelete },
+    editing: !readOnly,
+    dirty: formState.isDirty,
+    busy: api.busy,
+    submit: api.submit,
+    confirm,
+    toast: setToast,
+    reload,
+    onError: (error) => showError(error),
+  });
   // app-shell-tabs T-03 / Q-TAB-03: the tab shows the document number and a dot while edits are unsaved.
   useTabDocument(saved?.docNo);
   useTabDirty(formState.isDirty && !readOnly);
@@ -251,7 +261,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
     return () => clearTimeout(t);
   }, [toast]);
 
-  const showError = (error: unknown) => {
+  function showError(error: unknown) {
     const outcome = config.mapSaveError(error);
     for (const field of outcome.fieldErrors) setError(field.name as Path<V>, { type: "server", message: field.message });
     setToast(outcome.message);
@@ -261,6 +271,11 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
       setMode("view");
       void api.invalidate();
     }
+  }
+
+  /** ADR-0048 codes first (in use, status, approval off), then the page's own mapping. */
+  const onWriteError = async (error: unknown, action: "save" | "delete") => {
+    if (!(await approvalFlow.handleError(error, action))) showError(error);
   };
 
   const onSave = handleSubmit(
@@ -268,16 +283,19 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
       const input = config.toInput(v as V);
       try {
         if (saved?.id && saved.version) {
-          await api.update({ ...input, id: saved.id, expectedVersion: saved.version });
-          setToast(`Saved ${saved.docNo}`);
+          const result = await api.update({ ...input, id: saved.id, expectedVersion: saved.version });
+          const message = savedMessage(saved.docNo, result);
+          setToast(message);
+          handOverNotice(saved.id, message);
           await api.invalidate();
         } else {
           const result = await api.create(input);
+          handOverNotice(result.id, savedMessage(result.docNo, result));
           await api.invalidate();
           replaceTab(config.detailHref(result.id));
         }
       } catch (error) {
-        showError(error);
+        await onWriteError(error, "save");
       }
     },
     (errors) => {
@@ -307,12 +325,12 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
       await api.invalidate();
       replaceTab(config.newHref);
     } catch (error) {
-      showError(error);
+      await onWriteError(error, "delete");
     }
   };
 
   const onRestore = async () => {
-    if (!saved?.id || !saved.version || !(await confirm(restoreDocumentConfirm(saved.docNo, restoredStatusLabel(saved.status))))) return;
+    if (!saved?.id || !saved.version || !(await confirm(restoreDocumentConfirm(saved.docNo, approvalFlow.restoreLabel)))) return;
     try {
       await api.restore({ id: saved.id, expectedVersion: saved.version });
       // The page remounts editable with the new version; the message goes with it.
@@ -328,24 +346,11 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
     }
   };
 
-  const onApprove = async () => {
-    if (!saved?.id || !saved.version || !api.approve) return;
-    try {
-      await api.approve({ id: saved.id, expectedVersion: saved.version });
-      setApproving(false);
-      setToast(`Approved ${saved.docNo}`);
-      await api.invalidate();
-    } catch (error) {
-      setApproving(false);
-      showError(error);
-    }
-  };
-
   const onDuplicate = () => {
     const current = getValues() as V & { lines: QuotationLine[] };
     setSaved(undefined);
     setDeleted(null);
-    reset({ ...config.empty(), ...current, id: undefined, docNo: undefined, version: undefined, status: approval?.pendingStatus ?? "DRAFT", lines: current.lines.map((l) => ({ ...l, key: newKey() })) });
+    reset({ ...config.empty(), ...current, id: undefined, docNo: undefined, version: undefined, status: "DRAFT", lines: current.lines.map((l) => ({ ...l, key: newKey() })) });
     setMode("edit");
     setToast(`Duplicated as a new ${config.noun}`);
   };
@@ -434,21 +439,16 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
                 docNo={docNo}
                 isPreview={!saved?.docNo}
                 status={status}
-                statusLabels={approval?.statusLabels}
-                hideEditDelete={locked || isDeleted}
-                extraActions={
-                  showApprove && (
-                    <Button variant="primary" onClick={() => setApproving(true)}>
-                      <CircleCheck className="size-4" /> Approve
-                    </Button>
-                  )
-                }
+                statusLabels={approvalFlow.statusLabels}
+                statusNote={approvalFlow.statusNote}
+                hideEditDelete={approvalFlow.hideEditDelete}
+                extraActions={approvalFlow.sendButton}
                 mode={isDeleted ? "view" : mode}
                 saving={api.busy}
                 canSave={!isDeleted && (saved ? canEdit : canAdd)}
                 canCreate={canAdd}
-                canEdit={Boolean(saved) && canEdit && !locked && !isDeleted}
-                canDelete={Boolean(saved) && canDelete && !locked && !isDeleted}
+                canEdit={approvalFlow.canEdit}
+                canDelete={approvalFlow.canDelete}
                 actions={{
                   onCancel: () => void onCancel(),
                   onSave: () => void onSave(),
@@ -568,19 +568,6 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
               onClose: () => setSecondaryOpen(false),
               onAdd: (picked) => addPicked(picked, secondaryPicker.addedToast),
             })}
-          {approval && (
-            <ConfirmDialog
-              open={approving}
-              title={approval.confirmTitle}
-              body={approval.confirmBody(lines.filter(isFilledLine))}
-              cancelLabel="Cancel"
-              confirmLabel="Approve"
-              pendingLabel="Approving…"
-              pending={api.busy}
-              onCancel={() => setApproving(false)}
-              onConfirm={() => void onApprove()}
-            />
-          )}
           {confirmDialog}
           {toast && <Toast message={toast} onClose={() => setToast(null)} />}
         </FormProvider>

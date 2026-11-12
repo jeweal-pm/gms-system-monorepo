@@ -69,8 +69,10 @@ vi.mock("../../src/database/prisma-client", () => {
     currency: { findUnique: track("currency.findUnique", { active: true }) },
     stoneCode: { findMany: track("stoneCode.findMany", []) },
     companyProfile: { findUnique: track("companyProfile.findUnique", { currencyCode: "THB" }) },
-    $queryRaw: vi.fn(async (sql: { sql: string }) => {
-      if (sql.sql.includes("memo_stock_id_counter")) {
+    // Prisma.sql objects, or a tagged template (the approval setting read: no row → approval ON, ADR-0048).
+    $queryRaw: vi.fn(async (sql: { sql: string } | TemplateStringsArray) => {
+      if (Array.isArray(sql)) { db.calls.push("setting"); return []; }
+      if ((sql as { sql: string }).sql.includes("memo_stock_id_counter")) {
         const count = Number((sql as unknown as { values: unknown[] }).values[1]);
         db.calls.push(`counter:${count}`);
         db.counter += count;
@@ -85,7 +87,9 @@ vi.mock("../../src/database/prisma-client", () => {
       create: track("purchase.create", {}),
       findUnique: vi.fn(async (args: { include?: unknown }) => (args.include ? db.getRow : db.stored)),
       updateMany: track("purchase.updateMany", { count: 1 }),
+      update: track("purchase.update", {}),
     },
+    approvalSetting: { findUnique: vi.fn(async () => ({ requireApproval: true })) },
     purchaseLine: {
       createMany: vi.fn(async ({ data }: { data: Record<string, unknown>[] }) => { db.calls.push("purchaseLine.createMany"); db.lines = data; return { count: data.length }; }),
       deleteMany: track("purchaseLine.deleteMany", { count: 1 }),
@@ -171,7 +175,7 @@ describe("PurchaseService save (UT-PU-B02)", () => {
     const service = new PurchaseService();
     service.clock = () => new Date("2026-11-04T03:00:00Z");
     const result = await service.create("user-1", input([stockLine(), poLine(), manualLine()]));
-    expect(result).toMatchObject({ docNo: "1", version: 1, stockIds: ["260042", "260001", "260002"] });
+    expect(result).toMatchObject({ docNo: "1", version: 1, stockIds: ["260042", "260001", "260002"], status: "DRAFT", autoApproved: false });
     expect(db.lines.map((line) => [line.source, line.memoStockId, line.memoGroup, line.purchaseOrderLineId, line.stockId, line.stoneCodeId])).toEqual([
       ["STOCK", ITEM, "IN_STOCK", null, "260042", null],
       ["PURCHASE_ORDER", null, null, PO_LINE, "260001", PO_CODE],
@@ -189,22 +193,22 @@ describe("PurchaseService save (UT-PU-B02)", () => {
   it("update: a saved MANUAL / PO line keeps its id and Stock ID; a STOCK line takes the item's; unknown line ids are refused", async () => {
     const service = new PurchaseService();
     db.stored = {
-      status: "PENDING_APPROVAL", version: 2, currencyCode: "THB", vendorId: VENDOR,
+      docNo: "PU-1", status: "DRAFT", autoApproved: false, revisionCount: 0, version: 2, currencyCode: "THB", vendorId: VENDOR,
       lines: [{ id: SAVED_PO_LINE, stockId: "260010", source: "PURCHASE_ORDER", stoneCodeId: PO_CODE }, { id: SAVED_MANUAL, stockId: "260011", source: "MANUAL", stoneCodeId: null }],
     };
     const result = await service.update("user-1", DOC, 2, input([poLine({ id: SAVED_PO_LINE }), manualLine({ id: SAVED_MANUAL }), stockLine(), manualLine()]));
-    expect(result).toEqual({ id: DOC, version: 3, stockIds: ["260010", "260011", "260042", "260001"] });
+    expect(result).toMatchObject({ id: DOC, version: 3, stockIds: ["260010", "260011", "260042", "260001"], status: "DRAFT" });
     expect(db.lines.slice(0, 2).map((line) => line.id)).toEqual([SAVED_PO_LINE, SAVED_MANUAL]);
     expect(db.calls).not.toContain("$executeRaw");
 
     expect(await failure(service.update("user-1", DOC, 2, input([manualLine({ id: "00000000-0000-4000-8000-0000000000ff" })])))).toMatchObject({
       code: "VALIDATION_ERROR", fieldErrors: [{ path: "lines.0.id", code: "unknown_line" }],
     });
-    db.stored = { status: "APPROVED", version: 2, currencyCode: "THB", vendorId: VENDOR, lines: [] };
+    db.stored = { docNo: "PU-1", status: "APPROVED", autoApproved: false, revisionCount: 0, version: 2, currencyCode: "THB", vendorId: VENDOR, lines: [] };
     expect((await failure(service.update("user-1", DOC, 2, input([manualLine()])))).code).toBe("PURCHASE_STATUS_INVALID");
   });
 
-  it("get: limitPcs / limitWeightCt from the source while pending; null for manual lines and once approved", async () => {
+  it("get: limitPcs / limitWeightCt from the source while a DRAFT (still saveable); null for manual lines and once approved", async () => {
     const service = new PurchaseService();
     const line = (patch: Record<string, unknown>) => ({
       id: SAVED_MANUAL, source: "MANUAL", stoneCodeId: null, stoneCodeSnapshot: "", stone: "", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "",
@@ -217,14 +221,14 @@ describe("PurchaseService save (UT-PU-B02)", () => {
       ref: "", documentNote: "", discountType: "NONE", discountValue: D("0"), taxEnabled: false, taxRate: D("7"), taxIncluded: false,
       laborWork: null, laborBasis: null, laborQty: null, laborRate: null, subtotal: D("10"), discountAmount: D("0"), priceBeforeTax: D("10"), taxAmount: D("0"),
       chargesAmount: D("0"), laborAmount: D("0"), grandTotal: D("10"), approvedAt: status === "APPROVED" ? new Date() : null, approvedBy: status === "APPROVED" ? "user-1" : null,
-      createdAt: new Date(), createdBy: "user-1", updatedAt: new Date(), charges: [],
+      createdAt: new Date(), createdBy: "user-1", updatedAt: new Date(), charges: [], autoApproved: false, revisionCount: 0,
       lines: [
         line({ source: "STOCK", memoStockId: ITEM, memoGroup: "SOLD", stockId: "260042", memoStock: { receivedDocNo: "MR-3", ...memoItem() } }),
         line({ source: "PURCHASE_ORDER", purchaseOrderLineId: PO_LINE, memoStock: null, purchaseOrderLine: { position: 2, pcs: 10, weightCt: D("4"), purchasedPcs: 4, purchasedWeightCt: D("1.5"), document: { id: "po-1", docNo: "PO-9" } } }),
         line({}),
       ],
     });
-    db.getRow = row("PENDING_APPROVAL");
+    db.getRow = row("DRAFT");
     const pending = await service.get(DOC);
     expect(pending.lines.map((l) => [l.source, l.stockId, l.limitPcs, l.limitWeightCt, l.memoReceive, l.purchaseOrder])).toEqual([
       ["STOCK", "260042", 1, "0.500", { docNo: "MR-3" }, null],

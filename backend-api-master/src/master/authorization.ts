@@ -1,11 +1,15 @@
 import { TRPCError } from "@trpc/server";
 
-export type MasterMenu = "customer" | "vendor" | "company-profile" | "stone-master" | "document-setup" | "decimal-setup" | "currency" | "quotation" | "memo-out" | "memo-out-return" | "memo-receive" | "memo-return" | "memo-outstanding-vendor" | "memo-outstanding-customer" | "reserve" | "purchase-order" | "purchase" | "purchase-outstanding";
+export type MasterMenu = "customer" | "vendor" | "company-profile" | "stone-master" | "document-setup" | "decimal-setup" | "approval-setup" | "currency" | "quotation" | "memo-out" | "memo-out-return" | "memo-receive" | "memo-return" | "memo-outstanding-vendor" | "memo-outstanding-customer" | "reserve" | "purchase-order" | "purchase" | "purchase-outstanding";
 export type MasterAction = "VIEW" | "ADD" | "EDIT" | "DELETE" | "CANCEL" | "APPROVE" | "PRICE";
 
 /** Supplied only by the future JWT + current-authorization adapter, never from browser headers. */
 export type MasterContext = {
-  principal: { userId: string; sessionId: string; isSuperAdmin: boolean; grants: readonly string[] } | null;
+  /**
+   * `displayName`: the caller's own name from the auth view (ADR-0046 D5), trimmed ≤ 200 or null; used only for
+   * snapshots (submitted_by_name / reviewed_by_name / updated_by_name), never for authorization.
+   */
+  principal: { userId: string; sessionId: string; isSuperAdmin: boolean; grants: readonly string[]; displayName?: string | null } | null;
   authorization: "CURRENT" | "UNAVAILABLE";
   license: "ELIGIBLE" | "DENIED" | "UNAVAILABLE";
   csrfVerified: boolean;
@@ -34,6 +38,25 @@ export function requireMasterGrant(ctx: MasterContext, menu: MasterMenu, action:
     throw new TRPCError({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
   }
   return principal.userId;
+}
+
+/**
+ * Every listed `menu:action` is required (approve-center ADR-0046 D11: `approval.pending` needs APPROVE **and** VIEW).
+ * Same live checks and CSRF order as `requireMasterGrant`; Super Admin passes. Refused before any domain read.
+ */
+export function requireAllMasterGrants(ctx: MasterContext, required: readonly (readonly [MasterMenu, MasterAction])[], mutation: boolean): string {
+  const principal = requireMasterSession(ctx);
+  if (mutation && !ctx.csrfVerified) throw new TRPCError({ code: "FORBIDDEN", message: "CSRF_INVALID" });
+  if (required.length === 0) throw new TRPCError({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+  if (!principal.isSuperAdmin && !required.every(([menu, action]) => principal.grants.includes(`${menu}:${action}`))) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+  }
+  return principal.userId;
+}
+
+/** Super Admin, or the caller holds `menu:action` (no live-session checks: call after one of the require* guards). */
+export function hasMasterGrant(principal: { isSuperAdmin: boolean; grants: readonly string[] }, menu: MasterMenu, action: MasterAction): boolean {
+  return principal.isSuperAdmin || principal.grants.includes(`${menu}:${action}`);
 }
 
 /** Read-only variant: `action` on any one of `menus` is enough (currency SA-CUR-07). Same live checks first. */
