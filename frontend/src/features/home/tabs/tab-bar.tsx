@@ -114,13 +114,15 @@ function TabStrip({ tabs, activeId, onSelect, onClose }: Readonly<Pick<TabBarPro
                 title={tab.title}
                 onClick={() => onSelect(tab.id)}
                 onKeyDown={(event) => handleKeyDown(event, index)}
-                className={`min-w-0 truncate rounded-gms-sm py-1 text-gms-body font-medium tracking-normal ${focusRing}`}
+                // Owner 2026-11-13: the shown tab's name is bold; the others are regular. `!` because the unlayered
+                // `button { font: inherit }` in globals.css outranks layered utilities on a <button>.
+                className={`min-w-0 truncate rounded-gms-sm py-1 text-gms-body tracking-normal ${active ? "font-semibold!" : "font-normal!"} ${focusRing}`}
               >
                {tab.title}
               </button>
               {/* Owner 2026-11-03: no dot on the shown tab; it marks unsaved changes in the other tabs. */}
               {tab.dirty && !active && <span aria-label="Unsaved changes" role="img" className="size-1.5 shrink-0 rounded-full bg-gms-primary" />}
-              <CloseButton title={tab.title} onClick={() => onClose(tab.id)} />
+              <CloseButton title={tab.title} alwaysVisible={active} onClick={() => onClose(tab.id)} />
             </div>
           );
         })}
@@ -130,9 +132,14 @@ function TabStrip({ tabs, activeId, onSelect, onClose }: Readonly<Pick<TabBarPro
   );
 }
 
-function CloseButton({ title, onClick }: Readonly<{ title: string; onClick: () => void }>) {
+/**
+ * Owner 2026-11-13: the shown tab always has its ×; another tab shows it on hover (or while the tab has keyboard focus).
+ * Hidden with opacity, not removed, so the tab keeps its width and the × stays reachable by keyboard.
+ */
+function CloseButton({ title, alwaysVisible, onClick }: Readonly<{ title: string; alwaysVisible: boolean; onClick: () => void }>) {
+  const visibility = alwaysVisible ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100";
   return (
-    <button type="button" aria-label={`Close ${title}`} title={`Close ${title}`} onClick={onClick} className={`shrink-0 rounded-full text-gms-text-muted hover:text-gms-text ${focusRing}`}>
+    <button type="button" aria-label={`Close ${title}`} title={`Close ${title}`} onClick={onClick} className={`shrink-0 rounded-full text-gms-text-muted transition-opacity hover:text-gms-text ${visibility} ${focusRing}`}>
       <CircleX aria-hidden size={18} strokeWidth={1.25} />
     </button>
   );
@@ -232,7 +239,8 @@ function TabCountMenu({
                   {tab.title}
                 </button>
                 {tab.dirty && tab.id !== activeId && <span aria-label="Unsaved changes" role="img" className="size-1.5 shrink-0 rounded-full bg-gms-primary" />}
-                <CloseButton title={tab.title} onClick={() => onClose(tab.id)} />
+                {/* The open-tabs list keeps every × visible: its rows are a menu, not the strip. */}
+                <CloseButton title={tab.title} alwaysVisible onClick={() => onClose(tab.id)} />
               </li>
             ))}
           </ul>

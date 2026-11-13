@@ -20,7 +20,7 @@ import {
 import { useTabDirty, useTabDocument, useTabReplace } from "@/features/home/tabs/tab-host";
 import { FormProvider, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { QuotationHeader } from "@/features/quotation/components/header/QuotationHeader";
-import { ItemEditorPanel } from "@/features/quotation/components/items/ItemEditorPanel";
+import { ItemEditorDock, ItemEditorPanel } from "@/features/quotation/components/items/ItemEditorPanel";
 import { ItemPhotoBox } from "@/features/quotation/components/items/ItemPhotoBox";
 import { ItemTable, type RowAction } from "@/features/quotation/components/items/ItemTable";
 import { DocumentNote } from "@/features/quotation/components/note/DocumentNote";
@@ -387,23 +387,22 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, flo
                 </div>
 
                 {editorIndex === null && <RailButtons active={railPanel} onChange={setRailPanel} />}
+                {editorIndex !== null && (
+                  <ItemEditorDock>
+                    <ItemEditorPanel
+                      index={editorIndex}
+                      total={lines.length}
+                      readOnly={readOnly}
+                      onPrev={() => setSelectedIndex(Math.max(0, editorIndex - 1))}
+                      onNext={() => setSelectedIndex(Math.min(lines.length - 1, editorIndex + 1))}
+                      onNextRow={() => setSelectedIndex(editorIndex < lines.length - 1 ? editorIndex + 1 : addRow())}
+                      onRemove={() => removeRow(editorIndex)}
+                      onClose={() => setEditorOpen(false)}
+                    />
+                  </ItemEditorDock>
+                )}
               </div>
             </div>
-
-            {editorIndex !== null && (
-              <div className="h-full">
-                <ItemEditorPanel
-                  index={editorIndex}
-                  total={lines.length}
-                  readOnly={readOnly}
-                  onPrev={() => setSelectedIndex(Math.max(0, editorIndex - 1))}
-                  onNext={() => setSelectedIndex(Math.min(lines.length - 1, editorIndex + 1))}
-                  onNextRow={() => setSelectedIndex(editorIndex < lines.length - 1 ? editorIndex + 1 : addRow())}
-                  onRemove={() => removeRow(editorIndex)}
-                  onClose={() => setEditorOpen(false)}
-                />
-              </div>
-            )}
 
             {railPanel && editorIndex === null && (
               <fieldset disabled={readOnly && railPanel === "summary"} className="absolute top-4 right-16 bottom-4 z-30 w-[440px]">

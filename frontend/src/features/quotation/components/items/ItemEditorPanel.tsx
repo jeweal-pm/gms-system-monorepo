@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, ChevronUp, Lock, X } from "lucide-react";
-import { useRef, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import { lineGross } from "../../lib/calculate";
 import { dec, div, mul, toFixed, ZERO } from "../../lib/decimal";
@@ -32,6 +32,62 @@ export function stockQuantityBound(text: string, minText: string | undefined, ca
   if (capText && value > dec(capText)) return capText;
   return null;
 }
+
+/**
+ * Owner design 2026-11-13: while a row is edited, the editor docks at the top right of the Item card (flush with the
+ * card's top and right edges, cancelling its 24 px padding), so the document header and the info form above keep their
+ * full width; the table, Document Note and Summary Value beside it narrow instead. It sticks to the top of the page
+ * scroller and always reaches the bottom of the window, so its Remove row / Close / Next row bar stays in view: the
+ * height follows the dock's top as the page scrolls (CSS alone can't), starting from the visible-area height.
+ */
+export function ItemEditorDock({ children }: Readonly<{ children: ReactNode }>) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const dock = ref.current;
+    if (!dock) return undefined;
+    let scroller: HTMLElement | null = dock.parentElement;
+    while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
+    let frame = 0;
+    const card = dock.parentElement;
+    const fit = () => {
+      frame = 0;
+      // From where the dock shows (its top, or the scroller's top once it sticks) down to the window's bottom, but never
+      // past the Item card: a taller dock would push the sticky box up under the breadcrumb row at the end of the page.
+      const top = Math.max(dock.getBoundingClientRect().top, scroller?.getBoundingClientRect().top ?? 0);
+      const bottom = Math.min(window.innerHeight, card?.getBoundingClientRect().bottom ?? window.innerHeight);
+      const next = Math.max(DOCK_MIN_HEIGHT, Math.round(bottom - top));
+      setHeight((current) => (current === next ? current : next));
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(fit);
+    };
+    fit();
+    const target: HTMLElement | Window = scroller ?? window;
+    target.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      target.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+    };
+  }, []);
+
+  return (
+    <div
+      ref={ref}
+      data-item-editor-dock
+      style={height === null ? undefined : { height }}
+      className="sticky top-0 -my-6 -mr-6 h-[calc(100dvh-84px)] shrink-0 self-start overflow-hidden rounded-r-gms-md"
+    >
+      {children}
+    </div>
+  );
+}
+
+/** The dock never gets shorter than its header, one field group and the action bar. */
+const DOCK_MIN_HEIGHT = 320;
 
 export function ItemEditorPanel({
   index,
