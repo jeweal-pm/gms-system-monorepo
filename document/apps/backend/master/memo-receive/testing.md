@@ -5,7 +5,8 @@ These follow `document/workflow/automated-testing.md`. Backend tests use the exi
 | ID | Level | Check |
 |---|---|---|
 | IT-MR-01 | integration | create → PENDING_APPROVAL, docNo from Document Setup (row and plain), stockIds `YY0001…` in line order, totals = calculator |
-| IT-MR-02 | integration | Stock ID counter per year of the save, with the clock faked to 2026 and 2027: gives `26…` and `27…` whatever the Doc Date is. Concurrent creates (2 parallel) give no duplicates. At 9,999 → `STOCK_ID_EXHAUSTED` and nothing is saved |
+| IT-MR-02 | integration | Stock ID counter per year of the save, with the clock faked to 2026 and 2027: gives `26…` and `27…` whatever the Doc Date is. Concurrent creates (2 parallel) give no duplicates. |
+| IT-MR-02b | integration | Owner Q-MR-09 (2026-11-13, INV-20261029-002): 579998 + 3 lines → `579999, 580000, 580001`; the next year starts after the greatest issued (`580003`); a year not reached starts at `…0001`; parallel saves across 9,999 stay unique; only the INTEGER limit refuses (`STOCK_ID_EXHAUSTED`, nothing saved). UT-MR-ID2/ID3: format and the single statement; IT-PU-B09: Purchase shares the counter across 769999 → 770002 |
 | IT-MR-03 | integration | update keeps the Stock IDs of lines sent with `id`, gives new numbers to new lines, does not reuse numbers of removed lines. A foreign line id → `VALIDATION_ERROR lines.N.id` |
 | IT-MR-04 | integration | stale version → CHANGED. Update or delete of an APPROVED document → STATUS_INVALID |
 | IT-MR-05 | integration | approve → APPROVED, approved_at/by set, version + 1, one `memo_stock` per line with location `Memo` and pending = received. A second approve → STATUS_INVALID with no new rows. Two parallel approves → one succeeds |

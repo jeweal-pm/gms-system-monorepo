@@ -6,11 +6,10 @@ import { prisma } from "../database/prisma-client";
 import { Prisma } from "../generated/prisma/client";
 import { TradeDocumentEngine, type DocumentActor, type DocumentEffects, type LineHook, type TradeDocumentInput } from "../trade-document/document-engine";
 import { vendorDocumentOptions, vendorParty, type VendorOut } from "../trade-document/memo-out-return.service";
-import { issueStockIds } from "../trade-document/memo-receive.service";
 import { purchaseMemoStock, purchaseOrderLines } from "./purchase-pickers";
 import { lockSourceHeaders } from "../trade-document/source-lock";
 import { completeSourceLines, giveBackForPurchase, memoLineRange, purchaseOrderAvailable, takeForPurchase, type PreparedInput, type SoldPart } from "./purchase-stock";
-import { purchaseErrors, purchasePendingShort, purchaseStockIdExhausted } from "./purchase.errors";
+import { purchaseErrors, purchasePendingShort } from "./purchase.errors";
 import type { LineMemoGroup, PurchaseInput, PurchaseLineSource, PurchaseListInput, PurchaseMemoStockInput, PurchaseOrderLinesInput, PurchaseStatus } from "./purchase.schemas";
 import { LINE_PHOTO_DOCUMENTS, withLinePhotos } from "../trade-document/line-photos";
 
@@ -37,39 +36,27 @@ type StoredPoLine = { position: number; pcs: number; weightCt: Dec; purchasedPcs
  */
 @Injectable()
 export class PurchaseService {
-  /** Server clock for the Stock ID year; replaced in tests only. */
-  clock: () => Date = () => new Date();
-
   /**
-   * SA-PU-02/10: writes the source columns, keeps a saved line's id (and its issued Stock ID when the saved line was not a
-   * STOCK line), issues new Stock IDs for MANUAL / PURCHASE_ORDER lines from the shared counter, and sets the PO line's
-   * stone code id after the engine's stone-code check.
+   * SA-PU-02/10 (ADR-0051, owner 2026-11-13): writes the source columns, keeps a saved line's id and sets the PO line's
+   * stone code id after the engine's stone-code check. Only a STOCK line carries a Stock ID (the Memo Stock item's);
+   * MANUAL / PURCHASE_ORDER lines store NULL until Load to Stock issues one. Purchase never takes a number from the
+   * shared `memo_stock_id_counter` (Memo Receive is its only caller).
    */
   private readonly lines: LineHook<EngineInput> = {
-    storedSelect: { id: true, stockId: true, source: true },
-    assign: async (tx, engineInput, stored) => {
+    storedSelect: { id: true },
+    assign: async (_tx, engineInput, stored) => {
       const input = engineInput as unknown as PreparedInput;
-      const kept = new Map((stored ?? []).map((line) => [line.id as string, { stockId: line.stockId as string, source: line.source as string }]));
+      const kept = new Set((stored ?? []).map((line) => line.id as string));
       const errors: FieldError[] = input.lines.flatMap((line, index) => (line.id && !kept.has(line.id) ? [{ path: `lines.${index}.id`, code: "unknown_line" }] : []));
       if (errors.length > 0) throw validationException(errors);
-      const keepsIssued = (line: PreparedInput["lines"][number]) => {
-        const saved = line.id ? kept.get(line.id) : undefined;
-        return saved !== undefined && saved.source !== "STOCK" && line.source !== "STOCK";
-      };
-      const needed = input.lines.filter((line) => line.source !== "STOCK" && !keepsIssued(line)).length;
-      const fresh = await issueStockIds(tx, needed, this.clock(), purchaseStockIdExhausted);
-      let next = 0;
-      return input.lines.map((line) => {
-        const stockId = line.source === "STOCK" ? line.sourceStockId : keepsIssued(line) ? kept.get(line.id!)!.stockId : fresh[next++];
-        return {
-          ...(line.id ? { id: line.id } : {}),
-          memoStockId: line.source === "STOCK" ? line.memoStockId : null,
-          memoGroup: line.source === "STOCK" ? line.memoGroup : null,
-          purchaseOrderLineId: line.source === "PURCHASE_ORDER" ? line.purchaseOrderLineId : null,
-          stockId,
-          ...(line.source === "PURCHASE_ORDER" ? { stoneCodeId: line.copiedStoneCodeId ?? null } : {}),
-        };
-      });
+      return input.lines.map((line) => ({
+        ...(line.id ? { id: line.id } : {}),
+        memoStockId: line.source === "STOCK" ? line.memoStockId : null,
+        memoGroup: line.source === "STOCK" ? line.memoGroup : null,
+        purchaseOrderLineId: line.source === "PURCHASE_ORDER" ? line.purchaseOrderLineId : null,
+        stockId: line.source === "STOCK" ? line.sourceStockId : null,
+        ...(line.source === "PURCHASE_ORDER" ? { stoneCodeId: line.copiedStoneCodeId ?? null } : {}),
+      }));
     },
     output: (line, base) => {
       const { outstandingPcs: _pcs, outstandingWeightCt: _weight, ...rest } = base;
@@ -87,7 +74,7 @@ export class PurchaseService {
         memoStockId: (line.memoStockId as string | null) ?? null,
         memoGroup: group ?? null,
         purchaseOrderLineId: (line.purchaseOrderLineId as string | null) ?? null,
-        stockId: line.stockId as string,
+        stockId: (line.stockId as string | null) ?? null,
         photoIds: [],
         memoReceive: memoStock ? { docNo: memoStock.receivedDocNo } : null,
         purchaseOrder: poLine ? { id: poLine.document.id, docNo: poLine.document.docNo, position: poLine.position } : null,
@@ -99,7 +86,7 @@ export class PurchaseService {
         soldPartWeightCt: soldPartWeight ? soldPartWeight.toFixed(3) : null,
       };
     },
-    result: (assigned) => ({ stockIds: assigned.map((line) => line.stockId as string) }),
+    result: (assigned) => ({ stockIds: assigned.map((line) => (line.stockId as string | null) ?? null) }),
     // SA-PU-16: the sources' current availability, read with the lines (one batched primary-key query per relation).
     lineInclude: {
       memoStock: { select: { receivedDocNo: true, pendingPcs: true, pendingWeightCt: true, soldPcs: true, soldWeightCt: true, purchasedPcs: true, purchasedWeightCt: true } },
@@ -178,10 +165,10 @@ export class PurchaseService {
     return this.engine.nextNumber(docDate);
   }
   create(actorId: string, input: PurchaseInput, viewer: FlowPrincipal | null = null) {
-    return this.engine.create(actorId, asEngine(input), viewer) as Promise<unknown> as Promise<{ id: string; docNo: string; version: number; stockIds: string[]; status: string; autoApproved: boolean }>;
+    return this.engine.create(actorId, asEngine(input), viewer) as Promise<unknown> as Promise<{ id: string; docNo: string; version: number; stockIds: (string | null)[]; status: string; autoApproved: boolean }>;
   }
   update(actorId: string, id: string, expectedVersion: number, input: PurchaseInput, viewer: FlowPrincipal | null = null) {
-    return this.engine.update(actorId, id, expectedVersion, asEngine(input), viewer) as Promise<unknown> as Promise<{ id: string; version: number; stockIds: string[]; status: string; autoApproved: boolean }>;
+    return this.engine.update(actorId, id, expectedVersion, asEngine(input), viewer) as Promise<unknown> as Promise<{ id: string; version: number; stockIds: (string | null)[]; status: string; autoApproved: boolean }>;
   }
   /** SA-PU-08 / ADR-0045 D4 / ADR-0050: soft delete; an auto-approved purchase gives its stock back first. */
   delete(actorId: string, id: string, expectedVersion: number) {
@@ -253,7 +240,8 @@ export type PurchaseLineOut = EngineLineOut & {
   memoStockId: string | null;
   memoGroup: LineMemoGroup | null;
   purchaseOrderLineId: string | null;
-  stockId: string;
+  /** ADR-0051: the Memo Stock item's Stock ID on a STOCK line; null on MANUAL / PURCHASE_ORDER lines. */
+  stockId: string | null;
   /** ADR-0048: the line's photos in order (the photo hook replaces the `[]` this hook writes). */
   photoIds: string[];
   memoReceive: { docNo: string } | null;

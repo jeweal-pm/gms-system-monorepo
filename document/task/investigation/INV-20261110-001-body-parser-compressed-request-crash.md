@@ -3,7 +3,7 @@
 ## Tracking
 
 - Ticket revision: 1
-- Status: pending-review
+- Status: resolved (2026-11-13, pass 1; see Resolution)
 - Owner: backend
 - Priority: awaiting user review
 - Auditor / mode / run ID: sec-auditor / frontend, backend, dependency and Docker static investigation / incomplete; no retained full-audit run
@@ -33,9 +33,9 @@
 
 ## User selection and approval
 
-- Approved ticket revision:
-- Actual user instruction / approval evidence:
-- Approval date:
+- Approved ticket revision: current
+- Actual user instruction / approval evidence: owner 2026-11-13: "แก้ไข INV-20261110-001" — fix now
+- Approval date: 2026-11-13
 - Separate approved SA bundle/revision, if required:
 
 Do not infer approval from creation of this ticket or approval of a different revision.
@@ -46,19 +46,35 @@ Apply [bounded remediation](../../workflow/remediation.md); counts persist acros
 
 - Selected work ID / root-cause fingerprint: `auth-body-parser-compressed-trailing-bytes-crash`
 - Corrective pass limit: 3 (initial fix included)
-- Passes allocated: 0
-- Active pass: none
+- Passes allocated: 1
+- Active pass: none (pass 1 succeeded)
 - User-authorized extension and new limit: none
 - Stop reason / missing prerequisite: none
 - Reopen evidence and explicit selection: none
 
 | Pass | Owner(s) / input revision or hash | Causal hypothesis / new evidence | Meaningful change | Authorized verification / result / failure signature | Next fact or terminal decision |
 |---|---|---|---|---|---|
+| 1 | backend / `2126ec01` + working tree | Every Express JSON/raw parser in auth and api-master resolved body-parser 2.3.0 (advisory: patched in 2.4.0) | root pnpm override → body-parser 2.4.0; auth parser extracted | `pnpm why`, in-process tests, sandboxed repro, full suites: pass | resolved |
 
-- Assigned owner and start date:
-- Changed files / implementation revision:
-- Checks performed, results, and limitations:
-- Follow-up auditor and verification evidence:
-- Remaining risk or reopened validation gap:
-- Completion report under document/task/done/:
-- Final status / date:
+- Assigned owner and start date: backend, 2026-11-13.
+- Changed files / implementation revision: branch `fix/12-11-26-inv`, base `2126ec01` + uncommitted working tree. See Resolution (pass 1).
+- Checks performed, results, and limitations: see Resolution (pass 1).
+- Follow-up auditor and verification evidence: security reviews are routed once by the parent on the final revision.
+- Remaining risk or reopened validation gap: see Resolution (pass 1).
+- Completion report under document/task/done/: [2026-11-13 INV fixes](../done/2026-11-13-inv-fixes.md)
+- Final status / date: resolved, 2026-11-13.
+
+## Resolution (pass 1)
+
+- Dependency change (the one allowed manifest/lockfile change; parent integration owner to serialize):
+  - `pnpm-workspace.yaml`: `overrides: "body-parser@>=2.0.0 <2.4.0": 2.4.0` (pnpm 10.22.0). express 5.2.1 already allows `^2.2.1`, so no express / `@nestjs/platform-express` change was needed; the override only stops a lockfile from resolving a vulnerable 2.x again.
+  - `pnpm-lock.yaml` (`pnpm install --lockfile-only`): `body-parser` 2.3.0 → **2.4.0** (published 2026-10-22, integrity `sha512-Ifk1KcLr…`); its new range `qs ^6.16.1` added **qs 6.17.1** (published 2026-10-28) for body-parser only (express keeps qs 6.16.0); `overrides` block recorded. pnpm also re-serialized the `eslint-plugin-import@2.32.0` snapshot peer key (same versions, no package change), as on 2026-10-14.
+  - `pnpm why body-parser -r` after install: every importer (backend-api-auth, backend-api-master, frontend via its workspace links) → `express 5.2.1 → body-parser 2.4.0`; no 2.3.0 left. Both Dockerfiles copy `pnpm-workspace.yaml` + the lockfile and run `pnpm install --frozen-lockfile`, so the next auth / api-master image build resolves 2.4.0.
+- Code: `backend-api-auth/src/http/json-body.ts` (new) — `authJsonBody()` = `express.json({ limit: "32kb" })`, used by `backend-api-auth/src/main.ts` for `/api/auth/trpc` and the catch-all JSON parser (behaviour unchanged; compressed bodies stay accepted). api-master code is unchanged (`express.json({ limit: "256kb" })` and `express.raw` resolve the same patched package).
+- Tests:
+  - `backend-api-auth/test/http/json-body.integration.test.ts` IT-BP-01…03 (new; in-process Express app on an ephemeral 127.0.0.1 port, no running stack): resolved body-parser ≥ 2.4.0; gzip body + trailing bytes in the same chunk, in a later chunk, or a half gzip member → 400; deflate / brotli / zstd (where Node has it) + trailing bytes → never 5xx; no `uncaughtException`; plain and well-formed gzip requests still parse (200).
+  - `backend-api-master/test/master/body-parser.integration.test.ts` IT-BP-M01/M02 (new): same version guard and gzip + trailing bytes → 400 on the api-master parser.
+  - Full suites on a fresh disposable PostgreSQL 18.6: auth 24 files / 111 passed / 6 skipped; master 725 passed / 15 skipped; tsc and eslint clean.
+- Isolated reproduction attempt (scratch only; disposable container from the dev image, Node 24.11.0, `--network none --memory 256m --cpus 0.5 --pids-limit 64 --read-only`): body-parser 2.3.0 and 2.4.0 side by side with gzip / deflate / brotli / gzip-magic trailing bytes, same chunk and delayed chunk. Neither version terminated the process on these variants (gzip → 400, deflate/brotli → 200, the trailing bytes are ignored by zlib). The upstream crash path was therefore **not reproduced**; the fix relies on the advisory's patched release, whose `read.js` now detaches the decompression stream with an error listener after the body is read and checks the charset before piping into a decoder.
+- Dev containers: the named node_modules volumes were updated with the project's install command (`docker compose … run --rm --no-deps -e CI=true frontend pnpm install --frozen-lockfile --store-dir=/root/.local/share/pnpm/store`, no volume removed), then `backend-api-auth`, `api-master`, `frontend`, `nginx` restarted and `docker/repair-dev-networks.cjs` run.
+- Remaining items (not backend scope): rebuild and roll out the auth / api-master images through devops (no image was built or pushed here); infra to record auth ingress exposure per deployment profile (base Compose publishes 3101; GMS overlay removes it), as in the acceptance criteria.

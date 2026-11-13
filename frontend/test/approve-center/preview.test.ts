@@ -24,6 +24,7 @@ import { page, RS1, reserveDetail, sourceTwoItems } from "./fixtures";
 /** Approve Center UI rev 2 (FE-AP-013…015, owner 2026-11-10): the document preview modal. */
 const reserve = approveMenuFor("reserve") as AvailableMenu;
 const memoReceive = approveMenuFor("memo-receive") as AvailableMenu;
+const purchase = approveMenuFor("purchase") as AvailableMenu;
 const format = numberFormatFor({ weightPlaces: 2, pricePlaces: 2 });
 const decoded = (html: string) => html.replaceAll("&#x27;", "'").replaceAll("&amp;", "&");
 
@@ -99,6 +100,25 @@ describe("UT-AP-16 value in the company currency (Q-AP-17) and the view model", 
     expect(view).toMatchObject({ partyLabel: "Vendor", partyName: "Boyaca Emerald Traders S.A.S.", orderedBy: false, valueCurrency: "THB", currency: "THB", note: "" });
     expect(view.rows[0]).toMatchObject({ code: "260005", stone: "Emerald", orderedBy: null, value: "1000.00", location: "—" });
     expect(stoneCodeText({ stoneCode: null, stockId: null })).toBe("—");
+  });
+
+  it("FE-PU-014 Purchase (ADR-0051): a Memo Stock row shows its Stock ID, a PO / manual row its stone code, and a row with neither and stockId null shows —", () => {
+    const detail = reserveDetail({
+      customer: undefined,
+      vendor: { name: "Aom" },
+      currency: "THB",
+      exchangeRate: null,
+      lines: [
+        { stoneCode: "", stockId: "260003", stone: "Ruby", shape: "", size: "", pcs: 1, weightCt: "0.680", amount: "100.00", location: "Memo" },
+        { stoneCode: "RU-OV-1", stockId: null, stone: "Ruby", shape: "Oval", size: "", pcs: 6, weightCt: "3.000", amount: "200.00", location: "Safe A" },
+        { stoneCode: null, stockId: null, stone: "Ruby", shape: "", size: "", pcs: 1, weightCt: "0.500", amount: "45.00", location: "" },
+      ],
+      totals: { grandTotal: "345.00" },
+    });
+    const view = previewView(purchase, detail, "THB", 2);
+    expect(view.rows.map((row) => row.code)).toEqual(["260003", "RU-OV-1", "—"]);
+    const html = renderToStaticMarkup(createElement(PreviewBody, { view, docNo: "PU-7", format }));
+    expect(html).not.toContain("Auto");
   });
 });
 

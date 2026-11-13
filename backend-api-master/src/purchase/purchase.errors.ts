@@ -12,8 +12,6 @@ const logger = new Logger("Purchase");
 
 /** Approve found a source quantity that is no longer available (409, every short line field). */
 export const purchasePendingShort = (fields: FieldError[]) => partnerException("PURCHASE_PENDING_SHORT", HttpStatus.CONFLICT, fields);
-/** The shared Stock ID counter reached 9,999 for the year (SA-PU-10). */
-export const purchaseStockIdExhausted = () => partnerException("PURCHASE_STOCK_ID_EXHAUSTED", HttpStatus.CONFLICT);
 
 const CHECK_VIOLATION = "23514";
 

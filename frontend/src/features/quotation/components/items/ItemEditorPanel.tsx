@@ -186,7 +186,7 @@ export function ItemEditorPanel({
             </div>
           ) : kind.stockId === "from-stock" ? (
             <Field label="Stock ID">
-              <ReadonlyBox compact value={line.stockId} placeholder="From stock only" />
+              <ReadonlyBox compact value={line.stockId} placeholder={kind.stockIdEmpty ?? "From stock only"} />
             </Field>
           ) : null}
           <Field label="Lot">

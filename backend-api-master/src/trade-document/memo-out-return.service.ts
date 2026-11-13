@@ -235,12 +235,16 @@ async function returnLines(tx: Tx, id: string): Promise<ReturnLine[]> {
   return tx.memoOutReturnLine.findMany({ where: { memoOutReturnId: id }, orderBy: { position: "asc" }, select: { memoOutLineId: true, pcs: true, weightCt: true } });
 }
 
-/** Locks the Memo Out lines in id order (`FOR UPDATE`; lock order memo_out_line → memo_stock, as in approval). */
+/**
+ * Locks the Memo Out lines in id order (lock order memo_out_line → memo_stock, as in approval). `FOR NO KEY UPDATE`
+ * (INV-20261031-002): only non-key columns change, so the FK `KEY SHARE` checks of concurrent return-line inserts
+ * neither wait for it nor form a deadlock cycle with it; approvals of the same lines still queue.
+ */
 async function lockOutLines(tx: Tx, lines: ReturnLine[]) {
   const ids = lines.map((line) => line.memoOutLineId);
   const locked = await tx.$queryRaw<OutLineLock[]>(Prisma.sql`
     SELECT id::text AS id, pcs, weight_ct, returned_pcs, returned_weight_ct, memo_stock_id::text AS memo_stock_id
-    FROM "partner"."memo_out_line" WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR UPDATE`);
+    FROM "partner"."memo_out_line" WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR NO KEY UPDATE`);
   return new Map(locked.map((row) => [row.id, row]));
 }
 

@@ -58,12 +58,13 @@ export const PURCHASE_NOTE_HINT = "Printed on the purchase for the vendor";
 
 /**
  * T-06/T-09/S-01 + R2-03: the Quotation table with Stone Code and a typed Location (manual rows; blank shows "—"), the
- * Stock ID "Auto" until Save issues one, "Price" (a buying cost, DV-03 / Q-PU-14), picked rows that take part or all of
+ * Stock ID of Memo Stock rows only (manual / PO rows show "—", ADR-0051 / Q-PU-37), "Price" (a buying cost, DV-03 / Q-PU-14), picked rows that take part or all of
  * their cap with no line discount (D8), and a 250-character note.
  */
 export const PURCHASE_KIND: DocumentKind = {
   ...QUOTATION_KIND,
-  stockId: "auto",
+  stockId: "from-stock",
+  stockIdEmpty: "—",
   stoneCode: true,
   location: true,
   locations: "text",
@@ -128,7 +129,7 @@ function PurchaseInfoForm({ options }: { options: PurchaseOptions | undefined })
   );
 }
 
-/** The shared item table showing "Auto", "from {PO No.}" and "—" for a blank Location (display only). */
+/** The shared item table showing "—" for a row without a Stock ID, "from {PO No.}" and "—" for a blank Location (display only). */
 export function PurchaseItemTable(props: ComponentProps<typeof ItemTable>) {
   const lines = useMemo(() => props.lines.map(purchaseTableLine), [props.lines]);
   return <ItemTable {...props} lines={lines} />;

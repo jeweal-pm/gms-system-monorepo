@@ -27,7 +27,7 @@ export function encodeMemoStockCursor(group: MemoGroup, docDate: string, stockId
 
 export function decodeMemoStockCursor(value: string): { group: 0 | 1; docDate: string; stockId: string } {
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(value)) throw invalidCursor();
-  const match = /^([01])\|(\d{4}-\d{2}-\d{2})\|(\d{6})$/.exec(Buffer.from(value, "base64url").toString("utf8"));
+  const match = /^([01])\|(\d{4}-\d{2}-\d{2})\|(\d{6,10})$/.exec(Buffer.from(value, "base64url").toString("utf8"));
   if (!match || Number.isNaN(Date.parse(match[2]))) throw invalidCursor();
   return { group: Number(match[1]) as 0 | 1, docDate: match[2], stockId: match[3] };
 }

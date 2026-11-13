@@ -18,6 +18,8 @@ export type DocumentKind = {
    * IDs come later, at Purchase).
    */
   stockId: "from-stock" | "auto" | "none";
+  /** Read-only Stock ID text when a `from-stock` row has none (default "From stock only"; Purchase "—", ADR-0051). */
+  stockIdEmpty?: string;
   /** Stone Code field and column; without it the Stock ID leads the row (Memo Receive, owner 2026-10-28). */
   stoneCode: boolean;
   /** Location column and row-panel field; Memo Receive has none (rev 3: its Memo Stock is always `Memo`). */

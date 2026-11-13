@@ -103,7 +103,7 @@ erDiagram
   }
   MEMO_STOCK_ID_COUNTER {
     smallint year PK "2-digit year of the save, e.g. 26"
-    int last_no "CHECK 0..9999"
+    int last_no "CHECK 0..2000000000; may pass 9,999 (Q-MR-09)"
   }
 ```
 
@@ -112,7 +112,7 @@ erDiagram
 | Table | Constraint / index |
 |---|---|
 | memo_receive | `UNIQUE (numbering_id, running_no)`; partial `UNIQUE (running_no) WHERE numbering_id IS NULL`; list `(doc_date desc, created_at desc, id desc)`; `(vendor_id, doc_date desc)`; `(status, doc_date desc, created_at desc, id desc)` for the future Approve page; `CHECK ((status = 'APPROVED') = (approved_at IS NOT NULL))` |
-| memo_receive_line | `UNIQUE (memo_receive_id, position)`; `UNIQUE (stock_id)`; `CHECK stock_id ~ '^[0-9]{6}$'` |
+| memo_receive_line | `UNIQUE (memo_receive_id, position)`; `UNIQUE (stock_id)`; `CHECK stock_id ~ '^[0-9]{6,10}$'` (6 digits until a year passes 9,999 → carries into the next prefix; migration `20261113090000_stock_id_carry_over`, same on `memo_stock`) |
 | memo_stock | `UNIQUE (stock_id)`; `UNIQUE (memo_receive_line_id)`; partial `(vendor_id, received_doc_date desc, stock_id desc) WHERE pending_pcs > 0 OR pending_weight_ct > 0` for the dialog; `(memo_receive_id)` |
 
 `memo_stock.stock_id` matches its line. The line FK uses `RESTRICT`, and an approved document cannot be deleted (SA-MR-03), so a stock item always keeps its source line.

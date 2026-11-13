@@ -7,7 +7,7 @@ No new package, service, container, variable, secret or nginx location. The ledg
 | Persistence, migration | Prisma (ADR-0006), PostgreSQL schema `partner` (ADR-0003, ADR-0027) | `backend-api-master/prisma/**` |
 | Document engine, numbering, totals | `TradeDocumentEngine`, `document-numbering.ts`, quotation calculator | `src/trade-document/document-engine.ts`, `src/document-setup/`, `src/quotation/quotation.calculate.ts` |
 | Stock moves | `totalPerItem` + the `takeFromMemoStock` row-lock pattern | `src/trade-document/memo-stock.service.ts` (pattern; Purchase owns its SQL in `src/purchase/purchase-stock.ts`) |
-| Stock IDs | `issueStockIds` (shared counter, SA-MR-04) | `src/trade-document/memo-receive.service.ts` |
+| Stock IDs | none since ADR-0051 (STOCK lines copy the Memo Stock item's id; `issueStockIds` is Memo Receive only) | — |
 | API, validation | tRPC (ADR-0007/0025), zod 4 | `src/master/router.ts`, `src/purchase/purchase.schemas.ts` |
 | Authorization | ADR-0031 master context; auth catalog leaf `purchase` (ADR-0020) | `src/master/authorization.ts` |
 | Ids | `uuidV7` from `@gms/storage` (already used by the engine; no file storage) | engine |

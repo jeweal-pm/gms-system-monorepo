@@ -100,3 +100,30 @@ Use [bounded remediation](../../workflow/remediation.md) for defects: one root-c
 - **Not done:** live TC-PU-14/15 in the browser.
 - **Security review** (2026-11-06, same uncommitted revision on base a130c68): sec-auditor and security-auditor are both clear, with no INV records. Note, not a finding: the `purchase.approved` log field `memoStockKeys` counts a merged item as two keys (one per bucket moved).
 - **Owner 2026-11-06 (screenshot, merged row with Pcs 1 below the Sold 5):** "อยากให้ทำดักตั้งเเต่ตอนใส่ตัวเลขว่าห้ามต่ำกว่า 5 ทั้ง pcs และ weight". Pcs / Weight of a row with a minimum now snap back into min…cap when the field is left (`stockQuantityBound` in `ItemEditorPanel`); the red row error still shows while typing. Test added to UT-PU-14. Dev data for TC-PU-14: Memo Stock 260012 (MR-3, vendor Org, AFN) set to Sold 5 / 5.000 + pending 5 / 5.000 on the dev database only.
+
+## ADR-0051: MANUAL / PO rows without a Stock ID (2026-11-13)
+
+- approved-revision: [ADR-0051](../../adr/0051-purchase-lines-without-stock-id.md) (amends ADR-0042 SA-PU-10; purchase SA rev 3)
+- approved-by: owner; approved-at: 2026-11-13; approval-evidence: Q-PU-36 "ล้างเป็นค่าว่าง เลขที่ล้างแล้วจะไม่ถูกนำมาใช้ซ้ำ", Q-PU-37 "เป็น — ดีแล้ว", then "ไม่ต้องทำอะไรเพิ่ม ปรับ Pu กันก่อน"
+- branch: `fix/12-11-26-inv` (uncommitted)
+
+| Done | ID | Owner | Task | Allowed files | Depends on | Verification |
+|---|---|---|---|---|---|---|
+| [x] done 2026-11-13 (backend) | BE-PU-007 | backend | Migration `20261113110000_purchase_line_stock_id_nullable`: `purchase_line.stock_id` nullable, MANUAL / PO ids cleared (counter not rewound), CHECK `purchase_line_stock_id_source_check`, drop `purchase_line_issued_stock_id_key`; Prisma `stockId String?` | `backend-api-master/prisma/**` | ADR-0051 | IT-PU-B01, IT-PU-B10; dev DB applied |
+| [x] done 2026-11-13 (backend) | BE-PU-008 | backend | Line hook stores `stockId` only on STOCK lines; no `issueStockIds` / clock; `PURCHASE_STOCK_ID_EXHAUSTED` removed; `issueStockIds` Memo Receive only (no `exhausted` parameter); `get` / save result give `stockId` / `stockIds` null for MANUAL / PO | `backend-api-master/src/{purchase,common,trade-document/memo-receive.service.ts}`, tests | BE-PU-007 | UT-PU-B02, UT-PU-B05, IT-PU-B03/B04/B09/B11 |
+| [x] | FE-PU-014 | frontend | Show "—" for a MANUAL / PO row's Stock ID (table, row panel, preview) instead of "Auto" / issued number; accept `stockId: null` and `stockIds: (string \| null)[]`; remove the `PURCHASE_STOCK_ID_EXHAUSTED` mapping | `frontend/src/features/purchase/**`, `frontend/test/purchase/**` | BE-PU-008 | frontend tests |
+
+### Evidence, ADR-0051 (2026-11-13)
+
+- **backend-api-master:** `tsc --noEmit` and ESLint clean. Full suite on a disposable PostgreSQL 18.6 (127.0.0.1:55439, `prisma migrate deploy`, container removed afterwards): **727 passed, 15 skipped** (previous baseline 725 / 15; +IT-PU-B10, +IT-PU-B11; IT-PU-B09 rewritten). backend-api-auth: 111 passed, 6 skipped.
+- **Changed tests:** UT-PU-B02 (create `stockIds` ["260042", null, null], no counter query; update keeps MANUAL / PO line ids with null; `get` null), UT-PU-B05 (Memo Receive only), IT-PU-B01 (CHECK cases, unique index absent), IT-PU-B03/B04 (null Stock IDs on save and reload), IT-PU-B09 (Purchase does not move the counter). Removed `purchase.clock` from the approval-documents, approval-source-lock and soft-delete DB suites.
+- **Dev database:** `f1-system-api-master-1` restarted, `migrate deploy` applied `20261113110000_purchase_line_stock_id_nullable`, container healthy. Before: MANUAL 1 / PURCHASE_ORDER 6 rows with a Stock ID; after: 0 of 7 have one; STOCK 3 / 3 keep theirs; CHECK present, `purchase_line_issued_stock_id_key` absent.
+- **API shape change for frontend:** `PurchaseLine.stockId: string | null` (null on MANUAL / PURCHASE_ORDER); `purchase.create` / `update` → `stockIds: (string | null)[]`; error code `PURCHASE_STOCK_ID_EXHAUSTED` no longer returned. Input unchanged.
+- Security reviews not run for this change (parent instruction).
+
+### Evidence, FE-PU-014 (frontend, 2026-11-13)
+
+- **Pages:** a MANUAL / PO row shows "—" for its Stock ID in the Purchase table ("— · from {PO No.}" for PO rows), in the row panel (Purchase kind now `stockId: "from-stock"`, `stockIdEmpty: "—"`, no "Assigned when you save") and in the Add Purchase Order picker. STOCK rows keep their Stock ID and the "· Sold / · In stock / · Sold + In stock" tag. `fromPurchase` maps `stockId: null` → `""`. The `PURCHASE_STOCK_ID_EXHAUSTED` mapping is removed. The Approve Center preview already showed "—" for a line with no stone code and no Stock ID (`stoneCodeText`).
+- **Tests:** UT-PU-01 (kind), UT-PU-09 (table "—"), UT-PU-10 (panel "—" for manual / PO, "260003" for Memo Stock), UT-PU-11 (fromPurchase null → ""; exhausted case removed), picker cells "—", IT-PU-01 (`stockIds` with null), FE-AS-010 page render (null from `purchase.get` → "—"), new preview case for Purchase. Full frontend suite **109 files, 996 passed** (was 995). `tsc --noEmit`: 0 errors outside stale `.next/types`. `eslint .`: 0 errors (2 existing warnings in `login-form.tsx`).
+- **Smoke** (http://localhost:8080 after restarting `f1-system-frontend-1`, dev login): Purchase 5 (Approved) shows row 1 STOCK "260012 · Sold + In stock", rows 2–3 PO "— · from PO-4", row 4 MANUAL "—". Screenshot `document/testing/screenshots/purchase/2026-11-13-no-stock-id.png`.
+- Security reviews not run for this change (parent instruction).

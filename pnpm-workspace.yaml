@@ -10,3 +10,8 @@ onlyBuiltDependencies:
   - esbuild
   - prisma
   - unrs-resolver
+
+# INV-20261110-001 (owner 2026-11-13): body-parser < 2.4.0 can crash the process on a compressed body with trailing
+# bytes (GHSA-27r3-jxmh-p828). express 5.2.1 allows ^2.2.1; pin the patched release for every workspace.
+overrides:
+  "body-parser@>=2.0.0 <2.4.0": 2.4.0

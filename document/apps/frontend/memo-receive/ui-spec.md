@@ -113,7 +113,7 @@ page, cancel, permission catalog changes, Decimal Setup use, a location master.
 Owner (verbatim in [ADR-0034](../../../adr/0034-memo-receive-approval-and-memo-stock.md)). This revision changes these items. Everything else stays as revision 2.
 
 - **Data**: real API (`memoReceive.*`), and the mock store is removed. Field lists come from `memoReceive.options`.
-- **Stock ID**: the server assigns `YY####` (e.g. `260001`) on save. Before save the field shows "Auto", and a line keeps its number when the document is edited.
+- **Stock ID**: the server assigns `YY####` (e.g. `260001`) on save; past 9,999 in a year the number carries into the next prefix (`269999` → `270000`, owner Q-MR-09 2026-11-13), so the field holds 6 digits (more only in the far future). Before save the field shows "Auto", and a line keeps its number when the document is edited.
 - **Location**: removed from the item table column and from the row panel (P-03). It is stored as `Memo` on Memo Stock.
 - **Approve** (header, temporary until the Approve page): shown when the status is Pending Approval, the document is saved with no unsaved changes, and the user has `memo-receive:APPROVE`. Confirm dialog "Approve this Memo Receive? Its N items move to Memo Stock and it can no longer be edited." → toast "Approved". Then the status badge reads Approved, and Edit, Delete and Approve are hidden.
 - **Photos**: the row-panel photo box shows "Photos come in a later update", as on Memo Out (no upload in this revision).

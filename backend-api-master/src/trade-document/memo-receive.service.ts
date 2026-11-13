@@ -33,8 +33,13 @@ export async function checkLinePhotos(tx: Tx, lines: { photoIds: string[] }[]): 
 
 /** Location of every Memo Stock item (ADR-0034 D6, SA-MR-07). */
 export const MEMO_LOCATION = "Memo";
-/** 4-digit running number per year (SA-MR-04); item 10,000 is refused (Q-MR-09 still open). */
-export const STOCK_NO_MAX = 9_999;
+/**
+ * SA-MR-04 / owner Q-MR-09 (2026-11-13, INV-20261029-002): the running number has no yearly ceiling; past 9,999 it
+ * carries into the next prefix (269999 → 270000). The only limit left is the INTEGER `last_no` column: 2,000,000,000
+ * keeps `year × 10,000 + last_no` inside int4 and inside the VARCHAR(10) Stock ID columns. Reaching it would take about
+ * ten million 200-line saves; it still refuses with `MEMO_RECEIVE_STOCK_ID_EXHAUSTED` instead of overflowing.
+ */
+export const STOCK_NO_MAX = 2_000_000_000;
 /** Asia/Bangkok has no daylight saving: UTC+7 all year. */
 const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000;
 
@@ -46,28 +51,41 @@ export function stockIdYear(now: Date): number {
   return new Date(now.getTime() + BANGKOK_OFFSET_MS).getUTCFullYear() % 100;
 }
 
-/** Stock ID = YY ‖ lpad(n, 4, '0'), e.g. 26 + 1 → "260001". */
+/**
+ * Stock ID = year × 10,000 + running number, zero-padded to at least 6 digits: 26 + 1 → "260001", 5 + 42 → "050042".
+ * Past 9,999 the number carries into the next prefix: 26 + 10,000 → "270000" (owner Q-MR-09, 2026-11-13).
+ */
 export function formatStockId(year: number, runningNo: number): string {
-  return `${String(year).padStart(2, "0")}${String(runningNo).padStart(4, "0")}`;
+  return String(year * 10_000 + runningNo).padStart(6, "0");
 }
 
 /**
- * Takes `count` numbers from the counter of the save year under its row lock (INSERT … ON CONFLICT DO UPDATE in the
- * caller's transaction, after the Document Setup lock — always the same order, so no deadlock). The guarded UPDATE
- * returns no row when the year would pass 9,999 → `MEMO_RECEIVE_STOCK_ID_EXHAUSTED`; the transaction then rolls back.
- * Another document that issues ids from the same counter (Purchase, SA-PU-10) passes its own `exhausted` error.
+ * Takes `count` numbers from the counter of the save year in ONE statement, in the caller's transaction after the
+ * Document Setup lock (always the same lock order, so no deadlock):
+ * - `prior` share-locks the earlier years' counter rows in year order, so a save still issuing in an earlier year
+ *   commits first and its last number is seen;
+ * - a year's numbers always start after the greatest number issued in earlier years: if 2026 ran into 270005, 2027
+ *   starts at 270006 (`last_no` 5 → 6), never at 270001, so Stock IDs stay unique although 2026 used the 27… prefix;
+ * - the year's own row takes `GREATEST(last_no, that floor) + count` under its row lock (INSERT … ON CONFLICT DO UPDATE).
+ * Only the INTEGER limit `STOCK_NO_MAX` refuses (`MEMO_RECEIVE_STOCK_ID_EXHAUSTED`) and the transaction then rolls back.
+ * The unique Stock ID indexes remain the final backstop. Memo Receive is the only caller: Purchase lines no longer get a
+ * Stock ID (ADR-0051, 2026-11-13); a later Load to Stock design reuses this counter.
  */
-export async function issueStockIds(tx: Tx, count: number, now: Date, exhausted: () => Error = stockIdExhausted): Promise<string[]> {
+export async function issueStockIds(tx: Tx, count: number, now: Date): Promise<string[]> {
   if (count === 0) return [];
   const year = stockIdYear(now);
   const rows = await tx.$queryRaw<{ last_no: number }[]>(Prisma.sql`
+    WITH prior AS (
+      SELECT "year", "last_no" FROM "partner"."memo_stock_id_counter" WHERE "year" < ${year}::smallint ORDER BY "year" FOR SHARE
+    )
     INSERT INTO "partner"."memo_stock_id_counter" AS c ("year", "last_no")
-    VALUES (${year}::smallint, ${count}::int)
-    ON CONFLICT ("year") DO UPDATE SET "last_no" = c."last_no" + EXCLUDED."last_no"
-    WHERE c."last_no" + EXCLUDED."last_no" <= ${STOCK_NO_MAX}
+    SELECT ${year}::smallint, ${count}::int + GREATEST(0, COALESCE(max(p."year"::int * 10000 + p."last_no"), 0) - ${year}::int * 10000)
+    FROM prior p
+    ON CONFLICT ("year") DO UPDATE SET "last_no" = GREATEST(c."last_no" + ${count}::int, EXCLUDED."last_no")
+    WHERE GREATEST(c."last_no" + ${count}::int, EXCLUDED."last_no") <= ${STOCK_NO_MAX}
     RETURNING "last_no"`);
   const last = rows[0]?.last_no;
-  if (last === undefined || last > STOCK_NO_MAX) throw exhausted();
+  if (last === undefined || last > STOCK_NO_MAX) throw stockIdExhausted();
   return Array.from({ length: count }, (_, index) => formatStockId(year, last - count + 1 + index));
 }
 

@@ -237,8 +237,10 @@ const zero = () => new Decimal(0);
  * BE-PU-004 / SA-PU-09 step 2–5, inside the approve transaction (after the guarded status update):
  * 1. sums the lines per key;
  * 2. locks the source `purchase_order` headers `FOR SHARE` (INV-20261111-002 F1), the touched `memo_stock` rows
- *    `FOR UPDATE` in id order, then the touched `purchase_order_line` rows in id order (lock order purchase → PO header →
- *    memo_stock → purchase_order_line; other memo_stock writers lock only memo_stock);
+ *    `FOR NO KEY UPDATE` in id order, then the touched `purchase_order_line` rows in id order, also `FOR NO KEY UPDATE`
+ *    (lock order purchase → PO header → memo_stock → purchase_order_line; other memo_stock writers lock only
+ *    memo_stock). INV-20261031-002: only non-key columns change, so FK `KEY SHARE` checks of concurrent purchase-line
+ *    inserts neither wait for these locks nor deadlock with them;
  * 3. re-checks each PO is APPROVED with the purchase's vendor and currency;
  * 4. splits each MERGED line Sold part first (`splitMerged`, ADR-0043), then guards every key (IN_STOCK q ≤ pending;
  *    SOLD q ≤ sold − purchased; PO q ≤ ordered − purchased). Any short →
@@ -265,11 +267,11 @@ export async function takeForPurchase(
   const lockedItems = memoIds.length === 0 ? [] : await tx.$queryRaw<LockedItem[]>(Prisma.sql`
     SELECT id::text AS id, pending_pcs, pending_weight_ct, sold_pcs, sold_weight_ct, purchased_pcs, purchased_weight_ct
     FROM "partner"."memo_stock"
-    WHERE id = ANY(${memoIds}::uuid[]) ORDER BY id FOR UPDATE`);
+    WHERE id = ANY(${memoIds}::uuid[]) ORDER BY id FOR NO KEY UPDATE`);
   const lockedPoLines = poIds.length === 0 ? [] : await tx.$queryRaw<LockedPoLine[]>(Prisma.sql`
     SELECT l.id::text AS id, l.pcs, l.weight_ct, l.purchased_pcs, l.purchased_weight_ct, d.status, (d.deleted_at IS NOT NULL) AS deleted, d.vendor_id::text AS vendor_id, d.currency_code
     FROM "partner"."purchase_order_line" l JOIN "partner"."purchase_order" d ON d.id = l.purchase_order_id
-    WHERE l.id = ANY(${poIds}::uuid[]) ORDER BY l.id FOR UPDATE OF l`);
+    WHERE l.id = ANY(${poIds}::uuid[]) ORDER BY l.id FOR NO KEY UPDATE OF l`);
 
   const items = new Map(lockedItems.map((row) => [row.id, row]));
   const mergedParts = splitMerged(merged, items, { inStock, sold });
@@ -364,10 +366,10 @@ export async function giveBackForPurchase(tx: Tx, lines: PurchaseGiveBack[], inU
   const items = memoIds.length === 0 ? [] : await tx.$queryRaw<LockedItem[]>(Prisma.sql`
     SELECT id::text AS id, pending_pcs, pending_weight_ct, sold_pcs, sold_weight_ct, purchased_pcs, purchased_weight_ct
     FROM "partner"."memo_stock"
-    WHERE id = ANY(${memoIds}::uuid[]) ORDER BY id FOR UPDATE`);
+    WHERE id = ANY(${memoIds}::uuid[]) ORDER BY id FOR NO KEY UPDATE`);
   const poLines = poIds.length === 0 ? [] : await tx.$queryRaw<{ id: string; purchased_pcs: number; purchased_weight_ct: Dec | string }[]>(Prisma.sql`
     SELECT id::text AS id, purchased_pcs, purchased_weight_ct FROM "partner"."purchase_order_line"
-    WHERE id = ANY(${poIds}::uuid[]) ORDER BY id FOR UPDATE`);
+    WHERE id = ANY(${poIds}::uuid[]) ORDER BY id FOR NO KEY UPDATE`);
   const byId = new Map(items.map((row) => [row.id, row]));
   for (const id of memoIds) {
     const item = byId.get(id);

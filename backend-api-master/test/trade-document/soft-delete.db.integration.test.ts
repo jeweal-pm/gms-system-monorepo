@@ -111,7 +111,6 @@ describe.runIf(canRun)("IT-SD transaction soft delete on PostgreSQL", () => {
       stock: new MemoStockService(), purchase: new PurchaseService(), quotation: new QuotationService(), setup: new DocumentSetupService(),
     };
     s.receive.clock = clock;
-    s.purchase.clock = clock;
     const createIfAbsent = async (create: () => Promise<unknown>) => {
       try { await create(); return true; } catch (error) {
         if ((error as { code?: string }).code === "P2002") return false;

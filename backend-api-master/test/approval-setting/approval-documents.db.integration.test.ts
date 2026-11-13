@@ -123,7 +123,6 @@ describe.runIf(canRun)("approval documents (ADR-0050 stage 2) on PostgreSQL", ()
     const receive = new MemoReceiveService();
     receive.clock = () => new Date(`20${YEAR}-06-01T03:00:00Z`);
     const purchase = new PurchaseService();
-    purchase.clock = receive.clock;
     s = { receive, memoReturn: new MemoReturnService(), memoOut: new MemoOutService(), reserve: new ReserveService(), memoOutReturn: new MemoOutReturnService(),
       po: new PurchaseOrderService(), purchase, quotation: new QuotationService() };
     if (!(await prisma.currency.findUnique({ where: { code: "THB" } }))) await prisma.currency.create({ data: { code: "THB", name: "THB", createdBy: ACTOR, updatedBy: ACTOR } });

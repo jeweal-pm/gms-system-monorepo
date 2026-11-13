@@ -59,7 +59,8 @@ export function toPurchaseInput(values: PurchaseFormValues) {
 }
 
 /**
- * Saved purchase → form values. Rows keep their server line id as their key and show their Stock ID. A picked row keeps
+ * Saved purchase → form values. Rows keep their server line id as their key. Only a Memo Stock row has a Stock ID; a
+ * manual or PO row comes back with `stockId: null` (ADR-0051) and keeps an empty one. A picked row keeps
  * its source, Memo No. / PO No. and, while pending, its cap from `limitPcs` / `limitWeightCt` (SA-PU-16).
  */
 export function fromPurchase(detail: PurchaseDetail): PurchaseFormValues {
@@ -72,7 +73,7 @@ export function fromPurchase(detail: PurchaseDetail): PurchaseFormValues {
       return {
         ...line,
         source: picked ? ("STOCK" as const) : ("MANUAL" as const),
-        stockId: saved.stockId,
+        stockId: saved.stockId ?? "",
         stoneCodeId: picked ? "" : line.stoneCodeId,
         memoStockId: saved.memoStockId ?? "",
         memoGroup: saved.memoGroup ?? "",
@@ -150,8 +151,6 @@ export function mapPurchaseSaveError(error: unknown): SaveOutcome {
       return { fieldErrors: [], message: PURCHASE_CHANGED_MESSAGE };
     case "PURCHASE_STATUS_INVALID":
       return { fieldErrors: [], message: PURCHASE_APPROVED_MESSAGE };
-    case "PURCHASE_STOCK_ID_EXHAUSTED":
-      return { fieldErrors: [], message: "No more Stock IDs this year. Contact the administrator." };
     case "CSRF_INVALID":
       return { fieldErrors: [], message: "Please reload the page and try again." };
   }

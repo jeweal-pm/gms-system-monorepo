@@ -14,7 +14,7 @@ type MemoGroup = "IN_STOCK" | "SOLD";                                         //
 // cutting, quality, lot, location, cerType, cerNo and priceUnit from the database (SA-PU-14); only pcs, weightCt,
 // unitPrice and itemNote are taken from the input, and discount must be {type: "NONE"} (R2-03 / R2-D-07, D8).
 type PurchaseLineInput = Omit<QuotationLineInput, "source" | "photoIds"> & {
-  id?: string;                         // update only: a saved line id keeps its issued Stock ID (MANUAL / PURCHASE_ORDER)
+  id?: string;                         // update only: a saved line id keeps the line
   source: PurchaseLineSource;
   memoStockId?: string | null;         // STOCK: required; otherwise null/absent
   memoGroup?: MemoGroup | null;        // STOCK: required; otherwise null/absent
@@ -26,7 +26,7 @@ type PurchaseInput = Omit<PurchaseOrderInput, "lines"> & { lines: PurchaseLineIn
                                                                                           // discount, tax, serviceCharges, labor; lines 1..200
 
 type PurchaseLine = Omit<PurchaseLineInput, "id" | "photoIds"> & {
-  id: string; stockId: string;                        // STOCK: the item's; MANUAL / PURCHASE_ORDER: issued at save (SA-PU-10)
+  id: string; stockId: string | null;                 // STOCK: the item's; MANUAL / PURCHASE_ORDER: null (SA-PU-10, ADR-0051)
   photoIds: [];
   discountAmount: string; amount: string;
   memoReceive: { docNo: string } | null;              // STOCK only (the item's Memo No.)
@@ -48,8 +48,8 @@ type Purchase = Omit<PurchaseInput, "lines"> & {
 | `purchase.options` | query | purchase VIEW | `{vendorId?}` | `purchaseOrder.options` shape: vendors + addresses, currencies, company currency, charge types, stone lists with codes, `numbering: {configured}` |
 | `purchase.memoStock` | query | purchase VIEW | see [Memo Stock picker](#memo-stock-picker) | `{items, nextCursor, counts}` |
 | `purchase.purchaseOrderLines` | query | purchase VIEW | see [Purchase Order picker](#purchase-order-picker) | `{items, nextCursor}` |
-| `purchase.create` | mutation | purchase ADD + CSRF | `PurchaseInput` | `{id, docNo, version, stockIds: string[]}` (Stock ID per line, in order) |
-| `purchase.update` | mutation | purchase EDIT + CSRF | `{id, expectedVersion} & PurchaseInput` | `{id, version, stockIds: string[]}` |
+| `purchase.create` | mutation | purchase ADD + CSRF | `PurchaseInput` | `{id, docNo, version, stockIds: (string | null)[], status, autoApproved}` (per line, in order: the STOCK line's Stock ID, null for MANUAL / PURCHASE_ORDER, ADR-0051) |
+| `purchase.update` | mutation | purchase EDIT + CSRF | `{id, expectedVersion} & PurchaseInput` | `{id, version, stockIds: (string | null)[], status, autoApproved}` |
 | `purchase.delete` | mutation | purchase DELETE + CSRF | `{id, expectedVersion}` | `{ok: true}` |
 | `purchase.approve` | mutation | purchase APPROVE + CSRF | `{id, expectedVersion}` | `{id, version, status: "APPROVED", lineCount}` |
 | `currency.options` (existing) | query | any of …, **+ purchase** VIEW | — | unchanged |
@@ -137,11 +137,11 @@ type PurchaseOrderLineRow = {
 ```
 
 - Only lines of `APPROVED` POs of this vendor in this currency, with available pcs > 0 or weight > 0. The order is PO Doc Date desc, PO created_at desc, PO id desc, then line position asc, so one PO's lines are adjacent for the group rows. The cursor is base64url JSON `{d, c, i, p, v: 1}`, strictly decoded. `counts` use the same filters, ignore `status` and `cursor`, and come from one `count(*) FILTER` query.
-- A picked PO row's Stock ID shows "Auto" until the save issues it (SA-PU-10).
+- A MANUAL or PO row has no Stock ID (`stockId: null`) and shows "—" (ADR-0051, Q-PU-37). Approve Center search by Stock ID matches STOCK rows only.
 
 ## Errors (`error.data.domainCode`, HTTP)
 
-`VALIDATION_ERROR` 400 (fieldErrors), `PURCHASE_NOT_FOUND` 404, `PURCHASE_CHANGED` 409 (stale version, or a number race on save), `PURCHASE_STATUS_INVALID` 409 (not pending), `PURCHASE_REFERENCE_INVALID` 422 (`vendorId`, `addressId`, `currency`, `lines.N.stoneCodeId`, `lines.N.memoStockId`, `lines.N.purchaseOrderLineId`), `PURCHASE_PENDING_SHORT` 409 at approve (`lines.N.pcs|weightCt` / `exceeds_available`; at save the same condition is `VALIDATION_ERROR` `exceeds_available`), `PURCHASE_STOCK_ID_EXHAUSTED` 409, `PARTNER_UNAVAILABLE` 503, `UNAUTHORIZED` 401, `PERMISSION_DENIED` 403, `CSRF_INVALID` 403, `LICENSE_REQUIRED` 403, `AUTHORIZATION_UNAVAILABLE` 503. Full table: [error-handling](error-handling.md).
+`VALIDATION_ERROR` 400 (fieldErrors), `PURCHASE_NOT_FOUND` 404, `PURCHASE_CHANGED` 409 (stale version, or a number race on save), `PURCHASE_STATUS_INVALID` 409 (not pending), `PURCHASE_REFERENCE_INVALID` 422 (`vendorId`, `addressId`, `currency`, `lines.N.stoneCodeId`, `lines.N.memoStockId`, `lines.N.purchaseOrderLineId`), `PURCHASE_PENDING_SHORT` 409 at approve (`lines.N.pcs|weightCt` / `exceeds_available`; at save the same condition is `VALIDATION_ERROR` `exceeds_available`), `PARTNER_UNAVAILABLE` 503, `UNAUTHORIZED` 401, `PERMISSION_DENIED` 403, `CSRF_INVALID` 403, `LICENSE_REQUIRED` 403, `AUTHORIZATION_UNAVAILABLE` 503. Full table: [error-handling](error-handling.md).
 
 Note for frontend: the conflict code is `PURCHASE_CHANGED`, not `*_STALE` as the UI rev 1 error-handling draft says. `mapDocumentSaveError(error, "PURCHASE", …)` already maps `_CHANGED`, `_STATUS_INVALID` and `_REFERENCE_INVALID`. `_PENDING_SHORT` is mapped like `MEMO_RETURN_PENDING_SHORT` (a row error).
 

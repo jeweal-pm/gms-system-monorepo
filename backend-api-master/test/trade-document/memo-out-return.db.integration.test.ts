@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { HttpException } from "@nestjs/common";
+import { Prisma } from "../../src/generated/prisma/client";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { sendAndApprove, setApproval, submitted } from "../partner-shared/approval";
 
@@ -246,6 +247,54 @@ describe.runIf(canRun)("IT-MOR memo out return on PostgreSQL", () => {
     expect(await returnedOf(first.id)).toEqual([2, "1.000"]);
     expect(await returnedOf(secondLine.id)).toEqual([3, "1.500"]);
     expect(await bucketsOf(item.id)).toEqual({ pending: [10, "5.000"], reserved: [0, "0.000"] });
+  });
+
+  it("IT-MOR-08 (INV-20261031-002) a return save's FK KEY SHARE in the opposite line order neither blocks an approve nor deadlocks", async () => {
+    const one = await lentOut(customerB, [6, "3"], [3, "1.5"]);
+    const two = await lentOut(customerB, [6, "3"], [3, "1.5"]);
+    const [low, high] = [one.line.id, two.line.id].sort();
+    const pending = await submitted(memoOutReturn, ACTOR, await memoOutReturn.create(ACTOR, backInput(customerB, [backLine(one.line.id, 1, "0.5"), backLine(two.line.id, 1, "0.5")])));
+    // The exact row lock PostgreSQL's FK check takes for each inserted memo_out_return_line (RI_FKey_check).
+    const keyShare = (id: string) => Prisma.sql`SELECT 1 FROM ONLY "partner"."memo_out_line" x WHERE "id" = ${id}::uuid FOR KEY SHARE OF x`;
+
+    // Control: the pre-fix approve lock (FOR UPDATE, id order) against a save naming `high` then `low` is a 40P01 cycle.
+    const control = await Promise.allSettled([
+      prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(keyShare(high));
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await tx.$queryRaw(keyShare(low));
+      }, { timeout: 10_000 }),
+      prisma.$transaction(async (tx) => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await tx.$queryRaw(Prisma.sql`SELECT id FROM "partner"."memo_out_line" WHERE id = ANY(${[low, high]}::uuid[]) ORDER BY id FOR UPDATE`);
+      }, { timeout: 10_000 }),
+    ]);
+    expect(control.some((result) => result.status === "rejected" && /40P01|deadlock/i.test(JSON.stringify(result.reason, Object.getOwnPropertyNames(result.reason))))).toBe(true);
+
+    // Fix: session A (the save) holds KEY SHARE on `high`; session B (the real approve, `low` then `high`) completes
+    // without waiting; A then takes `low` and commits. No 40P01 on either side.
+    let approved: Promise<unknown> | null = null;
+    let approveDone = false;
+    const save = prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(keyShare(high));
+      approved = memoOutReturn.approve(ACTOR, pending.id, 2).finally(() => { approveDone = true; });
+      const until = Date.now() + 5_000;
+      while (!approveDone && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(approveDone).toBe(true);
+      await tx.$queryRaw(keyShare(low));
+    }, { timeout: 10_000 });
+    await expect(save).resolves.toBeUndefined();
+    await expect(approved!).resolves.toEqual({ id: pending.id, version: 3, status: "APPROVED" });
+    expect(await returnedOf(one.line.id)).toEqual([1, "0.500"]);
+    expect(await returnedOf(two.line.id)).toEqual([1, "0.500"]);
+
+    // And the real services in parallel: a save naming the lines high → low next to an approve locking low → high.
+    const next = await submitted(memoOutReturn, ACTOR, await memoOutReturn.create(ACTOR, backInput(customerB, [backLine(one.line.id, 1, "0.5"), backLine(two.line.id, 1, "0.5")])));
+    const byHigh = (id: string) => (id === high ? 0 : 1);
+    const reversed = [one.line.id, two.line.id].sort((a, b) => byHigh(a) - byHigh(b)).map((id) => backLine(id, 1, "0.5"));
+    const results = await Promise.allSettled([memoOutReturn.create(ACTOR, backInput(customerB, reversed)), memoOutReturn.approve(ACTOR, next.id, 2)]);
+    expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled"]);
+    expect(await returnedOf(one.line.id)).toEqual([2, "1.000"]);
   });
 
   it("IT-MOR-06 Memo Out lines with returns can't be deleted (RESTRICT) and the report still balances", async () => {

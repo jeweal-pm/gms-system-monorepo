@@ -161,8 +161,11 @@ describe("IT-PU-02 purchase page composition (rev 2, wired)", () => {
     expect(html).toContain("Pending Approval");
     expect(html).toContain("Waiting for approval · Read-only until it is approved, sent back or rejected");
     expect(html).toContain(">260003 · In stock<");
-    expect(html).toContain("260012 · from PO2611001");
-    expect(html).toContain(">260011<");
+    // FE-PU-014 (ADR-0051): purchase.get returns stockId null for PO / manual rows; they show "—".
+    expect(html).toContain(">— · from PO2611001<");
+    expect(html).not.toContain("260012");
+    expect(html).not.toContain("260011");
+    expect(html).not.toMatch(/>Auto(?: · from [^<]*)?</);
     expect(html).toContain("3 rows");
     expect(button(html, "lucide-circle-check")).toBe("");
     expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>).)*> Approve<\/button>/);
@@ -283,10 +286,10 @@ describe("IT-SD-F02 restore and the deleted daybook through the real link (FE-SD
 
 describe("IT-PU-01 purchase API wiring (FE-PU-003, SA rev 1 contract)", () => {
   it("create → POST purchase.create with the contract input and CSRF; the result has the number and Stock IDs", async () => {
-    respond = (path) => (path === "purchase.create" ? ok({ id: ID, docNo: "PU-8", version: 1, stockIds: ["260003", "260013"] }) : ok(null));
+    respond = (path) => (path === "purchase.create" ? ok({ id: ID, docNo: "PU-8", version: 1, stockIds: ["260003", null] }) : ok(null));
     const { api } = probe(seeded(ALL));
     const input = toPurchaseInput(validValues());
-    await expect(api.create(input)).resolves.toEqual({ id: ID, docNo: "PU-8", version: 1, stockIds: ["260003", "260013"] });
+    await expect(api.create(input)).resolves.toEqual({ id: ID, docNo: "PU-8", version: 1, stockIds: ["260003", null] });
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({ path: "purchase.create", method: "POST", csrf: "1" });
     expect(calls[0]!.input).toMatchObject({
@@ -301,7 +304,7 @@ describe("IT-PU-01 purchase API wiring (FE-PU-003, SA rev 1 contract)", () => {
   it("get → fromPurchase → update sends the saved line ids and expectedVersion; delete and Send to approve (submit) carry the version", async () => {
     respond = (path) => {
       if (path === "purchase.get") return ok(savedPurchase());
-      if (path === "purchase.update") return ok({ id: ID, version: 4, stockIds: ["260003", "260012", "260011"] });
+      if (path === "purchase.update") return ok({ id: ID, version: 4, stockIds: ["260003", null, null] });
       if (path === "purchase.delete") return ok({ ok: true });
       if (path === "purchase.submit") return ok({ id: ID, version: 4, status: "PENDING_APPROVAL", submittedAt: "2026-11-12T03:00:00.000Z" });
       return ok(null);
@@ -438,7 +441,7 @@ describe("IT-PU-04 Add Purchase Order wired (FE-PU-009)", () => {
     expect(render(empty, createElement(PurchaseOrderPicker, { vendorId: ID, currency: "THB", excluded: new Set<string>(), onCancel: () => undefined, onConfirm: () => undefined }))).toContain("No open purchase order lines from this vendor in THB.");
   });
 
-  it("the page's Purchase Order button: PO lines on the form are left out, OK maps rows with Stock ID Auto", () => {
+  it("the page's Purchase Order button: PO lines on the form are left out, OK maps rows without a Stock ID (ADR-0051)", () => {
     const values = { ...validValues(), lines: [purchaseOrderLineToPurchaseLine(poRow())] };
     const onAdd = vi.fn();
     const picker = lazyChild(PURCHASE_CONFIG.secondaryPicker!.render!({ values, onClose: () => undefined, onAdd }));

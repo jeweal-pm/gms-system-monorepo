@@ -3,7 +3,7 @@
 ## Tracking
 
 - Ticket revision: 1
-- Status: pending-review
+- Status: resolved (verified 2026-11-13; fixed by the approval work, PR #89)
 - Owner: frontend
 - Priority: awaiting user review
 - Auditor / mode / run ID: security-auditor / focused pre-handoff review / none
@@ -39,8 +39,8 @@
 ## User selection and approval
 
 - Approved ticket revision:
-- Actual user instruction / approval evidence:
-- Approval date:
+- Actual user instruction / approval evidence: owner 2026-11-13 "INV-20261107-001 เช็คให้หน่อย" (verification)
+- Approval date: 2026-11-13
 - Separate approved SA bundle/revision, if required: not required
 
 Do not infer approval from creation of this ticket or approval of a different revision.
@@ -68,3 +68,12 @@ revisions, and sessions for the same cause. Do not allocate a fresh budget on ha
 - Remaining risk or reopened validation gap:
 - Completion report under document/task/done/:
 - Final status / date:
+
+## Resolution (verified 2026-11-13, no new code)
+
+Fixed by approve-center phase 2 / ADR-0050 (feat/10-11-26-approval-api, merged to `dev` by PR #89):
+
+- The client no longer refreshes the version before approving. Single Approve sends the listed row's `version` (`frontend/src/features/approve-center/components/ApproveCenterPage.tsx:236,296`). Approve from the preview sends the version the modal loaded (`:283`). Bulk Approve sends each row's listed version (`model.ts:444-466`, `runBulkApprove` calls `calls.approve(row.id, row.version)`). There is no `prepare`/`get` first (`api.ts:109-116`).
+- A document edited after the list loaded therefore fails with `<CODE>_CHANGED`. The row reloads and nothing is approved, which is UA-AP-06.
+- Root cause removed on the server too: since ADR-0050, a `PENDING_APPROVAL` document is locked (update/delete → `<CODE>_STATUS_INVALID`), so the maker can't change what the approver is reviewing (backend IT-AS-B02).
+- Tests: frontend approve-center suite (`test/approve-center/approve.test.ts`, `approve.integration.test.ts`) and backend `approval-documents.db.integration.test.ts`. All passed on the merged revision (frontend 995, master 712).

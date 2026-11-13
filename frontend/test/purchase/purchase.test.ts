@@ -68,7 +68,7 @@ describe("UT-PU-03 routes, page settings and access", () => {
 
   it("number label, kind and note", () => {
     expect(PURCHASE_CONFIG.noLabel).toBe("Purchase No.:");
-    expect(PURCHASE_KIND).toMatchObject({ stockId: "auto", stoneCode: true, location: true, locations: "text", stockQuantity: true, lockStockDiscount: true, priceTitle: "Price", documentNote: { max: 250, hint: "Printed on the purchase for the vendor" } });
+    expect(PURCHASE_KIND).toMatchObject({ stockId: "from-stock", stockIdEmpty: "—", stoneCode: true, location: true, locations: "text", stockQuantity: true, lockStockDiscount: true, priceTitle: "Price", documentNote: { max: 250, hint: "Printed on the purchase for the vendor" } });
     expect(PURCHASE_CONFIG.noteMax).toBe(250);
     expect(PURCHASE_CONFIG.notePlaceholder).toBe("e.g. Paid by transfer on delivery.");
     expect(PURCHASE_CONFIG.partyId(valid())).toBe(ID);
@@ -171,7 +171,7 @@ describe("UT-PU-05 Memo Stock rows (R2-MS → page rows)", () => {
 });
 
 describe("UT-PU-09 Purchase Order rows (R2-PO, R2-05)", () => {
-  it("copies the attributes, the open quantity as the cap, the PO net price and the PO line id; Stock ID Auto", () => {
+  it("copies the attributes, the open quantity as the cap, the PO net price and the PO line id; no Stock ID (ADR-0051)", () => {
     const row = purchaseOrderLineToPurchaseLine(poRow());
     expect(row).toMatchObject({
       source: "STOCK", stockId: "", stoneCode: "RU-OV-1", stoneCodeId: "", lot: "L-PO-1", locationId: "Safe A", stone: "Ruby", cerType: "GRS", cerNo: "GRS-1", itemNote: "Pair",
@@ -186,10 +186,10 @@ describe("UT-PU-09 Purchase Order rows (R2-PO, R2-05)", () => {
       .toMatchObject({ pcs: "10", weightCt: "5.000", priceUnit: "PER_PCS", unitPrice: "120.00" });
   });
 
-  it("the page table shows Auto · from {PO No.}; a manual row Auto and — for a blank location", () => {
-    expect(purchaseTableLine(purchaseOrderLineToPurchaseLine(poRow()))).toMatchObject({ stockId: "Auto · from PO2611001", locationId: "Safe A" });
-    expect(purchaseTableLine({ ...purchaseOrderLineToPurchaseLine(poRow()), stockId: "260010" })).toMatchObject({ stockId: "260010 · from PO2611001" });
-    expect(purchaseTableLine(manualLine())).toMatchObject({ stockId: "Auto", locationId: "—" });
+  it("FE-PU-014 the page table shows — · from {PO No.}; a manual row — (Q-PU-37) and — for a blank location; Memo Stock rows keep their Stock ID", () => {
+    expect(purchaseTableLine(purchaseOrderLineToPurchaseLine(poRow()))).toMatchObject({ stockId: "— · from PO2611001", locationId: "Safe A" });
+    expect(purchaseTableLine(manualLine())).toMatchObject({ stockId: "—", locationId: "—" });
+    for (const line of [purchaseOrderLineToPurchaseLine(poRow()), manualLine()]) expect(purchaseTableLine(line).stockId).not.toContain("Auto");
     expect(purchaseTableLine(memoStockToPurchaseLine(memoRow()))).toMatchObject({ stockId: "260003 · In stock", locationId: "Memo" });
     const empty = emptyPurchaseLine();
     expect(purchaseTableLine(empty)).toBe(empty);
@@ -232,7 +232,12 @@ describe("UT-PU-10 picked-row edit rule (R2-03, owner 2026-11-04)", () => {
     expect(input(manual, 'aria-label="Discount \\(%\\)"')).not.toContain("disabled=\"\"");
     expect(input(manual, 'name="lines.0.lot"')).not.toMatch(/ readOnly=""/);
     expect(input(manual, 'name="lines.0.locationId"')).not.toMatch(/ readOnly=""/);
-    expect(manual).toContain("Assigned when you save");
+    // FE-PU-014 (ADR-0051 / Q-PU-37): a manual / PO row has no Stock ID and shows "—", not "Auto"; a Memo Stock row shows its own.
+    expect(manual).not.toContain("Assigned when you save");
+    expect(manual).not.toContain(">Auto<");
+    expect(manual).toMatch(/>Stock ID<\/span><div aria-readonly="true"[^>]*><span class="truncate">—</);
+    expect(panel(PURCHASE_KIND, purchaseOrderLineToPurchaseLine(poRow()))).toMatch(/>Stock ID<\/span><div aria-readonly="true"[^>]*><span class="truncate">—</);
+    expect(panel(PURCHASE_KIND, memoStockToPurchaseLine(memoRow()))).toMatch(/>Stock ID<\/span><div aria-readonly="true"[^>]*><span class="truncate">260003</);
     const quotationStock = panel(QUOTATION_KIND, { ...manualLine(), source: "STOCK", memoStockId: STOCK, stockPendingPcs: "5", stockPendingWeightCt: "9" });
     expect(QUOTATION_KIND.lockStockDiscount).toBeUndefined();
     expect(input(quotationStock, 'aria-label="Discount \\(%\\)"')).not.toContain("disabled=\"\"");
@@ -276,12 +281,12 @@ describe("UT-PU-06 contract mapping, errors and the approve text (FE-PU-003/005)
     for (const line of input.lines) expect(line).not.toHaveProperty("id");
   });
 
-  it("fromPurchase keeps sources, Stock IDs, Memo / PO numbers and the caps; a saved row sends its id on update", () => {
+  it("fromPurchase keeps sources, the Memo Stock row's Stock ID (PO / manual rows null → \"\", ADR-0051), Memo / PO numbers and the caps; a saved row sends its id on update", () => {
     const values = fromPurchase(savedPurchase());
     expect(values).toMatchObject({ id: ID, docNo: "PU-7", version: 3, status: "PENDING_APPROVAL", vendorId: ID, addressId: ID, ref: "R-1", documentNote: "Paid by transfer" });
     expect(values.lines[0]).toMatchObject({ key: "66666666-6666-4666-8666-666666666666", source: "STOCK", stockId: "260003", memoStockId: STOCK, memoGroup: "IN_STOCK", sourceDocNo: "MR-1001", stockPendingPcs: "2", stockPendingWeightCt: "1.360", pcs: "1" });
-    expect(values.lines[1]).toMatchObject({ source: "STOCK", stockId: "260012", purchaseOrderLineId: POL, sourceDocNo: "PO2611001", stockPendingPcs: "6", stoneCodeId: "" });
-    expect(values.lines[2]).toMatchObject({ source: "MANUAL", stockId: "260011", stoneCodeId: ID, discountType: "PERCENT", discountValue: "10", memoStockId: "", purchaseOrderLineId: "" });
+    expect(values.lines[1]).toMatchObject({ source: "STOCK", stockId: "", purchaseOrderLineId: POL, sourceDocNo: "PO2611001", stockPendingPcs: "6", stoneCodeId: "" });
+    expect(values.lines[2]).toMatchObject({ source: "MANUAL", stockId: "", stoneCodeId: ID, discountType: "PERCENT", discountValue: "10", memoStockId: "", purchaseOrderLineId: "" });
     expect(issues(values)).toEqual([]);
     const input = toPurchaseInput({ ...values, lines: [...values.lines, manualLine()] });
     expect(input.lines.map((line) => ("id" in line ? line.id : undefined))).toEqual(["66666666-6666-4666-8666-666666666666", "77777777-7777-4777-8777-777777777777", LINE, undefined]);
@@ -311,7 +316,6 @@ describe("UT-PU-06 contract mapping, errors and the approve text (FE-PU-003/005)
       message: "Row 1: this item is no longer available. Remove the row and choose again.",
     });
     expect(map("PURCHASE_REFERENCE_INVALID", [{ path: "vendorId", code: "invalid_reference" }], 422).fieldErrors).toEqual([{ name: "vendorId", message: "Choose an active option" }]);
-    expect(map("PURCHASE_STOCK_ID_EXHAUSTED").message).toBe("No more Stock IDs this year. Contact the administrator.");
     expect(map("CSRF_INVALID", undefined, 403).message).toBe("Please reload the page and try again.");
     expect(map("VALIDATION_ERROR", [{ path: "dueDate", code: "required" }], 400).fieldErrors).toEqual([{ name: "dueDate", message: "Required" }]);
     expect(purchaseLoadError(gatewayError({ code: "NOT_FOUND", httpStatus: 404, domainCode: "PURCHASE_NOT_FOUND" }))).toBe("Purchase not found.");
