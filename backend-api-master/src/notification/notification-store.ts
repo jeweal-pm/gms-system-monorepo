@@ -10,15 +10,43 @@ export const NOTIFICATION_PAGE_MAX = 20;
 export const NOTIFICATION_RETENTION_DAYS = 90;
 export const NOTIFICATION_PURGE_BATCH = 5_000;
 const SUMMARY_TEXT_MAX = 200;
+/**
+ * JSON bytes the summary may use: the column CHECK is `octet_length(summary::text) <= 1024`, and jsonb's text adds a
+ * space after each ':' and ',' (≤ 8 bytes for four keys). A Thai party name and a Thai reject reason at 200
+ * characters each would be ~1.2 KB, which the CHECK would refuse and roll back the review itself.
+ */
+export const SUMMARY_BYTES_MAX = 960;
 
-const clip = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim().slice(0, SUMMARY_TEXT_MAX) : undefined);
+/**
+ * At most 200 whole code points (INV-20261112-002): a UTF-16 `slice` could keep half of an emoji, and jsonb refuses a
+ * lone surrogate, which rolled back the review / submit / approve that records the notification. Lone surrogates
+ * already in the text are replaced too, so no input shape can fail the insert.
+ */
+const clip = (value: unknown) => {
+  if (typeof value !== "string") return undefined;
+  const text = Array.from(value.trim().replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "�")).slice(0, SUMMARY_TEXT_MAX).join("").trimEnd();
+  return text || undefined;
+};
+const jsonBytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), "utf8");
 
-/** Display-only summary, every text clipped so the row stays ≤ 1 KB. */
+/** Display-only summary: every text clipped to 200 characters, then the reason (then the party) shortened to fit. */
 export function cleanSummary(summary: NotificationSummary): NotificationSummary {
   const clean: NotificationSummary = {};
   for (const key of ["partyName", "amount", "currency", "reason"] as const) {
     const value = clip(summary[key]);
     if (value) clean[key] = value;
+  }
+  for (const key of ["reason", "partyName"] as const) {
+    const text = clean[key];
+    if (!text) continue;
+    const chars = Array.from(text); // whole code points, never half of a surrogate pair
+    let keep = chars.length;
+    while (keep > 0 && jsonBytes(clean) > SUMMARY_BYTES_MAX) {
+      keep = Math.floor(keep * 0.9);
+      const kept = chars.slice(0, keep).join("").trimEnd();
+      if (kept) clean[key] = `${kept}…`;
+      else delete clean[key];
+    }
   }
   return clean;
 }

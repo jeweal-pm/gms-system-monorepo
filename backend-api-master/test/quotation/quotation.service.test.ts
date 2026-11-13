@@ -33,6 +33,9 @@ const db = vi.hoisted(() => ({
   restoredStatus: "DRAFT",
   listRows: [] as Row[],
   countArgs: [] as Row[],
+  /** ADR-0049 notification events / recipient rows written in the transaction. */
+  events: [] as Row[],
+  recipients: [] as Row[],
   /** Quotation approval setting (seed: OFF). */
   requireApproval: false,
 }));
@@ -72,6 +75,8 @@ vi.mock("../../src/database/prisma-client", () => {
     },
     documentSetup: { findUnique: vi.fn(async () => null) },
     approvalSetting: { findUnique: vi.fn(async () => ({ requireApproval: db.requireApproval })) },
+    notificationEvent: { create: vi.fn(async ({ data }: { data: Row }) => { db.events.push(data); return data; }) },
+    notificationRecipient: { createMany: vi.fn(async ({ data }: { data: Row[] }) => { db.recipients.push(...data); return { count: data.length }; }) },
     quotation: {
       aggregate: vi.fn(async () => ({ _max: { runningNo: db.maxRunning } })),
       create: vi.fn(async ({ data }: { data: Row }) => { db.created.push(data); return data; }),
@@ -138,7 +143,7 @@ beforeEach(() => {
     companyCurrency: "THB",
     stored: null,
     writeCount: 1,
-    rawSql: [], created: [], updates: [], lines: [], linePhotos: [], charges: [], findManyArgs: [], deletes: [], restoredStatus: "DRAFT", listRows: [], countArgs: [],
+    rawSql: [], created: [], updates: [], lines: [], linePhotos: [], charges: [], findManyArgs: [], deletes: [], restoredStatus: "DRAFT", listRows: [], countArgs: [], events: [], recipients: [],
     requireApproval: false,
   });
 });
@@ -285,6 +290,31 @@ describe("edit and status guards (SA-QT-03/09)", () => {
     db.writeCount = 0;
     db.stored = { status: "PENDING_APPROVAL", version: 2, deletedAt: null, revisionCount: 1 };
     expect(await failure(service.requestRevision({ id: "b", name: null }, QT, 2, "Again"))).toMatchObject({ status: 409, code: "QUOTATION_REVISE_LIMIT" });
+  });
+
+  it("UT-QT-NT-01 (ADR-0049, BE-NT-007) send to approve, approve, reject and revise each record one notification in the transaction", async () => {
+    db.requireApproval = true;
+    db.stored = { ...stored("PENDING_APPROVAL", 2), lines: [], charges: [], docDate: new Date("2026-10-26"), dueDate: new Date("2026-11-25"), currencyCode: "THB", exchangeRate: null,
+      discountType: "NONE", discountValue: "0", taxEnabled: false, taxRate: "7", taxIncluded: false, laborWork: null, laborBasis: null, laborQty: null, laborRate: null,
+      docNo: "QT-26001", createdBy: "creator", customerNameSnapshot: "Siam Gems Co., Ltd.", grandTotal: "1234.5" };
+    await service.submit({ id: "maker", name: "Ann" }, QT, 1);
+    expect(db.events[0]).toMatchObject({ type: "approval.pending", documentType: "quotation", documentId: QT, docNo: "QT-26001", actorUserId: "maker", summary: { partyName: "Siam Gems Co., Ltd.", amount: "1234.50", currency: "THB" } });
+    await service.approve("boss", QT, 2);
+    expect(db.events[1]).toMatchObject({ type: "document.approved", actorUserId: "boss" });
+    await service.reject({ id: "boss", name: "Boss" }, QT, 2, "Price changed");
+    expect(db.events[2]).toMatchObject({ type: "document.rejected", summary: { reason: "Price changed" } });
+    await service.requestRevision({ id: "boss", name: null }, QT, 2, "Fix the price");
+    expect(db.events[3]).toMatchObject({ type: "document.revision_requested", summary: { reason: "Fix the price" } });
+    // The creator receives approved / rejected / revise; nobody is notified of their own action.
+    expect(db.recipients.map((row) => row.userId)).toEqual(["creator", "creator", "creator"]);
+    await service.approve("creator", QT, 2);
+    expect(db.events).toHaveLength(5);
+    expect(db.recipients).toHaveLength(3);
+    // A refused review writes nothing.
+    db.writeCount = 0;
+    db.stored = { status: "REJECTED", version: 3, deletedAt: null, revisionCount: 0 };
+    expect(await failure(service.reject({ id: "boss", name: null }, QT, 2, "Again"))).toMatchObject({ code: "QUOTATION_STATUS_INVALID" });
+    expect(db.events).toHaveLength(5);
   });
 
   it("UT-QT-B18 a guarded write that touches no row explains why", async () => {

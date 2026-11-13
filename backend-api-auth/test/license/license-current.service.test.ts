@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   refreshCurrent: vi.fn(), queryRaw: vi.fn(), userFindUnique: vi.fn(),
   offlineRow: null as null | { state: string; signed_token: string | null; successful_at: Date | null; db_now: Date },
   staleWrite: false, order: 0n,
+  newerRow: null as null | { last_check_order: unknown; state: string },
 }));
 vi.mock("../../src/license/license.client", () => ({
   createLicenseClient: () => ({ refreshCurrent: mocks.refreshCurrent }),
@@ -44,11 +45,13 @@ describe("GP-LIC-04 ordered v2 service boundary", () => {
     mocks.offlineRow = null;
     mocks.staleWrite = false;
     mocks.order = 0n;
+    mocks.newerRow = null;
     mocks.userFindUnique.mockResolvedValue({ username: subject, active: true });
     mocks.queryRaw.mockImplementation(async (strings: TemplateStringsArray) => {
       const sql = strings.join("?");
       if (sql.includes("nextval")) return [{ check_order: ++mocks.order }];
       if (sql.includes("INSERT INTO")) return mocks.staleWrite ? [] : [{ last_check_order: mocks.order }];
+      if (sql.includes('SELECT "last_check_order", "state"')) return mocks.newerRow ? [mocks.newerRow] : [];
       if (sql.includes('SELECT "state"')) return mocks.offlineRow ? [mocks.offlineRow] : [];
       throw new Error("unexpected test SQL");
     });
@@ -94,6 +97,43 @@ describe("GP-LIC-04 ordered v2 service boundary", () => {
     mocks.refreshCurrent.mockResolvedValue(await token());
     mocks.staleWrite = true;
     await expect((await service()).resolveCurrentStatus("user-1")).rejects.toMatchObject({ code: "LICENSE_UNVERIFIABLE", httpStatus: 503 });
+  });
+
+  it("UT-LIC-ORDER-01 (INV-20261112-001) an ACTIVE answer that loses to a newer ACTIVE decision stays eligible", async () => {
+    mocks.refreshCurrent.mockResolvedValue(await token());
+    mocks.staleWrite = true;
+    mocks.newerRow = { last_check_order: 5n, state: "ACTIVE" };
+    expect((await (await service()).resolveCurrentStatus("user-1")).state).toBe("VALID");
+    const reads = mocks.queryRaw.mock.calls.filter(([sql]) => (sql as TemplateStringsArray).join("?").includes('SELECT "last_check_order", "state"'));
+    expect(reads).toHaveLength(1);
+  });
+
+  it("UT-LIC-ORDER-02 a lost order check still fails closed for a newer denial, a not-newer row, a missing row or a read error", async () => {
+    mocks.refreshCurrent.mockResolvedValue(await token());
+    mocks.staleWrite = true;
+    const license = await service();
+    mocks.newerRow = { last_check_order: 5n, state: "DENIED" };
+    await expect(license.resolveCurrentStatus("user-1")).rejects.toMatchObject({ code: "LICENSE_UNVERIFIABLE", httpStatus: 503 });
+    mocks.newerRow = { last_check_order: 0n, state: "ACTIVE" };
+    await expect(license.resolveCurrentStatus("user-1")).rejects.toMatchObject({ code: "LICENSE_UNVERIFIABLE", httpStatus: 503 });
+    mocks.newerRow = { last_check_order: "99", state: "ACTIVE" };
+    await expect(license.resolveCurrentStatus("user-1")).rejects.toMatchObject({ code: "LICENSE_UNVERIFIABLE", httpStatus: 503 });
+    mocks.newerRow = null;
+    await expect(license.resolveCurrentStatus("user-1")).rejects.toMatchObject({ code: "LICENSE_UNVERIFIABLE", httpStatus: 503 });
+    const base = mocks.queryRaw.getMockImplementation()!;
+    mocks.queryRaw.mockImplementation(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      if (strings.join("?").includes('SELECT "last_check_order", "state"')) throw new Error("database unavailable");
+      return base(strings, ...values);
+    });
+    await expect(license.resolveCurrentStatus("user-1")).rejects.toMatchObject({ code: "LICENSE_UNVERIFIABLE", httpStatus: 503 });
+  });
+
+  it("UT-LIC-ORDER-03 a losing DENIED answer never reads the newer row and stays denied", async () => {
+    mocks.refreshCurrent.mockResolvedValue(await token("revoked"));
+    mocks.staleWrite = true;
+    mocks.newerRow = { last_check_order: 5n, state: "ACTIVE" };
+    await expect((await service()).resolveCurrentStatus("user-1")).rejects.toMatchObject({ code: "LICENSE_UNVERIFIABLE", httpStatus: 503 });
+    expect(mocks.queryRaw.mock.calls.some(([sql]) => (sql as TemplateStringsArray).join("?").includes('SELECT "last_check_order", "state"'))).toBe(false);
   });
 
   it("429 stores denial and never enters grace; timeout uses only latest active proof", async () => {

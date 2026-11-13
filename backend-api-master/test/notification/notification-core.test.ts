@@ -79,11 +79,40 @@ describe("recipients (D4, Q-NT-08)", () => {
     expect(creatorRecipient("u1", "u1")).toEqual([]);
     expect(creatorRecipient(null, "u1")).toEqual([]);
     expect(isNotificationDocumentType("memo-out")).toBe(true);
-    expect(isNotificationDocumentType("quotation")).toBe(false);
+    expect(isNotificationDocumentType("quotation")).toBe(true);
+    expect(isNotificationDocumentType("stone-master")).toBe(false);
   });
 });
 
 describe("store (D2/D5)", () => {
+  it("UT-NT-14 (BE-NT-007) a Thai party name and a Thai reason at full length still fit the 1 KB summary CHECK", () => {
+    const thai = (n: number) => "ก".repeat(n); // 3 UTF-8 bytes each
+    const summary = cleanSummary({ partyName: thai(250), amount: "123456789012.34", currency: "THB", reason: thai(250) });
+    const jsonbText = JSON.stringify(summary).replace(/":/g, "\": ").replace(/,"/g, ", \""); // jsonb's text adds spaces
+    expect(Buffer.byteLength(jsonbText, "utf8")).toBeLessThanOrEqual(1024);
+    expect(summary.partyName).toBe(thai(200)); // the party name is kept whole; the reason gives way first
+    expect(summary.reason?.endsWith("…")).toBe(true);
+    expect(summary.reason!.length).toBeGreaterThan(20);
+    // Short texts and emoji (surrogate pairs) are never cut in half.
+    expect(cleanSummary({ reason: "ราคาไม่ถูกต้อง" })).toEqual({ reason: "ราคาไม่ถูกต้อง" });
+    const emoji = cleanSummary({ partyName: "💎".repeat(200), reason: "💎".repeat(200) });
+    expect(Buffer.byteLength(JSON.stringify(emoji), "utf8")).toBeLessThanOrEqual(960);
+    expect(emoji.reason ?? "").not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+
+  it("UT-NT-15 (INV-20261112-002) clipping keeps whole code points: an emoji at UTF-16 unit 199/200 or a lone surrogate never reaches jsonb", () => {
+    const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    const odd = `${"a".repeat(199)}😀${"b".repeat(50)}`;
+    const summary = cleanSummary({ reason: odd, partyName: `${"x".repeat(199)}💎💎` });
+    for (const text of [summary.reason!, summary.partyName!]) {
+      expect(text).not.toMatch(lone);
+      expect(JSON.stringify(text)).not.toMatch(/\\ud[89a-f]/i);
+      expect(Array.from(text)).toHaveLength(200);
+    }
+    expect(summary.reason!.endsWith("😀")).toBe(true);
+    expect(cleanSummary({ reason: "bad \uD83D end", partyName: "\uDC00x" })).toEqual({ reason: "bad � end", partyName: "�x" });
+  });
+
   it("UT-NT-05 records the event and distinct recipient rows (never the actor) in the given transaction", async () => {
     const tx = { notificationEvent: { create: vi.fn(async () => ({})) }, notificationRecipient: { createMany: vi.fn(async () => ({ count: 2 })) } };
     const result = await recordNotification(tx as never, {
@@ -124,7 +153,7 @@ describe("engine hook (D3)", () => {
     const [sent] = await engine("reserve").notifyApproved(tx as never, DOC, "approver");
     expect(sent).toMatchObject({ type: "document.approved", documentType: "reserve", recipients: ["creator"] });
     expect(tx.notificationEvent.create).toHaveBeenCalledWith({ data: expect.objectContaining({ docNo: "RS-2611-0001", summary: { partyName: "Acme", amount: "1234.50", currency: "THB" } }) });
-    expect(await engine("quotation").notifyApproved(tx as never, DOC, "approver")).toEqual([]);
+    expect(await engine("stone-master").notifyApproved(tx as never, DOC, "approver")).toEqual([]);
   });
 });
 

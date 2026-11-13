@@ -2,9 +2,14 @@
 
 export const NOTIFICATION_TYPES = ["approval.pending", "document.approved", "document.rejected", "document.revision_requested"] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
+/** The events sent to the document's creator (ADR-0049 D4); `approval.pending` goes to the approvers. */
+export type CreatorNotificationType = Exclude<NotificationType, "approval.pending">;
 
-/** The master documents with an approval step; each is also its menu / permission leaf. */
-export const NOTIFICATION_DOCUMENT_TYPES = ["reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase"] as const;
+/**
+ * The master documents with an approval step; each is also its menu / permission leaf. Quotation joined on 2026-11-12:
+ * approval-setup (ADR-0050) gave it the same Send to approve / Approve / Reject / Revise flow.
+ */
+export const NOTIFICATION_DOCUMENT_TYPES = ["quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase"] as const;
 export type NotificationDocumentType = (typeof NOTIFICATION_DOCUMENT_TYPES)[number];
 
 export function isNotificationDocumentType(value: string): value is NotificationDocumentType {

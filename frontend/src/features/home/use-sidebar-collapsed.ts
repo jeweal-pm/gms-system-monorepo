@@ -65,3 +65,20 @@ export function resetSidebarPreference() {
   }
   for (const listener of listeners) listener();
 }
+
+/** Below Tailwind's `lg` (1024 px) the sidebar is the icon rail by default (owner 2026-11-12). */
+export const NARROW_SCREEN_QUERY = "(max-width: 1023.98px)";
+
+function subscribeToNarrow(onChange: () => void) {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => undefined;
+  const query = window.matchMedia(NARROW_SCREEN_QUERY);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+const readNarrow = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(NARROW_SCREEN_QUERY).matches;
+const wideOnServer = () => false;
+
+/** True on screens narrower than `lg`; the server and hydration render assume a wide screen. */
+export function useIsNarrowScreen(): boolean {
+  return useSyncExternalStore(subscribeToNarrow, readNarrow, wideOnServer);
+}

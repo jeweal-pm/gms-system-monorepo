@@ -42,8 +42,8 @@ describe("notification router (ADR-0049)", () => {
 
   it("UT-NT-12 \"all\" lists only document types the caller may VIEW (Super Admin: every type)", async () => {
     await router.createCaller(context(["reserve:VIEW", "purchase:APPROVE", "quotation:VIEW"])).notification.list({ scope: "all" });
-    expect(store.listForTypes).toHaveBeenCalledWith(["reserve"], undefined, undefined);
-    expect(viewableNotificationTypes(context([], { principal: { userId: "x", sessionId: "s", isSuperAdmin: true, grants: [] } }))).toHaveLength(7);
+    expect(store.listForTypes).toHaveBeenCalledWith(["quotation", "reserve"], undefined, undefined);
+    expect(viewableNotificationTypes(context([], { principal: { userId: "x", sessionId: "s", isSuperAdmin: true, grants: [] } }))).toHaveLength(8);
     expect(viewableNotificationTypes(context([], { principal: null }))).toEqual([]);
   });
 

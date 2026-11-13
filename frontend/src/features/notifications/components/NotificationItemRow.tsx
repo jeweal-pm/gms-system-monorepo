@@ -1,9 +1,9 @@
 "use client";
 
 import { ChevronRight } from "lucide-react";
-import { bodyText, timeLabel, titleParts, typeLabel, type NotificationItem } from "../model";
+import { bodyText, reasonText, timeLabel, titleParts, typeLabel, type NotificationItem } from "../model";
 
-/** The owner's bell glyph (2026-11-11 SVG, `#637381`), centred in the 40 px item avatar. */
+/** The owner's bell glyph (2026-11-11 SVG, `#637381`), centred in the 32 px item avatar. */
 export function NotificationBellGlyph({ className }: { className?: string }) {
   return (
     <svg aria-hidden width="24" height="24" viewBox="0 0 24 24" fill="none" className={className}>
@@ -15,7 +15,8 @@ export function NotificationBellGlyph({ className }: { className?: string }) {
   );
 }
 
-const avatar = "flex size-10 shrink-0 items-center justify-center rounded-full bg-[#F4F6F8]";
+/** Inbox components (owner design 2026-11-12): a 32 px circle, #F4F6F8 on a read row and white on an unread one. */
+const avatar = (unread: boolean) => `flex size-8 shrink-0 items-center justify-center rounded-full ${unread ? "bg-white" : "bg-[#F4F6F8]"}`;
 
 /**
  * Source 03 item: read = white (hover #FBFBFB), unread = #E2F0F0 (hover #A3C9CC) with a red dot. The row opens the
@@ -37,6 +38,7 @@ export function NotificationItemRow({
   const { docNo, action } = titleParts(item);
   const label = typeLabel(item.documentType);
   const body = bodyText(item);
+  const reason = reasonText(item);
   const createdAt = new Date(item.createdAt);
   return (
     <li
@@ -50,32 +52,36 @@ export function NotificationItemRow({
         onClick={() => onOpen(item)}
         className="flex w-full items-start gap-3 py-4 pl-4 pr-14 text-left outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gms-primary"
       >
-        <span className={avatar}>
+        <span className={avatar(unread)}>
           <NotificationBellGlyph />
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="text-gms-body font-medium text-gms-text">
+          <span className="text-gms-body leading-6 font-medium text-gms-text">
             {unread && <span className="sr-only">Unread: </span>}
             <span className="font-semibold">{docNo}</span> {action}
           </span>
-          <span className="line-clamp-2 text-gms-body text-gms-text-muted">
+          <span className="line-clamp-2 text-gms-body leading-5 text-gms-text-muted">
             <span className="mr-1.5 inline-block rounded-[4px] bg-[#EEF0F2] px-1.5 align-[1px] text-[11px] leading-4 text-gms-text-muted">{label}</span>
             {body}
           </span>
-          <time dateTime={item.createdAt} className="mt-1 text-gms-label text-[#A9A9A9]">
+          {reason && (
+            <span data-notification-reason title={reason} className="line-clamp-2 break-words text-gms-body text-gms-text">
+              {reason}
+            </span>
+          )}
+          <time dateTime={item.createdAt} className="mt-1 text-[13px] leading-5 text-[#A9A9A9]">
             {timeLabel(createdAt, now)}
           </time>
         </span>
       </button>
-      {unread && <span aria-hidden data-unread-dot className="absolute right-5 top-5 size-2 rounded-full bg-gms-danger" />}
+      {unread && <span aria-hidden data-unread-dot className="absolute right-6 top-[25px] size-1.5 rounded-full bg-gms-danger" />}
       {onOpenList && (
         <button
           type="button"
           onClick={() => onOpenList(item)}
           aria-label={`Open list page for ${label}`}
-          className={`group/chevron absolute right-4 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-gms-md text-gms-text opacity-0 outline-none transition-opacity group-hover/item:opacity-100 group-focus-within/item:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-gms-primary ${
-            unread ? "bg-[#E2F0F0]" : "bg-[#F4F6F8]"
-          }`}
+          // Inbox components (owner design 2026-11-12): a plain chevron, no button background.
+          className="group/chevron absolute right-4 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-gms-md text-gms-text opacity-0 outline-none transition-opacity group-hover/item:opacity-100 group-focus-within/item:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-gms-primary"
         >
           <ChevronRight aria-hidden size={18} strokeWidth={1.75} />
           <span
@@ -95,7 +101,7 @@ export function NotificationItemSkeleton() {
   const bar = "h-2.5 rounded-full bg-[#F4F6F8]";
   return (
     <li aria-hidden className="flex items-start gap-3 border-b border-[#EDEDED] px-4 py-4">
-      <span className={avatar}>
+      <span className={avatar(false)}>
         <NotificationBellGlyph />
       </span>
       <span className="flex flex-1 flex-col gap-2 pt-1">

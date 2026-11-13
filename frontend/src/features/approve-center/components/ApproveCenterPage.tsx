@@ -474,6 +474,8 @@ export function PendingApprovals({ menu, count }: { menu: AvailableMenu; count?:
         body={confirm?.body ?? ""}
         cancelLabel="Cancel"
         confirmLabel="Approve"
+        // Owner 2026-11-12: Approve confirms in the primary green (like the row's Approve), not the destructive red.
+        confirmVariant="primary"
         pendingLabel="Approving…"
         pending={confirmPending}
         onCancel={() => setConfirm(null)}

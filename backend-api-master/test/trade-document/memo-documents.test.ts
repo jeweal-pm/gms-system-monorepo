@@ -303,3 +303,34 @@ describe("list and options (SA-MO-09)", () => {
     await expect(memoOutReturn.options()).resolves.toMatchObject({ customers: [], currencies: ["THB"], companyCurrency: "THB", numbering: { configured: false } });
   });
 });
+
+describe("reject / revise notifications (ADR-0049, BE-NT-007)", () => {
+  it("UT-MO-NT-01 reject and revise tell the creator with the reason in the review transaction; a refused review records nothing", async () => {
+    const { prisma } = await import("../../src/database/prisma-client");
+    const events = prisma.notificationEvent.create as unknown as ReturnType<typeof vi.fn>;
+    const recipients = prisma.notificationRecipient.createMany as unknown as ReturnType<typeof vi.fn>;
+    const transaction = prisma.$transaction as unknown as ReturnType<typeof vi.fn>;
+    events.mockClear(); recipients.mockClear(); transaction.mockClear();
+    const { Prisma } = await import("../../src/generated/prisma/client");
+    db.stored = { docNo: "MO-1", createdBy: "creator", customerNameSnapshot: "Siam Gems", grandTotal: new Prisma.Decimal("2500"), currencyCode: "THB" };
+
+    await memoOut.reject({ id: "boss", name: "Boss" }, DOC, 2, "Wrong price");
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(events).toHaveBeenLastCalledWith({ data: expect.objectContaining({ type: "document.rejected", documentType: "memo-out", documentId: DOC, docNo: "MO-1", actorUserId: "boss", summary: expect.objectContaining({ amount: "2500.00", currency: "THB", reason: "Wrong price" }) }) });
+    expect(recipients).toHaveBeenLastCalledWith({ data: [expect.objectContaining({ userId: "creator" })] });
+
+    await memoOut.requestRevision({ id: "boss", name: null }, DOC, 2, "Fix the lines");
+    expect(events).toHaveBeenLastCalledWith({ data: expect.objectContaining({ type: "document.revision_requested", summary: expect.objectContaining({ reason: "Fix the lines" }) }) });
+
+    // The creator reviewing their own document is not notified.
+    recipients.mockClear();
+    await memoOut.reject({ id: "creator", name: null }, DOC, 2, "Mine");
+    expect(recipients).not.toHaveBeenCalled();
+
+    events.mockClear();
+    db.writeCount = 0;
+    db.stored = { status: "REJECTED", version: 3, deletedAt: null, revisionCount: 0 };
+    expect(await failure(memoOut.reject({ id: "boss", name: null }, DOC, 2, "Again"))).toMatchObject({ status: 409 });
+    expect(events).not.toHaveBeenCalled();
+  });
+});

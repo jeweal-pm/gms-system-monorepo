@@ -19,7 +19,7 @@ import { lineTotals } from "./document-totals";
 import { emitNotificationSignals } from "../notification/notification-hub";
 import { approverRecipients, creatorRecipient } from "../notification/notification-recipients";
 import { recordNotification } from "../notification/notification-store";
-import { isNotificationDocumentType, type NotificationDocumentType, type NotificationSignal } from "../notification/notification-types";
+import { isNotificationDocumentType, type CreatorNotificationType, type NotificationDocumentType, type NotificationSignal } from "../notification/notification-types";
 
 /**
  * Shared document engine for reserve, memo out, memo out return (ADR-0033/0036), memo receive (ADR-0034), memo return,
@@ -259,19 +259,24 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
    * ADR-0049 D3/D4: inside an approve transaction, records "document.approved" for the document's creator. Returns the
    * signals to emit after commit (`emitNotificationSignals`).
    */
-  async notifyApproved(tx: Tx, id: string, actorId: string): Promise<NotificationSignal[]> {
+  notifyApproved(tx: Tx, id: string, actorId: string): Promise<NotificationSignal[]> {
+    return this.notifyCreator(tx, id, actorId, "document.approved");
+  }
+
+  /** ADR-0049 D3/D4 (BE-NT-007): approved / rejected / sent back → the creator (not the actor), with the reason or note. */
+  private async notifyCreator(tx: Tx, id: string, actorId: string, type: CreatorNotificationType, reason?: string): Promise<NotificationSignal[]> {
     const documentType = this.notificationType;
     if (!documentType) return [];
     const row = await this.doc(tx).findUnique({ where: { id }, select: { docNo: true, createdBy: true } });
     if (!row) return [];
     const signal = await recordNotification(tx, {
-      type: "document.approved",
+      type,
       documentType,
       documentId: id,
       docNo: row.docNo as string,
       actorId,
       recipients: creatorRecipient(row.createdBy as string | null, actorId),
-      summary: await this.notificationSummary(tx, id),
+      summary: { ...(await this.notificationSummary(tx, id)), ...(reason ? { reason } : {}) },
     });
     return [signal];
   }
@@ -620,12 +625,18 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
   private async review(actor: DocumentActor, id: string, expectedVersion: number, action: "REJECT" | "REVISE", note: string) {
     const { errors, event } = this.config;
     const status = action === "REJECT" ? "REJECTED" : "REVISION_REQUESTED";
+    let signals: NotificationSignal[];
     try {
-      const updated = await this.doc(prisma).updateMany(reviewUpdate(actor, id, expectedVersion, action, note, new Date()));
-      if (updated.count === 0) explainReviewMiss(errors, await this.missRow(id), action);
+      // ADR-0049 D3 (BE-NT-007): the creator's notification commits with the status change.
+      signals = await prisma.$transaction(async (tx) => {
+        const updated = await this.doc(tx).updateMany(reviewUpdate(actor, id, expectedVersion, action, note, new Date()));
+        if (updated.count === 0) explainReviewMiss(errors, await this.missRow(id, tx), action);
+        return this.notifyCreator(tx, id, actor.id, action === "REJECT" ? "document.rejected" : "document.revision_requested", note);
+      }, WRITE_TX);
     } catch (error) {
       throw errors.map(error, action === "REJECT" ? "reject" : "requestRevision");
     }
+    emitNotificationSignals(signals);
     const version = expectedVersion + 1;
     // D13: ids and the note length only, never the note.
     this.logger.log({ event: `${event}.${action === "REJECT" ? "rejected" : "revision_requested"}`, actorId: actor.id, id, version, noteLength: note.length });

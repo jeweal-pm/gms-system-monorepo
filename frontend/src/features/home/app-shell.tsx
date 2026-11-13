@@ -1,7 +1,6 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { X } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ToastProvider } from "@/components/ui/toast";
@@ -9,14 +8,14 @@ import { DecimalSetupProvider } from "@/features/decimal-setup/number-format-pro
 import { authClient } from "@/lib/auth-client";
 import { clearAccountCache } from "@/lib/session-cache";
 import { Breadcrumbs } from "./breadcrumbs";
-import { contextNavFor, type ContextNav } from "./navigation";
+import { contextNavFor } from "./navigation";
 import { Sidebar } from "./sidebar";
 import { SidebarContextPanel } from "./sidebar-context-panel";
 import { SidebarRail, type SidebarFocusRequest } from "./sidebar-rail";
 import { TabBar } from "./tabs/tab-bar";
 import { forgetTabsOnSignOut, TabPanels, TabsProvider, useTabs } from "./tabs/tab-host";
 import { Topbar, topbarIconButton } from "./topbar";
-import { resetSidebarPreference, useSidebarCollapsed } from "./use-sidebar-collapsed";
+import { resetSidebarPreference, useIsNarrowScreen, useSidebarCollapsed } from "./use-sidebar-collapsed";
 import { stopNotificationStreams } from "@/features/notifications/stream";
 
 export type { Breadcrumb } from "./navigation";
@@ -64,8 +63,6 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     isChecked: isSessionChecked,
   });
   const session = currentSession ?? (view === "ready" ? lastSession : null);
-  const [isNavigationOpen, setIsNavigationOpen] = useState(false);
-  const menuButtonRef = useRef<HTMLButtonElement>(null);
   // FE-NAV-003: expanded sidebar or collapsed rail at ≥ md (server/hydration render: expanded).
   const [isSidebarCollapsed, setSidebarCollapsed] = useSidebarCollapsed();
   const [animateSidebarWidth, setAnimateSidebarWidth] = useState(false);
@@ -75,7 +72,12 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
   const contextNav = contextNavFor(pathname);
   const [contextExpandedFor, setContextExpandedFor] = useState<string | null>(null);
   const isContextExpanded = contextExpandedFor === pathname;
-  const showRail = contextNav ? !isContextExpanded : isSidebarCollapsed;
+  // Owner 2026-11-12: below `lg` the sidebar starts as the icon rail on every page; expanding opens the full sidebar
+  // over the content for this page only (the stored preference is for wide screens and is not changed).
+  const isNarrow = useIsNarrowScreen();
+  const [narrowExpandedFor, setNarrowExpandedFor] = useState<string | null>(null);
+  const isNarrowExpanded = isNarrow && narrowExpandedFor === pathname;
+  const showRail = isNarrow ? !isNarrowExpanded : contextNav ? !isContextExpanded : isSidebarCollapsed;
   const focusRequestRef = useRef<SidebarFocusRequest | null>(null);
   const takeFocusRequest = useCallback(() => {
     const request = focusRequestRef.current;
@@ -129,15 +131,26 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
 
   function switchSidebar(collapsed: boolean, request: SidebarFocusRequest | null) {
     focusRequestRef.current = request;
+    if (isNarrow) {
+      setNarrowExpandedFor(collapsed ? null : pathname);
+      return;
+    }
     setAnimateSidebarWidth(true);
     if (contextNav) setContextExpandedFor(collapsed ? null : pathname);
     else setSidebarCollapsed(collapsed);
   }
 
-  function closeNavigation(returnFocus: boolean) {
-    setIsNavigationOpen(false);
-    if (returnFocus) menuButtonRef.current?.focus();
-  }
+  // The overlaid sidebar (narrow screens) closes with Escape, like other overlays; focus returns to the toggle.
+  useEffect(() => {
+    if (!isNarrowExpanded) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      focusToggleRef.current = true;
+      setNarrowExpandedFor(null);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isNarrowExpanded]);
 
   // A signed-in shell is never swapped for the skeleton again (that would drop every open tab).
   if (!session) {
@@ -164,12 +177,24 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
       </a>
       {/* Only one of sidebar / rail is rendered, so landmarks and focus order stay single. The width
           animates 150 ms after a user toggle only (not on the hydration switch), none with reduced motion.
-          Shown from `lg` (1024 px; owner 2026-10-21): portrait tablets such as an iPad mini (768 px) get the
-          whole width and open the menu as a drawer, like phones. */}
+          Owner 2026-11-12: below `lg` (1024 px) the rail is always shown (no hamburger drawer); expanding there lays the
+          full sidebar over the content with a backdrop, while a rail-wide spacer keeps the page where it was. */}
+      {isNarrowExpanded && (
+        <>
+          <div aria-hidden className="w-gms-rail shrink-0" />
+          <div aria-hidden data-sidebar-backdrop className="fixed inset-0 z-30 bg-black/30" onClick={() => setNarrowExpandedFor(null)} />
+        </>
+      )}
       <aside
         id={sidebarContainerId}
-        className={`hidden h-screen shrink-0 overflow-hidden lg:block ${
-          showRail ? (contextNav ? "w-[calc(var(--spacing-gms-rail)+var(--spacing-gms-sidebar))]" : "w-gms-rail") : "w-gms-sidebar"
+        className={`h-screen shrink-0 overflow-hidden ${
+          isNarrowExpanded
+            ? "fixed inset-y-0 left-0 z-40 w-gms-sidebar max-w-[85vw] shadow-gms-overlay"
+            : showRail
+              ? contextNav && !isNarrow
+                ? "w-[calc(var(--spacing-gms-rail)+var(--spacing-gms-sidebar))]"
+                : "w-gms-rail"
+              : "w-gms-sidebar"
         } ${
           animateSidebarWidth ? "transition-[width] duration-150 ease-out motion-reduce:transition-none" : ""
         }`}
@@ -183,19 +208,19 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
               onExpand={(request) => switchSidebar(false, request)}
               toggle={<SidebarToggleButton expanded={false} controlsId={sidebarContainerId} onToggle={toggleSidebar} />}
             />
-            {contextNav && <SidebarContextPanel nav={contextNav} pathname={pathname} />}
+            {/* The context panel needs a wide screen; on narrow screens its pages are one expand away. */}
+            {contextNav && !isNarrow && <SidebarContextPanel nav={contextNav} pathname={pathname} />}
           </div>
         ) : (
           // Owner design 2026-11-11: on the full sidebar it sits at the right of the GMS logo; the menu starts at the top.
           <Sidebar
             pathname={pathname}
             collapse={{ takeFocusRequest }}
+            onNavigate={isNarrow ? () => setNarrowExpandedFor(null) : undefined}
             headerAction={<SidebarToggleButton expanded controlsId={sidebarContainerId} onToggle={toggleSidebar} />}
           />
         )}
       </aside>
-
-      {isNavigationOpen && <MobileNavigation pathname={pathname} contextNav={contextNav} onClose={closeNavigation} />}
 
       {/* decimal-setup FE-DEC-102: one website-wide number format for every tab (signed-in shell only). */}
       <DecimalSetupProvider>
@@ -206,9 +231,6 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
                 tabs={<ShellTabBar />}
                 user={{ name: session.user.name, username: session.user.username ?? "" }}
                 onSignOut={handleSignOut}
-                menuButtonRef={menuButtonRef}
-                isNavigationOpen={isNavigationOpen}
-                onOpenNavigation={() => setIsNavigationOpen(true)}
               />
               <ShellBreadcrumbs />
               {/* Each tab scrolls inside its own pane (TabPanels), so it keeps its scroll position. */}
@@ -260,72 +282,6 @@ function ShellBreadcrumbs() {
   return (
     <div className="flex h-11 shrink-0 items-center border-b border-gms-border-header bg-gms-surface px-4 md:px-6">
       {breadcrumbs.length > 0 && <Breadcrumbs items={breadcrumbs} />}
-    </div>
-  );
-}
-
-const noFocusRequest = () => null;
-
-/**
- * Below `lg` the sidebar opens as a modal drawer from the topbar menu button (FE-NAV-004); the focus trap
- * skips links inside closed disclosures. On a context page (Stone Master, Vendor/Customer) it shows the same
- * rail + context panel as wide screens, so the sibling pages are one tap away (owner 2026-10-22); the rail's
- * ⇆ and section buttons switch the drawer to the full sidebar. Elsewhere it is the expanded sidebar.
- */
-function MobileNavigation({ pathname, contextNav, onClose }: Readonly<{ pathname: string; contextNav: ContextNav | null; onClose: (returnFocus: boolean) => void }>) {
-  const panelRef = useRef<HTMLDivElement>(null);
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const [showFullSidebar, setShowFullSidebar] = useState(false);
-
-  useEffect(() => {
-    closeButtonRef.current?.focus();
-  }, []);
-
-  function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onClose(true);
-      return;
-    }
-    if (event.key !== "Tab") return;
-    const focusables = Array.from(panelRef.current?.querySelectorAll<HTMLElement>("a[href], button:not([disabled])") ?? []).filter((element) => !element.closest("[hidden]"));
-    if (focusables.length === 0) return;
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-40 lg:hidden">
-      <div aria-hidden className="absolute inset-0 bg-black/30" onClick={() => onClose(false)} />
-      <div
-        ref={panelRef}
-        id="mobile-navigation"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Main menu"
-        onKeyDown={handleKeyDown}
-        className="absolute inset-y-0 left-0 max-w-[85vw] shadow-gms-overlay"
-      >
-        {contextNav && !showFullSidebar ? (
-          <div className="flex h-full bg-gms-surface-muted">
-            <SidebarRail pathname={pathname} takeFocusRequest={noFocusRequest} onExpand={() => setShowFullSidebar(true)} />
-            <SidebarContextPanel nav={contextNav} pathname={pathname} onNavigate={() => onClose(false)} />
-          </div>
-        ) : (
-          <Sidebar pathname={pathname} onNavigate={() => onClose(false)} className="max-w-[85vw]" />
-        )}
-        {/* topbarIconButton is `relative`; `absolute!` keeps the close button at the top right (it used to fall below the menu, off screen). */}
-        <button ref={closeButtonRef} type="button" onClick={() => onClose(true)} aria-label="Close main menu" className={`${topbarIconButton} absolute! right-2 top-[18px] z-10`}>
-          <X aria-hidden size={20} strokeWidth={1.5} />
-        </button>
-      </div>
     </div>
   );
 }

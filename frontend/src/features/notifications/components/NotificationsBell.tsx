@@ -4,7 +4,7 @@ import { Bell } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { useNotificationActions, useNotificationList, useNotificationStream, useUnreadCount } from "../api";
-import { ANNOUNCE_EVERY_MS, bellLabel, countBadge, documentHref, groupByDay, listHref, type NotificationItem, type NotificationScope } from "../model";
+import { ANNOUNCE_EVERY_MS, bellLabel, countBadge, groupByDay, listHref, openHref, type NotificationItem, type NotificationScope } from "../model";
 import { NotificationItemRow, NotificationItemSkeleton } from "./NotificationItemRow";
 
 const bellButton =
@@ -86,7 +86,7 @@ export function NotificationsPanel({ id, unread, onClose }: Readonly<{ id: strin
 
   function openItem(item: NotificationItem) {
     if (scope === "for-me" && item.readAt === null) markRead.mutate({ ids: [item.id] });
-    const href = documentHref(item);
+    const href = openHref(item);
     onClose(false);
     if (href) router.push(href);
   }
@@ -125,10 +125,14 @@ export function NotificationsPanel({ id, unread, onClose }: Readonly<{ id: strin
 
 const TABS: { scope: NotificationScope; label: string }[] = [
   { scope: "for-me", label: "For me" },
-  { scope: "all", label: "All" },
+  // Owner design 2026-11-12: the second tab is "Overview" (scope "all": every event of the types the user may VIEW).
+  { scope: "all", label: "Overview" },
 ];
 
-/** Sources 05/06: default #637381, hover #1C252E, focus 1 px outline, active #1C252E + 3 px #006A70 underline. */
+/**
+ * Sources 05/06: default #637381, hover #1C252E, focus 1 px outline, active #1C252E + 3 px #006A70 underline under
+ * the whole tab (label and badge). The underline is its own bar: a bottom border on a rounded tab tapered to a stub.
+ */
 function NotificationTabs({ scope, unread, onChange, panelId }: Readonly<{ scope: NotificationScope; unread: number; onChange: (scope: NotificationScope) => void; panelId: string }>) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const badge = countBadge(unread);
@@ -158,10 +162,11 @@ function NotificationTabs({ scope, unread, onChange, panelId }: Readonly<{ scope
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(tab.scope)}
             onKeyDown={(event) => onKeyDown(event, index)}
-            className={`relative -mb-px flex h-12 items-center gap-1.5 rounded-gms-sm border-b-[3px] text-gms-body font-medium outline-none focus-visible:outline-1 focus-visible:outline-[#E3E6EA] ${
-              selected ? "border-gms-primary text-gms-text" : "border-transparent text-gms-text-muted hover:text-gms-text"
+            className={`relative -mb-px flex h-12 items-center gap-1.5 text-base font-medium outline-none focus-visible:rounded-gms-sm focus-visible:outline-1 focus-visible:outline-[#E3E6EA] ${
+              selected ? "text-gms-text" : "text-gms-text-muted hover:text-gms-text"
             }`}
           >
+            {selected && <span aria-hidden data-tab-underline className="absolute inset-x-0 bottom-0 h-[3px] bg-[#006A70]" />}
             {tab.label}
             {tab.scope === "for-me" && badge && (
               <span data-count-badge className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-gms-danger px-1 text-[11px] leading-none font-medium text-white">
@@ -221,7 +226,7 @@ function NotificationList({
       <>
         {groupByDay(list.items, now).map((group) => (
           <section key={group.label} aria-label={group.label}>
-            <h3 className="px-4 pb-2 pt-3 text-gms-body text-gms-text-muted">{group.label}</h3>
+            <h3 className="px-4 pb-3 pt-4 text-base text-gms-text-muted">{group.label}</h3>
             <ul>
               {group.items.map((item) => (
                 <NotificationItemRow

@@ -45,11 +45,23 @@ export function groupDigits(amount: string): string {
   return `${match[1]}${match[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${match[3] ?? ""}`;
 }
 
-/** Body text: "Siam Gems Trading Co., Ltd. · 172,020.00 THB", then the reason / note when there is one. */
+/** Body text: "Siam Gems Trading Co., Ltd. · 172,020.00 THB" (the reason has its own line, `reasonText`). */
 export function bodyText(item: Pick<NotificationItem, "summary">): string {
-  const { partyName, amount, currency, reason } = item.summary;
+  const { partyName, amount, currency } = item.summary;
   const money = amount ? [groupDigits(amount), currency].filter(Boolean).join(" ") : "";
-  return [partyName, money, reason].filter(Boolean).join(" · ");
+  return [partyName, money].filter(Boolean).join(" · ");
+}
+
+/**
+ * BE-NT-007: the approver's words on a rejected / sent-back document, "Reason: …" / "Note: …", on a line of its own so
+ * a long party name never pushes it out of view. `null` for other types or without a reason.
+ */
+export function reasonText(item: Pick<NotificationItem, "type" | "summary">): string | null {
+  const reason = item.summary.reason?.trim();
+  if (!reason) return null;
+  if (item.type === "document.rejected") return `Reason: ${reason}`;
+  if (item.type === "document.revision_requested") return `Note: ${reason}`;
+  return null;
 }
 
 /** Row target: the document itself (Q-NT-03). `null` when the type has no page in this app. */
@@ -57,6 +69,18 @@ export function documentHref(item: Pick<NotificationItem, "documentType" | "docu
   const menu = approveMenuFor(item.documentType);
   if (!menu || menu.availability === "not-available") return null;
   return `${menu.documentBase}/${encodeURIComponent(item.documentId)}`;
+}
+
+/**
+ * Row target (owner 2026-11-12): "waits for your approval" opens Approve › {type}, where the approver acts on it;
+ * approved / rejected / sent back open the document itself.
+ */
+export function openHref(item: Pick<NotificationItem, "documentType" | "documentId" | "type">): string | null {
+  if (item.type === "approval.pending") {
+    const menu = approveMenuFor(item.documentType);
+    return menu && menu.availability !== "not-available" ? approveMenuHref(menu.slug as ApproveMenuSlug) : null;
+  }
+  return documentHref(item);
 }
 
 /** Chevron "Open list page": Approve › {type} for a pending approval, otherwise the document list (Q-NT-03). */

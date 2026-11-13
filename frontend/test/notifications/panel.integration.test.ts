@@ -74,7 +74,10 @@ describe("notifications bell and panel", () => {
     expect(html).toContain(">Notifications</h2>");
     expect(html).toMatch(/<button type="button"[^>]*>Mark all as read<\/button>/);
     expect(html).toContain('role="tablist"');
-    expect(html).toMatch(/aria-selected="true"[^>]*>For me<span data-count-badge[^>]*><span class="sr-only">, <\/span>6/);
+    expect(html).toMatch(/aria-selected="true"[^>]*><span aria-hidden="true" data-tab-underline="true" class="absolute inset-x-0 bottom-0 h-\[3px\] bg-\[#006A70\]"><\/span>For me<span data-count-badge[^>]*><span class="sr-only">, <\/span>6/);
+    // Owner design 2026-11-12: the second tab reads "Overview"; only the selected tab has the full-width underline.
+    expect(html).toMatch(/aria-selected="false"[^>]*>Overview<\/button>/);
+    expect(html.match(/data-tab-underline/g)).toHaveLength(1);
     expect(html).toContain(">Today</h3>");
     expect(html).toContain('<span class="font-semibold">RS2611002</span> waits for your approval');
     expect(html).toContain("Siam Gems Trading Co., Ltd. · 172,020.00 THB");
@@ -85,6 +88,26 @@ describe("notifications bell and panel", () => {
     expect(html).toContain('aria-label="Open list page for Reserve"');
     expect(html).toContain('aria-label="Open list page for Purchase"');
     expect(html).toContain(">Open list page</span>");
+    expect(html).not.toContain("data-notification-reason");
+    // Inbox components (owner design 2026-11-12): 32 px avatar (white on unread, #F4F6F8 on read), 6 px dot, plain chevron.
+    expect(html).toContain("size-8 shrink-0 items-center justify-center rounded-full bg-white");
+    expect(html).toContain("size-8 shrink-0 items-center justify-center rounded-full bg-[#F4F6F8]");
+    expect(html).toContain("size-1.5 rounded-full bg-gms-danger");
+    expect(html).not.toMatch(/aria-label="Open list page for [^"]+" class="[^"]*bg-\[/);
+  });
+
+  it("IT-NT-FE-05 (BE-NT-007) rejected / sent-back rows show the approver reason on its own line, full text on hover", () => {
+    const reason = "ราคาไม่ตรงกับใบเสนอ กรุณาตรวจสอบอีกครั้ง";
+    const html = render(seeded(2, [
+      item({ type: "document.rejected", documentType: "quotation", docNo: "QT2611001", summary: { partyName: "Siam Gems", amount: "1000.00", currency: "THB", reason } }),
+      item({ id: ID2, type: "document.revision_requested", summary: { partyName: "Siam Gems", reason: "Only 1 pcs" } }),
+    ]), panel(2));
+    expect(html).toContain("<span class=\"font-semibold\">QT2611001</span> was rejected");
+    expect(html).toContain(`title="Reason: ${reason}"`);
+    expect(html).toContain(`>Reason: ${reason}</span>`);
+    expect(html).toContain(">Note: Only 1 pcs</span>");
+    expect(html).toContain("Siam Gems · 1,000.00 THB");
+    expect(html).toContain("aria-label=\"Open list page for Quotation\"");
   });
 
   it("IT-NT-FE-03 loading shows 5 skeleton items; an empty list shows the hint; nothing unread disables Mark all", () => {

@@ -66,3 +66,32 @@ describe("UT-NAV-RAIL-02 rail states and toggle icon", () => {
     expect(html).toContain('class="text-[#1C252E]"');
   });
 });
+
+/** Owner 2026-11-12: no hamburger; below `lg` the sidebar is the icon rail by default and the toggle expands it over the page. */
+describe("UT-NAV-RAIL-03 narrow screens", () => {
+  const shell = readFileSync("src/features/home/app-shell.tsx", "utf8");
+  const topbar = readFileSync("src/features/home/topbar.tsx", "utf8");
+
+  it("the top bar has no hamburger and the mobile drawer is gone", () => {
+    expect(topbar).not.toContain("Open main menu");
+    expect(topbar).not.toContain("onOpenNavigation");
+    expect(shell).not.toContain("MobileNavigation");
+    expect(shell).not.toContain("hidden h-screen shrink-0 overflow-hidden lg:block");
+  });
+
+  it("below lg the rail shows by default; expanding overlays the full sidebar for this page and leaves the wide-screen preference alone", async () => {
+    const { NARROW_SCREEN_QUERY } = await import("@/features/home/use-sidebar-collapsed");
+    expect(NARROW_SCREEN_QUERY).toBe("(max-width: 1023.98px)");
+    expect(shell).toContain("const showRail = isNarrow ? !isNarrowExpanded : contextNav ? !isContextExpanded : isSidebarCollapsed;");
+    expect(shell).toMatch(/if \(isNarrow\) \{\s*setNarrowExpandedFor\(collapsed \? null : pathname\);\s*return;\s*\}/);
+    expect(shell).toContain('"fixed inset-y-0 left-0 z-40 w-gms-sidebar max-w-[85vw] shadow-gms-overlay"');
+    expect(shell).toContain('<div aria-hidden data-sidebar-backdrop className="fixed inset-0 z-30 bg-black/30" onClick={() => setNarrowExpandedFor(null)} />');
+    expect(shell).toContain("onNavigate={isNarrow ? () => setNarrowExpandedFor(null) : undefined}");
+  });
+
+  it("the hook assumes a wide screen on the server (hydration matches)", async () => {
+    const { useIsNarrowScreen } = await import("@/features/home/use-sidebar-collapsed");
+    const Probe = () => createElement("span", null, String(useIsNarrowScreen()));
+    expect(renderToStaticMarkup(createElement(Probe))).toBe("<span>false</span>");
+  });
+});

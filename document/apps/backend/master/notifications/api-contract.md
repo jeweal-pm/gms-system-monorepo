@@ -6,7 +6,7 @@ Decision record: [ADR-0049](../../../../adr/0049-notifications-sse.md) (Accepted
 
 ```ts
 type NotificationType = "approval.pending" | "document.approved" | "document.rejected" | "document.revision_requested";
-type NotificationDocumentType = "reserve" | "memo-receive" | "memo-return" | "memo-out" | "memo-out-return" | "purchase-order" | "purchase";
+type NotificationDocumentType = "quotation" | "reserve" | "memo-receive" | "memo-return" | "memo-out" | "memo-out-return" | "purchase-order" | "purchase";
 
 type NotificationItem = {
   id: string;                        // notification_event.id (uuid v7)
@@ -14,7 +14,7 @@ type NotificationItem = {
   documentType: NotificationDocumentType;
   documentId: string;
   docNo: string;                     // snapshot at the event
-  summary: {                         // display only, ≤ 1 KB, never authoritative
+  summary: {                         // display only, ≤ 1 KB (texts ≤ 200 chars; reason, then partyName, shortened with "…" to fit), never authoritative
     partyName?: string; amount?: string; currency?: string;
     actorName?: string; actorRole?: string;
     reason?: string;                 // reject reason / revise note (ADR-0046)
@@ -79,3 +79,9 @@ sequenceDiagram
   M->>DB: indexed reads (caller's rows)
   M-->>B: count + items
 ```
+
+## Revision note 2026-11-12 (BE-NT-007)
+
+- `document.rejected` and `document.revision_requested` are emitted by Reject and Revise. Both go to the creator, never the actor. `summary.reason` holds the reject reason or revise note.
+- `quotation` is a `NotificationDocumentType`, because Quotation now has the Send to approve / Approve / Reject / Revise flow (approval-setup, ADR-0050).
+- There is no new procedure, field or schema change.
