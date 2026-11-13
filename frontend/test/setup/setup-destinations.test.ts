@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -44,16 +45,33 @@ describe("masterCodeDestinations", () => {
 });
 
 describe("setupLandingTiles", () => {
-  it("UT-NAV-F01 lists the tiles in the design order with their colors (Decimal Setup added 2026-10-27; Notifications removed 2026-11-11)", () => {
+  it("UT-NAV-F01 lists the tiles in the design order with their colors (Decimal Setup added 2026-10-27; Notifications removed 2026-11-11; colours 2026-11-13)", () => {
     expect(setupLandingTiles.map((tile) => [tile.label, tile.kind, tile.color])).toEqual([
-      ["Company Profile", "link", "indigo"],
-      ["User and Permission", "link", "green"],
+      ["Company Profile", "link", "violet"],
+      ["User and Permission", "link", "sky"],
       ["Master Code", "master-code", "neutral"],
-      ["Document Setup", "link", "blue"],
+      ["Document Setup", "link", "orange"],
       ["Approval", "link", "emerald"],
-      ["Decimal Setup", "link", "blue"],
+      ["Decimal Setup", "link", "taupe"],
       ["Stone Factory", "unavailable", "stone"],
     ]);
+  });
+
+  it("UT-NAV-F06 (owner design 2026-11-13) the new tile colours and the Decimal Setup SVG", () => {
+    const css = readFileSync("src/app/globals.css", "utf8");
+    expect(css).toMatch(/--color-gms-tile-violet:\s*#8173f6;/i);
+    expect(css).toMatch(/--color-gms-tile-sky:\s*#129be1;/i);
+    expect(css).toMatch(/--color-gms-tile-orange:\s*#d86c0e;/i);
+    expect(css).toMatch(/--color-gms-tile-taupe:\s*#ad8d7f;/i);
+    const decimal = setupLandingTiles.find((tile) => tile.id === "decimal-setup")!;
+    const html = renderToStaticMarkup(createElement(decimal.icon, { size: 32 }));
+    expect(html).toContain('data-icon="decimal-setup"');
+    expect(html).toContain('viewBox="0 0 32 32"');
+    expect(html).toContain('stroke="currentColor"');
+    expect(html.match(/<path /g)).toHaveLength(4);
+    const landing = readFileSync("src/features/setup/setup-landing.tsx", "utf8");
+    expect(landing).toContain('data-setup-page className="flex min-h-full flex-col bg-gms-page px-6 pb-6"');
+    expect(landing).toContain("rounded-gms-md bg-gms-surface");
   });
 
   it("UT-DEC-05 links Decimal Setup to its page, gated by its own decimal-setup leaf (FE-DEC-103, Q-DEC-14)", () => {

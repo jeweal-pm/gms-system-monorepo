@@ -15,10 +15,14 @@ describe("tab strip colours and body background", () => {
     expect(source).not.toMatch(/"bg-\[#FFFFFF\] text-gms-text[^"]*shadow/);
   });
 
-  it("UT-TAB-10 (owner 2026-11-09): every tab label is IBM Plex Sans Thai 14/20 Medium (500), no bold on the active tab", () => {
-    expect(source).toContain("min-w-0 truncate rounded-gms-sm py-1 text-gms-body font-medium tracking-normal");
-    expect(source).not.toContain('active ? "font-bold"');
+  it("UT-TAB-10 (owner 2026-11-13, replaces 2026-11-09): tab labels are 14/20; the shown tab is bold (600), the others regular", () => {
+    expect(source).toContain("min-w-0 truncate rounded-gms-sm py-1 text-gms-body tracking-normal ${active ? \"font-semibold!\" : \"font-normal!\"}");
     expect(readFileSync("src/app/globals.css", "utf8")).toMatch(/--text-gms-body:\s*14px;[\s\S]*--text-gms-body--line-height:\s*20px;/);
+  });
+
+  it("UT-TAB-11 (owner 2026-11-13): the shown tab always shows its ×; another tab shows it on hover or keyboard focus", () => {
+    expect(source).toContain("<CloseButton title={tab.title} alwaysVisible={active} onClick={() => onClose(tab.id)} />");
+    expect(source).toContain('alwaysVisible ? "" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100"');
   });
 
   it("UT-TAB-08 (owner 2026-11-07): the tab shell is 40px high and each tab 36px, bottom-aligned", () => {

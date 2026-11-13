@@ -1,4 +1,4 @@
-import { Calculator, Factory } from "lucide-react";
+import { Factory } from "lucide-react";
 import type { IconComponent } from "@/components/ui/design-icon";
 import { MASTER_CODE_MENU_KEYS, menuKeyFor, setupPlaceholderLink } from "@/features/home/navigation";
 import { DEFAULT_STONE_SLUG, STONE_MENU_KEY, stonePageHref } from "@/features/stone-master/kinds";
@@ -6,6 +6,7 @@ import {
   CertificateMasterIcon,
   CompanyProfileIcon,
   CurrencyIcon,
+  DecimalSetupIcon,
   ApprovalSetupIcon,
   DocumentSetupIcon,
   LocationMasterIcon,
@@ -17,8 +18,8 @@ import {
   UserPermissionIcon,
 } from "./setup-icons";
 
-/** Tile square colors (design-system tokens, owner design 2026-10-16). */
-export type SetupTileColor = "indigo" | "green" | "emerald" | "red" | "blue" | "stone" | "neutral";
+/** Tile square colors (design-system tokens, owner designs 2026-10-16 and 2026-11-13). */
+export type SetupTileColor = "indigo" | "green" | "emerald" | "red" | "blue" | "stone" | "neutral" | "violet" | "sky" | "orange" | "taupe";
 
 /** `permission`: catalog keys; the tile shows when the user has VIEW on any (owner 2026-10-17). Undefined = always. */
 export type SetupLinkDestination = { kind: "link"; id: string; label: string; href: string; icon: IconComponent; color: SetupTileColor; permission?: readonly string[] };
@@ -46,18 +47,19 @@ const placeholder = (slug: Parameters<typeof setupPlaceholderLink>[0], icon: Ico
  * Factory is drawn faded in the design, so it is shown as not available yet. Every tile except Stone
  * Factory uses the owner's design SVGs (setup-icons.tsx, 2026-10-20/21).
  */
+// Owner design 2026-11-13 colours: Company Profile #8173F6, User and Permission #129BE1, Document Setup #D86C0E, Decimal Setup #AD8D7F.
 export const setupLandingTiles: (SetupLinkDestination | SetupMasterCodeEntry | SetupUnavailableEntry)[] = [
-  { kind: "link", id: "company-profile", label: "Company Profile", href: "/setup/company-profile", icon: CompanyProfileIcon, color: "indigo", permission: ["company-profile"] },
-  { kind: "link", id: "user-permission", label: "User and Permission", href: "/setup/user-permission", icon: UserPermissionIcon, color: "green", permission: ["user-and-permission"] },
+  { kind: "link", id: "company-profile", label: "Company Profile", href: "/setup/company-profile", icon: CompanyProfileIcon, color: "violet", permission: ["company-profile"] },
+  { kind: "link", id: "user-permission", label: "User and Permission", href: "/setup/user-permission", icon: UserPermissionIcon, color: "sky", permission: ["user-and-permission"] },
   // Notifications removed from the Setup page (owner 2026-11-11).
   { kind: "master-code", id: "master-code", label: "Master Code", icon: MasterCodeIcon, color: "neutral", permission: MASTER_CODE_MENU_KEYS },
   // document-setup UI rev 1 (owner 2026-10-23): real page, gated by the new `document-setup` leaf.
-  { kind: "link", id: "document-setup", label: "Document Setup", href: "/setup/document-setup", icon: DocumentSetupIcon, color: "blue", permission: ["document-setup"] },
+  { kind: "link", id: "document-setup", label: "Document Setup", href: "/setup/document-setup", icon: DocumentSetupIcon, color: "orange", permission: ["document-setup"] },
   // approval-setup UI rev 1 (FE-AS-001, Q-AS-10): after Document Setup, gated by the `approval-setup` leaf
   // (BE-AS-001 / FE-AS-011: VIEW opens it read-only, EDIT switches).
   { kind: "link", id: "approval-setup", label: "Approval", href: "/setup/approval", icon: ApprovalSetupIcon, color: "emerald", permission: ["approval-setup"] },
-  // decimal-setup UI rev 2 (FE-DEC-103): its own `decimal-setup` leaf (Q-DEC-14).
-  { kind: "link", id: "decimal-setup", label: "Decimal Setup", href: "/setup/decimal-setup", icon: Calculator, color: "blue", permission: ["decimal-setup"] },
+  // decimal-setup UI rev 2 (FE-DEC-103): its own `decimal-setup` leaf (Q-DEC-14). Owner design 2026-11-13: own SVG.
+  { kind: "link", id: "decimal-setup", label: "Decimal Setup", href: "/setup/decimal-setup", icon: DecimalSetupIcon, color: "taupe", permission: ["decimal-setup"] },
   { kind: "unavailable", id: "stone-factory", label: "Stone Factory", icon: Factory, color: "stone" },
 ];
 

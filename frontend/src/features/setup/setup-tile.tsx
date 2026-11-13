@@ -13,6 +13,10 @@ const tileColorClass: Record<SetupTileColor, string> = {
   blue: "bg-gms-tile-blue",
   stone: "bg-gms-tile-stone",
   neutral: "bg-gms-tile-neutral",
+  violet: "bg-gms-tile-violet",
+  sky: "bg-gms-tile-sky",
+  orange: "bg-gms-tile-orange",
+  taupe: "bg-gms-tile-taupe",
 };
 
 type TileContentProps = {

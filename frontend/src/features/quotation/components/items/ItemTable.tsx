@@ -280,9 +280,10 @@ function FilledCells({ line, currency, stoneCode, location }: { line: QuotationL
         </div>
         <div className="mt-1 text-xs text-[#6B7480]">{line.priceUnit === "PER_CT" ? "per cts" : "per pcs"}</div>
       </td>
-      {/* Owner 2026-10-27: amounts carry the currency code; a line discount shows under the amount. */}
+      {/* Owner 2026-10-27: amounts carry the currency code; a line discount shows under the amount.
+          Owner 2026-11-13: the line amount is medium (500). */}
       <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">
-        <div>
+        <div data-line-amount className="font-medium">
           {formatMoney(lineAmount(line), nf.pricePlaces)} {currency}
         </div>
         {lineDiscount(line) > ZERO && <div className="mt-1 text-xs text-[#E5484D]">Disc −{formatMoney(lineDiscount(line), nf.pricePlaces)}</div>}
