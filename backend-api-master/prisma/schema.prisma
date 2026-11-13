@@ -1829,7 +1829,9 @@ model PurchaseLine {
   soldPartPcs         Int?               @map("sold_part_pcs")
   soldPartWeightCt    Decimal?           @map("sold_part_weight_ct") @db.Decimal(12, 3)
   purchaseOrderLineId String?            @map("purchase_order_line_id") @db.Uuid
-  stockId             String             @map("stock_id") @db.VarChar(10)
+  /// ADR-0051: the Memo Stock item's Stock ID on a STOCK line; NULL on MANUAL / PURCHASE_ORDER lines until Load to Stock
+  /// (CHECK purchase_line_stock_id_source_check).
+  stockId             String?            @map("stock_id") @db.VarChar(10)
   stoneCodeId         String?            @map("stone_code_id") @db.Uuid
   stoneCodeSnapshot   String             @default("") @map("stone_code_snapshot") @db.VarChar(60)
   stone               String             @default("") @db.VarChar(60)
@@ -1863,7 +1865,6 @@ model PurchaseLine {
   @@unique([purchaseId, position], map: "purchase_line_position_key")
   @@unique([purchaseId, memoStockId, memoGroup], map: "purchase_line_memo_stock_key")
   @@unique([purchaseId, purchaseOrderLineId], map: "purchase_line_po_line_key")
-  @@unique([stockId], where: raw("((source)::text <> 'STOCK'::text)"), map: "purchase_line_issued_stock_id_key")
   @@index([memoStockId], map: "purchase_line_memo_stock_idx")
   @@index([purchaseOrderLineId], map: "purchase_line_po_line_idx")
   @@index([stoneCodeId], map: "purchase_line_stone_code_idx")

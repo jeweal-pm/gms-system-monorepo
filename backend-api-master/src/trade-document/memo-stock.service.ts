@@ -62,8 +62,9 @@ const BUCKET_SQL = {
 } as const;
 
 /**
- * Inside an approval transaction: locks the items in id order (`FOR UPDATE`, so concurrent approvals of the same item
- * queue up instead of deadlocking), re-checks each line against the item's current pending (owner Q-MR-15 over-pull
+ * Inside an approval transaction: locks the items in id order (`FOR NO KEY UPDATE`, so concurrent approvals of the same
+ * item queue up instead of deadlocking, while the FK `KEY SHARE` checks of concurrent line inserts no longer conflict:
+ * only non-key columns change, INV-20261031-002), re-checks each line against the item's current pending (owner Q-MR-15 over-pull
  * guard) and moves the quantity from pending into `bucket` in one UPDATE (CHECK memo_stock_balance holds). A line asking
  * more than pending → `short(fields)` is thrown and the caller's transaction rolls back. Memo Return → returned
  * (memo-return SA rev 2); Memo Out → reserved (memo-out SA-MO-14). Lines are summed per item first (`totalPerItem`).
@@ -74,7 +75,7 @@ export async function takeFromMemoStock(tx: Tx, takes: MemoStockTake[], bucket: 
   const ids = totals.map((total) => total.memoStockId);
   const locked = await tx.$queryRaw<{ id: string; pending_pcs: number; pending_weight_ct: Dec | string }[]>(Prisma.sql`
     SELECT id::text AS id, pending_pcs, pending_weight_ct FROM "partner"."memo_stock"
-    WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR UPDATE`);
+    WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR NO KEY UPDATE`);
   const pending = new Map(locked.map((row) => [row.id, row]));
   const shortFields: FieldError[] = [];
   for (const total of totals) {
@@ -106,7 +107,7 @@ const RELEASE_SQL = {
 } as const;
 
 /**
- * Moves quantity from `bucket` back to pending (`bucket -= q, pending += q`) under the same id-ordered `FOR UPDATE` lock
+ * Moves quantity from `bucket` back to pending (`bucket -= q, pending += q`) under the same id-ordered `FOR NO KEY UPDATE` lock
  * as `takeFromMemoStock`. Used by a Memo Out Return approval (Reserve → pending, memo-out-return SA-MOR-17) and by the
  * reversal of an auto-approved Memo Out / Reserve (reserved) or Memo Return (returned) edit or delete (approval-setup
  * ADR-0050 D4). An item with less in the bucket than the lines bring back → `short` (nothing changes);
@@ -119,7 +120,7 @@ export async function releaseToMemoStock(tx: Tx, puts: MemoStockTake[], short: (
   const ids = totals.map((total) => total.memoStockId);
   const locked = await tx.$queryRaw<{ id: string; bucket_pcs: number; bucket_weight_ct: Dec | string }[]>(Prisma.sql`
     SELECT id::text AS id, ${sql.read} FROM "partner"."memo_stock"
-    WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR UPDATE`);
+    WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR NO KEY UPDATE`);
   const held = new Map(locked.map((row) => [row.id, row]));
   const shortFields: FieldError[] = [];
   for (const total of totals) {
@@ -224,7 +225,7 @@ export function encodeStockCursor(docDate: string, stockId: string): string {
 function decodeStockCursor(value: string): { docDate: string; stockId: string } {
   const invalid = () => validationException([{ path: "cursor", code: "invalid" }]);
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(value)) throw invalid();
-  const match = /^(\d{4}-\d{2}-\d{2})\|(\d{6})$/.exec(Buffer.from(value, "base64url").toString("utf8"));
+  const match = /^(\d{4}-\d{2}-\d{2})\|(\d{6,10})$/.exec(Buffer.from(value, "base64url").toString("utf8"));
   if (!match || Number.isNaN(Date.parse(match[1]))) throw invalid();
   return { docDate: match[1], stockId: match[2] };
 }

@@ -10,7 +10,7 @@
 - **Owner:** `backend-api-master`, with a new module `src/purchase/` (`purchase.schemas.ts`, `purchase.service.ts`, `purchase-stock.ts` for the take / give-back moves, and `purchase-pickers.ts` for the two picker queries). Data lives in schema `partner`, which master owns (ADR-0027).
 - **Reuses, unchanged:** `TradeDocumentEngine` (create, update, list, get and nextNumber via `prepare` and a `LineHook`), `vendorParty` / `vendorDocumentOptions`, the quotation calculator and `discountBoundRules`, `issueStockIds` (shared `YY####` counter), `totalPerItem`, `documentErrors`, `WRITE_TX`, `escapeLike`, cursor helpers and the ADR-0031 auth context.
 - **Small, backward-compatible edits:**
-  - `issueStockIds` takes an optional `exhausted` error factory, so Purchase can throw `PURCHASE_STOCK_ID_EXHAUSTED`. Memo Receive keeps its default.
+  - ~~`issueStockIds` takes an optional `exhausted` error factory for Purchase.~~ Removed by ADR-0051: Purchase issues no Stock IDs; Memo Receive is the only caller.
   - `document-numbering.ts` gains the `purchase` kind.
   - `authorization.ts` `MasterMenu` gains `"purchase"`.
   - `router.ts` gains the `purchase` router and `purchase` in the `currency.options` any-of list.
@@ -23,7 +23,7 @@
 ## Behaviour and operation
 
 - **Timing (SA default D2):** check at Save, cut at Approve (Q-MR-15, as Memo Return, Memo Out and Reserve).
-- **Create / update:** the engine transaction. The `prepare` hook completes source lines from the database, by primary key and without a lock. It checks vendor, currency, PO status and duplicates, and checks the quantity against current availability (`exceeds_available`). It moves no stock. The line hook writes source columns, Stock IDs (kept by line id, otherwise issued) and the copied PO stone code id. That id is set after the engine's stone-code check, so a PO line whose stone code became inactive still copies.
+- **Create / update:** the engine transaction. The `prepare` hook completes source lines from the database, by primary key and without a lock. It checks vendor, currency, PO status and duplicates, and checks the quantity against current availability (`exceeds_available`). It moves no stock. The line hook writes source columns, the Stock ID (STOCK lines: the item's; MANUAL / PO: NULL, ADR-0051) and the copied PO stone code id. That id is set after the engine's stone-code check, so a PO line whose stone code became inactive still copies.
 - **Delete:** the engine `delete`, unchanged. Pending only, and no stock.
 - **Approve:** `PurchaseService.approve`. In one `WRITE_TX`:
   1. A guarded status update.

@@ -42,7 +42,7 @@ sequenceDiagram
     API-->>FE: 400 VALIDATION_ERROR [lines.N.pcs|weightCt exceeds_available]
   else ok
     API->>API: copy stone fields, price unit, Stock ID (STOCK) from the source
-    API->>DB: lock document_numbering (create) → running no; memo_stock_id_counter → Stock IDs (MANUAL / PO lines)
+    API->>DB: lock document_numbering (create) → running no (no Stock ID for MANUAL / PO lines, ADR-0051)
     API->>DB: INSERT / replace purchase (PENDING_APPROVAL), purchase_line, purchase_charge. No stock change
     API->>DB: COMMIT
     API-->>FE: {id, docNo, version, stockIds}

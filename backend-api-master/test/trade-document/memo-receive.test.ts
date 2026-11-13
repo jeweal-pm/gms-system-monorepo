@@ -2,8 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "../../src/generated/prisma/client";
 import { HttpException } from "@nestjs/common";
 import type { Tx } from "../../src/common/persistence";
-import { formatStockId, issueStockIds, netUnitPrice, stockIdYear } from "../../src/trade-document/memo-receive.service";
-import { purchaseStockIdExhausted } from "../../src/purchase/purchase.errors";
+import { formatStockId, issueStockIds, netUnitPrice, STOCK_NO_MAX, stockIdYear } from "../../src/trade-document/memo-receive.service";
 import { encodeStockCursor, pendingAmount, totalPerItem } from "../../src/trade-document/memo-stock.service";
 import { createMemoReceiveSchema, memoStockListSchema, updateMemoReceiveSchema } from "../../src/trade-document/memo-schemas";
 
@@ -82,9 +81,18 @@ describe("Stock ID (SA-MR-04)", () => {
     expect(formatStockId(27, 9999)).toBe("279999");
     expect(formatStockId(5, 42)).toBe("050042");
   });
+
+  it("UT-MR-ID2 past 9,999 the number carries into the next prefix (owner Q-MR-09, INV-20261029-002)", () => {
+    expect(formatStockId(26, 9_998)).toBe("269998");
+    expect(formatStockId(26, 10_000)).toBe("270000");
+    expect(formatStockId(26, 10_005)).toBe("270005");
+    expect(formatStockId(5, 10_001)).toBe("060001");
+    expect(formatStockId(99, 10_000)).toBe("1000000");
+    expect(formatStockId(99, STOCK_NO_MAX)).toHaveLength(10);
+  });
 });
 
-describe("issueStockIds (SA-MR-04, purchase SA-PU-10)", () => {
+describe("issueStockIds (SA-MR-04; Memo Receive only since ADR-0051)", () => {
   const counter = (lastNo: number | null) => ({ $queryRaw: vi.fn(async () => (lastNo === null ? [] : [{ last_no: lastNo }])) }) as unknown as Tx & { $queryRaw: ReturnType<typeof vi.fn> };
   const code = async (promise: Promise<unknown>) => {
     try { await promise; } catch (error) { return error instanceof HttpException ? (error.getResponse() as { error: { code: string } }).error.code : String(error); }
@@ -97,14 +105,24 @@ describe("issueStockIds (SA-MR-04, purchase SA-PU-10)", () => {
     expect(await issueStockIds(tx, 3, now)).toEqual(["260010", "260011", "260012"]);
     expect(tx.$queryRaw).toHaveBeenCalledOnce();
     const idle = counter(1);
-    expect(await issueStockIds(idle, 0, now, purchaseStockIdExhausted)).toEqual([]);
+    expect(await issueStockIds(idle, 0, now)).toEqual([]);
     expect(idle.$queryRaw).not.toHaveBeenCalled();
   });
 
-  it("UT-PU-B05 an exhausted year throws the caller's error: Memo Receive keeps its default, Purchase passes its own", async () => {
+  it("UT-PU-B05 the INTEGER limit refuses with MEMO_RECEIVE_STOCK_ID_EXHAUSTED (the only caller since ADR-0051)", async () => {
     expect(await code(issueStockIds(counter(null), 2, now))).toBe("MEMO_RECEIVE_STOCK_ID_EXHAUSTED");
-    expect(await code(issueStockIds(counter(null), 2, now, purchaseStockIdExhausted))).toBe("PURCHASE_STOCK_ID_EXHAUSTED");
-    expect(await code(issueStockIds(counter(10_000), 1, now, purchaseStockIdExhausted))).toBe("PURCHASE_STOCK_ID_EXHAUSTED");
+    expect(await code(issueStockIds(counter(STOCK_NO_MAX + 1), 1, now))).toBe("MEMO_RECEIVE_STOCK_ID_EXHAUSTED");
+  });
+
+  it("UT-MR-ID3 no 9,999 ceiling: 9,998 + 3 → 269999, 270000, 270001; one statement that seeds from earlier years", async () => {
+    const tx = counter(10_001);
+    expect(await issueStockIds(tx, 3, now)).toEqual(["269999", "270000", "270001"]);
+    expect(tx.$queryRaw).toHaveBeenCalledOnce();
+    const sql = (tx.$queryRaw.mock.calls[0][0] as { sql: string }).sql;
+    expect(sql).toMatch(/WITH prior AS \([\s\S]*"year" < \?::smallint ORDER BY "year" FOR SHARE/);
+    expect(sql).toContain(`ON CONFLICT ("year") DO UPDATE SET "last_no" = GREATEST(`);
+    expect(sql).not.toContain("9999");
+    expect(await code(issueStockIds(counter(STOCK_NO_MAX), 1, now))).toBe("issued");
   });
 });
 

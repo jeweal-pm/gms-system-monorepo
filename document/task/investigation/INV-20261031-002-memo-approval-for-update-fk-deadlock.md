@@ -3,7 +3,7 @@
 ## Tracking
 
 - Ticket revision: 2 (2026-11-04: Purchase approve added as a further instance of the same lock pattern; root cause, verdict and remediation unchanged)
-- Status: pending-review
+- Status: resolved (2026-11-13, pass 1; see Resolution)
 - Owner: backend
 - Priority: awaiting user review
 - Auditor / mode / run ID: sec-auditor / focused pre-handoff review (guidance mode, not a full audit) / no run tree
@@ -38,9 +38,9 @@
 
 ## User selection and approval
 
-- Approved ticket revision:
-- Actual user instruction / approval evidence:
-- Approval date:
+- Approved ticket revision: current
+- Actual user instruction / approval evidence: owner 2026-11-13: "แก้ไข INV-20261031-002" — fix now
+- Approval date: 2026-11-13
 - Separate approved SA bundle/revision, if required: not required
 
 Do not infer approval from creation of this ticket or approval of a different revision.
@@ -52,19 +52,35 @@ revisions, and sessions for the same cause. Do not allocate a fresh budget on ha
 
 - Selected work ID / root-cause fingerprint: `explicit-FOR-UPDATE-vs-FK-KEY-SHARE:memo_out_line,memo_stock`
 - Corrective pass limit: 3 (initial fix included)
-- Passes allocated: 0
-- Active pass: none
+- Passes allocated: 1
+- Active pass: none (pass 1 succeeded)
 - User-authorized extension and new limit: none
 - Stop reason / missing prerequisite: none
 - Reopen evidence and explicit selection: none
 
 | Pass | Owner(s) / input revision or hash | Causal hypothesis / new evidence | Meaningful change | Authorized verification / result / failure signature | Next fact or terminal decision |
 |---|---|---|---|---|---|
+| 1 | backend / `2126ec01` + working tree | Approve and stock locks take `FOR UPDATE`, which conflicts with the FK `KEY SHARE` that concurrent line inserts take in user line order → 40P01 cycle (reproduced as the control in IT-MOR-08) | the non-key row locks → `FOR NO KEY UPDATE` | IT-MOR-08 two-session test + full master/auth suites on disposable PostgreSQL 18.6: pass | resolved |
 
-- Assigned owner and start date:
-- Changed files / implementation revision:
-- Checks performed, results, and limitations:
-- Follow-up auditor and verification evidence:
-- Remaining risk or reopened validation gap:
-- Completion report under document/task/done/:
-- Final status / date:
+- Assigned owner and start date: backend, 2026-11-13.
+- Changed files / implementation revision: branch `fix/12-11-26-inv`, base `2126ec01` + uncommitted working tree. See Resolution (pass 1).
+- Checks performed, results, and limitations: see Resolution (pass 1).
+- Follow-up auditor and verification evidence: security reviews are routed once by the parent on the final revision.
+- Remaining risk or reopened validation gap: see Resolution (pass 1).
+- Completion report under document/task/done/: [2026-11-13 INV fixes](../done/2026-11-13-inv-fixes.md)
+- Final status / date: resolved, 2026-11-13.
+
+## Resolution (pass 1)
+
+- Change: every row lock that only updates non-key columns now uses `FOR NO KEY UPDATE` instead of `FOR UPDATE`. It still serializes approvals of the same rows (NO KEY UPDATE conflicts with itself), but no longer conflicts with the FK `KEY SHARE` of concurrent line inserts, so the save-vs-approve cycle cannot form.
+  - `backend-api-master/src/trade-document/memo-out-return.service.ts` `lockOutLines` (memo_out_line; Memo Out Return approve and reversal).
+  - `backend-api-master/src/trade-document/memo-stock.service.ts` `takeFromMemoStock` and `releaseToMemoStock` (memo_stock; Memo Out, Reserve, Memo Return and Memo Out Return approvals and reversals).
+  - `backend-api-master/src/purchase/purchase-stock.ts` `takeForPurchase` (memo_stock and `purchase_order_line … FOR NO KEY UPDATE OF l`) and the purchase reversal (memo_stock, purchase_order_line).
+- Checked and kept: the `memo-receive.service.ts` reversal keeps `FOR UPDATE` on memo_stock because it **deletes** those rows (a key change that must conflict with FK KEY SHARE). `source-lock.ts` / document-engine keep source headers `FOR SHARE` (INV-20261111-002 F1): `FOR SHARE` conflicts with the source writer's `FOR NO KEY UPDATE` header bump, so the auto-approved delete race stays serialized; IT-AS-B15 passes unchanged. Document Setup numbering, company profile and approval setting `FOR UPDATE` locks are not part of this cycle and were left as they are.
+- 40P01 / 40001 mapping: not changed. They already surface as the retryable `DEPENDENCY_UNAVAILABLE` (503), not a 500, and the save/approve cycle no longer occurs.
+- Tests:
+  - `test/trade-document/memo-out-return.db.integration.test.ts` IT-MOR-08 (new, two sessions). Control: a session holding the FK `KEY SHARE` on the higher line and then asking for the lower one, against the old `FOR UPDATE` id-order lock, gets 40P01. Fix: while session A holds `KEY SHARE` on the higher line, the real `memoOutReturn.approve` over both lines (lower → higher) completes without waiting; A then takes the lower line and commits; no 40P01; returned quantities are correct. Then the real services in parallel (a save naming the lines high → low next to an approve): both succeed.
+  - `test/trade-document/memo-stock-locks.test.ts` UT-LOCK-01/02 (new): take/release lock `FOR NO KEY UPDATE` in id order. `test/purchase/purchase-stock.test.ts` lock assertions updated.
+  - Existing over-return / short-reserve tests (IT-MOR-04/05/07, IT-MO, IT-PU, IT-AS-B15) pass.
+- Verification: fresh disposable PostgreSQL 18.6 — master 725 passed / 15 skipped, auth 111 / 6; tsc and eslint clean.
+- Remaining risk: none new. A source edit that replaces lines while a dependent locks them can still be aborted by the deadlock detector (noted in INV-20261111-002; unrelated to this lock mode).

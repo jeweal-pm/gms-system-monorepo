@@ -118,7 +118,6 @@ describe.runIf(canRun)("IT-AS-B15 source header lock vs auto-approved delete (IN
     const receive = new MemoReceiveService();
     receive.clock = () => new Date(`20${YEAR}-06-01T03:00:00Z`);
     const purchase = new PurchaseService();
-    purchase.clock = receive.clock;
     s = { receive, memoOut: new MemoOutService(), reserve: new ReserveService(), memoOutReturn: new MemoOutReturnService(), po: new PurchaseOrderService(), purchase };
     if (!(await prisma.currency.findUnique({ where: { code: "THB" } }))) await prisma.currency.create({ data: { code: "THB", name: "THB", createdBy: ACTOR, updatedBy: ACTOR } });
     await prisma.memoStockIdCounter.deleteMany({ where: { year: YEAR } });

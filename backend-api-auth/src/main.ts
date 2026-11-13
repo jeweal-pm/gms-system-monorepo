@@ -14,6 +14,7 @@ import { userAdminException } from "./user-admin/user-admin.errors";
 import { LicenseService } from "./license/license.service";
 import { UserAdminService } from "./user-admin/user-admin.service";
 import { createAuthTrpcContext, createAuthTrpcRouter } from "./trpc/auth-trpc.router";
+import { authJsonBody } from "./http/json-body";
 import { createPhotoAccessCheck, createPublicPhotoAccessCheck, photoCsrfCheck, photoMethodCheck, photoReadBodyCheck } from "./user-admin/user-photo.http";
 
 /** user-photo.md PH-04/05: the only route that accepts a raw body (JPEG/PNG, ≤ 5 MB). */
@@ -47,7 +48,7 @@ async function bootstrap() {
     createContext: ({ req }) => createAuthTrpcContext(req, licenseService),
   });
   // Domain-owned auth tRPC is mounted before Better Auth's catch-all under the same prefix.
-  expressApp.use("/api/auth/trpc", express.json({ limit: "32kb" }), authTrpc);
+  expressApp.use("/api/auth/trpc", authJsonBody(), authTrpc);
   expressApp.post("/api/auth/refresh", createRefreshHandler({
     issuer: accessTokenIssuer,
     store: refreshStore,
@@ -58,7 +59,7 @@ async function bootstrap() {
   expressApp.use("/api/auth", toNodeHandler(auth));
   expressApp.use(PHOTO_ROUTE, photoMethodCheck, photoReadBodyCheck, createPhotoAccessCheck(userAdminService), express.raw({ type: [...PHOTO_TYPES], limit: PHOTO_MAX_BYTES }), photoBodyErrors);
   expressApp.use(PUBLIC_PHOTO_ROUTE, photoMethodCheck, photoReadBodyCheck, photoCsrfCheck, createPublicPhotoAccessCheck(userAdminService), express.raw({ type: [...PHOTO_TYPES], limit: PHOTO_MAX_BYTES }), photoBodyErrors);
-  expressApp.use(express.json({ limit: "32kb" }));
+  expressApp.use(authJsonBody());
   await app.listen(Number(process.env.PORT ?? 3101), "0.0.0.0");
 }
 

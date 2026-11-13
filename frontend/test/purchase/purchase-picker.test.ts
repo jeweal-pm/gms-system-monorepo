@@ -253,12 +253,13 @@ describe("UT-PU-09 Add Purchase Order view (rev 3: like the From Stock picker)",
     expect(numbers(html)).toEqual([1, 2, 3]);
   });
 
-  it("cells: bold PO No. over its Doc Date, Stone Code over Auto + lot badge and the note, open quantity and the net price", () => {
+  it("cells: bold PO No. over its Doc Date, Stone Code over — (no Stock ID, ADR-0051) + lot badge and the note, open quantity and the net price", () => {
     const html = view(props, state("ALL", data(rows)));
     expect(html).toContain('<div class="font-medium">PO2611002</div><div class="mt-1 text-xs text-[#656B71]">02/11/2026</div>');
     expect(html.match(/>PO2611001<\/div>/g)).toHaveLength(2);
     expect(html).toContain(">RU-OV-1</div>");
-    expect(html.match(/<span>Auto<\/span>/g)).toHaveLength(3);
+    expect(html.match(/<span>—<\/span>/g)).toHaveLength(3);
+    expect(html).not.toContain("<span>Auto</span>");
     expect(html).toContain('bg-[#FDF1DC] font-mono text-[#B4540A]">L-PO-1</span>');
     expect(html).toContain('<div class="font-medium">—</div>');
     expect(html).toContain(">Safe A</td>");

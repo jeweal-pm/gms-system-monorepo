@@ -1,6 +1,6 @@
 # ADR-0042: Purchase document and its stock deduction from Memo Stock and Purchase Orders
 
-- Status: Accepted
+- Status: Accepted; decision 7 (SA-PU-10, Stock IDs for MANUAL / PO lines) **amended by [ADR-0051](0051-purchase-lines-without-stock-id.md)** (Accepted 2026-11-13)
 - Date: 2026-11-04
 - Feature / source UI revision: `purchase` / 1 (approved), with the revision 2 pickers
 - SA revision: 1
@@ -43,7 +43,7 @@ Bundle: [UI rev 1/2](../apps/frontend/purchase/ui-spec.md), [SA rev 1](../apps/b
    - `purchase.purchaseOrderLines`: open approved PO lines, counts.
 
    `memoStock.list` is unchanged. The sale-invoice fields and the piece type are returned as `null` until a Sale revision and a piece-type field exist. No invoice is invented.
-7. **Stock IDs and own stock.** MANUAL and PO lines get a Stock ID at Save from the shared `YY####` counter. Own stock is deferred (SA default D4).
+7. **Stock IDs and own stock.** ~~MANUAL and PO lines get a Stock ID at Save from the shared `YY####` counter.~~ Amended by [ADR-0051](0051-purchase-lines-without-stock-id.md) (2026-11-13): MANUAL and PO lines have no Stock ID (NULL) until Load to Stock; STOCK lines keep the item's. Own stock is deferred (SA default D4).
 
 ## Alternatives
 

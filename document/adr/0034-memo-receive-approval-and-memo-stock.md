@@ -46,6 +46,7 @@ Diagrams: [sequence](../apps/backend/master/memo-receive/sequence-diagram.md), [
 - No new container, service, volume, route, cache or package. Saving uses one transaction as Memo Out does (≤ 200 lines). Approval inserts ≤ 200 rows in one transaction. `memoStock.list` is a keyset page of ≤ 50 rows on a partial index, at most 2 queries.
 - Expected data is small: thousands of memo items a year. The pool and limits of ADR-0027 are unchanged.
 - Stock ID allows 9,999 items per year. Item 10,000 is refused with `MEMO_RECEIVE_STOCK_ID_EXHAUSTED`. The owner expects fewer than that a year and is still deciding the final rule (Q-MR-09).
+  - **Superseded 2026-11-13** (owner Q-MR-09, [INV-20261029-002](../task/investigation/INV-20261029-002-memo-receive-stock-id-exhaustion.md)): no ceiling. Past 9,999 the number carries into the next prefix (269999 → 270000); a new year starts after the greatest number already issued. The error stays only for the INTEGER counter limit.
 - This is still a deviation from ADR-0027 until the move to inventory.
 
 ## Acceptance and approval

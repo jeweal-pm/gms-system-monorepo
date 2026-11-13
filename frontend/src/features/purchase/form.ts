@@ -156,7 +156,7 @@ export function memoStockToPurchaseLine(row: PurchaseMemoStockRow): PurchaseLine
 /**
  * An approved PO line → a purchase row (R2-PO, R2-05): attributes, stone code, lot, location, certificate and note copied
  * and locked; Pcs and Weight start at the open quantity (ordered − purchased, the cap); Price starts at the PO net unit
- * price (D12). The Stock ID is "Auto" until the save issues one. PO photos are not copied (Q-PU-11).
+ * price (D12). The row has no Stock ID (ADR-0051: issued later, at Load to Stock). PO photos are not copied (Q-PU-11).
  */
 export function purchaseOrderLineToPurchaseLine(row: PurchaseOrderLineRow): PurchaseLine {
   return {
@@ -322,7 +322,7 @@ export function clearPickedRows(lines: readonly PurchaseLine[]): PurchaseLine[] 
 }
 
 /**
- * How a row reads in the page table (R2-05, FE-PU-005): a manual or PO row without a Stock ID yet shows "Auto", a PO row
+ * How a row reads in the page table (R2-05, FE-PU-005, ADR-0051 / Q-PU-37): a manual or PO row has no Stock ID and shows "—", a PO row
  * adds "from {PO No.}", and a blank Location shows "—". Display only; the form keeps its values.
  */
 export function purchaseTableLine<T extends QuotationLine>(line: T): T {
@@ -330,5 +330,5 @@ export function purchaseTableLine<T extends QuotationLine>(line: T): T {
   const row = line as T & Partial<PurchaseLine>;
   // R3-02 + INV-20261107-003: a Memo Stock row names its part (Sold / In stock / both), so separate rows of one Stock ID differ.
   const from = row.purchaseOrderLineId ? ` · from ${row.sourceDocNo}` : row.memoGroup ? ` · ${MEMO_GROUP_TAG[row.memoGroup]}` : "";
-  return { ...line, stockId: `${line.stockId || "Auto"}${from}`, locationId: line.locationId || "—" };
+  return { ...line, stockId: `${line.stockId || "—"}${from}`, locationId: line.locationId || "—" };
 }

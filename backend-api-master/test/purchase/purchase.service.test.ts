@@ -73,7 +73,7 @@ vi.mock("../../src/database/prisma-client", () => {
     $queryRaw: vi.fn(async (sql: { sql: string } | TemplateStringsArray) => {
       if (Array.isArray(sql)) { db.calls.push("setting"); return []; }
       if ((sql as { sql: string }).sql.includes("memo_stock_id_counter")) {
-        const count = Number((sql as unknown as { values: unknown[] }).values[1]);
+        const count = Number((sql as unknown as { values: unknown[] }).values[2]); // [year (prior), year, count, …]
         db.calls.push(`counter:${count}`);
         db.counter += count;
         return [{ last_no: db.counter }];
@@ -174,34 +174,35 @@ describe("completeSourceLines (UT-PU-B02)", () => {
 });
 
 describe("PurchaseService save (UT-PU-B02)", () => {
-  it("create: issues Stock IDs for MANUAL / PO lines only, writes source columns and the PO stone code, moves no stock", async () => {
+  it("create (ADR-0051): STOCK keeps the item's Stock ID, MANUAL / PO store null, the shared counter is not used; source columns, PO stone code, no stock move", async () => {
     const service = new PurchaseService();
-    service.clock = () => new Date("2026-11-04T03:00:00Z");
     const result = await service.create("user-1", input([stockLine(), poLine(), manualLine()]));
-    expect(result).toMatchObject({ docNo: "1", version: 1, stockIds: ["260042", "260001", "260002"], status: "DRAFT", autoApproved: false });
+    expect(result).toMatchObject({ docNo: "1", version: 1, stockIds: ["260042", null, null], status: "DRAFT", autoApproved: false });
     expect(db.lines.map((line) => [line.source, line.memoStockId, line.memoGroup, line.purchaseOrderLineId, line.stockId, line.stoneCodeId])).toEqual([
       ["STOCK", ITEM, "IN_STOCK", null, "260042", null],
-      ["PURCHASE_ORDER", null, null, PO_LINE, "260001", PO_CODE],
-      ["MANUAL", null, null, null, "260002", null],
+      ["PURCHASE_ORDER", null, null, PO_LINE, null, PO_CODE],
+      ["MANUAL", null, null, null, null, null],
     ]);
     expect(db.lines[0]).toMatchObject({ stone: "Sapphire", priceUnit: "PER_CT" });
     expect(Number(db.lines[0].amount)).toBe(1350);
     expect(db.lines[1]).toMatchObject({ stone: "Ruby", location: "Safe B", priceUnit: "PER_PCS" });
     expect(Number(db.lines[1].amount)).toBe(300);
-    // One counter call for 2 ids; nothing written to memo_stock or purchase_order_line (D2).
-    expect(db.calls.filter((call) => call.startsWith("counter"))).toEqual(["counter:2"]);
+    // No counter call (ADR-0051); nothing written to memo_stock or purchase_order_line (D2).
+    expect(db.calls.filter((call) => call.startsWith("counter"))).toEqual([]);
     expect(db.calls).not.toContain("$executeRaw");
   });
 
-  it("update: a saved MANUAL / PO line keeps its id and Stock ID; a STOCK line takes the item's; unknown line ids are refused", async () => {
+  it("update: a saved MANUAL / PO line keeps its id with a null Stock ID; a STOCK line takes the item's; unknown line ids are refused", async () => {
     const service = new PurchaseService();
     db.stored = {
       docNo: "PU-1", status: "DRAFT", autoApproved: false, revisionCount: 0, version: 2, currencyCode: "THB", vendorId: VENDOR,
-      lines: [{ id: SAVED_PO_LINE, stockId: "260010", source: "PURCHASE_ORDER", stoneCodeId: PO_CODE }, { id: SAVED_MANUAL, stockId: "260011", source: "MANUAL", stoneCodeId: null }],
+      lines: [{ id: SAVED_PO_LINE, stoneCodeId: PO_CODE }, { id: SAVED_MANUAL, stoneCodeId: null }],
     };
     const result = await service.update("user-1", DOC, 2, input([poLine({ id: SAVED_PO_LINE }), manualLine({ id: SAVED_MANUAL }), stockLine(), manualLine()]));
-    expect(result).toMatchObject({ id: DOC, version: 3, stockIds: ["260010", "260011", "260042", "260001"], status: "DRAFT" });
+    expect(result).toMatchObject({ id: DOC, version: 3, stockIds: [null, null, "260042", null], status: "DRAFT" });
     expect(db.lines.slice(0, 2).map((line) => line.id)).toEqual([SAVED_PO_LINE, SAVED_MANUAL]);
+    expect(db.lines.map((line) => line.stockId)).toEqual([null, null, "260042", null]);
+    expect(db.calls.filter((call) => call.startsWith("counter"))).toEqual([]);
     expect(db.calls).not.toContain("$executeRaw");
 
     expect(await failure(service.update("user-1", DOC, 2, input([manualLine({ id: "00000000-0000-4000-8000-0000000000ff" })])))).toMatchObject({
@@ -216,7 +217,7 @@ describe("PurchaseService save (UT-PU-B02)", () => {
     const line = (patch: Record<string, unknown>) => ({
       id: SAVED_MANUAL, source: "MANUAL", stoneCodeId: null, stoneCodeSnapshot: "", stone: "", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "",
       lot: "", location: "", cerType: "", cerNo: "", pcs: 1, weightCt: D("1"), priceUnit: "PER_CT", unitPrice: D("10"), discountType: "NONE", discountValue: D("0"),
-      discountAmount: D("0"), amount: D("10"), itemNote: "", stockId: "260011", memoStockId: null, memoGroup: null, purchaseOrderLineId: null, memoStock: null, purchaseOrderLine: null, ...patch,
+      discountAmount: D("0"), amount: D("10"), itemNote: "", stockId: null, memoStockId: null, memoGroup: null, purchaseOrderLineId: null, memoStock: null, purchaseOrderLine: null, ...patch,
     });
     const row = (status: string) => ({
       id: DOC, docNo: "PU-1", status, version: 1, docDate: new Date("2026-11-04T00:00:00Z"), dueDate: new Date("2026-12-04T00:00:00Z"),
@@ -235,8 +236,8 @@ describe("PurchaseService save (UT-PU-B02)", () => {
     const pending = await service.get(DOC);
     expect(pending.lines.map((l) => [l.source, l.stockId, l.limitPcs, l.limitWeightCt, l.memoReceive, l.purchaseOrder])).toEqual([
       ["STOCK", "260042", 1, "0.500", { docNo: "MR-3" }, null],
-      ["PURCHASE_ORDER", "260011", 6, "2.500", null, { id: "po-1", docNo: "PO-9", position: 2 }],
-      ["MANUAL", "260011", null, null, null, null],
+      ["PURCHASE_ORDER", null, 6, "2.500", null, { id: "po-1", docNo: "PO-9", position: 2 }],
+      ["MANUAL", null, null, null, null, null],
     ]);
     expect(pending.lines[0]).toMatchObject({ memoStockId: ITEM, memoGroup: "SOLD", photoIds: [] });
     expect(pending.lines[0]).not.toHaveProperty("outstandingPcs");

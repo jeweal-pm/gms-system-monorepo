@@ -30,7 +30,7 @@ export const poRow = (patch: Partial<PurchaseOrderLineRow> = {}): PurchaseOrderL
 export const savedLine = (patch: Record<string, unknown>) => ({
   id: LINE, source: "MANUAL", stoneCodeId: ID, stoneCode: "RU-1", stone: "Ruby", shape: "Oval", size: "6x4", color: "Red", clarity: "VS", cutting: "Good", quality: "AA",
   lot: "L-1", location: "", cerType: "", cerNo: "", pcs: 1, weightCt: "0.500", priceUnit: "PER_CT", unitPrice: "100.00", discount: { type: "PERCENT", value: "10" },
-  itemNote: "", photoIds: [], discountAmount: "5.00", amount: "45.00", stockId: "260011", memoStockId: null, memoGroup: null, purchaseOrderLineId: null,
+  itemNote: "", photoIds: [], discountAmount: "5.00", amount: "45.00", stockId: null, memoStockId: null, memoGroup: null, purchaseOrderLineId: null,
   memoReceive: null, purchaseOrder: null, limitPcs: null, limitWeightCt: null, ...patch,
 });
 export const savedPurchase = (patch: Record<string, unknown> = {}) => ({
@@ -42,7 +42,7 @@ export const savedPurchase = (patch: Record<string, unknown> = {}) => ({
   autoApproved: false, revisionCount: 0, canEdit: false, canDelete: false, canSubmit: false, usedBy: null, review: null, submittedAt: "2026-11-04T02:00:00.000Z", submittedByName: "Aom",
   lines: [
     savedLine({ id: "66666666-6666-4666-8666-666666666666", source: "STOCK", memoStockId: STOCK, memoGroup: "IN_STOCK", stockId: "260003", stoneCodeId: null, stoneCode: "", discount: { type: "NONE", value: "0" }, memoReceive: { docNo: "MR-1001" }, limitPcs: 2, limitWeightCt: "1.360", pcs: 1, weightCt: "0.680" }),
-    savedLine({ id: "77777777-7777-4777-8777-777777777777", source: "PURCHASE_ORDER", purchaseOrderLineId: POL, stockId: "260012", discount: { type: "NONE", value: "0" }, purchaseOrder: { id: PO, docNo: "PO2611001", position: 2 }, limitPcs: 6, limitWeightCt: "3.000" }),
+    savedLine({ id: "77777777-7777-4777-8777-777777777777", source: "PURCHASE_ORDER", purchaseOrderLineId: POL, stockId: null, discount: { type: "NONE", value: "0" }, purchaseOrder: { id: PO, docNo: "PO2611001", position: 2 }, limitPcs: 6, limitWeightCt: "3.000" }),
     savedLine({}),
   ],
   ...patch,

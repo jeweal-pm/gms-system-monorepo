@@ -34,12 +34,12 @@ sequenceDiagram
   end
   M->>DB: Document Setup row in effect on doc_date FOR UPDATE (or advisory lock → plain number)
   M->>DB: SELECT max(running_no) → docNo
-  M->>DB: INSERT memo_stock_id_counter(year of now, Asia/Bangkok) ON CONFLICT DO UPDATE last_no = last_no + n RETURNING last_no
-  alt last_no > 9999
+  M->>DB: WITH prior (earlier years FOR SHARE) INSERT memo_stock_id_counter(year of now, Asia/Bangkok, floor from prior + n) ON CONFLICT DO UPDATE last_no = GREATEST(last_no + n, floor + n) RETURNING last_no
+  alt last_no > 2,000,000,000 (INTEGER limit only; no 9,999 ceiling, Q-MR-09)
     M->>DB: ROLLBACK
     M-->>FE: MEMO_RECEIVE_STOCK_ID_EXHAUSTED (409)
   end
-  M->>M: stockIds = YY + 4 digits per new line · totals (Decimal)
+  M->>M: stockIds = lpad(YY × 10,000 + n, 6) per new line (269999 → 270000) · totals (Decimal)
   M->>DB: INSERT memo_receive (status PENDING_APPROVAL), lines, charges
   M->>DB: COMMIT
   M-->>FE: {id, docNo, version, stockIds}

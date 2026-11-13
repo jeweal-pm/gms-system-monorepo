@@ -273,7 +273,7 @@ export function purchaseOrderEmptyText(currency: string) {
 
 export const purchaseOrderLinesLoadError = (error: unknown) => documentLoadError(error, "PURCHASE", "purchase order lines", "purchase order lines");
 
-/** One PO line's cells after the checkbox and # (rev 3). PO lines have no Stock ID yet: "Auto" (R2-05). */
+/** One PO line's cells after the checkbox and # (rev 3). PO lines have no Stock ID: "—" (ADR-0051 / Q-PU-37). */
 export function PurchaseOrderLineCells({ row, currency }: { row: PurchaseOrderLineRow; currency: string }) {
   const nf = useNumberFormat();
   return (
@@ -285,7 +285,7 @@ export function PurchaseOrderLineCells({ row, currency }: { row: PurchaseOrderLi
       <td className="px-3 py-4">
         <div className="font-medium">{row.stoneCode || "—"}</div>
         <div className={cx(sub, "flex flex-wrap items-center gap-2")}>
-          <span>Auto</span>
+          <span>—</span>
           {row.lot && <Badge variant="lot">{row.lot}</Badge>}
         </div>
         <Note text={row.itemNote} />

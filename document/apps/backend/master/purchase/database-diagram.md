@@ -59,7 +59,7 @@ erDiagram
     uuid memo_stock_id FK "STOCK only"
     varchar10 memo_group "IN_STOCK | SOLD, STOCK only"
     uuid purchase_order_line_id FK "PURCHASE_ORDER only"
-    varchar10 stock_id "item's, or issued YY####"
+    varchar10 stock_id "STOCK: the item's; else NULL (ADR-0051)"
     uuid stone_code_id FK
     varchar60 stone_code_snapshot
     varchar60 stone_shape_size_color_clarity_cutting_quality "7 columns"
@@ -108,7 +108,7 @@ The header columns are exactly those of `purchase_order` (subtotal, discount_amo
 | purchase_line | `purchase_line_source_check`: `source IN ('STOCK','PURCHASE_ORDER','MANUAL')` and the shape rule `(source = 'STOCK') = (memo_stock_id IS NOT NULL AND memo_group IS NOT NULL)`, `(source = 'PURCHASE_ORDER') = (purchase_order_line_id IS NOT NULL)`, `(source = 'STOCK') OR memo_group IS NULL` |
 | purchase_line | `purchase_line_memo_group_check` (`memo_group IN ('IN_STOCK','SOLD')` or null); `purchase_line_qty_check` (pcs ≥ 0, weight_ct ≥ 0, pcs > 0 OR weight_ct > 0, unit_price > 0); `purchase_line_values_check` as `purchase_order_line_values_check` (position 1..200, price unit, discount enums) |
 | purchase_line | `purchase_line_position_key (purchase_id, position)`; `purchase_line_memo_stock_key (purchase_id, memo_stock_id, memo_group)` (NULLs distinct, so it applies to STOCK only); `purchase_line_po_line_key (purchase_id, purchase_order_line_id)` |
-| purchase_line | partial unique `purchase_line_issued_stock_id_key (stock_id) WHERE source <> 'STOCK'` (issued ids never repeat; STOCK lines repeat their item's id across purchases) |
+| purchase_line | `purchase_line_stock_id_source_check`: `(source = 'STOCK') = (stock_id IS NOT NULL)` (ADR-0051, migration `20261113110000_purchase_line_stock_id_nullable`; `stock_id` nullable). The rev 1 partial unique `purchase_line_issued_stock_id_key` was dropped by that migration; STOCK lines repeat their item's id across purchases |
 | memo_stock | **NEW** `memo_stock_purchased_check`: `purchased_pcs >= 0 AND purchased_weight_ct >= 0 AND purchased_pcs <= sold_pcs AND purchased_weight_ct <= sold_weight_ct`. Unchanged: `memo_stock_balance`, `memo_stock_buckets_nonneg`, 0 ≤ pending ≤ received |
 | purchase_order_line | unchanged: `purchase_order_line_purchased_check` (0 ≤ purchased ≤ ordered) |
 

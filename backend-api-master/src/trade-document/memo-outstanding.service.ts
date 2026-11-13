@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { escapeLike } from "../common/persistence";
+import { escapeLike, READ_TX, type Tx } from "../common/persistence";
 import { prisma } from "../database/prisma-client";
 import { fromDbDate, toDbDate } from "../document-setup/document-setup.service";
 import { Prisma } from "../generated/prisma/client";
@@ -45,8 +45,37 @@ const OPEN_VALUE = Prisma.sql`round(CASE WHEN s.price_unit = 'PER_CT' THEN
       ELSE s.line_amount * (s.reserved_pcs + s.pending_pcs) / s.received_pcs END
   END, 2)`;
 
-/** SA-MOV-04: a document is listed while any of its items has Reserve or Outstanding above 0. */
-const HAS_OPEN_ITEM = Prisma.sql`bool_or(s.pending_pcs > 0 OR s.pending_weight_ct > 0 OR s.reserved_pcs > 0 OR s.reserved_weight_ct > 0)`;
+/**
+ * SA-MOV-04: a document is listed while any of its items has Reserve or Outstanding above 0. INV-20261029-004: applied
+ * as an `EXISTS` before grouping (not `HAVING bool_or(…)` after it), so settled history is pruned through the partial
+ * index `memo_stock_open_idx` (same predicate) and only open documents are joined and aggregated.
+ */
+const HAS_OPEN_ITEM = Prisma.sql`EXISTS (SELECT 1 FROM "partner"."memo_stock" o WHERE o.memo_receive_id = r.id
+  AND (o.pending_pcs > 0 OR o.pending_weight_ct > 0 OR o.reserved_pcs > 0 OR o.reserved_weight_ct > 0))`;
+
+/**
+ * INV-20261029-004: every report statement runs in one READ_TX (one pooled connection, 2.5 s) with a 2 s
+ * `statement_timeout`, so a slow report fails fast (DEPENDENCY_UNAVAILABLE) instead of holding a pool connection.
+ */
+export const REPORT_STATEMENT_TIMEOUT_MS = 2_000;
+function reportRead<T>(run: (tx: Tx) => Promise<T>): Promise<T> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${REPORT_STATEMENT_TIMEOUT_MS}`);
+    return run(tx);
+  }, READ_TX);
+}
+
+/**
+ * Page rows carry `count(*) OVER ()` (the total of the filtered, pruned documents), so a list is one statement. Only a
+ * page past the end returns no row to read it from; then the pruned count runs once in the same transaction.
+ */
+type Counted = { total: Num };
+async function pagedTotal(tx: Tx, rows: Counted[], docs: Prisma.Sql, page: number): Promise<number> {
+  if (rows.length > 0) return Number(rows[0].total);
+  if (page === 1) return 0;
+  const counted = await tx.$queryRaw<{ total: Num }[]>(Prisma.sql`WITH docs AS (${docs}) SELECT count(*)::bigint AS total FROM docs`);
+  return Number(counted[0]?.total ?? 0);
+}
 
 /** Document sums of every item (Q-MOV-02/09: the document row is always the sum of its items). */
 const DOC_SUMS = Prisma.sql`
@@ -126,8 +155,12 @@ const PU_OPEN_VALUE = Prisma.sql`round(CASE WHEN s.price_unit = 'PER_CT' THEN
       ELSE s.line_amount * ${PU_BALANCE_PCS} / s.received_pcs END
   END, 2)`;
 
-/** SA-POS-03: a document is listed while any of its items has a balance above 0. */
-const PU_HAS_BALANCE = Prisma.sql`bool_or(${PU_BALANCE_PCS} > 0 OR ${PU_BALANCE_WT} > 0)`;
+/**
+ * SA-POS-03: a document is listed while any of its items has a balance above 0. INV-20261029-004: an `EXISTS` before
+ * grouping through the partial index `memo_stock_balance_open_idx` (same predicate), not `HAVING` after it.
+ */
+const PU_HAS_BALANCE = Prisma.sql`EXISTS (SELECT 1 FROM "partner"."memo_stock" o WHERE o.memo_receive_id = r.id
+  AND ((o.received_pcs - o.returned_pcs - o.purchased_pcs) > 0 OR (o.received_weight_ct - o.returned_weight_ct - o.purchased_weight_ct) > 0))`;
 
 /** Per-item buckets of SA-POS-02; the document row sums them. */
 const PU_ITEM_BUCKETS = Prisma.sql`
@@ -195,8 +228,12 @@ const CUSTOMER_NET_PRICE = Prisma.sql`round(CASE WHEN l.price_unit = 'PER_CT'
     THEN CASE WHEN l.weight_ct = 0 THEN l.unit_price ELSE l.amount / l.weight_ct END
     ELSE CASE WHEN l.pcs = 0 THEN l.unit_price ELSE l.amount / l.pcs END END, 4)`;
 
-/** SA-MOC-03: a document is listed while any stock line still has something out. */
-const HAS_OUT_LINE = Prisma.sql`bool_or(l.returned_pcs < l.pcs OR l.returned_weight_ct < l.weight_ct)`;
+/**
+ * SA-MOC-03: a document is listed while any stock line still has something out. INV-20261029-004: an `EXISTS` before
+ * grouping through the partial index `memo_out_line_open_idx` (same predicate), not `HAVING` after it.
+ */
+const HAS_OUT_LINE = Prisma.sql`EXISTS (SELECT 1 FROM "partner"."memo_out_line" x WHERE x.memo_out_id = o.id
+  AND x.memo_stock_id IS NOT NULL AND (x.returned_pcs < x.pcs OR x.returned_weight_ct < x.weight_ct))`;
 
 const CUSTOMER_DOC_SUMS = Prisma.sql`
   sum(l.pcs)::bigint AS memo_pcs, sum(l.weight_ct) AS memo_wt,
@@ -263,15 +300,14 @@ export class MemoOutstandingService {
   async vendorSummary(input: MemoOutstandingFilters) {
     const today = toDbDate(bangkokToday(this.clock()));
     try {
-      const [row] = await prisma.$queryRaw<SummaryRow[]>(Prisma.sql`
+      const [row] = await reportRead((tx) => tx.$queryRaw<SummaryRow[]>(Prisma.sql`
         WITH company AS (SELECT currency_code FROM "partner"."company_profile" WHERE id = 1),
         docs AS (
           SELECT r.id, r.due_date, r.currency_code, r.exchange_rate, sum(${OPEN_VALUE}) AS open_value
           FROM "partner"."memo_receive" r
           JOIN "partner"."memo_stock" s ON s.memo_receive_id = r.id
-          WHERE ${receiveFilters(input)}
+          WHERE ${receiveFilters(input)} AND ${HAS_OPEN_ITEM}
           GROUP BY r.id
-          HAVING ${HAS_OPEN_ITEM}
         )
         SELECT count(*)::bigint AS documents,
           count(*) FILTER (WHERE d.due_date < ${today}::date)::bigint AS overdue,
@@ -279,7 +315,7 @@ export class MemoOutstandingService {
           round(sum(d.open_value * CASE WHEN d.currency_code = (SELECT currency_code FROM company) THEN 1
             ELSE COALESCE(d.exchange_rate, 1) END), 2) AS grand_total,
           (SELECT currency_code FROM company) AS company_currency
-        FROM docs d`);
+        FROM docs d`));
       return {
         documents: Number(row?.documents ?? 0),
         overdue: Number(row?.overdue ?? 0),
@@ -304,21 +340,21 @@ export class MemoOutstandingService {
         ${DOC_SUMS}
       FROM "partner"."memo_receive" r
       JOIN "partner"."memo_stock" s ON s.memo_receive_id = r.id
-      WHERE ${receiveFilters(input)}
-      GROUP BY r.id
-      HAVING ${HAS_OPEN_ITEM}`;
+      WHERE ${receiveFilters(input)} AND ${HAS_OPEN_ITEM}
+      GROUP BY r.id`;
     try {
-      const [rows, counted] = await Promise.all([
-        prisma.$queryRaw<DocRow[]>(Prisma.sql`
+      const { rows, total } = await reportRead(async (tx) => {
+        const rows = await tx.$queryRaw<(DocRow & Counted)[]>(Prisma.sql`
           WITH docs AS (${docs})
           SELECT id::text AS id, doc_no, doc_date, due_date, (due_date - ${today}::date)::int AS due_in_days,
             vendor_id::text AS vendor_id, vendor_code_snapshot, vendor_name_snapshot, currency_code,
-            memo_pcs, memo_wt, return_pcs, return_wt, sold_pcs, sold_wt, reserve_pcs, reserve_wt, outstanding_pcs, outstanding_wt, open_value
+            memo_pcs, memo_wt, return_pcs, return_wt, sold_pcs, sold_wt, reserve_pcs, reserve_wt, outstanding_pcs, outstanding_wt, open_value,
+            count(*) OVER ()::bigint AS total
           FROM docs
           ORDER BY ${orderBy}
-          LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}`),
-        prisma.$queryRaw<{ total: Num }[]>(Prisma.sql`WITH docs AS (${docs}) SELECT count(*)::bigint AS total FROM docs`),
-      ]);
+          LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}`);
+        return { rows, total: await pagedTotal(tx, rows, docs, input.page) };
+      });
       return {
         items: rows.map((row) => ({
           memoReceiveId: row.id,
@@ -331,7 +367,7 @@ export class MemoOutstandingService {
           openValue: dec(row.open_value).toFixed(2),
           ...buckets(row),
         })),
-        total: Number(counted[0]?.total ?? 0),
+        total,
         page: input.page,
         pageSize: input.pageSize,
       };
@@ -359,8 +395,7 @@ export class MemoOutstandingService {
         JOIN "partner"."memo_receive" r ON r.id = s.memo_receive_id
         JOIN "partner"."memo_receive_line" l ON l.id = s.memo_receive_line_id
         WHERE r.status = ${APPROVED} AND r.deleted_at IS NULL AND r.id IN (${Prisma.join(ids)})
-          AND EXISTS (SELECT 1 FROM "partner"."memo_stock" o WHERE o.memo_receive_id = r.id
-            AND (o.pending_pcs > 0 OR o.pending_weight_ct > 0 OR o.reserved_pcs > 0 OR o.reserved_weight_ct > 0))
+          AND ${HAS_OPEN_ITEM}
         ORDER BY r.doc_no ASC, r.id ASC, l.position ASC`);
       return {
         items: rows.map((row) => ({
@@ -397,15 +432,14 @@ export class MemoOutstandingService {
   async customerSummary(input: MemoOutstandingCustomerFilters) {
     const today = toDbDate(bangkokToday(this.clock()));
     try {
-      const [row] = await prisma.$queryRaw<SummaryRow[]>(Prisma.sql`
+      const [row] = await reportRead((tx) => tx.$queryRaw<SummaryRow[]>(Prisma.sql`
         WITH company AS (SELECT currency_code FROM "partner"."company_profile" WHERE id = 1),
         docs AS (
           SELECT o.id, o.due_date, o.currency_code, o.exchange_rate, sum(${CUSTOMER_OPEN_VALUE}) AS open_value
           FROM "partner"."memo_out" o
           JOIN "partner"."memo_out_line" l ON l.memo_out_id = o.id AND ${STOCK_LINE}
-          WHERE ${memoOutFilters(input)}
+          WHERE ${memoOutFilters(input)} AND ${HAS_OUT_LINE}
           GROUP BY o.id
-          HAVING ${HAS_OUT_LINE}
         )
         SELECT count(*)::bigint AS documents,
           count(*) FILTER (WHERE d.due_date < ${today}::date)::bigint AS overdue,
@@ -413,7 +447,7 @@ export class MemoOutstandingService {
           round(sum(d.open_value * CASE WHEN d.currency_code = (SELECT currency_code FROM company) THEN 1
             ELSE COALESCE(d.exchange_rate, 1) END), 2) AS grand_total,
           (SELECT currency_code FROM company) AS company_currency
-        FROM docs d`);
+        FROM docs d`));
       return {
         documents: Number(row?.documents ?? 0),
         overdue: Number(row?.overdue ?? 0),
@@ -439,21 +473,21 @@ export class MemoOutstandingService {
         ${CUSTOMER_DOC_SUMS}
       FROM "partner"."memo_out" o
       JOIN "partner"."memo_out_line" l ON l.memo_out_id = o.id AND ${STOCK_LINE}
-      WHERE ${memoOutFilters(input)}
-      GROUP BY o.id
-      HAVING ${HAS_OUT_LINE}`;
+      WHERE ${memoOutFilters(input)} AND ${HAS_OUT_LINE}
+      GROUP BY o.id`;
     try {
-      const [rows, counted] = await Promise.all([
-        prisma.$queryRaw<CustomerDocRow[]>(Prisma.sql`
+      const { rows, total } = await reportRead(async (tx) => {
+        const rows = await tx.$queryRaw<(CustomerDocRow & Counted)[]>(Prisma.sql`
           WITH docs AS (${docs})
           SELECT id::text AS id, doc_no, doc_date, due_date, (due_date - ${today}::date)::int AS due_in_days,
             customer_id::text AS customer_id, customer_code_snapshot, customer_name_snapshot, currency_code,
-            memo_pcs, memo_wt, return_pcs, return_wt, sold_pcs, sold_wt, outstanding_pcs, outstanding_wt, open_value
+            memo_pcs, memo_wt, return_pcs, return_wt, sold_pcs, sold_wt, outstanding_pcs, outstanding_wt, open_value,
+            count(*) OVER ()::bigint AS total
           FROM docs
           ORDER BY ${orderBy}
-          LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}`),
-        prisma.$queryRaw<{ total: Num }[]>(Prisma.sql`WITH docs AS (${docs}) SELECT count(*)::bigint AS total FROM docs`),
-      ]);
+          LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}`);
+        return { rows, total: await pagedTotal(tx, rows, docs, input.page) };
+      });
       return {
         items: rows.map((row) => ({
           memoOutId: row.id,
@@ -466,7 +500,7 @@ export class MemoOutstandingService {
           openValue: dec(row.open_value).toFixed(2),
           ...customerBuckets(row),
         })),
-        total: Number(counted[0]?.total ?? 0),
+        total,
         page: input.page,
         pageSize: input.pageSize,
       };
@@ -491,8 +525,7 @@ export class MemoOutstandingService {
         FROM "partner"."memo_out_line" l
         JOIN "partner"."memo_out" o ON o.id = l.memo_out_id
         WHERE o.status = ${APPROVED} AND o.deleted_at IS NULL AND o.id IN (${Prisma.join(ids)}) AND ${STOCK_LINE}
-          AND EXISTS (SELECT 1 FROM "partner"."memo_out_line" x WHERE x.memo_out_id = o.id AND x.memo_stock_id IS NOT NULL
-            AND (x.returned_pcs < x.pcs OR x.returned_weight_ct < x.weight_ct))
+          AND ${HAS_OUT_LINE}
         ORDER BY o.doc_no ASC, o.id ASC, l.position ASC`);
       return {
         items: rows.map((row) => ({
@@ -544,15 +577,14 @@ export class MemoOutstandingService {
   async purchaseSummary(input: MemoOutstandingFilters) {
     const today = toDbDate(bangkokToday(this.clock()));
     try {
-      const [row] = await prisma.$queryRaw<SummaryRow[]>(Prisma.sql`
+      const [row] = await reportRead((tx) => tx.$queryRaw<SummaryRow[]>(Prisma.sql`
         WITH company AS (SELECT currency_code FROM "partner"."company_profile" WHERE id = 1),
         docs AS (
           SELECT r.id, r.due_date, r.currency_code, r.exchange_rate, sum(${PU_OPEN_VALUE}) AS open_value
           FROM "partner"."memo_receive" r
           JOIN "partner"."memo_stock" s ON s.memo_receive_id = r.id
-          WHERE ${receiveFilters(input)}
+          WHERE ${receiveFilters(input)} AND ${PU_HAS_BALANCE}
           GROUP BY r.id
-          HAVING ${PU_HAS_BALANCE}
         )
         SELECT count(*)::bigint AS documents,
           count(*) FILTER (WHERE d.due_date < ${today}::date)::bigint AS overdue,
@@ -560,7 +592,7 @@ export class MemoOutstandingService {
           round(sum(d.open_value * CASE WHEN d.currency_code = (SELECT currency_code FROM company) THEN 1
             ELSE COALESCE(d.exchange_rate, 1) END), 2) AS grand_total,
           (SELECT currency_code FROM company) AS company_currency
-        FROM docs d`);
+        FROM docs d`));
       return {
         documents: Number(row?.documents ?? 0),
         overdue: Number(row?.overdue ?? 0),
@@ -585,21 +617,21 @@ export class MemoOutstandingService {
         ${PU_DOC_SUMS}
       FROM "partner"."memo_receive" r
       JOIN "partner"."memo_stock" s ON s.memo_receive_id = r.id
-      WHERE ${receiveFilters(input)}
-      GROUP BY r.id
-      HAVING ${PU_HAS_BALANCE}`;
+      WHERE ${receiveFilters(input)} AND ${PU_HAS_BALANCE}
+      GROUP BY r.id`;
     try {
-      const [rows, counted] = await Promise.all([
-        prisma.$queryRaw<(Omit<DocRow, keyof BucketSums> & PurchaseSums)[]>(Prisma.sql`
+      const { rows, total } = await reportRead(async (tx) => {
+        const rows = await tx.$queryRaw<(Omit<DocRow, keyof BucketSums> & PurchaseSums & Counted)[]>(Prisma.sql`
           WITH docs AS (${docs})
           SELECT id::text AS id, doc_no, doc_date, due_date, (due_date - ${today}::date)::int AS due_in_days,
             vendor_id::text AS vendor_id, vendor_code_snapshot, vendor_name_snapshot, currency_code,
-            memo_pcs, memo_wt, return_pcs, return_wt, purchase_pcs, purchase_wt, sale_pcs, sale_wt, balance_pcs, balance_wt, open_value
+            memo_pcs, memo_wt, return_pcs, return_wt, purchase_pcs, purchase_wt, sale_pcs, sale_wt, balance_pcs, balance_wt, open_value,
+            count(*) OVER ()::bigint AS total
           FROM docs
           ORDER BY ${orderBy}
-          LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}`),
-        prisma.$queryRaw<{ total: Num }[]>(Prisma.sql`WITH docs AS (${docs}) SELECT count(*)::bigint AS total FROM docs`),
-      ]);
+          LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}`);
+        return { rows, total: await pagedTotal(tx, rows, docs, input.page) };
+      });
       return {
         items: rows.map((row) => ({
           memoReceiveId: row.id,
@@ -612,7 +644,7 @@ export class MemoOutstandingService {
           openValue: dec(row.open_value).toFixed(2),
           ...purchaseBuckets(row),
         })),
-        total: Number(counted[0]?.total ?? 0),
+        total,
         page: input.page,
         pageSize: input.pageSize,
       };
@@ -634,8 +666,7 @@ export class MemoOutstandingService {
         JOIN "partner"."memo_receive" r ON r.id = s.memo_receive_id
         JOIN "partner"."memo_receive_line" l ON l.id = s.memo_receive_line_id
         WHERE r.status = ${APPROVED} AND r.deleted_at IS NULL AND r.id IN (${Prisma.join(ids)})
-          AND EXISTS (SELECT 1 FROM "partner"."memo_stock" o WHERE o.memo_receive_id = r.id
-            AND (o.received_pcs - o.returned_pcs - o.purchased_pcs > 0 OR o.received_weight_ct - o.returned_weight_ct - o.purchased_weight_ct > 0))
+          AND ${PU_HAS_BALANCE}
         ORDER BY r.doc_no ASC, r.id ASC, l.position ASC`);
       return {
         items: rows.map((row) => ({

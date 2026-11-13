@@ -6,7 +6,7 @@ import { sendAndApprove, setApproval, submitted } from "../partner-shared/approv
 /**
  * IT-PU-B01…B06 (purchase SA rev 1 / ADR-0042, owner 2026-11-04) against real PostgreSQL: the migration's columns,
  * CHECKs and partial uniques; Memo Stock and Purchase Order approval under row locks with the over-pull guard; the
- * document lifecycle with Document Setup numbers and shared-counter Stock IDs; the Memo Stock picker; and the
+ * document lifecycle with Document Setup numbers and Stock IDs (STOCK lines only, ADR-0051); the Memo Stock picker; and the
  * 200-line approve measurement.
  *
  * Opt-in like the other DB integrations (INV-20261021-007): runs only with `PARTNER_TEST_DATABASE_URL` pointing at a
@@ -153,7 +153,6 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     const { DocumentSetupService } = await import("../../src/document-setup/document-setup.service");
     ({ isCheckViolation } = await import("../../src/purchase/purchase.errors"));
     purchase = new PurchaseService();
-    purchase.clock = clock;
     receive = new MemoReceiveService();
     receive.clock = clock;
     order = new PurchaseOrderService();
@@ -193,7 +192,7 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     vi.unstubAllEnvs();
   });
 
-  it("IT-PU-B01 migration: purchased_* default 0, memo_stock_purchased_check, line source CHECKs and the partial uniques", async () => {
+  it("IT-PU-B01 migration: purchased_* default 0, memo_stock_purchased_check, line source / Stock ID CHECKs and the partial uniques", async () => {
     const { items: [item] } = await approvedStock(vendorA, [receiveLine()]);
     expect(item).toMatchObject({ purchasedPcs: 0, soldPcs: 0 });
     expect(item.purchasedWeightCt.toFixed(3)).toBe("0.000");
@@ -206,7 +205,7 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
 
     const saved = await purchase.create(ACTOR, purchaseInput(vendorA, [manualLine()]));
     const insert = (values: Record<string, string>) => {
-      const row = { id: `'${randomUUID()}'`, purchase_id: `'${saved.id}'`, position: "50", source: "'MANUAL'", stock_id: `'${randomUUID().slice(0, 6)}'`, pcs: "1", weight_ct: "1",
+      const row = { id: `'${randomUUID()}'`, purchase_id: `'${saved.id}'`, position: "50", source: "'MANUAL'", stock_id: "NULL", pcs: "1", weight_ct: "1",
         price_unit: "'PER_CT'", unit_price: "1", amount: "1", ...values };
       return sqlState(`INSERT INTO "partner"."purchase_line" (${Object.keys(row).join(", ")}) VALUES (${Object.values(row).join(", ")})`);
     };
@@ -217,19 +216,22 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     expect(await insert({ position: "54", source: "'STOCK'", memo_stock_id: `'${item.id}'`, memo_group: "'RESERVED'" })).toBe("23514");
     expect(await insert({ position: "55", pcs: "0", weight_ct: "0" })).toBe("23514");
     expect(await insert({ position: "56", unit_price: "0" })).toBe("23514");
-    // Issued Stock IDs never repeat; a STOCK line repeats its item's id freely; one item × group and one PO line per document.
-    const issued = (await prisma.purchaseLine.findFirstOrThrow({ where: { purchaseId: saved.id, position: 1 } })).stockId;
-    expect(await insert({ position: "57", stock_id: `'${issued}'` })).toBe("23505");
+    // ADR-0051 purchase_line_stock_id_source_check: a Stock ID exactly on STOCK lines; MANUAL / PO lines repeat NULL freely.
+    // A STOCK line repeats its item's id freely; one item × group and one PO line per document.
+    expect((await prisma.purchaseLine.findFirstOrThrow({ where: { purchaseId: saved.id, position: 1 } })).stockId).toBeNull();
+    expect(await insert({ position: "57", stock_id: "'759999'" })).toBe("23514");
+    expect(await insert({ position: "63" })).toBe("accepted");
+    expect(await insert({ position: "64", source: "'STOCK'", memo_stock_id: `'${item.id}'`, memo_group: "'MERGED'" })).toBe("23514");
     expect(await insert({ position: "58", source: "'STOCK'", memo_stock_id: `'${item.id}'`, memo_group: "'IN_STOCK'", stock_id: `'${item.stockId}'` })).toBe("accepted");
     expect(await insert({ position: "59", source: "'STOCK'", memo_stock_id: `'${item.id}'`, memo_group: "'SOLD'", stock_id: `'${item.stockId}'` })).toBe("accepted");
     expect(await insert({ position: "60", source: "'STOCK'", memo_stock_id: `'${item.id}'`, memo_group: "'IN_STOCK'", stock_id: `'${item.stockId}'` })).toBe("23505");
     const po = await approvedOrder(vendorA, [orderLine()]);
     expect(await insert({ position: "61", source: "'PURCHASE_ORDER'", purchase_order_line_id: `'${po.lineIds[0]}'` })).toBe("accepted");
     expect(await insert({ position: "62", source: "'PURCHASE_ORDER'", purchase_order_line_id: `'${po.lineIds[0]}'` })).toBe("23505");
-    // Indexes exist with their partial predicates.
+    // Indexes exist with their partial predicates; the issued-Stock-ID unique is gone (ADR-0051).
     const indexes = await prisma.$queryRawUnsafe<{ indexname: string; indexdef: string }[]>(
       `SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'partner' AND indexname IN ('memo_stock_sold_open_idx', 'purchase_order_line_open_idx', 'purchase_line_issued_stock_id_key')`);
-    expect(indexes.map((row) => row.indexname).sort()).toEqual(["memo_stock_sold_open_idx", "purchase_line_issued_stock_id_key", "purchase_order_line_open_idx"]);
+    expect(indexes.map((row) => row.indexname).sort()).toEqual(["memo_stock_sold_open_idx", "purchase_order_line_open_idx"]);
     expect(indexes.find((row) => row.indexname === "memo_stock_sold_open_idx")!.indexdef).toMatch(/WHERE \(\(sold_pcs > purchased_pcs\) OR \(sold_weight_ct > purchased_weight_ct\)\)/);
     await purchase.delete(ACTOR, saved.id, 1);
   });
@@ -296,9 +298,9 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     expect((await picker()).counts).toEqual({ all: 2, open: 2, partlyPurchased: 0 });
 
     const saved = await purchase.create(ACTOR, purchaseInput(vendorA, [poLine(l1, 4, "1.5")]));
-    expect(saved.stockIds[0]).toMatch(new RegExp(`^${YEAR}\\d{4}$`));
+    expect(saved.stockIds).toEqual([null]);
     const line = (await purchase.get(saved.id)).lines[0];
-    expect(line).toMatchObject({ source: "PURCHASE_ORDER", purchaseOrderLineId: l1, stone: "Sapphire", location: "Safe A", priceUnit: "PER_PCS", limitPcs: 10, limitWeightCt: "4.000",
+    expect(line).toMatchObject({ source: "PURCHASE_ORDER", stockId: null, purchaseOrderLineId: l1, stone: "Sapphire", location: "Safe A", priceUnit: "PER_PCS", limitPcs: 10, limitWeightCt: "4.000",
       purchaseOrder: { id: po.id, docNo: po.docNo, position: 1 }, discount: { type: "NONE" } });
     expect(await poPurchased(l1)).toEqual([0, "0.000"]);
     await sendAndApprove(purchase, ACTOR, saved.id, 1);
@@ -333,16 +335,14 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     expect((await failure(order.update(ACTOR, po.id, 3, { ...header(vendorA), lines: [orderLine()] } as never))).code).toBe("PURCHASE_ORDER_STATUS_INVALID");
   });
 
-  it("IT-PU-B04 lifecycle: numbers, Stock IDs kept by line id, version guard, delete pending only, approve read-only, Document Setup used", async () => {
+  it("IT-PU-B04 lifecycle: numbers, Stock IDs on STOCK lines only (ADR-0051), line ids kept, version guard, delete pending only, approve read-only, Document Setup used", async () => {
     const { items: [item] } = await approvedStock(vendorA, [receiveLine({ lot: "LC" })]);
     const po = await approvedOrder(vendorA, [orderLine()]);
     const preview = await purchase.nextNumber("2026-11-04");
     const saved = await purchase.create(ACTOR, purchaseInput(vendorA, [manualLine(), stockLine(item.id, "IN_STOCK", 1, "0.5"), poLine(po.lineIds[0], 1, "0.4")]));
     expect(saved.docNo).toMatch(/^PU-\d+$/);
     expect(saved.docNo).toBe(preview.docNo);
-    expect(saved.stockIds[1]).toBe(item.stockId);
-    expect(saved.stockIds[0]).toMatch(new RegExp(`^${YEAR}\\d{4}$`));
-    expect(saved.stockIds[2]).toMatch(new RegExp(`^${YEAR}\\d{4}$`));
+    expect(saved.stockIds).toEqual([null, item.stockId, null]);
     const plain = await purchase.create(ACTOR, purchaseInput(vendorA, [manualLine()], { docDate: "2025-06-01", dueDate: "2025-06-30" }));
     expect(plain.docNo).toMatch(/^\d+$/);
 
@@ -352,9 +352,10 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
       manualLine({ id: manualId, pcs: 2 }), poLine(po.lineIds[0], 2, "0.8", { id: poLineId }), stockLine(item.id, "IN_STOCK", 1, "0.5", { id: stockLineId }), manualLine({ stone: "New" }),
     ]));
     expect(updated.version).toBe(2);
-    expect(updated.stockIds.slice(0, 3)).toEqual([saved.stockIds[0], saved.stockIds[2], item.stockId]);
-    expect(updated.stockIds[3]).not.toBe(saved.stockIds[0]);
-    expect((await purchase.get(saved.id)).lines.slice(0, 2).map((line) => line.id)).toEqual([manualId, poLineId]);
+    expect(updated.stockIds).toEqual([null, null, item.stockId, null]);
+    const reloaded = await purchase.get(saved.id);
+    expect(reloaded.lines.slice(0, 2).map((line) => line.id)).toEqual([manualId, poLineId]);
+    expect(reloaded.lines.map((line) => [line.source, line.stockId])).toEqual([["MANUAL", null], ["PURCHASE_ORDER", null], ["STOCK", item.stockId], ["MANUAL", null]]);
     expect(await failure(purchase.update(ACTOR, saved.id, 1, purchaseInput(vendorA, [manualLine()])))).toMatchObject({ status: 409, code: "PURCHASE_CHANGED" });
 
     const listed = await purchase.list({ partyId: vendorA.id, status: "DRAFT", q: saved.docNo, limit: 50, deleted: false });
@@ -545,5 +546,81 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     expect((await outstanding.purchaseList({ ...filters, page: 1, pageSize: 10 })).total).toBe(0);
     expect((await outstanding.purchaseItems({ memoReceiveIds: [receiveId] })).items).toEqual([]);
     expect(await outstanding.purchaseSummary(filters)).toMatchObject({ documents: 0, grandTotal: "0.00" });
+  });
+
+  // ADR-0051 (owner 2026-11-13): Purchase no longer takes numbers from the shared counter, so Memo Receive is its only
+  // user again (INV-20261113-001 Part B resolved by design). Uses year 76 (free in every DB suite); its row is removed.
+  it("IT-PU-B09 Purchase does not move the shared Stock ID counter: Memo Receive 769999 → 770000 around a MANUAL / PO purchase", async () => {
+    const at76 = () => new Date("2076-06-01T03:00:00Z");
+    receive.clock = at76;
+    try {
+      await prisma.memoStockIdCounter.deleteMany({ where: { year: 76 } });
+      await prisma.memoStockIdCounter.create({ data: { year: 76, lastNo: 9_998 } });
+      const po = await approvedOrder(vendorA, [orderLine()]);
+      const memo = await receive.create(ACTOR, { ...header(vendorA), lines: [receiveLine()] } as never);
+      const bought = await purchase.create(ACTOR, purchaseInput(vendorA, [manualLine(), poLine(po.lineIds[0], 1, "0.1"), manualLine({ lot: "M-2" })]));
+      expect(bought.stockIds).toEqual([null, null, null]);
+      expect((await prisma.memoStockIdCounter.findUnique({ where: { year: 76 } }))?.lastNo).toBe(9_999);
+      const later = await receive.create(ACTOR, { ...header(vendorA), lines: [receiveLine()] } as never);
+      expect([...memo.stockIds, ...later.stockIds]).toEqual(["769999", "770000"]);
+      expect((await prisma.memoStockIdCounter.findUnique({ where: { year: 76 } }))?.lastNo).toBe(10_000);
+    } finally {
+      receive.clock = clock;
+      await prisma.memoStockIdCounter.deleteMany({ where: { year: 76 } });
+    }
+  });
+
+  // ADR-0051 migration 20261113110000: replayed on the pre-migration shape inside a transaction that is rolled back.
+  it("IT-PU-B10 migration 20261113110000 clears MANUAL / PO Stock IDs, keeps STOCK ones, adds the CHECK and drops the issued unique", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const { items: [item] } = await approvedStock(vendorA, [receiveLine({ lot: "MIG" })]);
+    const po = await approvedOrder(vendorA, [orderLine()]);
+    const saved = await purchase.create(ACTOR, purchaseInput(vendorA, [manualLine(), stockLine(item.id, "IN_STOCK", 1, "0.5"), poLine(po.lineIds[0], 1, "0.1")]));
+    const sql = await readFile(join(process.cwd(), "prisma/migrations/20261113110000_purchase_line_stock_id_nullable/migration.sql"), "utf8");
+    const statements = sql.split("\n").filter((line) => !line.startsWith("--")).join("\n").split(";").map((part) => part.trim()).filter(Boolean);
+    expect(statements).toHaveLength(4);
+    type Seen = { lines: { source: string; stock_id: string | null }[]; leftover: number; shape: { nullable: string; check: string | null; idx: string | null } };
+    const rollback = new Error("rollback") as Error & { result?: Seen };
+    const seen = await prisma.$transaction(async (tx) => {
+      // Pre-migration shape (rev 1): issued ids on the non-STOCK rows, NOT NULL and the partial unique.
+      await tx.$executeRawUnsafe(`ALTER TABLE "partner"."purchase_line" DROP CONSTRAINT "purchase_line_stock_id_source_check"`);
+      await tx.$executeRawUnsafe(`UPDATE "partner"."purchase_line" SET stock_id = 'R' || substr(md5(id::text), 1, 9) WHERE stock_id IS NULL`);
+      await tx.$executeRawUnsafe(`ALTER TABLE "partner"."purchase_line" ALTER COLUMN stock_id SET NOT NULL`);
+      await tx.$executeRawUnsafe(`CREATE UNIQUE INDEX "purchase_line_issued_stock_id_key" ON "partner"."purchase_line"("stock_id") WHERE ("source" <> 'STOCK')`);
+      for (const statement of statements) await tx.$executeRawUnsafe(statement);
+      const lines = await tx.$queryRawUnsafe<{ source: string; stock_id: string | null }[]>(
+        `SELECT source, stock_id FROM "partner"."purchase_line" WHERE purchase_id = '${saved.id}' ORDER BY position`);
+      const leftover = await tx.$queryRawUnsafe<{ n: bigint }[]>(`SELECT count(*) AS n FROM "partner"."purchase_line" WHERE (source = 'STOCK') <> (stock_id IS NOT NULL)`);
+      const shape = await tx.$queryRawUnsafe<Seen["shape"][]>(`
+        SELECT (SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'partner' AND table_name = 'purchase_line' AND column_name = 'stock_id') AS nullable,
+               (SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'purchase_line_stock_id_source_check') AS "check",
+               (SELECT indexname FROM pg_indexes WHERE schemaname = 'partner' AND indexname = 'purchase_line_issued_stock_id_key') AS idx`);
+      rollback.result = { lines, leftover: Number(leftover[0].n), shape: shape[0] };
+      throw rollback;
+    }).catch((error: unknown) => {
+      if (error !== rollback || !rollback.result) throw error;
+      return rollback.result;
+    });
+    expect(seen.lines).toEqual([{ source: "MANUAL", stock_id: null }, { source: "STOCK", stock_id: item.stockId }, { source: "PURCHASE_ORDER", stock_id: null }]);
+    expect(seen.leftover).toBe(0);
+    expect(seen.shape.nullable).toBe("YES");
+    expect(seen.shape.check).toMatch(/\(\(source\)::text = 'STOCK'::text\) = \(stock_id IS NOT NULL\)/);
+    expect(seen.shape.idx).toBeNull();
+    // The transaction rolled back: the applied schema (CHECK present, no issued unique) is unchanged.
+    expect(await sqlState(`UPDATE "partner"."purchase_line" SET stock_id = '759998' WHERE purchase_id = '${saved.id}' AND source = 'MANUAL'`)).toBe("23514");
+  });
+
+  // ADR-0051: Approve Center search by Stock ID matches STOCK rows only; a purchase with MANUAL rows is still found by stone.
+  it("IT-PU-B11 approval.pending search: Stock ID matches the STOCK line's id; MANUAL rows (null Stock ID) match by stone only", async () => {
+    const { ApprovalService } = await import("../../src/approval/approval.service");
+    const { approvalPendingInputSchema } = await import("../../src/approval/approval.schemas");
+    const approval = new ApprovalService();
+    const { items: [item] } = await approvedStock(vendorA, [receiveLine({ lot: "APS" })]);
+    const withStock = await submitted(purchase, ACTOR, await purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(item.id, "IN_STOCK", 1, "0.5")])));
+    const manualOnly = await submitted(purchase, ACTOR, await purchase.create(ACTOR, purchaseInput(vendorA, [manualLine({ stone: "ZirconADR51" })])));
+    const ids = async (q: string) => (await approval.pending(approvalPendingInputSchema.parse({ type: "purchase", q, limit: 50 }))).items.map((row) => row.id);
+    expect(await ids(item.stockId)).toEqual([withStock.id]);
+    expect(await ids("ZirconADR51")).toEqual([manualOnly.id]);
   });
 });

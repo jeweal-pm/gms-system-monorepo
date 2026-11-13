@@ -85,9 +85,9 @@ describe("takeForPurchase (UT-PU-B03)", () => {
     expect(queries[0].values).toEqual([[P]]);
     expect(queries[1].sql).toMatch(/FROM "partner"\."purchase_order"\s+WHERE id = ANY\(\$?\??[^)]*\) ORDER BY id FOR SHARE/);
     expect(queries[1].values).toEqual([[PO]]);
-    expect(queries[2].sql).toMatch(/FROM "partner"\."memo_stock"[\s\S]*ORDER BY id FOR UPDATE/);
+    expect(queries[2].sql).toMatch(/FROM "partner"\."memo_stock"[\s\S]*ORDER BY id FOR NO KEY UPDATE/);
     expect(queries[2].values).toEqual([[A, B]]);
-    expect(queries[3].sql).toMatch(/purchase_order_line[\s\S]*ORDER BY l\.id FOR UPDATE OF l/);
+    expect(queries[3].sql).toMatch(/purchase_order_line[\s\S]*ORDER BY l\.id FOR NO KEY UPDATE OF l/);
     expect(updates).toHaveLength(2);
     expect(updates[0].sql).toMatch(/UPDATE "partner"\."memo_stock"[\s\S]*pending_pcs = s\.pending_pcs - r\.in_pcs[\s\S]*sold_pcs = s\.sold_pcs \+ r\.in_pcs[\s\S]*purchased_pcs = s\.purchased_pcs \+ r\.in_pcs \+ r\.sold_pcs/);
     // A: IN_STOCK 1 / 0.5 and SOLD 3 / 3 in one VALUES row; B: IN_STOCK 2 / 2.

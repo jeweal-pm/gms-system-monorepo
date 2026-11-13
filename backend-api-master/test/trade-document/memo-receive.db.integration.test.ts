@@ -183,7 +183,7 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     expect((await receive.list({ partyId: vendorA.id, status: "APPROVED", limit: 50, deleted: false })).items.map((item) => item.id)).not.toContain(result.id);
   });
 
-  it("IT-MR-02 Stock ID year = year of the save (not the Doc Date); parallel saves never duplicate; 9,999 per year then EXHAUSTED", async () => {
+  it("IT-MR-02 Stock ID year = year of the save (not the Doc Date); parallel saves never duplicate", async () => {
     receive.clock = clockAt(2051);
     expect((await receive.create(ACTOR, input(vendorA, [line()], { docDate: "2026-12-31", dueDate: "2026-12-31" }))).stockIds).toEqual(["510001"]);
     receive.clock = clockAt(2052);
@@ -194,15 +194,42 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     expect(parallel.flatMap((entry) => entry.stockIds).sort()).toEqual(["530001", "530002", "530003", "530004"]);
     expect(new Set(parallel.map((entry) => entry.docNo)).size).toBe(2);
 
-    receive.clock = clockAt(2054);
-    await prisma.memoStockIdCounter.create({ data: { year: 54, lastNo: 9_998 } });
+  });
+
+  // INV-20261029-002 / owner Q-MR-09 (2026-11-13): no 9,999 ceiling — 579999 → 580000; Stock IDs stay unique across years.
+  // Years 57–59 run after 50–56 are seeded (the floor reads only earlier years), so IT-MR-03 (year 55) is unaffected.
+  it("IT-MR-02b past 9,999 the number carries into the next prefix; the next year starts after the greatest issued; parallel stays unique", async () => {
+    receive.clock = clockAt(2057);
+    await prisma.memoStockIdCounter.create({ data: { year: 57, lastNo: 9_998 } });
+    expect((await receive.create(ACTOR, input(vendorA, [line(), line(), line()]))).stockIds).toEqual(["579999", "580000", "580001"]);
+    expect((await receive.create(ACTOR, input(vendorA, [line()]))).stockIds).toEqual(["580002"]);
+    expect((await prisma.memoStockIdCounter.findUnique({ where: { year: 57 } }))?.lastNo).toBe(10_002);
+
+    // 2057 ran into 580002, so 2058 starts at 580003 (not 580001), and an approved copy keeps the 6-digit id.
+    receive.clock = clockAt(2058);
+    const next = await receive.create(ACTOR, input(vendorA, [line(), line()]));
+    expect(next.stockIds).toEqual(["580003", "580004"]);
+    expect((await prisma.memoStockIdCounter.findUnique({ where: { year: 58 } }))?.lastNo).toBe(4);
+
+    // A year that the previous one did not reach starts at …0001 as before.
+    receive.clock = clockAt(2059);
+    expect((await receive.create(ACTOR, input(vendorA, [line()]))).stockIds).toEqual(["590001"]);
+
+    // Parallel saves across the 9,999 boundary never duplicate.
+    await prisma.memoStockIdCounter.update({ where: { year: 59 }, data: { lastNo: 9_998 } });
+    const parallel = await Promise.all([receive.create(ACTOR, input(vendorA, [line(), line()])), receive.create(ACTOR, input(vendorA, [line(), line()]))]);
+    expect(parallel.flatMap((entry) => entry.stockIds).sort()).toEqual(["599999", "600000", "600001", "600002"]);
+    const saved = await prisma.memoReceiveLine.findMany({ where: { document: { vendorId: vendorA.id } }, select: { stockId: true } });
+    expect(new Set(saved.map((row) => row.stockId)).size).toBe(saved.length);
+
+    // Only the INTEGER limit still refuses; nothing is written and the counter is unchanged.
+    const { STOCK_NO_MAX } = await import("../../src/trade-document/memo-receive.service");
+    await prisma.memoStockIdCounter.update({ where: { year: 59 }, data: { lastNo: STOCK_NO_MAX - 1 } });
     const before = await prisma.memoReceive.count({ where: { vendorId: vendorA.id } });
     expect(await failure(receive.create(ACTOR, input(vendorA, [line(), line()])))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STOCK_ID_EXHAUSTED" });
     expect(await prisma.memoReceive.count({ where: { vendorId: vendorA.id } })).toBe(before);
-    expect((await prisma.memoStockIdCounter.findUnique({ where: { year: 54 } }))?.lastNo).toBe(9_998);
-    expect((await receive.create(ACTOR, input(vendorA, [line()]))).stockIds).toEqual(["549999"]);
-    expect(await failure(receive.create(ACTOR, input(vendorA, [line()])))).toMatchObject({ status: 409, code: "MEMO_RECEIVE_STOCK_ID_EXHAUSTED" });
-    expect(await prisma.memoReceive.count({ where: { vendorId: vendorA.id } })).toBe(before + 1);
+    expect((await prisma.memoStockIdCounter.findUnique({ where: { year: 59 } }))?.lastNo).toBe(STOCK_NO_MAX - 1);
+    await prisma.memoStockIdCounter.update({ where: { year: 59 }, data: { lastNo: 10_002 } });
   });
 
   it("IT-MR-03 update keeps Stock IDs of lines sent with id, numbers new lines, never reuses removed numbers; a foreign id is unknown_line", async () => {
