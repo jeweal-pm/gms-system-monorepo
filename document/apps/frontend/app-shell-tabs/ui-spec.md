@@ -44,6 +44,13 @@ Source 02 shows the strip empty with the count and Close all disabled: the state
 | ID | Rule |
 |---|---|
 | T-01 | **One tab per page** (Q-TAB-01). A tab is identified by its URL path; its query (e.g. memo outstanding filters) stays with the tab and comes back when switching to it. Opening a page that already has a tab (sidebar, link, breadcrumb, Create New, a daybook entry) switches to that tab and keeps its data. A different saved document (`/memo/memo-out/A` vs `/memo/memo-out/B`) is a different tab. |
+| T-01b | **Where a tab opens** (owner 2026-11-16).
+
+- **Opens or switches tabs:** only the sidebar (with its rail and context panel) and the notification panel.
+- **Moves the shown tab:** every other navigation shows its page in the shown tab. This covers a daybook row, Create New, a document link and Back/Forward.
+- **Page that already has a tab:** that tab is shown instead.
+- **Unsaved changes:** a tab with unsaved changes is never moved; the link opens another tab as before.
+- **Example:** Purchase opened from the sidebar, then a document picked from its daybook, stays one tab. Clicking Purchase in the sidebar again opens a new tab. |
 | T-02 | **Kept alive.** Hidden tabs stay mounted in the browser (React `Activity`, ADR-0037). Their typed data, row panels, pickers and scroll position stay; their background work (timers, listeners, live queries) pauses until shown again. |
 | T-03 | **Titles.** The page's name from its last breadcrumb (e.g. "Stone Code", "Memo Out"). A saved document adds its number: "Memo Out · MO-1"; a new one shows "New Memo Out". |
 | T-04 | **Limit 15** (Q-TAB-02). **Revised 2026-11-16 (owner):**

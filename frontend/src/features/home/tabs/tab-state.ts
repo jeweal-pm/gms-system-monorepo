@@ -119,6 +119,22 @@ export function undoEviction(state: TabsState, evicted: { tab: Tab; index: numbe
   return { tabs, activeId };
 }
 
+/**
+ * Owner 2026-11-16: a link inside a page (a daybook row, Create New, a document number) moves the shown tab to that
+ * page instead of opening another tab; only the sidebar opens or switches tabs (`openUrl`). A page that already has
+ * a tab still switches to it (one tab per page, T-01). `null` when there is no shown tab to move (Home) or the URL
+ * is Home or outside the app, so the caller falls back to `openUrl`.
+ */
+export function navigateInTab(state: TabsState, url: string, title: string, now = Date.now()): TabsState | null {
+  const path = tabPath(url);
+  if (path === HOME_PATH || !isTabPath(path)) return null;
+  const shown = activeTab(state);
+  if (!shown) return null;
+  const other = state.tabs.find((tab) => tab.path === path);
+  if (other) return { activeId: other.id, tabs: state.tabs.map((tab) => (tab.id === other.id ? { ...tab, url, usedAt: now } : tab)) };
+  return { ...state, tabs: state.tabs.map((tab) => (tab.id === shown.id ? { ...tab, path, url, title, usedAt: now } : tab)) };
+}
+
 /** Showing a tab marks it used (owner 2026-11-16, least recently used order). */
 export function touchTab(state: TabsState, id: string, now = Date.now()): TabsState {
   if (!state.tabs.some((tab) => tab.id === id)) return state;

@@ -13,6 +13,7 @@ import {
   emptyTabs,
   fallbackTitle,
   MAX_TABS,
+  navigateInTab,
   openUrl,
   parseStoredTabs,
   retargetTab,
@@ -150,6 +151,38 @@ describe("tab list (app-shell-tabs UI rev 1)", () => {
     expect(navigationLabelFor("/setup/vendor")).toBe("Vendor");
     expect(navigationLabelFor("/no/such/page")).toBeUndefined();
     expect(readFileSync("src/features/home/tabs/tab-host.tsx", "utf8")).toContain("return navigationLabelFor(path) ?? fallbackTitle(path);");
+  });
+
+  it("UT-TAB-18 (owner 2026-11-16) a link inside a page moves the shown tab; only the sidebar opens tabs", () => {
+    const state = openAll(["/setup", "/purchase-order/purchase"]);
+    const shown = state.activeId;
+    // Daybook row → the Purchase tab shows that document; no new tab.
+    const moved = navigateInTab(state, "/purchase-order/purchase/PU-1", "Purchase", 900)!;
+    expect(moved.tabs).toHaveLength(2);
+    expect(moved.activeId).toBe(shown);
+    expect(moved.tabs.find((tab) => tab.id === shown)).toMatchObject({ path: "/purchase-order/purchase/PU-1", url: "/purchase-order/purchase/PU-1", title: "Purchase", usedAt: 900 });
+    // Create New → back to the new form in the same tab
+    expect(titles(navigateInTab(moved, "/purchase-order/purchase", "Purchase")!)).toEqual(["/setup", "/purchase-order/purchase"]);
+    // a page that already has a tab switches to it (one tab per page); the shown tab stays as it was
+    const toSetup = navigateInTab(moved, "/setup?x=1", "Setup")!;
+    expect(activePath(toSetup)).toBe("/setup");
+    expect(toSetup.tabs.find((tab) => tab.path === "/setup")?.url).toBe("/setup?x=1");
+    expect(titles(toSetup)).toEqual(["/setup", "/purchase-order/purchase/PU-1"]);
+    // nothing to move from Home, and Home / login are not tab pages
+    expect(navigateInTab({ ...state, activeId: "" }, "/pre-sale/quotation", "Quotation")).toBeNull();
+    expect(navigateInTab(state, "/", "Home")).toBeNull();
+    expect(navigateInTab(state, "/login", "Login")).toBeNull();
+  });
+
+  it("UT-TAB-19 the sidebar, rail, context panel and notification panel are the clicks that open tabs", async () => {
+    const { OPENS_TAB_SELECTOR } = await import("@/features/home/tabs/tab-host");
+    expect(OPENS_TAB_SELECTOR).toBe("#app-sidebar a[href], [data-opens-tab] a[href], [data-opens-tab] button");
+    expect(readFileSync("src/features/notifications/components/NotificationsBell.tsx", "utf8")).toMatch(/role="dialog"\s*\/\/[^\n]*\n\s*data-opens-tab/);
+    const host = readFileSync("src/features/home/tabs/tab-host.tsx", "utf8");
+    // unsaved changes keep their tab: the link opens another tab as before
+    expect(host).toContain("if (!fromShell && shown && !metaRef.current[shown.id]?.dirty) {");
+    // a moved tab starts its new page fresh
+    expect(host).toContain("<TabPane key={tab.path} tabId={tab.id} controls={controls}>");
   });
 
   it("UT-TAB-16 the count box turns red at 15 tabs (owner design 2026-11-16)", () => {

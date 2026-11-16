@@ -14,6 +14,7 @@ import {
   fallbackTitle,
   HOME_PATH,
   HOME_TITLE,
+  navigateInTab,
   openUrl,
   parseStoredTabs,
   retargetTab,
@@ -80,6 +81,14 @@ const newTabId = () => `tab-${++tabCounter}`;
 function currentUrl() {
   return `${window.location.pathname}${window.location.search}`;
 }
+
+/**
+ * Owner 2026-11-16: clicks that open (or switch to) a tab: the sidebar, its rail and context panel, and anything marked
+ * `data-opens-tab` (the notification panel). Every other navigation moves the shown tab.
+ */
+export const OPENS_TAB_SELECTOR = "#app-sidebar a[href], [data-opens-tab] a[href], [data-opens-tab] button";
+/** The navigation a shell click starts arrives within this time; later ones are in-page navigation. */
+const SHELL_CLICK_WINDOW_MS = 2_000;
 
 /** A new tab's name until its page names itself: the sidebar label ("Merge/Split"), else the path in words. */
 function firstTitle(url: string): string {
@@ -168,12 +177,39 @@ export function TabsProvider({ userId, children }: Readonly<{ userId: string; ch
     if (initial.outcome === "evicted" && initial.evicted) announceEviction(initial.evicted, activeTab(initial.state), initial.previousActiveId);
   }, [initial, refuse, announceEviction]);
 
+  // Owner 2026-11-16: only the sidebar (and the notification panel) opens tabs. A click there is remembered for the
+  // navigation it starts; any other navigation (a link inside the page, Back/Forward) stays in the shown tab.
+  const shellClickAt = useRef(0);
+  useEffect(() => {
+    const onClick = (event: MouseEvent) => {
+      if (event.target instanceof Element && event.target.closest(OPENS_TAB_SELECTOR)) shellClickAt.current = Date.now();
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, []);
+
   // T-01 / T-08: every later navigation shows the page at the URL in its tab.
   useEffect(() => {
     if (signingOut || syncedPath.current === pathname) return;
     syncedPath.current = pathname;
     const url = currentUrl();
     const before = stateRef.current;
+    const fromShell = Date.now() - shellClickAt.current < SHELL_CLICK_WINDOW_MS;
+    shellClickAt.current = 0;
+    const shown = activeTab(before);
+    // A tab with unsaved changes is never moved away from its page: the link opens another tab as before.
+    if (!fromShell && shown && !metaRef.current[shown.id]?.dirty) {
+      const moved = navigateInTab(before, url, firstTitle(url));
+      if (moved) {
+        const after = moved.tabs.find((tab) => tab.id === shown.id);
+        if (moved.activeId === shown.id && after && after.path !== shown.path) {
+          // The tab shows another page now: the old page's kept element and its reports go.
+          forgetRef.current([shown]);
+        }
+        commit(moved);
+        return;
+      }
+    }
     const keep = new Set(Object.entries(metaRef.current).filter(([, entry]) => entry.dirty).map(([id]) => id));
     const result = openUrl(before, url, firstTitle(url), newTabId(), { keep });
     if (result.outcome === "limit") {
@@ -364,7 +400,8 @@ export function TabPanels({ children }: Readonly<{ children: ReactNode }>) {
         if (!entry) return null;
         return (
           <Activity key={tab.id} mode={tab.id === state.activeId ? "visible" : "hidden"} name={tab.path}>
-            <TabPane tabId={tab.id} controls={controls}>{entry.element}</TabPane>
+            {/* Keyed by path too: a tab moved to another page (owner 2026-11-16) starts that page fresh. */}
+            <TabPane key={tab.path} tabId={tab.id} controls={controls}>{entry.element}</TabPane>
           </Activity>
         );
       })}
