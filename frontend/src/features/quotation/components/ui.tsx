@@ -4,7 +4,9 @@
 import { DateInput, isBeforeDate } from "@/components/ui/date-input";
 import { Check, ChevronDown, X } from "lucide-react";
 import {
+  createContext,
   forwardRef,
+  useContext,
   useEffect,
   useId,
   useRef,
@@ -66,6 +68,20 @@ export function IconButton({ className, label, ...props }: ButtonHTMLAttributes<
   );
 }
 
+/**
+ * Owner 2026-11-16: a Field showing an error tells the control inside it, so every required text, number, date,
+ * dropdown or autocomplete box turns red with its label and message (before, only controls given `aria-invalid` by
+ * hand did). A control's own `aria-invalid` / `invalid` still wins.
+ */
+const FieldInvalidContext = createContext(false);
+
+/** `aria-invalid` for a control: its own value, else its Field's error state. */
+function useFieldInvalid(own: boolean | "true" | "false" | "grammar" | "spelling" | undefined): true | undefined {
+  const fromField = useContext(FieldInvalidContext);
+  if (own !== undefined) return own === true || own === "true" ? true : undefined;
+  return fromField || undefined;
+}
+
 export function Field({
   label,
   required,
@@ -104,7 +120,7 @@ export function Field({
         {label}
         {required && <span className="text-gms-danger"> *</span>}
       </span>
-      {children}
+      <FieldInvalidContext.Provider value={Boolean(error)}>{children}</FieldInvalidContext.Provider>
       {error && <span className="mt-1 block pl-4 text-gms-label italic text-gms-danger">{error}</span>}
     </label>
   );
@@ -116,7 +132,8 @@ const controlClass = cx(
   "outline-none focus:border-gms-primary focus:ring-2 focus:ring-gms-primary/20",
   "disabled:cursor-not-allowed disabled:bg-gms-field-disabled disabled:text-gms-checkbox-readonly disabled:hover:border-gms-border",
   // Error look of the shared fields (fieldBoxClass): red border, light red fill; the Field label reads the same state.
-  "aria-[invalid=true]:border-gms-danger aria-[invalid=true]:bg-gms-danger-subtle",
+  // Owner 2026-11-16: it stays red while focused (the primary focus colour no longer covers the error).
+  "aria-[invalid=true]:border-gms-danger aria-[invalid=true]:bg-gms-danger-subtle aria-[invalid=true]:focus:border-gms-danger aria-[invalid=true]:focus:ring-gms-danger/20",
 );
 /**
  * Read-only look for inputs only: a <button> always matches :read-only, so this must not be in controlClass
@@ -126,7 +143,8 @@ const readOnlyInputClass = "read-only:cursor-default read-only:bg-gms-field-disa
 
 export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { compact?: boolean }>(
   function TextInput({ className, compact, ...props }, ref) {
-    return <input ref={ref} className={cx(controlClass, readOnlyInputClass, compact && "h-10 px-3 text-sm", className)} {...props} />;
+    const invalid = useFieldInvalid(props["aria-invalid"]);
+    return <input ref={ref} className={cx(controlClass, readOnlyInputClass, compact && "h-10 px-3 text-sm", className)} {...props} aria-invalid={invalid} />;
   },
 );
 
@@ -207,6 +225,7 @@ export function SelectMenu({
   const rootRef = useRef<HTMLDivElement>(null);
   const listId = useId();
   const selected = options.find((o) => o.value === value);
+  const isInvalid = useFieldInvalid(invalid);
 
   useEffect(() => {
     if (!open) return;
@@ -250,7 +269,7 @@ export function SelectMenu({
         aria-expanded={open}
         aria-controls={listId}
         aria-haspopup="listbox"
-        aria-invalid={invalid || undefined}
+        aria-invalid={isInvalid}
         disabled={disabled}
         onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={onKeyDown}
@@ -258,8 +277,9 @@ export function SelectMenu({
           controlClass,
           "flex items-center justify-between gap-2 text-left",
           compact && "h-10 px-3 text-sm",
-          open && "border-gms-primary ring-2 ring-gms-primary/20",
-          invalid && "border-gms-danger bg-gms-danger-subtle",
+          open && !isInvalid && "border-gms-primary ring-2 ring-gms-primary/20",
+          isInvalid && "border-gms-danger bg-gms-danger-subtle",
+          isInvalid && open && "ring-2 ring-gms-danger/20",
         )}
       >
         <span className={cx("truncate", !selected && "text-gms-text-placeholder")}>{selected?.label ?? placeholder}</span>
@@ -346,6 +366,7 @@ export function AutocompleteInput({
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
   const inactive = disabled || readOnly;
+  const isInvalid = useFieldInvalid(invalid);
 
   const matches = autocompleteMatches(options, query);
   const visible = matches.slice(0, AUTOCOMPLETE_VISIBLE_MAX);
@@ -396,7 +417,7 @@ export function AutocompleteInput({
         aria-autocomplete="list"
         aria-expanded={open}
         aria-controls={listId}
-        aria-invalid={invalid || undefined}
+        aria-invalid={isInvalid}
         disabled={disabled}
         readOnly={readOnly}
         maxLength={maxLength}
@@ -413,7 +434,13 @@ export function AutocompleteInput({
           }
         }}
         onKeyDown={onKeyDown}
-        className={cx(controlClass, readOnlyInputClass, "pr-10", compact && "h-10 px-3 pr-10 text-sm", open && "border-gms-primary ring-2 ring-gms-primary/20")}
+        className={cx(
+          controlClass,
+          readOnlyInputClass,
+          "pr-10",
+          compact && "h-10 px-3 pr-10 text-sm",
+          open && (isInvalid ? "ring-2 ring-gms-danger/20" : "border-gms-primary ring-2 ring-gms-primary/20"),
+        )}
       />
       <button
         type="button"
@@ -480,6 +507,7 @@ export function FormDateInput<T extends FieldValues = FieldValues>({ name, compa
   const min = notBefore ? (watched ?? "") : "";
   const value = (field.value as string | undefined) ?? "";
   const errorMessage = fieldState.error?.message;
+  const invalid = useFieldInvalid(fieldState.error ? true : undefined);
   useEffect(() => {
     if (!notBefore) return;
     if (isBeforeDate(value, min)) {
@@ -496,7 +524,7 @@ export function FormDateInput<T extends FieldValues = FieldValues>({ name, compa
       min={min || undefined}
       onChange={field.onChange}
       onBlur={field.onBlur}
-      aria-invalid={fieldState.error ? true : undefined}
+      aria-invalid={invalid}
       className={cx(controlClass, readOnlyInputClass, compact && "h-10 px-3 text-sm")}
     />
   );
@@ -513,7 +541,7 @@ export function FormSelect<T extends FieldValues = FieldValues>({
   return (
     <SelectMenu
       {...props}
-      invalid={props.invalid ?? Boolean(fieldState.error)}
+      invalid={props.invalid ?? (fieldState.error ? true : undefined)}
       value={(field.value as string | undefined) ?? ""}
       onChange={(v) => {
         field.onChange(v);

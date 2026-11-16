@@ -10,24 +10,26 @@ import {
   STREAM_LOCK,
   startNotificationStream,
   stopNotificationStreams,
+  readNotificationHint,
   type StreamDeps,
 } from "@/features/notifications/stream";
 import { coordinatedRenew, RENEWED_AT_KEY, RENEWED_RECENTLY_MS, RENEWING_KEY, RENEW_LOCK, type RenewCoordination } from "@/lib/domain-trpc-fetch";
 
 /** UT-NT-FE-06…14 (FE-NT-003, INV-20261111-001 fix): the EventSource lifecycle across tabs. */
 class FakeSource {
-  listeners = new Map<string, () => void>();
+  listeners = new Map<string, (event?: { data?: unknown }) => void>();
   onerror: ((event: Event) => void) | null = null;
   closed = false;
   constructor(public url: string) {}
-  addEventListener(type: string, listener: () => void) {
+  addEventListener(type: string, listener: (event?: { data?: unknown }) => void) {
     this.listeners.set(type, listener);
   }
   close() {
     this.closed = true;
   }
-  emit(type: string) {
-    this.listeners.get(type)?.();
+  /** `data` is the SSE event's text, e.g. the server's `{"id":…,"type":…,"documentType":…}`. */
+  emit(type: string, data?: string) {
+    this.listeners.get(type)?.(data === undefined ? undefined : { data });
   }
   fail() {
     this.onerror?.(new Event("error"));
@@ -346,3 +348,47 @@ function fakeSleep(clock: { now: number }) {
 async function settle() {
   for (let i = 0; i < 30; i += 1) await Promise.resolve();
 }
+
+describe("notification hint (owner 2026-11-16: the open pages of that document type refetch)", () => {
+  it("UT-NT-FE-16 the event's ids-only data names the event and document type, here and in the other tabs", () => {
+    const openChannel = fakeBus();
+    const locks = fakeLocks();
+    const tabA = setup({ locks, openChannel });
+    const tabB = setup({ locks, openChannel });
+    const stopA = startNotificationStream(tabA.deps);
+    const stopB = startNotificationStream(tabB.deps);
+    tabA.sources[0].emit("notification", JSON.stringify({ id: "e1", type: "document.approved", documentType: "memo-receive" }));
+    const hint = { type: "document.approved", documentType: "memo-receive" };
+    expect(tabA.deps.onNotification).toHaveBeenLastCalledWith(hint);
+    expect(tabB.deps.onNotification).toHaveBeenLastCalledWith(hint);
+    // Unreadable data still refetches the bell, without a hint.
+    tabA.sources[0].emit("notification", "not json");
+    expect(vi.mocked(tabA.deps.onNotification).mock.lastCall?.[0]).toBeUndefined();
+    expect(tabB.deps.onNotification).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(tabB.deps.onNotification).mock.lastCall?.[0]).toBeUndefined();
+    stopA();
+    stopB();
+  });
+
+  it("UT-NT-FE-17 readNotificationHint accepts only short lower-case names", () => {
+    expect(readNotificationHint('{"type":"approval.pending","documentType":"quotation"}')).toEqual({ type: "approval.pending", documentType: "quotation" });
+    expect(readNotificationHint({ type: "document.rejected", documentType: "purchase-order" })).toEqual({ type: "document.rejected", documentType: "purchase-order" });
+    for (const bad of [undefined, null, "", "{}", '{"type":"x"}', '{"type":"A B","documentType":"quotation"}', `{"type":"x","documentType":"${"a".repeat(80)}"}`, "x".repeat(2_000)]) {
+      expect(readNotificationHint(bad)).toBeUndefined();
+    }
+  });
+
+  it("UT-NT-FE-18 a hint invalidates that document type, the Approve menus, and Memo Stock after an approval", async () => {
+    const { invalidateForNotification } = await import("@/features/notifications/api");
+    const keys: unknown[] = [];
+    const client = { invalidateQueries: vi.fn(async ({ queryKey }: { queryKey: unknown }) => void keys.push(queryKey)) };
+    await invalidateForNotification(client as never, { type: "document.approved", documentType: "memo-receive" });
+    expect(keys).toEqual([[["approval"]], [["memoReceive"]], [["memoStock"]]]);
+    keys.length = 0;
+    await invalidateForNotification(client as never, { type: "approval.pending", documentType: "purchase-order" });
+    expect(keys).toEqual([[["approval"]], [["purchaseOrder"]]]);
+    keys.length = 0;
+    await invalidateForNotification(client as never, undefined);
+    expect(keys).toEqual([[["approval"]]]);
+  });
+});

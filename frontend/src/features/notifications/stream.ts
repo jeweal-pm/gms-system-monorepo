@@ -33,8 +33,11 @@ type LockManagerLike = { request(name: string, options: { signal: AbortSignal },
 export type StreamDeps = {
   createEventSource: (url: string) => EventSourceLike;
   renew: () => Promise<boolean>;
-  /** A committed notification for this user exists. */
-  onNotification: () => void;
+  /**
+   * A committed notification for this user exists. `hint` names its event and document type (from the event's ids-only
+   * data), so the open pages of that type can refetch too (owner 2026-11-16); absent when the data can't be read.
+   */
+  onNotification: (hint?: NotificationHint) => void;
   /** The stream is (re)connected: catch up on anything missed meanwhile. */
   onReady: () => void;
   /** Web Locks; null / absent = this tab streams on its own. */
@@ -50,7 +53,27 @@ export type StreamDeps = {
   random?: () => number;
 };
 
-type RelayMessage = "ready" | "notification";
+/** What a `notification` event says (ids only, ADR-0049 D6): never rendered, only used to pick what to refetch. */
+export type NotificationHint = { type: string; documentType: string };
+const HINT_TEXT = /^[a-z][a-z._-]{0,63}$/;
+
+/** The event's JSON data → its type and document type; anything else (old server, bad data) → undefined. */
+export function readNotificationHint(data: unknown): NotificationHint | undefined {
+  let value: unknown = data;
+  if (typeof data === "string") {
+    if (data.length > 1_024) return undefined;
+    try {
+      value = JSON.parse(data);
+    } catch {
+      return undefined;
+    }
+  }
+  if (typeof value !== "object" || value === null) return undefined;
+  const { type, documentType } = value as { type?: unknown; documentType?: unknown };
+  return typeof type === "string" && typeof documentType === "string" && HINT_TEXT.test(type) && HINT_TEXT.test(documentType) ? { type, documentType } : undefined;
+}
+
+type RelayMessage = "ready" | "notification" | { kind: "notification"; hint: NotificationHint };
 
 const active = new Set<() => void>();
 
@@ -101,9 +124,10 @@ function runStream(deps: StreamDeps, relay: (message: RelayMessage) => void): ()
       deps.onReady();
       relay("ready");
     });
-    next.addEventListener("notification", () => {
-      deps.onNotification();
-      relay("notification");
+    next.addEventListener("notification", (event) => {
+      const hint = readNotificationHint((event as MessageEvent | undefined)?.data);
+      deps.onNotification(hint);
+      relay(hint ? { kind: "notification", hint } : "notification");
     });
     next.addEventListener("reauth", () => {
       // Expected about every 14 minutes; one that comes right after opening means renewal is not working.
@@ -137,8 +161,10 @@ export function startNotificationStream(deps: StreamDeps): () => void {
   const relay = (message: RelayMessage) => channel?.postMessage(message);
   if (channel) {
     channel.onmessage = (event) => {
-      if (event.data === "notification") deps.onNotification();
-      else if (event.data === "ready") deps.onReady();
+      const data: unknown = event.data;
+      if (data === "notification") deps.onNotification();
+      else if (data === "ready") deps.onReady();
+      else if (typeof data === "object" && data !== null && (data as { kind?: unknown }).kind === "notification") deps.onNotification(readNotificationHint((data as { hint?: unknown }).hint));
     };
   }
 

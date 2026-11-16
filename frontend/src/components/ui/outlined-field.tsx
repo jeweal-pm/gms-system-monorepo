@@ -23,8 +23,11 @@ export function fieldBoxClass({ invalid, readOnly, disabled }: { invalid?: boole
  */
 export const readOnlyControlClass = "cursor-default disabled:opacity-100 disabled:[-webkit-text-fill-color:currentColor]";
 
-export const fieldFocusClass = "outline-none focus:border-gms-primary focus:ring-2 focus:ring-gms-primary/20";
-export const fieldFocusWithinClass = "focus-within:border-gms-primary focus-within:ring-2 focus-within:ring-gms-primary/20";
+/** Owner 2026-11-16: a field in error stays red while focused (the primary focus colour no longer covers it). */
+export const fieldFocusClass =
+  "outline-none focus:border-gms-primary focus:ring-2 focus:ring-gms-primary/20 aria-[invalid=true]:focus:border-gms-danger aria-[invalid=true]:focus:ring-gms-danger/20";
+export const fieldFocusWithinClass =
+  "focus-within:border-gms-primary focus-within:ring-2 focus-within:ring-gms-primary/20 has-[[aria-invalid=true]]:focus-within:border-gms-danger has-[[aria-invalid=true]]:focus-within:ring-gms-danger/20";
 
 type FieldShellProps = {
   id: string;
