@@ -3,6 +3,7 @@
 import { ArrowLeft, ArrowRight, ChevronDown, CircleX } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import type { TabView } from "./tab-host";
+import { MAX_TABS } from "./tab-state";
 
 const focusRing = "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-gms-primary";
 /** Arrows scroll the strip by about one tab. */
@@ -208,9 +209,13 @@ function TabCountMenu({
         aria-haspopup="menu"
         aria-expanded={isOpen}
         aria-controls={isOpen ? menuId : undefined}
-        aria-label={`${tabs.length} open tabs`}
+        aria-label={tabs.length >= MAX_TABS ? `${tabs.length} open tabs, the most allowed` : `${tabs.length} open tabs`}
+        data-tabs-full={tabs.length >= MAX_TABS || undefined}
         onClick={() => setOpen((value) => !value)}
-        className={`flex h-8 items-center gap-1.5 rounded-gms-md border border-gms-border bg-gms-surface px-2 text-gms-body font-medium text-gms-text disabled:text-gms-text-placeholder ${focusRing}`}
+        // Owner design 2026-11-16: at the 15-tab limit the count box turns red (border and number).
+        className={`flex h-8 items-center gap-1.5 rounded-gms-md border bg-gms-surface px-2 text-gms-body font-medium disabled:text-gms-text-placeholder ${
+          tabs.length >= MAX_TABS ? "border-gms-danger text-gms-danger" : "border-gms-border text-gms-text"
+        } ${focusRing}`}
       >
         {tabs.length}
         <ChevronDown aria-hidden size={16} strokeWidth={1.75} />

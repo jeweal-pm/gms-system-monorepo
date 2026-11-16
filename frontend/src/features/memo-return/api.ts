@@ -53,9 +53,12 @@ export const memoReturnSchema = z
     status: z.enum(MEMO_RETURN_STATUSES),
     vendorId: z.string().min(1, "Required"),
     addressId: z.string().min(1, "Required"),
+    // Owner 2026-11-16: no Due Date field on Memo Return. The API still requires one, so it is the Doc Date
+    // (toMemoReturnInput); the form value is not validated, as nobody can see or fix it.
+    dueDate: z.string(),
   })
   .superRefine((value, ctx) => {
-    tradeDocumentRules(value, ctx);
+    tradeDocumentRules({ ...value, dueDate: value.docDate }, ctx);
     value.lines.forEach((line, index) => {
       if (!isFilledLine(line)) return;
       const issue = (field: "pcs" | "weightCt", message: string) => ctx.addIssue({ code: "custom", path: ["lines", index, field], message });
@@ -131,6 +134,8 @@ export function toMemoReturnInput(values: MemoReturnFormValues) {
   const filled = values.lines.filter(isFilledLine);
   return {
     ...shared,
+    // Owner 2026-11-16: Memo Return has no Due Date field; the required API value is the Doc Date.
+    dueDate: values.docDate,
     lines: shared.lines.map((line, index) => ({
       ...line,
       memoStockId: filled[index]?.memoStockId ?? "",

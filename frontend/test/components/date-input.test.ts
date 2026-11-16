@@ -52,7 +52,7 @@ describe("Due Date not before Doc Date (owner 2026-10-29)", () => {
     expect(isBeforeDate("2026-10-14", undefined)).toBe(false);
   });
 
-  it("UT-DATE-07 every transaction schema refuses a Due Date before the Doc Date with the shared message", async () => {
+  it("UT-DATE-07 every transaction schema with a Due Date field refuses one before the Doc Date with the shared message", async () => {
     const { DUE_BEFORE_DOC_MESSAGE, quotationSchema } = await import("@/features/quotation/schema");
     const { emptyQuotation } = await import("@/features/quotation/lib/defaults");
     const { memoReturnSchema, emptyMemoReturn } = await import("@/features/memo-return/api");
@@ -61,7 +61,8 @@ describe("Due Date not before Doc Date (owner 2026-10-29)", () => {
     const dueIssue = (result: { error?: { issues: { path: PropertyKey[]; message: string }[] } }) => result.error?.issues.find((issue) => issue.path.join(".") === "dueDate")?.message;
     const dates = { docDate: "2026-10-29", dueDate: "2026-10-14" };
     expect(dueIssue(quotationSchema.safeParse({ ...emptyQuotation(), ...dates }))).toBe(DUE_BEFORE_DOC_MESSAGE);
-    expect(dueIssue(memoReturnSchema.safeParse({ ...emptyMemoReturn(), ...dates }))).toBe(DUE_BEFORE_DOC_MESSAGE);
+    // Owner 2026-11-16: Memo Return has no Due Date field (it is sent as the Doc Date), so nothing to refuse there.
+    expect(dueIssue(memoReturnSchema.safeParse({ ...emptyMemoReturn(), ...dates }))).toBeUndefined();
     expect(dueIssue(memoReceiveSchema.safeParse({ ...emptyMemoReceive(), ...dates }))).toBe(DUE_BEFORE_DOC_MESSAGE);
     expect(dueIssue(quotationSchema.safeParse({ ...emptyQuotation(), docDate: "2026-10-29", dueDate: "2026-10-29" }))).toBeUndefined();
   });

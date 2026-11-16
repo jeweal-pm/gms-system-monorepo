@@ -398,6 +398,22 @@ export function contextNavFor(pathname: string): ContextNav | null {
   return contextNavs.find((nav) => nav.groups.some((group) => group.children.some((child) => pathname === child.href || pathname.startsWith(`${child.href}/`)))) ?? null;
 }
 
+/**
+ * The sidebar label of a page (e.g. "/modules/merge-split" → "Merge/Split"), for a tab before its page names itself
+ * and for the tab toasts (owner 2026-11-16). `undefined` when no sidebar or context-panel link opens exactly that path.
+ */
+export function navigationLabelFor(path: string): string | undefined {
+  for (const section of sidebarSections) {
+    for (const item of section.items) {
+      const links = item.kind === "disclosure" ? item.children : [item];
+      const hit = links.find((entry) => entry.href === path);
+      if (hit) return hit.label;
+    }
+  }
+  for (const nav of contextNavs) for (const group of nav.groups) for (const child of group.children) if (child.href === path) return child.label;
+  return undefined;
+}
+
 /** True when the user may see an item gated by `permission` (see `NavLink.permission`). */
 export type CanView = (permission: readonly string[] | undefined) => boolean;
 

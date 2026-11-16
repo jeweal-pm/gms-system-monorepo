@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { Activity, createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
-import type { Breadcrumb } from "../navigation";
+import { navigationLabelFor, type Breadcrumb } from "../navigation";
 import {
   activeTab,
   closeAllTabs,
@@ -19,10 +19,14 @@ import {
   retargetTab,
   serializeTabs,
   TAB_LIMIT_MESSAGE,
+  TAB_UNDO_MS,
+  tabEvictedMessage,
   tabPath,
   tabGroup,
   tabsStorageKey,
   tabTitle,
+  touchTab,
+  undoEviction,
   updateTab,
   type Tab,
   type TabsState,
@@ -77,6 +81,12 @@ function currentUrl() {
   return `${window.location.pathname}${window.location.search}`;
 }
 
+/** A new tab's name until its page names itself: the sidebar label ("Merge/Split"), else the path in words. */
+function firstTitle(url: string): string {
+  const path = tabPath(url);
+  return navigationLabelFor(path) ?? fallbackTitle(path);
+}
+
 function readStoredTabs(userId: string): TabsState | null {
   try {
     return parseStoredTabs(window.localStorage.getItem(tabsStorageKey(userId)), newTabId);
@@ -103,8 +113,8 @@ export function TabsProvider({ userId, children }: Readonly<{ userId: string; ch
     signingOut = false;
     const stored = readStoredTabs(userId) ?? emptyTabs;
     const url = currentUrl();
-    const result = openUrl(stored, url, fallbackTitle(tabPath(url)), newTabId());
-    return { ...result, path: window.location.pathname };
+    const result = openUrl(stored, url, firstTitle(url), newTabId());
+    return { ...result, previousActiveId: stored.activeId, path: window.location.pathname };
   });
   const [state, setState] = useState<TabsState>(initial.state);
   const stateRef = useRef(state);
@@ -112,6 +122,10 @@ export function TabsProvider({ userId, children }: Readonly<{ userId: string; ch
   const [meta, setMeta] = useState<Readonly<Record<string, TabMeta>>>({});
   const [pendingClose, setPendingClose] = useState<PendingClose>(null);
   const views = useMemo(() => state.tabs.map((tab) => ({ ...tab, dirty: Boolean(meta[tab.id]?.dirty) })), [meta, state.tabs]);
+  const metaRef = useRef(meta);
+  useEffect(() => {
+    metaRef.current = meta;
+  }, [meta]);
   const syncedPath = useRef<string>(initial.path);
 
   const commit = useCallback((next: TabsState) => {
@@ -127,20 +141,48 @@ export function TabsProvider({ userId, children }: Readonly<{ userId: string; ch
     router.replace(back?.url ?? HOME_PATH, { scroll: false });
   }, [router, toast]);
 
-  // A reload on a 16th page (15 stored tabs) is refused like any other.
+  const navigateToRef = useRef<(tab: Tab | undefined) => void>(() => undefined);
+  const forgetRef = useRef<(removed: Tab[]) => void>(() => undefined);
+
+  /**
+   * Owner 2026-11-16: a 16th page closed the least recently used tab (never one with unsaved changes). The toast says
+   * which, and Undo (6 s) closes the new page again, brings the tab back where it was and shows the previous page.
+   */
+  const announceEviction = useCallback((evicted: { tab: Tab; index: number }, opened: Tab | undefined, previousActiveId: string) => {
+    forgetRef.current([evicted.tab]);
+    const undo = () => {
+      const before = stateRef.current;
+      const keepOpened = !opened || Boolean(metaRef.current[opened.id]?.dirty);
+      const next = undoEviction(before, evicted, opened?.id ?? "", previousActiveId, keepOpened);
+      if (next === before) return;
+      if (opened && !keepOpened) forgetRef.current([opened]);
+      commit(next);
+      if (next.activeId !== before.activeId) navigateToRef.current(activeTab(next));
+    };
+    toast.show("info", tabEvictedMessage(evicted.tab.title, opened?.title ?? ""), { label: "Undo", onClick: undo }, { durationMs: TAB_UNDO_MS });
+  }, [commit, toast]);
+
+  // A reload on a 16th page (15 stored tabs) makes room the same way, or is refused when it can't.
   useEffect(() => {
     if (initial.outcome === "limit") refuse();
-  }, [initial, refuse]);
+    if (initial.outcome === "evicted" && initial.evicted) announceEviction(initial.evicted, activeTab(initial.state), initial.previousActiveId);
+  }, [initial, refuse, announceEviction]);
 
   // T-01 / T-08: every later navigation shows the page at the URL in its tab.
   useEffect(() => {
     if (signingOut || syncedPath.current === pathname) return;
     syncedPath.current = pathname;
     const url = currentUrl();
-    const result = openUrl(stateRef.current, url, fallbackTitle(tabPath(url)), newTabId());
-    if (result.outcome === "limit") refuse();
-    else commit(result.state);
-  }, [commit, pathname, refuse]);
+    const before = stateRef.current;
+    const keep = new Set(Object.entries(metaRef.current).filter(([, entry]) => entry.dirty).map(([id]) => id));
+    const result = openUrl(before, url, firstTitle(url), newTabId(), { keep });
+    if (result.outcome === "limit") {
+      refuse();
+      return;
+    }
+    commit(result.state);
+    if (result.outcome === "evicted" && result.evicted) announceEviction(result.evicted, activeTab(result.state), before.activeId);
+  }, [commit, pathname, refuse, announceEviction]);
 
   // An empty list is stored too, so tabs closed with Close all don't come back after a reload.
   useEffect(() => {
@@ -166,6 +208,9 @@ export function TabsProvider({ userId, children }: Readonly<{ userId: string; ch
     syncedPath.current = tab?.path ?? HOME_PATH;
     router.push(tab?.url ?? HOME_PATH, { scroll: false });
   }, [router]);
+  useEffect(() => {
+    navigateToRef.current = navigateTo;
+  }, [navigateTo]);
 
   /** Remember where the shown tab was left (its filters live in the query) before leaving it. */
   const rememberActiveUrl = useCallback(() => {
@@ -176,7 +221,7 @@ export function TabsProvider({ userId, children }: Readonly<{ userId: string; ch
   const select = useCallback((id: string) => {
     if (id === stateRef.current.activeId) return;
     rememberActiveUrl();
-    commit({ ...stateRef.current, activeId: id });
+    commit(touchTab(stateRef.current, id));
     navigateTo(activeTab(stateRef.current));
   }, [commit, navigateTo, rememberActiveUrl]);
 
@@ -193,6 +238,9 @@ export function TabsProvider({ userId, children }: Readonly<{ userId: string; ch
       return next;
     });
   }, []);
+  useEffect(() => {
+    forgetRef.current = forget;
+  }, [forget]);
 
   const apply = useCallback((next: TabsState) => {
     const before = stateRef.current;

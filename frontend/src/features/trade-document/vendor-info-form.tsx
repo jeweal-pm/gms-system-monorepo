@@ -23,10 +23,12 @@ export type VendorOptions = {
  * INV-20261107-002: choosing the vendor that is already chosen changes nothing, and `confirmVendorChange` may ask before
  * a real change (No keeps the old vendor and everything that depends on it).
  */
-export function VendorDocumentInfoForm({ options, onVendorChange: afterVendorChange, confirmVendorChange }: {
+export function VendorDocumentInfoForm({ options, onVendorChange: afterVendorChange, confirmVendorChange, showDueDate = true }: {
   options: VendorOptions | undefined;
   onVendorChange?: (vendorId: string) => void;
   confirmVendorChange?: (vendorId: string) => Promise<boolean>;
+  /** Owner 2026-11-16: Memo Return has no Due Date field (it follows the Doc Date, see memo-return api). */
+  showDueDate?: boolean;
 }) {
   const { register, control, setValue, resetField, formState: { errors, isSubmitted } } = useFormContext<VendorHeaderValues>();
   const vendorId = useWatch({ control, name: "vendorId" });
@@ -90,10 +92,12 @@ export function VendorDocumentInfoForm({ options, onVendorChange: afterVendorCha
           <FormSelect<VendorHeaderValues> name="addressId" options={addressOptions} />
         </Field>
       </div>
-      <div className="grid grid-cols-1 gap-x-4 gap-y-5 @2xl:grid-cols-2 @4xl:grid-cols-[200px_1fr_1fr_1fr]">
-        <Field label="Due Date" required error={errors.dueDate?.message}>
-          <FormDateInput<VendorHeaderValues> name="dueDate" notBefore="docDate" />
-        </Field>
+      <div className={`grid grid-cols-1 gap-x-4 gap-y-5 @2xl:grid-cols-2 ${showDueDate ? "@4xl:grid-cols-[200px_1fr_1fr_1fr]" : "@4xl:grid-cols-3"}`}>
+        {showDueDate && (
+          <Field label="Due Date" required error={errors.dueDate?.message}>
+            <FormDateInput<VendorHeaderValues> name="dueDate" notBefore="docDate" />
+          </Field>
+        )}
         <Field label="Currency" required error={errors.currency?.message}>
           <FormSelect<VendorHeaderValues> name="currency" options={quotationCurrencyOptions(items, currency)} onValueChange={onCurrencyChange} />
         </Field>
@@ -112,12 +116,12 @@ export function VendorDocumentInfoForm({ options, onVendorChange: afterVendorCha
  * A saved vendor document in view mode (memo-return design, view): "<title>" card with Doc Date, Due Date, Vendor,
  * Address, Currency, Exchange Rate and Ref. as text.
  */
-export function VendorDocumentDetails({ title, values, options }: { title: string; values: VendorHeaderValues; options: VendorOptions | undefined }) {
+export function VendorDocumentDetails({ title, values, options, showDueDate = true }: { title: string; values: VendorHeaderValues; options: VendorOptions | undefined; showDueDate?: boolean }) {
   const vendor = options?.vendors.find((v) => v.id === values.vendorId);
   const address = vendor?.addresses.find((a) => a.id === values.addressId);
   const items: [string, string][] = [
     ["Doc Date", values.docDate ? formatDate(values.docDate) : "—"],
-    ["Due Date", values.dueDate ? formatDate(values.dueDate) : "—"],
+    ...(showDueDate ? [["Due Date", values.dueDate ? formatDate(values.dueDate) : "—"] as [string, string]] : []),
     ["Vendor", vendor ? `${vendor.code} · ${vendor.name}` : "—"],
     ["Address", address?.label ?? "—"],
     ["Currency", values.currency || "—"],
@@ -127,7 +131,13 @@ export function VendorDocumentDetails({ title, values, options }: { title: strin
   return (
     <section className="mx-6 my-6 rounded-xl border border-[#E3E6EA]" aria-label={title}>
       <h2 className="border-b border-[#E3E6EA] px-5 py-3 text-[15px] font-medium text-[#1C252E]">{title}</h2>
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-4 px-5 py-4 md:grid-cols-[repeat(2,minmax(0,1fr))_minmax(0,2fr)_minmax(0,2fr)_repeat(3,minmax(0,1fr))]">
+      <dl
+        className={`grid grid-cols-2 gap-x-6 gap-y-4 px-5 py-4 ${
+          showDueDate
+            ? "md:grid-cols-[repeat(2,minmax(0,1fr))_minmax(0,2fr)_minmax(0,2fr)_repeat(3,minmax(0,1fr))]"
+            : "md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,2fr)_repeat(3,minmax(0,1fr))]"
+        }`}
+      >
         {items.map(([label, value]) => (
           <div key={label} className="min-w-0">
             <dt className="text-xs text-[#6B7480]">{label}</dt>
