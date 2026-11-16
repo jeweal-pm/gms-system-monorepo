@@ -9,6 +9,8 @@
 - Approval evidence: owner answer in chat 2026-11-06, "อนุมัติ เริ่มทำเลย" (with OQ-1: Quotation deletable only before approval; OQ-3: after Delete return to Create New; OQ-2/4/5: defaults kept)
 - Supersedes / related ADRs: changes the delete behaviour of [ADR-0032](0032-quotation-backend-in-master-service.md) (Q-QT-03 number reuse), [ADR-0033](0033-memo-documents-in-master-service.md), [ADR-0034](0034-memo-receive-approval-and-memo-stock.md), [ADR-0036](0036-reserve-document.md), [ADR-0041](0041-purchase-order-document.md), [ADR-0042](0042-purchase-document-and-stock-deduction.md); keeps [ADR-0030](0030-permanent-retention-for-user-uploaded-files.md) (photos kept) and [ADR-0016](0016-per-user-menu-action-permissions.md) (DELETE action reused)
 
+- **Proposed amendment (pending owner approval):** [ADR-0052](0052-load-to-stock-in-backend-api-inventory.md) D9 — Load to Stock adopts the soft-delete columns but **no Restore** (owner 2026-11-16 Q-LS-33).
+
 ## Context
 
 On 2026-11-06 the owner asked for soft delete on Quotation, Reserve, Memo Receive, Memo Return, Memo Out, Memo Out Return, Purchase Order, Purchase, Load to Stock, Merge/Split, Stock Transfer Location, Stock Adjustment and Sale. The owner also decided: (1) only draft documents can be deleted, as today, and deleting changes no stock; (2) deleted documents are hidden from the normal list, a "Deleted" filter shows them, a deleted document opens read-only, and "Restore" brings it back as a draft; (3) no reason is asked; who and when are recorded.

@@ -10,6 +10,8 @@
 - Inputs: owner team brief 2026-11-11 ([source](../apps/frontend/notifications/source/team-brief-2026-11-11.md)); design sources 01–07.
 - Related: [ADR-0025](0025-gms-domain-routing-and-trpc.md) (domain routing), [ADR-0026](0026-gms-access-tokens-and-live-authorization.md) (access JWT, live authorization view), [ADR-0027](0027-gms-master-inventory-data-and-operations.md) (master / inventory boundary), [ADR-0046](0046-approval-review-status-and-approve-center-api.md) (Reject / Revise, on hold), [ADR-0048](0048-line-photos-on-stock-documents.md).
 
+- **Proposed amendment (pending owner approval):** [ADR-0052](0052-load-to-stock-in-backend-api-inventory.md) D12 — the inventory stream path is `/api/inventory/v1/notifications/stream` (D10 named it without `/v1`).
+
 ## Context
 
 Facts (verified 2026-11-11):
