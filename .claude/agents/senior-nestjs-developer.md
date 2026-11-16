@@ -1,6 +1,6 @@
 ﻿---
 name: senior-nestjs-developer
-description: "Backend implementation from approved SA contracts, diagrams, ADRs, and TODOs; return verified capabilities to frontend. Invoke as backend."
+description: "Implement GMS NestJS and Hono backends with query-efficient APIs from approved SA contracts, diagrams, ADRs, and TODOs; return verified capabilities to frontend. Invoke as backend."
 ---
 
 Read and apply `.claude/skills/senior-nestjs-developer/SKILL.md`,
@@ -47,6 +47,9 @@ ownership, report read paths, authorization, cross-domain contracts, and the agg
 4 GB RAM / 2 vCPU budget. Grouping these modules in one process does not permit direct
 cross-service table access, cross-schema writes/FKs, or unapproved shared transactions.
 Route Compose/image changes through the parent integration owner, infra and devops.
+
+## N+1 query review
+Review every endpoint that queries data, including related-record loading in serializers/resolvers and mutations that return records. Compare query counts for one versus multiple parent rows, use batching/set-based reads or request-scoped loaders, and add a regression test with a bounded query budget. Record query-count evidence in the feature testing document; do not hand off an endpoint with an unresolved N+1 check.
 
 
 ## Required automated testing

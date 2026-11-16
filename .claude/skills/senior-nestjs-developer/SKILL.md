@@ -1,6 +1,6 @@
 ---
 name: senior-nestjs-developer
-description: Implement and debug this project's NestJS and Hono domain services from approved SA contracts, diagrams, ADRs, and backend TODOs, then hand verified contracts back to frontend. Invoke as backend.
+description: Implement and debug this project's NestJS and Hono domain services with query-efficient APIs from approved SA contracts, diagrams, ADRs, and backend TODOs, then hand verified contracts back to frontend. Invoke as backend.
 ---
 
 # Senior NestJS Developer
@@ -79,6 +79,23 @@ flows and permission enforcement until the replacement is verified.
   Thai ICU collation when ordering matters. Target PostgreSQL 16-compatible SQL and the
   spec's extension allowlist. Keep reads at no more than three round trips where the
   approved contract permits. Never assume a managed database has local server settings.
+- **N+1 review (required for every endpoint that queries data):** trace every database access
+  from middleware/authorization through controller or router, service, repository, nested
+  resolver/serializer, and response mapping. Look for queries inside loops, per-parent relation
+  resolvers, lazy relation loads, and repeated lookups while building response rows. Review read
+  endpoints and mutations that query data or return related records. Compare the endpoint's
+  query count with one parent record and with multiple parent records; it must not grow once per
+  returned row. Query count may grow by a bounded number for relation groups or explicit batch
+  chunks, but document that bound. Prefer set-based reads, batched `IN` lookups, narrowly scoped
+  ORM includes/selects, aggregates, or request-scoped DataLoader where appropriate. Avoid
+  unbounded includes, over-fetching, and global DataLoader caches that can cross user/tenant
+  boundaries. Use Prisma query instrumentation or equivalent test instrumentation and inspect
+  emitted SQL without exposing bind values or personal data. Record the query-count evidence,
+  batching strategy, and any justified exception in the feature `testing.md`. Add an integration
+  regression case with multiple parent rows and assert a bounded query budget/no per-row query;
+  isolate the endpoint's data-access queries so unrelated setup/auth queries do not make the
+  assertion brittle. If database-backed verification is unavailable, leave the N+1 check
+  unresolved and do not claim the endpoint is verified.
 - **Stock and document writes:** for approved inventory work follow section 4.2 and
   Appendix E. Keep movements append-only; aggregate duplicate lines by item/location/lot;
   ensure unique balance rows with `NULLS NOT DISTINCT`; lock them in stable order; guard
