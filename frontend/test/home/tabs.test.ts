@@ -193,6 +193,11 @@ describe("tab bar (sources 03–07)", () => {
     expect(html).toMatch(/aria-selected="true"[^>]*>Vendor</);
     expect(html).toMatch(/aria-selected="false"[^>]*>Customer</);
     expect(html).toContain('aria-label="Close Vendor"');
+    // Owner 2026-11-13: the shown tab is bold with its × always visible; the other tab's × waits for hover / focus.
+    expect(html).toMatch(/aria-selected="true"[^>]*class="[^"]*font-semibold[^"]*"[^>]*>Vendor</);
+    expect(html).toMatch(/aria-selected="false"[^>]*class="[^"]*font-normal[^"]*"[^>]*>Customer</);
+    expect(html).toMatch(/aria-label="Close Vendor" title="Close Vendor" class="(?![^"]*opacity-0)[^"]*"/);
+    expect(html).toMatch(/aria-label="Close Customer" title="Close Customer" class="[^"]*opacity-0 group-hover:opacity-100[^"]*"/);
     expect(html.match(/aria-label="Unsaved changes"/g)).toHaveLength(1);
     expect(html).toContain('aria-label="2 open tabs"');
     expect(html).toContain('aria-haspopup="menu"');

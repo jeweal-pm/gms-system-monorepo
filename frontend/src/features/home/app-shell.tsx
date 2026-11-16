@@ -280,7 +280,8 @@ function ShellTabBar() {
 function ShellBreadcrumbs() {
   const breadcrumbs = useTabs()?.breadcrumbs ?? [];
   return (
-    <div className="flex h-11 shrink-0 items-center border-b border-gms-border-header bg-gms-surface px-4 md:px-6">
+    // Owner 2026-11-13: the breadcrumb row sits on the page colour (#F9F9F9), not white.
+    <div className="flex h-11 shrink-0 items-center bg-gms-page px-4 md:px-6">
       {breadcrumbs.length > 0 && <Breadcrumbs items={breadcrumbs} />}
     </div>
   );

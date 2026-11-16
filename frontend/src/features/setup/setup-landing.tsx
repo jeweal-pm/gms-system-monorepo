@@ -33,9 +33,12 @@ export function SetupLanding() {
   }
 
   return (
-    <div className="@container px-6 pt-10 pb-12 md:px-4">
+    // Owner design 2026-11-13: a white 8 px-radius card on the #F9F9F9 page, 24 px from the sides and bottom, right under
+    // the breadcrumb row; the tiles sit 60 px under the title.
+    <div data-setup-page className="flex min-h-full flex-col bg-gms-page px-6 pb-6">
+      <div data-setup-card className="@container flex-1 rounded-gms-md bg-gms-surface px-6 pt-11 pb-12 md:px-4">
       <h1 className="text-center text-gms-title font-semibold text-gms-text">Setup</h1>
-      <ul className="mx-auto mt-12 grid w-fit grid-cols-[repeat(2,144px)] gap-x-8 gap-y-16 @min-[672px]:grid-cols-[repeat(4,144px)]">
+      <ul className="mx-auto mt-[60px] grid w-fit grid-cols-[repeat(2,144px)] gap-x-8 gap-y-16 @min-[672px]:grid-cols-[repeat(4,144px)]">
         {setupLandingTiles.filter((tile) => canView(tile.permission)).map((tile) => (
           <li key={tile.id}>
             {tile.kind === "link" ? (
@@ -48,6 +51,7 @@ export function SetupLanding() {
           </li>
         ))}
       </ul>
+      </div>
       <MasterCodeDialog open={isMasterCodeOpen} onClose={closeMasterCode} />
     </div>
   );

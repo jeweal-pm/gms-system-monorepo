@@ -85,6 +85,11 @@
   --color-gms-tile-blue: #0d80ea;
   --color-gms-tile-stone: #a1887f;
   --color-gms-tile-neutral: #737780;
+  /* Setup tiles, owner design 2026-11-13: Company Profile violet, User and Permission sky, Document Setup orange, Decimal Setup taupe. */
+  --color-gms-tile-violet: #8173f6;
+  --color-gms-tile-sky: #129be1;
+  --color-gms-tile-orange: #d86c0e;
+  --color-gms-tile-taupe: #ad8d7f;
   --color-gms-scrim: rgb(52 62 62 / 0.4);
   --spacing-gms-rail: 56px;
 

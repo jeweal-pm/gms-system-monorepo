@@ -181,7 +181,8 @@ export function returnItemTable(options: ReturnTableOptions) {
                         </>
                       )}
                     </td>
-                    <td className="px-3 py-4 text-right">{filled ? formatMoney(lineAmount(line), nf.pricePlaces) : ""}</td>
+                    {/* Owner 2026-11-13: the line amount is medium (500), as in the item table. */}
+                    <td data-line-amount className="px-3 py-4 text-right font-medium">{filled ? formatMoney(lineAmount(line), nf.pricePlaces) : ""}</td>
                   </tr>
                 );
               })}
