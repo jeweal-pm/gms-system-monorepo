@@ -90,6 +90,9 @@ export function mapPurchaseOrderError(error: unknown): PurchaseOrderOutcome {
   const firstRow = fieldErrors.find((entry) => entry.path.startsWith("lines."));
   switch (domainCode) {
     case "VALIDATION_ERROR": {
+      // location-master SA-LM-05: a typed name that isn't an active Location Master name.
+      const location = fieldErrors.find((entry) => entry.code === "unknown_location");
+      if (location) return outcome(`Row ${rowOf(location.path)}: choose a location from Location Master.`, { fieldErrors: onFields("Check this field") });
       const gross = fieldErrors.find((entry) => entry.code === "exceeds_gross");
       if (gross) return outcome(`Row ${rowOf(gross.path)}: the discount is more than the line amount.`, { fieldErrors: onFields("Check this field") });
       if (fieldErrors.some((entry) => entry.code === "exceeds_subtotal")) return outcome("The document discount is more than the subtotal.");

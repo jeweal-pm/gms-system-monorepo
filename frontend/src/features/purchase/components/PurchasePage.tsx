@@ -44,6 +44,7 @@ import {
 } from "../api";
 import { MergeDialog } from "./merge-dialog";
 import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
+import { locationOptions } from "@/features/location-master/location-options";
 
 export { PURCHASE_HREF };
 
@@ -239,6 +240,8 @@ export const PURCHASE_CONFIG: DocumentFormConfig<PurchaseFormValues, PurchaseInp
   emptyRowText: PURCHASE_EMPTY_ROW_TEXT,
   itemTable: PurchaseItemTable,
   kind: PURCHASE_KIND,
+  // location-master FE-LM-003 (ADR-0052): typed rows choose an active Location Master name.
+  kindFromOptions: (options) => ({ locations: locationOptions(options?.locations) }),
   approvalType: "purchase",
   photos: DOCUMENT_PHOTOS.purchase,
   noteMax: PURCHASE_NOTE_MAX,

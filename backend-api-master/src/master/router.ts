@@ -18,6 +18,9 @@ import { bodySchemasFor, optionsQuerySchema } from "../stone-master/stone-master
 import type { StoneKind } from "../stone-master/stone-master.kinds";
 import type { CurrencyService } from "../currency/currency.service";
 import { createCurrencyBodySchema, updateCurrencyBodySchema } from "../currency/currency.schemas";
+import type { LocationMasterService } from "../location-master/location-master.service";
+import { createLocationBodySchema, deleteLocationBodySchema, updateLocationBodySchema } from "../location-master/location-master.schemas";
+import { LOCATION_CURSOR_MAX } from "../location-master/location-master.service";
 import type { QuotationService } from "../quotation/quotation.service";
 import type { MemoOutService } from "../trade-document/memo-out.service";
 import type { ReserveService } from "../trade-document/reserve.service";
@@ -116,6 +119,11 @@ const listInput = z.object({
   direction: z.enum(["forward", "backward"]).optional(),
   limit: z.number().int().min(1).max(LIST_LIMIT_MAX).default(LIST_LIMIT_MAX),
 }).strict();
+/**
+ * Location Master's cursor carries the last name (≤ 40 characters of any script); a 40-character Thai or escaped name
+ * encodes past 200, so this list takes up to LOCATION_CURSOR_MAX (the decoder checks the same bound).
+ */
+const locationListInput = listInput.extend({ cursor: z.string().max(LOCATION_CURSOR_MAX).nullish() });
 const stoneOptionsInput = z.object({
   kinds: z.array(z.enum(["group", "size", "shape", "color", "cutting", "clarity", "quality", "stone-name"])).min(1).max(8),
   include: z.array(z.uuid()).max(20).default([]),
@@ -315,6 +323,7 @@ export type MasterServices = Pick<{
   decimalSetup: DecimalSetupService;
   approvalSetting: ApprovalSettingService;
   currency: CurrencyService;
+  locationMaster: LocationMasterService;
   quotation: QuotationService;
   memoOut: MemoOutService;
   memoOutReturn: MemoOutReturnService;
@@ -326,7 +335,7 @@ export type MasterServices = Pick<{
   purchaseOrder: PurchaseOrderService;
   purchase: PurchaseService;
   approval: ApprovalService;
-}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "decimalSetup" | "approvalSetting" | "currency" | "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoStock" | "memoReturn" | "memoOutstanding" | "reserve" | "purchaseOrder" | "purchase" | "approval">;
+}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "decimalSetup" | "approvalSetting" | "currency" | "locationMaster" | "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoStock" | "memoReturn" | "memoOutstanding" | "reserve" | "purchaseOrder" | "purchase" | "approval">;
 
 function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
   const schemas = bodySchemasFor(kind);
@@ -343,7 +352,7 @@ function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
 }
 
 /** Direct service calls preserve IDs, transaction behavior and existing partner/stone schemas. */
-export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, decimalSetup, approvalSetting, currency, quotation, memoOut, memoOutReturn, memoReceive, memoStock, memoReturn, memoOutstanding, reserve, purchaseOrder, purchase, approval }: MasterServices) {
+export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, decimalSetup, approvalSetting, currency, locationMaster, quotation, memoOut, memoOutReturn, memoReceive, memoStock, memoReturn, memoOutstanding, reserve, purchaseOrder, purchase, approval }: MasterServices) {
   return t.router({
     customer: t.router({
       list: permitted("customer", "VIEW").input(listInput).query(({ input }) => domainCall(() => customer.list(toListQuery(input)))),
@@ -434,6 +443,18 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
         return domainCall(() => currency.update(ctx.userId, id, body));
       }),
       delete: permitted("currency", "DELETE", true).input(idInput).mutation(({ ctx, input }) => domainCall(() => currency.delete(ctx.userId, input.id))),
+    }),
+    // location-master SA rev 1 / ADR-0052 (owner 2026-11-16): Name-only master; documents copy the name (no FK). The
+    // documents read active names through their own `options` (SA-LM-04), not here.
+    locationMaster: t.router({
+      list: permitted("location-master", "VIEW").input(locationListInput).query(({ input }) => domainCall(() => locationMaster.list(toListQuery(input)))),
+      get: permitted("location-master", "VIEW").input(idInput).query(({ input }) => domainCall(() => locationMaster.get(input.id))),
+      create: permitted("location-master", "ADD", true).input(createLocationBodySchema).mutation(({ ctx, input }) => domainCall(() => locationMaster.create(ctx.userId, input))),
+      update: permitted("location-master", "EDIT", true).input(updateLocationBodySchema.extend({ id: z.uuid() })).mutation(({ ctx, input }) => {
+        const { id, ...body } = input;
+        return domainCall(() => locationMaster.update(ctx.userId, id, body));
+      }),
+      delete: permitted("location-master", "DELETE", true).input(deleteLocationBodySchema.extend({ id: z.uuid() })).mutation(({ ctx, input }) => domainCall(() => locationMaster.delete(ctx.userId, input.id, input.expectedUpdatedAt))),
     }),
     // quotation SA rev 1 / ADR-0032 (owner 2026-10-26); joins the approval flow with approval-setup ADR-0050 (setting OFF by default).
     quotation: t.router({

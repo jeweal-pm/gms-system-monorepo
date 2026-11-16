@@ -106,6 +106,8 @@ export type DocumentFormConfig<V extends FieldValues & Saved, Input, Options ext
   approvalType: DocumentApprovalType;
   /** What the shared item table / row panel do differently (memo out: From Stock quantities); default Quotation. */
   kind?: DocumentKind;
+  /** Kind fields that come from the loaded options, e.g. the Location dropdown's choices (location-master FE-LM-003). */
+  kindFromOptions?: (options: Options | undefined) => Partial<DocumentKind>;
   /** Line photos (ADR-0048): upload / read routes of this document; without it the row panel says photos come later. */
   photos?: DocumentPhotos;
   noteMax?: number;
@@ -429,9 +431,10 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   const Table = config.itemTable ?? ItemTable;
   // ADR-0048: rows upload to this document's own photo route.
   const kind = useMemo<DocumentKind>(() => {
-    const base = config.kind ?? QUOTATION_KIND;
+    const configured = config.kind ?? QUOTATION_KIND;
+    const base = config.kindFromOptions ? { ...configured, ...config.kindFromOptions(api.options) } : configured;
     return config.photos ? { ...base, uploadPhoto: config.photos.uploadPhoto } : base;
-  }, [config.kind, config.photos]);
+  }, [config, api.options]);
 
   return (
     <DocumentKindContext.Provider value={kind}>

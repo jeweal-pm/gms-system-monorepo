@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, ChevronUp, Lock, X } from "lucide-react";
+import { ChevronDown, ChevronUp, GripVertical, Lock, X } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import { lineGross } from "../../lib/calculate";
@@ -74,13 +74,16 @@ export function ItemEditorDock({ children }: Readonly<{ children: ReactNode }>) 
     };
   }, []);
 
+  const width = useEditorWidth();
+
   return (
     <div
       ref={ref}
       data-item-editor-dock
-      style={height === null ? undefined : { height }}
-      className="sticky top-0 -my-6 -mr-6 h-[calc(100dvh-84px)] shrink-0 self-start overflow-hidden rounded-r-gms-md"
+      style={{ ...(height === null ? {} : { height }), ["--item-editor-width" as string]: `${width.value}px` }}
+      className="sticky top-0 -my-6 -mr-6 h-[calc(100dvh-84px)] shrink-0 self-start"
     >
+      <EditorResizeHandle width={width} />
       {children}
     </div>
   );
@@ -88,6 +91,144 @@ export function ItemEditorDock({ children }: Readonly<{ children: ReactNode }>) 
 
 /** The dock never gets shorter than its header, one field group and the action bar. */
 const DOCK_MIN_HEIGHT = 320;
+
+/**
+ * Owner 2026-11-16: the row editor can be dragged narrower (never wider than its designed 460 px) to give the table
+ * more room; the width is remembered in this browser. 340 px still fits the two field columns.
+ */
+export const EDITOR_WIDTH_DEFAULT = 460;
+export const EDITOR_WIDTH_MIN = 340;
+export const EDITOR_WIDTH_MAX = EDITOR_WIDTH_DEFAULT;
+const EDITOR_WIDTH_KEY = "gms.itemEditor.width";
+const EDITOR_WIDTH_STEP = 20;
+
+/** Between the minimum and the designed width (the maximum). */
+export function clampEditorWidth(width: number): number {
+  if (!Number.isFinite(width)) return EDITOR_WIDTH_DEFAULT;
+  return Math.round(Math.min(EDITOR_WIDTH_MAX, Math.max(EDITOR_WIDTH_MIN, width)));
+}
+
+type EditorWidth = { value: number; set: (width: number) => void; save: () => void };
+
+function useEditorWidth(): EditorWidth {
+  const [value, setValue] = useState(EDITOR_WIDTH_DEFAULT);
+  const latest = useRef(value);
+  useLayoutEffect(() => {
+    // The server render and the first client render use the default; the remembered width follows at once.
+    let stored = Number.NaN;
+    try {
+      stored = Number(window.localStorage.getItem(EDITOR_WIDTH_KEY));
+    } catch {
+      // Private mode or blocked storage: the default width.
+    }
+    if (stored) {
+      latest.current = clampEditorWidth(stored);
+      setValue(latest.current);
+    }
+  }, []);
+  const set = (width: number) => {
+    latest.current = clampEditorWidth(width);
+    setValue(latest.current);
+  };
+  const save = () => {
+    try {
+      window.localStorage.setItem(EDITOR_WIDTH_KEY, String(latest.current));
+    } catch {
+      // Not remembered; the width still applies until the page reloads.
+    }
+  };
+  return { value, set, save };
+}
+
+/**
+ * The left edge of the editor: a grip in the middle of a thin line. Drag it (mouse, pen or touch) right to narrow the
+ * editor and back left up to its designed width; double-click restores that width. The cursor shows the way it can
+ * still go. Keyboard: → narrower, ← wider, End narrowest, Home widest (a focusable separator, WAI-ARIA window splitter).
+ */
+function EditorResizeHandle({ width }: Readonly<{ width: EditorWidth }>) {
+  const drag = useRef<{ startX: number; startWidth: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drag.current = { startX: event.clientX, startWidth: width.value };
+    setDragging(true);
+  };
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!drag.current) return;
+    // The editor sits on the right: dragging its left edge to the left makes it wider.
+    width.set(drag.current.startWidth + (drag.current.startX - event.clientX));
+  };
+  const end = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!drag.current) return;
+    drag.current = null;
+    setDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    width.save();
+  };
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const next =
+      event.key === "ArrowRight" ? width.value - EDITOR_WIDTH_STEP
+      : event.key === "ArrowLeft" ? width.value + EDITOR_WIDTH_STEP
+      : event.key === "End" ? EDITOR_WIDTH_MIN
+      : event.key === "Home" ? EDITOR_WIDTH_MAX
+      : null;
+    if (next === null) return;
+    event.preventDefault();
+    width.set(next);
+    width.save();
+  };
+
+  // At the designed width it can only narrow (→), at the narrowest only widen back (←).
+  const cursor = width.value >= EDITOR_WIDTH_MAX ? "cursor-e-resize" : width.value <= EDITOR_WIDTH_MIN ? "cursor-w-resize" : "cursor-ew-resize";
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize the item editor"
+      aria-valuemin={EDITOR_WIDTH_MIN}
+      aria-valuemax={EDITOR_WIDTH_MAX}
+      aria-valuenow={width.value}
+      tabIndex={0}
+      title="Drag right to narrow · double-click to reset"
+      data-editor-resize
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={end}
+      onPointerCancel={end}
+      onDoubleClick={() => {
+        width.set(EDITOR_WIDTH_DEFAULT);
+        width.save();
+      }}
+      onKeyDown={onKeyDown}
+      data-dragging={dragging || undefined}
+      className={`group/resize absolute inset-y-0 left-0 z-20 flex w-4 -translate-x-1/2 touch-none items-center justify-center outline-none ${dragging ? "cursor-ew-resize" : cursor}`}
+    >
+      {/* The line: the editor's own 1 px border, drawn 2 px in the primary colour while hovered, focused or dragged. */}
+      <span
+        aria-hidden
+        className={`absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 transition-colors duration-150 ${
+          dragging ? "bg-gms-primary" : "bg-transparent group-hover/resize:bg-gms-primary/70 group-focus-visible/resize:bg-gms-primary"
+        }`}
+      />
+      {/* The grip: a small pill with dots centred on the border line (half each side, owner 2026-11-16), visible without hovering. */}
+      <span
+        aria-hidden
+        data-editor-grip
+        className={`relative flex h-10 w-3.5 items-center justify-center rounded-full border bg-gms-surface shadow-sm transition-colors duration-150 ${
+          dragging
+            ? "border-gms-primary text-gms-primary"
+            : "border-[#E3E6EA] text-[#919EAB] group-hover/resize:border-gms-primary group-hover/resize:text-gms-primary group-focus-visible/resize:border-gms-primary group-focus-visible/resize:text-gms-primary"
+        }`}
+      >
+        <GripVertical className="size-3" strokeWidth={2} />
+      </span>
+    </div>
+  );
+}
 
 export function ItemEditorPanel({
   index,
@@ -201,7 +342,7 @@ export function ItemEditorPanel({
   );
 
   return (
-    <aside className="flex h-full w-[460px] shrink-0 flex-col border-l border-[#E3E6EA] bg-white">
+    <aside className="flex h-full w-[var(--item-editor-width,460px)] shrink-0 flex-col overflow-hidden rounded-r-gms-md border-l border-[#E3E6EA] bg-white">
       <header className="border-b border-[#E3E6EA] px-5 pt-4 pb-5">
         <div className="flex items-center justify-between">
           <span className="text-xs text-[#6B7480]">
@@ -229,7 +370,14 @@ export function ItemEditorPanel({
         </h2>
       </header>
 
-      <fieldset disabled={readOnly} className="min-h-0 flex-1 space-y-1 overflow-y-auto px-5 py-2">
+      <fieldset disabled={readOnly} className="min-h-0 flex-1 overflow-y-auto px-5 py-2">
+        {/*
+          Owner 2026-11-16 bug: PCS / Weight / Sale Price / Note are register()ed (uncontrolled). Moving to another row
+          reused the same <input>s under the other row's names, and react-hook-form doesn't rewrite a DOM input it had
+          already registered, so they kept the previous row's numbers (the form values, and so Save, were right).
+          Keyed by the row, every input is created fresh with its row's value; the scroll box above keeps its position.
+        */}
+        <div key={line?.key ?? index} data-editor-row={index} className="space-y-1">
         <Section title="Info">
           {/* Quotation: Stock ID / Location come from From Stock only. Memo Receive (rev 3, owner 2026-10-29): the
               server assigns the Stock ID (YY####) on save, and there is no Location field. */}
@@ -350,6 +498,7 @@ export function ItemEditorPanel({
             <TextInput compact maxLength={kind.itemNote.max} placeholder={kind.itemNote.placeholder} {...register(name("itemNote"))} />
           </Field>
         </Section>
+        </div>
       </fieldset>
 
       <footer className="flex items-center justify-between gap-2 border-t border-[#E3E6EA] px-5 py-4">

@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Receipt, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, MapPin, Receipt, type LucideIcon } from "lucide-react";
 import {
   ApproveIcon,
   BarcodeIcon,
@@ -48,6 +48,8 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   "stone-master": stonePageHref(DEFAULT_STONE_SLUG),
   "document-setup": "/setup/document-setup",
   currency: "/setup/currency",
+  // location-master UI rev 1 (ADR-0052): Setup › Master Code › Location Master.
+  "location-master": "/setup/location-master",
   quotation: "/pre-sale/quotation",
   // reserve UI rev 1 (ADR-0036): Pre-Sale › Reserve.
   reserve: "/pre-sale/reserve",
@@ -391,7 +393,22 @@ const currencyContextNav: ContextNav = {
   ],
 };
 
-const contextNavs: ContextNav[] = [partnerContextNav, stoneContextNav, currencyContextNav];
+/** Setup › Location Master context (location-master UI rev 1, like Currency): one group with the page. */
+const locationContextNav: ContextNav = {
+  id: "setup-location-master",
+  title: "Setup",
+  groups: [
+    {
+      id: "location-master",
+      label: "Location Master",
+      icon: MapPin,
+      href: masterCodeDialogHref,
+      children: [link("location-master-page", "Location Master", undefined, "/setup/location-master")].map((child) => ({ ...child, permission: ["location-master"] })),
+    },
+  ],
+};
+
+const contextNavs: ContextNav[] = [partnerContextNav, stoneContextNav, currencyContextNav, locationContextNav];
 
 /** The context panel for the current route, or null when the route uses the normal sidebar. */
 export function contextNavFor(pathname: string): ContextNav | null {

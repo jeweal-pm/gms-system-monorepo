@@ -12,7 +12,9 @@ describe("item editor dock", () => {
   it("UT-ITEM-DOCK-01 renders a sticky box flush with the card's top/right edges, filling the visible height before measuring", () => {
     const html = renderToStaticMarkup(createElement(ItemEditorDock, null, createElement("aside", null, "editor")));
     expect(html).toContain("data-item-editor-dock");
-    expect(html).toContain("sticky top-0 -my-6 -mr-6 h-[calc(100dvh-84px)] shrink-0 self-start overflow-hidden rounded-r-gms-md");
+    // The dock doesn't clip (the resize grip sits half outside the border); the editor keeps the rounded corner.
+    expect(html).toContain('class="sticky top-0 -my-6 -mr-6 h-[calc(100dvh-84px)] shrink-0 self-start"');
+    expect(readFileSync("src/features/quotation/components/items/ItemEditorPanel.tsx", "utf8")).toContain("flex-col overflow-hidden rounded-r-gms-md border-l");
     expect(html).toContain("<aside>editor</aside>");
   });
 
