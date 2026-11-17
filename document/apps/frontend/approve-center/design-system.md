@@ -22,11 +22,11 @@
 | Reject outline / text, info icon | `#DF1016` | M | `gms-danger` (C) |
 | Revise outline / text, Pending text (design) | `#FFAB00` | M | **new** `gms-revise` (proposed; no existing token has this value) |
 | Pending badge background | `#FFE7B8` | M | `gms-warning-subtle` (C) |
-| Pending badge text (recommended) | `#9A5B00` | C | `gms-warning-text` — Q-AP-12: `#FFAB00` on `#FFE7B8` ≈ 1.6:1 fails WCAG AA |
+| Pending badge text (recommended) | `#FFAB00` | C | `gms-warning-text` — Q-AP-12: `#FFAB00` on `#FFE7B8` ≈ 1.6:1 fails WCAG AA |
 | Disabled button bg / text | `#F8F8F8` / `#A9A9A9` | M | `gms-field-disabled` / `gms-checkbox-readonly` (C) |
 | Count badge bg / text | `#E2F0F0` / `#1C7B80` | M | **new** `gms-count-badge` / `gms-count-badge-text` (proposed) |
 
-`#FFAB00` on white for the Revise label is ≈ 2.0:1, also below AA for 14 px text. Default: keep the outline color `#FFAB00` and use `gms-warning-text` `#9A5B00` for the label (Q-AP-12). Colors never carry meaning alone: Pending has its text; disabled buttons have the info icon and a tooltip.
+`#FFAB00` on white for the Revise label is ≈ 2.0:1, also below AA for 14 px text. Default: keep the outline color `#FFAB00` and use `gms-warning-text` `#FFAB00` for the label (Q-AP-12). Colors never carry meaning alone: Pending has its text; disabled buttons have the info icon and a tooltip.
 
 ## Typography (E; matches the existing scale)
 

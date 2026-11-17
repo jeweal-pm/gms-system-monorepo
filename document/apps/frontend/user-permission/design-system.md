@@ -32,7 +32,7 @@
 | `info-dot` | `#3385F0` | S | Notification unread dot | |
 | `excel-green` | `#187949` | S | Excel icon color only | |
 | `warning-subtle` | `#FFE7B8` | S | Draft badge background | |
-| `warning-text` | `~#FFAB00` (sampled) → proposed `#9A5B00` for AA | S / proposal | Draft badge text (contrast Q-UP-28) | |
+| `warning-text` | `~#FFAB00` (sampled) → proposed `#FFAB00` for AA | S / proposal | Draft badge text (contrast Q-UP-28) | |
 | `checkbox-readonly` | `#A9A9A9` | S | Grey check glyph after duplicate (meaning Q-UP-04) | |
 
 Rule: no hard-coded hex values in components. Add the tokens through Tailwind 4 `@theme` in `globals.css` (FE-UP-011).

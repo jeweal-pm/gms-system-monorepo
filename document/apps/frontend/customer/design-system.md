@@ -28,7 +28,7 @@
 | `gms-danger-subtle` | `#FAE6E4` | S, =UP | Error input fill |
 | `gms-success` | `#22C55E` | S (Default badge text) | Toast success icon |
 | `gms-excel` | `#187949` | S `#267D52` (darkest anti-aliased pixel; same icon as UP) | Excel icon |
-| `gms-warning-subtle` / `gms-warning-text` | `#FFE7B8` / `#9A5B00` | S bg =UP; text sampled `#FFAB00`, UP's AA proposal reused | Draft badge |
+| `gms-warning-subtle` / `gms-warning-text` | `#FFE7B8` / `#FFAB00` | S bg =UP; text sampled `#FFAB00`, UP's AA proposal reused | Draft badge |
 | `gms-checkbox-readonly` | `#A9A9A9` | S (disabled Duplicate icon, disabled select placeholder) | Disabled text/icon |
 
 ### Proposed new tokens (FE-CUS-016; parent serializes `globals.css`)

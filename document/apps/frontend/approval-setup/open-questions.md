@@ -23,7 +23,7 @@ Already answered by the owner (2026-11-09): OFF = Save approves at once with sto
 | Q-AS-15 | The chain shows Revise / Rejected, which the backend does not have yet (ADR-0046 on hold). Show them now? | Yes, as designed (target model). | — |
 | Q-AS-16 | Counts: should users without `<doc>:VIEW` see the number? Should Quotation (when turned on) show a count in phase 1? | Without VIEW → "—". Phase 1: no Quotation count (nothing can be pending). Phase 2: counts visible to `approval-setup:VIEW` from one server call. **requires SA** | — |
 | Q-AS-17 | The design omits Memo rows. | Resolved by A2: Memo rows inserted in sidebar order. | A2 |
-| Q-AS-18 | Chip and link text colors fail WCAG AA. Use darker existing text tokens? | Yes: Pending/Revise/link `#9A5B00`, Approved `#1C744A`; backgrounds as designed. | — |
+| Q-AS-18 | Chip and link text colors fail WCAG AA. Use darker existing text tokens? | Yes: Pending/Revise/link `#FFAB00`, Approved `#1C744A`; backgrounds as designed. | — |
 | Q-AS-19 | The design switch (≈ 36 × 20, off track `#C7CECE`) differs from the app's switch (40 × 24, `#ADB1B4`). | Keep the existing app switch for consistency. | — |
 | Q-AS-20 | Should the page show who last changed a setting and when? | Not in revision 1 UI; backend records `updated_by` / `updated_at` (SA-AS-01) so it can be shown later. | — |
 | Q-AS-21 | When a type is switched while someone has a document open, which rule applies to that document's Save? | The setting at the moment the server saves; the page then shows the actual status (see [error-handling](error-handling.md#document-pages-after-phase-2-for-fe-as-010-sa-as-03)). **requires SA** | — |

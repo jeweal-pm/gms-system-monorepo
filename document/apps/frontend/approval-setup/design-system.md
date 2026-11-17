@@ -19,11 +19,11 @@
 | Menu label | `#242D2E` (darkest anti-aliased sample) | measured | `gms-text` |
 | Helper line, "—" | `#637381` | measured | `gms-text-muted` |
 | Chip "Draft"/"Save" | bg `#F9F9F9`, text `#5C5C5C` | measured | bg `gms-page`, text `gms-text-secondary` `#656B71` |
-| Chip "Pending approval" | bg `#EEDAB9`, text `#C47A06` | measured | bg new `--color-gms-pending-chip` `#EEDAB9`; text **`gms-warning-text` `#9A5B00`** (contrast, Q-AS-18) |
+| Chip "Pending approval" | bg `#EEDAB9`, text `#C47A06` | measured | bg new `--color-gms-pending-chip` `#EEDAB9`; text **`gms-warning-text` `#FFAB00`** (contrast, Q-AS-18) |
 | Chip "Approved" | bg `#C1EFD2`, text `#22C55E` | measured | bg `gms-success-subtle`; text **`gms-status-active` `#1C744A`** (Q-AS-18) |
 | Chip "Revise" | bg `#FFE7B8`, text `#FFAB00` | measured | bg `gms-warning-subtle`; text **`gms-warning-text`** (Q-AS-18; same rule as approve-center Q-AP-12) |
 | Chip "Rejected" | bg `#FAE6E4`, text `#DF1016` | measured | `gms-danger-subtle` / `gms-danger` (≈ 4.4:1; keep, bold-ish medium weight) |
-| Waiting link | `#A96A10` (darkest sample; ≈ 4.4:1 on white) | measured | **`gms-warning-text` `#9A5B00`** (Q-AS-18) |
+| Waiting link | `#A96A10` (darkest sample; ≈ 4.4:1 on white) | measured | **`gms-warning-text` `#FFAB00`** (Q-AS-18) |
 | Switch on track | `#006A70` | measured | `gms-primary` |
 | Switch off track | `#C7CECE` | measured | existing switch uses `gms-text-placeholder` `#ADB1B4`; keep the existing component (difference noted, Q-AS-19) |
 | Switch label "On"/"Off" | `#242D2E` | measured | `gms-text` |

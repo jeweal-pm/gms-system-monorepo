@@ -271,7 +271,7 @@ function PhotoTile({
         <span
           data-crown
           title="Default photo"
-          className="pointer-events-none absolute top-1.5 left-1.5 z-[1] inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-[#9A5B00] shadow-[0_1px_3px_rgba(0,0,0,.12)]"
+          className="pointer-events-none absolute top-1.5 left-1.5 z-[1] inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-[#FFAB00] shadow-[0_1px_3px_rgba(0,0,0,.12)]"
         >
           <CrownIcon aria-hidden className="size-3.5 text-[#FFAB00]" />
           Default

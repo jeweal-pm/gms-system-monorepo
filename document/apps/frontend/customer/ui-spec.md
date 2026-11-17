@@ -274,7 +274,7 @@ flowchart TD
 - Excel uses `aria-disabled` so it stays focusable and its tooltip can be read.
 - Drawer: non-modal `<aside aria-label="Customers">`; the list is a `<ul>`; rows are buttons. Dialogs: modal, focus starts on the safe action, focus returns to the trigger.
 - Toasts use the existing polite live region and never take focus.
-- Contrast: the Default badge keeps text `#22C55E` on `#C1EFD2` by owner decision (Q-CUS-06, 2026-10-14) although it is below 4.5:1; the Draft badge reuses user-permission's `#9A5B00`.
+- Contrast: the Default badge keeps text `#22C55E` on `#C1EFD2` by owner decision (Q-CUS-06, 2026-10-14) although it is below 4.5:1; the Draft badge reuses user-permission's `#FFAB00`.
 
 ## Dependencies and traceability
 
