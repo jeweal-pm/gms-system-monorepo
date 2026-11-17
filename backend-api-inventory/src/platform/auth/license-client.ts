@@ -25,23 +25,40 @@ export function createLicenseClient(authServiceUrl: string, tokenFile: string | 
   return async (userId: string, sessionId: string): Promise<LicenseState> => {
     const token = await readServiceToken(tokenFile);
     if (!token) return "UNAVAILABLE";
+    // A bounded timer that is cleared once the body is settled. `AbortSignal.timeout` kept firing after the response
+    // completed; with an unread body (401/403) undici then closed the stream twice and the process crashed
+    // ("ReadableStream is already closed", dev 2026-11-17). Unread bodies are cancelled explicitly.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), DEADLINE_MS);
     try {
       const response = await fetcher(url, {
         method: "POST",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({ userId, sessionId }),
-        signal: AbortSignal.timeout(DEADLINE_MS),
+        signal: controller.signal,
         redirect: "error",
       });
       if (response.status === 200) {
         const body = (await response.json()) as Record<string, unknown>;
         return body?.decision === "ELIGIBLE" && ["VALID", "EXPIRING", "GRACE"].includes(String(body.status)) ? "ELIGIBLE" : "UNAVAILABLE";
       }
+      await discardBody(response);
       if (response.status === 401) return "UNAUTHENTICATED";
       if (response.status === 403) return "DENIED";
       return "UNAVAILABLE";
     } catch {
       return "UNAVAILABLE";
+    } finally {
+      clearTimeout(timer);
     }
   };
+}
+
+/** Releases an unread fetch body without throwing (keeps the undici stream state consistent). */
+export async function discardBody(response: Response): Promise<void> {
+  try {
+    if (response.body && !response.bodyUsed) await response.body.cancel();
+  } catch {
+    // already closed or errored: nothing to release
+  }
 }

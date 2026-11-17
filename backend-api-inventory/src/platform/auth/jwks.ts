@@ -1,3 +1,4 @@
+import { discardBody } from "./license-client";
 import type { JWK } from "jose";
 import { AppError, authUnavailable, unauthenticated } from "../errors";
 
@@ -38,16 +39,25 @@ export class JwksCache {
     this.pending = (async () => {
       this.lastFetchAt = this.now();
       let response: Response;
-      try {
-        response = await this.fetcher(this.url, { method: "GET", headers: { accept: "application/json" }, signal: AbortSignal.timeout(2_000), redirect: "error" });
-      } catch {
-        throw authUnavailable();
-      }
-      if (!response.ok) throw authUnavailable();
-      const declared = Number(response.headers.get("content-length") ?? 0);
-      if (Number.isFinite(declared) && declared > MAX_JWKS_BYTES) throw authUnavailable();
+      // Cleared once the body is settled (see license-client: a late AbortSignal.timeout crashed undici).
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 2_000);
       let payload: unknown;
-      try { payload = JSON.parse(await readBounded(response, MAX_JWKS_BYTES)); } catch { throw authUnavailable(); }
+      try {
+        try {
+          response = await this.fetcher(this.url, { method: "GET", headers: { accept: "application/json" }, signal: controller.signal, redirect: "error" });
+        } catch {
+          throw authUnavailable();
+        }
+        const declared = Number(response.headers.get("content-length") ?? 0);
+        if (!response.ok || (Number.isFinite(declared) && declared > MAX_JWKS_BYTES)) {
+          await discardBody(response);
+          throw authUnavailable();
+        }
+        try { payload = JSON.parse(await readBounded(response, MAX_JWKS_BYTES)); } catch { throw authUnavailable(); }
+      } finally {
+        clearTimeout(timer);
+      }
       const keys = parseJwks(payload);
       if (!keys) throw authUnavailable();
       this.cached = keys;

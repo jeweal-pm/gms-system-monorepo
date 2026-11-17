@@ -215,6 +215,30 @@ describe("UT-LS-B06 ported auth", () => {
     expect(await check("u", "s")).toBe("UNAVAILABLE");
     expect(await createLicenseClient(auth.url, join(dir, "missing"))("u", "s")).toBe("UNAVAILABLE");
   });
+
+  it("license client (dev crash 2026-11-17): an unread 401/403/500 body is cancelled and the deadline timer never aborts a finished call", async () => {
+    vi.useFakeTimers();
+    try {
+      const token = randomBytes(32).toString("base64url");
+      const file = join(dir, "auth-token-2");
+      writeFileSync(file, token);
+      for (const status of [401, 403, 500]) {
+        let cancelled = false;
+        let signal: AbortSignal | undefined;
+        const fetcher = (async (_url: unknown, init?: RequestInit) => {
+          signal = init?.signal ?? undefined;
+          const body = new ReadableStream<Uint8Array>({ pull: () => undefined, cancel: () => { cancelled = true; } });
+          return new Response(body, { status });
+        }) as typeof fetch;
+        await createLicenseClient("http://auth.test", file, fetcher)("u", "s");
+        expect(cancelled).toBe(true);
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(signal?.aborted).toBe(false);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("config, errors, hub, notifications", () => {
