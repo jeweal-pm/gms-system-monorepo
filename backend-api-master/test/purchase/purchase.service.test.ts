@@ -98,7 +98,7 @@ vi.mock("../../src/database/prisma-client", () => {
       // location-master SA-LM-05: the stored lines' locations may stay.
       findMany: vi.fn(async () => db.storedLocations.map((location) => ({ location }))),
     },
-    // location-master (ADR-0052): the active locations a typed row may choose.
+    // location-master (ADR-0053): the active locations a typed row may choose.
     location: { findMany: vi.fn(async () => db.activeLocations.map((name) => ({ name }))) },
     purchaseCharge: { createMany: track("purchaseCharge.createMany", {}), deleteMany: track("purchaseCharge.deleteMany", {}) },
     // ADR-0049: create (pending approval) and approve record a notification in the same transaction.

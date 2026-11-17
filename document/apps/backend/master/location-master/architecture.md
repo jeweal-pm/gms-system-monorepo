@@ -1,6 +1,6 @@
 # Location Master — architecture (SA revision 1)
 
-- Status: **approved** 2026-11-16 (owner "อนุมัติ" in chat, 2026-11-16 (Q-LM-01…05 take their defaults)) · UI revision 1 ([ui-spec](../../../frontend/location-master/ui-spec.md)) · [ADR-0052](../../../../adr/0052-location-master.md) (Accepted)
+- Status: **approved** 2026-11-16 (owner "อนุมัติ" in chat, 2026-11-16 (Q-LM-01…05 take their defaults)) · UI revision 1 ([ui-spec](../../../frontend/location-master/ui-spec.md)) · [ADR-0053](../../../../adr/0053-location-master.md) (Accepted)
 - Owning service: **backend-api-master** (schema `partner`), next to Stone Master, Currency and the documents that use locations. No new service, container, dependency or infra change.
 - Bundle: [api-contract](api-contract.md) · [database-diagram](database-diagram.md) · [sequence-diagram](sequence-diagram.md) · [testing](testing.md) · TODO [location-master](../../../../task/todo/location-master.md) · flow [location-master-flow](../../../../diagram/location-master-flow.md)
 

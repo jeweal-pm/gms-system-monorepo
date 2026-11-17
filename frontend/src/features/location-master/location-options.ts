@@ -4,7 +4,7 @@ import type { Option } from "@/features/quotation/lib/options";
 export const NO_LOCATION_OPTION: Option = { value: "", label: "—" };
 
 /**
- * location-master FE-LM-003 (ADR-0052, SA-LM-04): the active Location Master names from a document's `options`
+ * location-master FE-LM-003 (ADR-0053, SA-LM-04): the active Location Master names from a document's `options`
  * (`locations`) as Location dropdown choices. Until the options load, the dropdown still shows the blank choice and
  * the row's stored value (the row panel adds it, `withCurrent`).
  */

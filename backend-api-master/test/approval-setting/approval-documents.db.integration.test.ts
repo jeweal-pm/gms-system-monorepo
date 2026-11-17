@@ -111,7 +111,7 @@ describe.runIf(canRun)("approval documents (ADR-0050 stage 2) on PostgreSQL", ()
     vi.stubEnv("PARTNER_DATABASE_URL", testUrl!);
     vi.stubEnv("DATABASE_URL", testUrl!);
     ({ prisma } = await import("../../src/database/prisma-client"));
-    // location-master (ADR-0052): the locations these PO / Purchase rows type must be in the master.
+    // location-master (ADR-0053): the locations these PO / Purchase rows type must be in the master.
     await (await import("../partner-shared/locations")).ensureTestLocations(prisma);
     schemas = await import("../../src/trade-document/memo-schemas");
     const { MemoReceiveService } = await import("../../src/trade-document/memo-receive.service");

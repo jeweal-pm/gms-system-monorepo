@@ -1076,7 +1076,7 @@ describe("staged master domain tRPC boundary", () => {
   });
 });
 
-/** UT-LM-B02 (location-master SA rev 1, ADR-0052): grants per operation, CSRF on writes, the actor from the context. */
+/** UT-LM-B02 (location-master SA rev 1, ADR-0053): grants per operation, CSRF on writes, the actor from the context. */
 describe("locationMaster router", () => {
   const id = "11111111-1111-4111-8111-111111111111";
   const at = "2026-11-16T03:00:00.000Z";

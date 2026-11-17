@@ -8,7 +8,7 @@ import { mapPurchaseSaveError } from "@/features/purchase/api";
 import { createDomainTrpcFetch } from "@/lib/domain-trpc-fetch";
 
 /**
- * IT-LM-01/02 (location-master UI rev 1, ADR-0052): the real tRPC link + CSRF fetch wrapper against a controlled
+ * IT-LM-01/02 (location-master UI rev 1, ADR-0053): the real tRPC link + CSRF fetch wrapper against a controlled
  * `/api/master/trpc` server → the page's mappers, and the PO / Purchase Location choices from `options.locations`.
  */
 type Call = { path: string; method: string; input: unknown; csrf: string | null };

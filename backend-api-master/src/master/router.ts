@@ -444,7 +444,7 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       }),
       delete: permitted("currency", "DELETE", true).input(idInput).mutation(({ ctx, input }) => domainCall(() => currency.delete(ctx.userId, input.id))),
     }),
-    // location-master SA rev 1 / ADR-0052 (owner 2026-11-16): Name-only master; documents copy the name (no FK). The
+    // location-master SA rev 1 / ADR-0053 (owner 2026-11-16): Name-only master; documents copy the name (no FK). The
     // documents read active names through their own `options` (SA-LM-04), not here.
     locationMaster: t.router({
       list: permitted("location-master", "VIEW").input(locationListInput).query(({ input }) => domainCall(() => locationMaster.list(toListQuery(input)))),

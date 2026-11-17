@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { checkLineLocations, decodeLocationCursor, encodeLocationCursor, LOCATION_CURSOR_MAX, LOCATION_OPTIONS_LIMIT } from "../../src/location-master/location-master.service";
 import { createLocationBodySchema, deleteLocationBodySchema, updateLocationBodySchema } from "../../src/location-master/location-master.schemas";
 
-/** UT-LM-B01 / B03 / B04 (location-master SA rev 1, ADR-0052): schemas, cursor, the documents' line check. */
+/** UT-LM-B01 / B03 / B04 (location-master SA rev 1, ADR-0053): schemas, cursor, the documents' line check. */
 
 const AT = "2026-11-16T03:00:00.000Z";
 

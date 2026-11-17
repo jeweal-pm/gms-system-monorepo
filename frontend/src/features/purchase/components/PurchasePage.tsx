@@ -240,7 +240,7 @@ export const PURCHASE_CONFIG: DocumentFormConfig<PurchaseFormValues, PurchaseInp
   emptyRowText: PURCHASE_EMPTY_ROW_TEXT,
   itemTable: PurchaseItemTable,
   kind: PURCHASE_KIND,
-  // location-master FE-LM-003 (ADR-0052): typed rows choose an active Location Master name.
+  // location-master FE-LM-003 (ADR-0053): typed rows choose an active Location Master name.
   kindFromOptions: (options) => ({ locations: locationOptions(options?.locations) }),
   approvalType: "purchase",
   photos: DOCUMENT_PHOTOS.purchase,

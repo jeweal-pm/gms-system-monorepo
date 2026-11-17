@@ -3,7 +3,7 @@ import { HttpException } from "@nestjs/common";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 /**
- * IT-LM-B01…B03 (location-master SA rev 1, ADR-0052) on a disposable PostgreSQL (`PARTNER_TEST_DATABASE_URL`, never
+ * IT-LM-B01…B03 (location-master SA rev 1, ADR-0053) on a disposable PostgreSQL (`PARTNER_TEST_DATABASE_URL`, never
  * the dev database on 5432): the table and its case-insensitive unique name, list paging and search, versions, a
  * concurrent duplicate, and the active names the documents offer.
  */

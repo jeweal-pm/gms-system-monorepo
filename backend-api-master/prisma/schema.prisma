@@ -670,7 +670,7 @@ model Currency {
   @@schema("partner")
 }
 
-/// Location Master (ADR-0052, SA location-master rev 1): names offered on Purchase Order / Purchase rows. Documents copy
+/// Location Master (ADR-0053, SA location-master rev 1): names offered on Purchase Order / Purchase rows. Documents copy
 /// the name into their own `location` column (no FK), so a rename or delete never changes a saved document. The name is
 /// unique ignoring case (`location_name_lower_key ON lower(name)`, raw SQL; Prisma can't declare expression indexes).
 model Location {

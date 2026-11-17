@@ -4,7 +4,7 @@ import type { LocationFormValues } from "./schema";
 
 /**
  * location-master data boundary (data-fetching.md): contract → form values and back, drawer row text and
- * domain-code messages for the master `locationMaster.*` procedures (SA rev 1, ADR-0052).
+ * domain-code messages for the master `locationMaster.*` procedures (SA rev 1, ADR-0053).
  */
 
 /** Wording for the shared Partner Master header / drawer / dialogs; `key` is the permission menu key. */

@@ -74,7 +74,7 @@ describe.runIf(canRun)("go-live approve-pending command on PostgreSQL (IT-AS-B12
     vi.stubEnv("PARTNER_DATABASE_URL", testUrl!);
     vi.stubEnv("DATABASE_URL", testUrl!);
     ({ prisma } = await import("../../src/database/prisma-client"));
-    // location-master (ADR-0052): the locations these PO / Purchase rows type must be in the master.
+    // location-master (ADR-0053): the locations these PO / Purchase rows type must be in the master.
     await (await import("../partner-shared/locations")).ensureTestLocations(prisma);
     command = await import("../../src/scripts/approve-pending");
     schemas = await import("../../src/trade-document/memo-schemas");

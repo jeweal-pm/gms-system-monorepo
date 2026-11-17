@@ -8,6 +8,8 @@
 - Approval evidence: owner 2026-11-13 Q-PU-36 "ล้างเป็นค่าว่าง เลขที่ล้างแล้วจะไม่ถูกนำมาใช้ซ้ำ", Q-PU-37 "เป็น — ดีแล้ว", then "ไม่ต้องทำอะไรเพิ่ม ปรับ Pu กันก่อน" (Q-PU-38 default, start implementation)
 - Amends: [ADR-0042](0042-purchase-document-and-stock-deduction.md) SA-PU-10 ("MANUAL / PURCHASE_ORDER lines get a Stock ID at Save"). Related: [INV-20261029-002](../task/investigation/INV-20261029-002-memo-receive-stock-id-exhaustion.md) (shared counter) and [INV-20261113-001](../task/investigation/INV-20261113-001-inv-fixes-review.md) Part B (Memo Receive / Purchase duplicate at the year boundary).
 
+- **Proposed amendment (pending owner approval):** [ADR-0052](0052-load-to-stock-in-backend-api-inventory.md) D5 — §6: Load to Stock gets the Stock ID from master inside the PU allocation transaction (same counter and format), at Save with approval OFF or at Approve with ON, one per load row, never reused; `issueStockIds` takes one fixed advisory lock and reads the clock after it, so INV-20261113-001 Part B stays closed with two issuers.
+
 ## Context
 
 Today a Purchase row picked from Memo Stock (`STOCK`) keeps that item's Stock ID. A keyed-in row (`MANUAL`) or a Purchase Order row (`PURCHASE_ORDER`) gets a new Stock ID at Save. That ID comes from the counter `memo_stock_id_counter`, which Memo Receive also uses (`issueStockIds`). Purchase Order itself has no Stock ID.

@@ -1,4 +1,4 @@
-# ADR-0052: Location Master in api-master; documents keep the location name
+# ADR-0053: Location Master in api-master; documents keep the location name
 
 - Status: Accepted
 - Date: 2026-11-16

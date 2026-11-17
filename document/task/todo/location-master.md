@@ -1,6 +1,6 @@
 # TODO: location-master (UI rev 1 + SA rev 1)
 
-- Status: **done** 2026-11-16 (approved the same day) — one owner approval covers this TODO, the [ui-spec](../../apps/frontend/location-master/ui-spec.md), the [SA bundle](../../apps/backend/master/location-master/architecture.md) and [ADR-0052](../../adr/0052-location-master.md).
+- Status: **done** 2026-11-16 (approved the same day) — one owner approval covers this TODO, the [ui-spec](../../apps/frontend/location-master/ui-spec.md), the [SA bundle](../../apps/backend/master/location-master/architecture.md) and [ADR-0053](../../adr/0053-location-master.md).
 - Approval: owner "อนุมัติ" in chat, 2026-11-16 (Q-LM-01…05 take their defaults)
 - Order: backend BE-LM-001…004 → frontend FE-LM-001…004 → FE-LM-005 reviews.
 - Implementation note: optimistic locking uses `updatedAt` / `expectedUpdatedAt` and a taken name is `LOCATION_NAME_TAKEN` (409), like the other masters; the [contract](../../apps/backend/master/location-master/api-contract.md) is updated.

@@ -5,6 +5,8 @@
 - ADRs: [routing](../../../../adr/0025-gms-domain-routing-and-trpc.md), [authz](../../../../adr/0026-gms-access-tokens-and-live-authorization.md), [ownership](../../../../adr/0027-gms-master-inventory-data-and-operations.md)
 - Main flow: [GMS request](../../../../diagram/gms-platform-request-flow.md)
 
+> Revision note (2026-11-16, proposed): the first slice and the service identity `backend-api-inventory` are designed in [load-to-stock SA revision 1](../load-to-stock/architecture.md) / [ADR-0052](../../../../adr/0052-load-to-stock-in-backend-api-inventory.md); divergences from this candidate are listed in its [decisions](../load-to-stock/decisions.md#divergence-from-the-earlier-inventory-design-gms-platform-rev-1).
+
 ## Domain and public boundary
 
 `api-inventory` does not exist yet. Proposed Hono service owns `inventory` PostgreSQL schema, app/migration/report roles and `/api/inventory/v1/*` typed REST. Item/SKU, units, conversions, warehouse/location, lot/serial, stock documents, movements/balances and counters belong here. Existing stone master stays in master; inventory reads an owner API or approved read-only view/copy by stable ID and version, never writes master/stone. Auth provides only public JWT keys and auth-owned read-only current-authorization view. The browser reaches inventory through Nginx same origin; no gateway. No inventory UI/stock document product contract is approved yet, so initial build should be gated to selected minimal vertical slice, not all modules at once.

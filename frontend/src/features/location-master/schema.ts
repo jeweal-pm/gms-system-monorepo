@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** Location Master form (location-master UI rev 1, ADR-0052): one Name field and the Active switch. */
+/** Location Master form (location-master UI rev 1, ADR-0053): one Name field and the Active switch. */
 export type LocationFormValues = { name: string; active: boolean };
 
 /** The documents store up to 40 characters (`location varchar(40)`). */

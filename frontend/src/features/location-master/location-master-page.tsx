@@ -36,7 +36,7 @@ const FORM_ID = "location-form";
 const entity = LOCATION_ENTITY;
 
 /**
- * Setup › Master Code › Location Master (location-master UI rev 1, ADR-0052): the Stone Master › Size layout with one
+ * Setup › Master Code › Location Master (location-master UI rev 1, ADR-0053): the Stone Master › Size layout with one
  * Name field and the Active switch. Same modes and permission rules as the other masters (create / view / edit /
  * none; buttons disabled without the action). Documents copy the name, so a rename or delete never changes them.
  */

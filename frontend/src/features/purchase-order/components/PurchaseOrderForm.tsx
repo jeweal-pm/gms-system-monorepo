@@ -101,7 +101,7 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, flo
   const next = useNextPurchaseOrderNo(values.docDate ?? "", !saved?.id);
   const writes = usePurchaseOrderWrites();
   const docNo = saved?.docNo ?? next.data?.docNo ?? "—";
-  // location-master FE-LM-003 (ADR-0052): the Location dropdown's choices are the active Location Master names.
+  // location-master FE-LM-003 (ADR-0053): the Location dropdown's choices are the active Location Master names.
   const kind = useMemo(() => ({ ...PURCHASE_ORDER_KIND, stone: stoneChoices(options.data), locations: locationOptions(options.data?.locations) }), [options.data]);
   useTabDocument(saved?.docNo);
   useTabDirty(formState.isDirty && !readOnly);

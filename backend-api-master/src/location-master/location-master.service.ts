@@ -74,7 +74,7 @@ export async function activeLocationsByKey(client: Client): Promise<Map<string, 
 }
 
 /**
- * SA-LM-05 (ADR-0052): a typed (manual) line's non-empty location must be an active master name — stored in the
+ * SA-LM-05 (ADR-0053): a typed (manual) line's non-empty location must be an active master name — stored in the
  * master's spelling — or a value the document already stores (an old typed or since-deactivated name may stay).
  * Copied lines (`isManual` false) keep their copied location. Blank stays allowed. Refused lines answer one
  * VALIDATION_ERROR with `lines.{i}.location` / `unknown_location`. Returns the lines with the spelling applied.

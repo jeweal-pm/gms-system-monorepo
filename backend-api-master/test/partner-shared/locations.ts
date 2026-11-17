@@ -1,5 +1,5 @@
 /**
- * location-master (ADR-0052, SA-LM-05): Purchase Order / Purchase manual rows now need an active Location Master name.
+ * location-master (ADR-0053, SA-LM-05): Purchase Order / Purchase manual rows now need an active Location Master name.
  * The disposable test database starts with an empty master, so the suites that type a location add the names they use
  * (idempotent: an existing name, any case, is left alone).
  */

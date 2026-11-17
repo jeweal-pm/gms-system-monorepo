@@ -108,7 +108,7 @@ const isQuantityShort = (entry: FieldError) => /^lines\.\d+\.(pcs|weightCt)$/.te
 /** rev 3 (ADR-0043): a row below the Sold part, a Sold row not bought whole, or an item with nothing left to merge. */
 const isSoldRule = (entry: FieldError) => ["below_sold", "must_equal_sold", "not_mergeable"].includes(entry.code);
 export const PURCHASE_BELOW_SOLD = "At least the quantity already sold to customers";
-/** location-master SA-LM-05 (ADR-0052). */
+/** location-master SA-LM-05 (ADR-0053). */
 export const PURCHASE_LOCATION_UNKNOWN = "Choose a location from Location Master";
 export const PURCHASE_MUST_EQUAL_SOLD = "A sold item is purchased whole";
 const isRowReference = (entry: FieldError) => /^lines\.\d+\.(memoStockId|purchaseOrderLineId|stoneCodeId)$/.test(entry.path);

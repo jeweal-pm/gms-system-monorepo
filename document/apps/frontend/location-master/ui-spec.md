@@ -5,7 +5,7 @@
 - Date: 2026-11-16
 - Owner request (2026-11-16, verbatim): "sa uxui ช่วยทำ spec และ adr หน้า location master หน่อยโดยหน้านี้จะมี textfield เดียวคือ Name UI หน้าเหมือน stone เลย frontend backend ช่วยทำ ui ให้หน่อย และ ทำ api และหน้าไหนมี location ให้เลือกก็ fetch จาก location จริงๆไปใช้ได้เลย"
 - Source: owner text only (no new image). The layout reuses the approved Stone Master pages ([stone-master ui-spec](../stone-master/ui-spec.md), source S1), the Size page in particular (one Name field).
-- SA bundle: [backend location-master](../../backend/master/location-master/architecture.md), [ADR-0052](../../../adr/0052-location-master.md)
+- SA bundle: [backend location-master](../../backend/master/location-master/architecture.md), [ADR-0053](../../../adr/0053-location-master.md)
 - Central TODO: [task/todo/location-master.md](../../../task/todo/location-master.md)
 - Main flow: [diagram/location-master-flow.md](../../../diagram/location-master-flow.md)
 

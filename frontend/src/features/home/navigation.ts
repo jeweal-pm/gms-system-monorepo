@@ -48,7 +48,7 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   "stone-master": stonePageHref(DEFAULT_STONE_SLUG),
   "document-setup": "/setup/document-setup",
   currency: "/setup/currency",
-  // location-master UI rev 1 (ADR-0052): Setup › Master Code › Location Master.
+  // location-master UI rev 1 (ADR-0053): Setup › Master Code › Location Master.
   "location-master": "/setup/location-master",
   quotation: "/pre-sale/quotation",
   // reserve UI rev 1 (ADR-0036): Pre-Sale › Reserve.

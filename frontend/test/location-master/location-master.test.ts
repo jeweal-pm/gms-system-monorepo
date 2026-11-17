@@ -10,7 +10,7 @@ import { PURCHASE_CONFIG } from "@/features/purchase/components/PurchasePage";
 import { masterCodeDestinations } from "@/features/setup/setup-destinations";
 import { gatewayError, issuesByPath } from "../partner/helpers";
 
-/** UT-LM-01…04: location-master UI rev 1 (ADR-0052, owner approval 2026-11-16). */
+/** UT-LM-01…04: location-master UI rev 1 (ADR-0053, owner approval 2026-11-16). */
 
 const detail = (overrides: Partial<LocationDetail> = {}): LocationDetail => ({
   id: "00000000-0000-4000-8000-000000000001",
