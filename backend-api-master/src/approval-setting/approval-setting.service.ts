@@ -49,7 +49,7 @@ function toUpdated(row: SettingRow): ApprovalSettingUpdated {
 export class ApprovalSettingService {
   private readonly logger = new Logger(ApprovalSettingService.name);
 
-  /** 11 items in sidebar order; `waiting` only when `withCounts` (caller holds approval-setup:VIEW). */
+  /** 8 items in sidebar order (ADR-0052 D8: inventory types live in backend-api-inventory); `waiting` only when `withCounts`. */
   async list(options: { withCounts: boolean }): Promise<{ items: ApprovalSettingItem[] }> {
     try {
       const rows = await prisma.approvalSetting.findMany({ select: { type: true, requireApproval: true, version: true, updatedAt: true, updatedByName: true } });

@@ -14,11 +14,13 @@ import { approveMenuHref, type ApproveMenu, type ApproveMenuSlug } from "@/featu
 import { menuAccess } from "@/features/approve-center/model";
 import { PartnerAccessGuard, PartnerPageFrame } from "@/features/partner/components/partner-page-parts";
 import { APPROVAL_SETTING_QUERY } from "@/features/trade-document/approval-flow";
+import { inventoryApprovalApi, inventoryApprovalKeys, isInventoryApprovalType, useInventoryApprovalSettings } from "@/features/inventory/approval";
 import { masterTrpc } from "@/lib/master-trpc";
 import {
   blockedText,
   helperText,
   isNotAvailable,
+  mergeSettings,
   rowLocked,
   SETTINGS_LOAD_ERROR,
   settingOf,
@@ -62,9 +64,12 @@ function ApprovalSetupWorkspace({ canEdit }: { canEdit: boolean }) {
   const utils = masterTrpc.useUtils();
   const { mine } = useMine();
   const list = masterTrpc.approvalSetting.list.useQuery(undefined, APPROVAL_SETTING_QUERY);
+  // FE-LS-014 (ADR-0052 D8): Load to Stock, Merge/Split and Transfer Location switches live in backend-api-inventory.
+  const inventoryList = useInventoryApprovalSettings();
   const [dialog, setDialog] = useState<OpenDialog | null>(null);
   const [saving, setSaving] = useState<ApproveMenuSlug | null>(null);
-  const items = list.data?.items;
+  const items = mergeSettings(list.data?.items, inventoryList.data?.items);
+  const refetchSettings = () => Promise.all([utils.approvalSetting.list.invalidate(), queryClient.invalidateQueries({ queryKey: inventoryApprovalKeys.settings() })]);
 
   function onToggle(menu: ApproveMenu, next: boolean) {
     if (saving || dialog) return;
@@ -81,20 +86,27 @@ function ApprovalSetupWorkspace({ canEdit }: { canEdit: boolean }) {
     if (!setting) return;
     setSaving(menu.slug);
     try {
-      const saved = await utils.client.approvalSetting.update.mutate({ type: menu.type, requireApproval: on, expectedVersion: setting.version });
-      utils.approvalSetting.list.setData(undefined, (current) =>
-        current ? { ...current, items: current.items.map((item) => (item.type === saved.type ? { ...item, ...saved } : item)) } : current,
-      );
-      toast.show("success", switchedToast(menu, saved.requireApproval));
-      await Promise.all([utils.approvalSetting.list.invalidate(), queryClient.invalidateQueries({ queryKey: [["approval"]] })]);
+      let savedOn: boolean;
+      if (isInventoryApprovalType(menu.type)) {
+        const saved = await inventoryApprovalApi.updateSetting(menu.type, on, setting.version);
+        savedOn = saved.requireApproval;
+      } else {
+        const saved = await utils.client.approvalSetting.update.mutate({ type: menu.type as Parameters<typeof utils.client.approvalSetting.update.mutate>[0]["type"], requireApproval: on, expectedVersion: setting.version });
+        utils.approvalSetting.list.setData(undefined, (current) =>
+          current ? { ...current, items: current.items.map((item) => (item.type === saved.type ? { ...item, ...saved } : item)) } : current,
+        );
+        savedOn = saved.requireApproval;
+      }
+      toast.show("success", switchedToast(menu, savedOn));
+      await Promise.all([refetchSettings(), queryClient.invalidateQueries({ queryKey: [["approval"]] }), queryClient.invalidateQueries({ queryKey: ["inventory", "approval"] })]);
     } catch (error) {
       const failure = updateFailure(error, menu, setting.requireApproval);
       if (failure.kind === "blocked") {
         setDialog({ kind: "blocked", menu, text: blockedText(menu, failure.total) });
-        void utils.approvalSetting.list.invalidate();
+        void refetchSettings();
       } else {
         toast.show("error", failure.message);
-        if (failure.refetchSettings) void utils.approvalSetting.list.invalidate();
+        if (failure.refetchSettings) void refetchSettings();
         if (failure.refetchAccess) void queryClient.invalidateQueries({ queryKey: [["permission", "mine"]] });
       }
     } finally {

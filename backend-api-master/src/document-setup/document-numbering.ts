@@ -78,11 +78,32 @@ export async function nextPlainRunningNo(client: Client, document: NumberedDocum
 export const nextQuotationRunningNo = (client: Client, row: NumberingRow) => nextRunningNo(client, "quotation", row);
 export const nextPlainQuotationRunningNo = (client: Client, lock: boolean) => nextPlainRunningNo(client, "quotation", lock);
 
-/** Numbering row ids that issued a number on any document type (Document Setup `used`, SA-QT-05, SA-MO-04, SA-MR-08, SA-PO-08, SA-PU-11). */
+/**
+ * Numbering row ids that issued a number on any document type (Document Setup `used`, SA-QT-05, SA-MO-04, SA-MR-08,
+ * SA-PO-08, SA-PU-11), plus rows an inventory document took a number from (ADR-0052 D10: `external_used_at`, set by
+ * `POST /internal/v1/inventory/document-numbering/resolve` with `markUsed`; BE-LS-005).
+ */
 export async function usedNumberingIds(client: Client, ids: readonly string[]): Promise<Set<string>> {
   if (ids.length === 0) return new Set();
   const where = { numberingId: { in: [...ids] } };
   const kinds: NumberedDocument[] = ["quotation", "memoOut", "memoOutReturn", "memoReceive", "memoReturn", "reserve", "purchaseOrder", "purchase"];
-  const used = await Promise.all(kinds.map((kind) => documentTable(client, kind).groupBy({ by: ["numberingId"], where })));
-  return new Set(used.flat().flatMap((entry) => (entry.numberingId ? [entry.numberingId] : [])));
+  const [external, ...used] = await Promise.all([
+    client.documentNumbering.findMany({ where: { id: { in: [...ids] }, externalUsedAt: { not: null } }, select: { id: true } }),
+    ...kinds.map((kind) => documentTable(client, kind).groupBy({ by: ["numberingId"], where })),
+  ]);
+  return new Set([
+    ...external.map((row) => row.id),
+    ...used.flat().flatMap((entry) => (entry.numberingId ? [entry.numberingId] : [])),
+  ]);
+}
+
+/**
+ * ADR-0052 D10 (BE-LS-004): the numbering row in effect for an inventory document; with `markUsed` the row is marked
+ * used once (`external_used_at`, idempotent) in the same statement that reads it, so Document Setup then keeps it locked.
+ */
+export async function resolveExternalNumbering(client: Client, transactionKey: DocumentTransactionKey, docDate: Date, markUsed: boolean): Promise<NumberingRow | null> {
+  const row = await numberingInEffect(client, transactionKey, docDate, false);
+  if (!row || !markUsed) return row;
+  await client.$executeRaw(Prisma.sql`UPDATE "partner"."document_numbering" SET "external_used_at" = now() WHERE "id" = ${row.id}::uuid AND "external_used_at" IS NULL`);
+  return row;
 }

@@ -389,9 +389,12 @@ describe("staged master domain tRPC boundary", () => {
     const editor = router.createCaller({ ...editorCtx, principal: { ...editorCtx.principal!, displayName: "Mint" } });
     await editor.approvalSetting.update(update);
     expect(approvalSetting.update).toHaveBeenCalledWith({ userId: "user-1", userName: "Mint" }, update);
-    await router.createCaller(context(["approval-setup:EDIT"])).approvalSetting.update({ ...update, type: "load-to-stock", requireApproval: true });
-    expect(approvalSetting.update).toHaveBeenLastCalledWith({ userId: "user-1", userName: null }, { type: "load-to-stock", requireApproval: true, expectedVersion: 3 });
+    await router.createCaller(context(["approval-setup:EDIT"])).approvalSetting.update({ ...update, type: "purchase", requireApproval: true });
+    expect(approvalSetting.update).toHaveBeenLastCalledWith({ userId: "user-1", userName: null }, { type: "purchase", requireApproval: true, expectedVersion: 3 });
     approvalSetting.update.mockClear();
+    // ADR-0052 D8 (BE-LS-005): the inventory keys belong to backend-api-inventory now and are refused here.
+    await expect(editor.approvalSetting.update({ ...update, type: "load-to-stock" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST", message: "VALIDATION_ERROR" });
+    expect(approvalSetting.update).not.toHaveBeenCalled();
     // Validation after the grant check, with field errors; strict (an actor in the input is refused).
     const invalid = await editor.approvalSetting.update({ ...update, type: "sale" } as never).then(() => null, (error: unknown) => error as { code: string; message: string; cause: HttpException });
     expect(invalid).toMatchObject({ code: "BAD_REQUEST", message: "VALIDATION_ERROR" });

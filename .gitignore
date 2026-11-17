@@ -19,3 +19,6 @@ document/testing/user-check/chrome-*/
 backend-api-master/storage/
 backend-api-auth/storage/
 /storage/
+# backend-api-inventory dev upload root (ADR-0052 D13); production uses a host path outside the repo
+/storage-inventory/
+backend-api-inventory/storage/

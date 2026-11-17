@@ -19,9 +19,9 @@ describe("UT-AP-01 menu registry", () => {
     ]);
   });
 
-  it("the inventory menus are not available; the eight document types are available with their procedures (FE-AS-009: Quotation too)", () => {
+  it("Merge/Split and Transfer Location are not available; the eight document types and Load to Stock (FE-LS-011) are available with their procedures", () => {
     const by = Object.fromEntries(APPROVE_MENUS.map((menu) => [menu.slug, menu]));
-    for (const slug of ["load-to-stock", "merge-split", "transfer-location"]) expect(by[slug].availability).toBe("not-available");
+    for (const slug of ["merge-split", "transfer-location"]) expect(by[slug].availability).toBe("not-available");
     const procs = APPROVE_MENUS.flatMap((menu) => (menu.availability === "available" ? [[menu.slug, menu.proc]] : []));
     expect(procs).toEqual([
       ["quotation", "quotation"],
@@ -32,6 +32,7 @@ describe("UT-AP-01 menu registry", () => {
       ["memo-out-return", "memoOutReturn"],
       ["purchase-order", "purchaseOrder"],
       ["purchase", "purchase"],
+      ["load-to-stock", "loadToStock"],
     ]);
   });
 
@@ -46,7 +47,7 @@ describe("UT-AP-01 menu registry", () => {
       "quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase", "load-to-stock", "merge-split", "stock-transfer-location",
     ]);
     expect(APPROVE_PERMISSIONS).toContain("stock-transfer-location:APPROVE");
-    expect(APPROVE_MENUS.filter((menu) => menu.party === "vendor").map((menu) => menu.slug)).toEqual(["memo-receive", "memo-return", "purchase-order", "purchase"]);
+    expect(APPROVE_MENUS.filter((menu) => menu.party === "vendor").map((menu) => menu.slug)).toEqual(["memo-receive", "memo-return", "purchase-order", "purchase", "load-to-stock"]);
     expect(searchPlaceholder(approveMenuFor("reserve")!)).toBe("Search no., customer, stone, Stock ID");
     expect(searchPlaceholder(approveMenuFor("purchase")!)).toBe("Search no., vendor, stone, Stock ID");
     expect(searchPlaceholder(approveMenuFor("merge-split")!)).toBe("Search no., stone, Stock ID");

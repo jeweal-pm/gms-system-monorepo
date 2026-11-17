@@ -4,6 +4,7 @@ import { Send } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/features/quotation/components/ui";
 import type { ConfirmRequest } from "@/features/quotation/components/use-confirm";
+import { isInventoryApprovalType, useInventoryApprovalSettings } from "@/features/inventory/approval";
 import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
 import {
@@ -27,10 +28,14 @@ import {
 export const APPROVAL_SETTING_QUERY = { staleTime: 5 * 60_000, refetchOnWindowFocus: "always" as const, retry: retryTransient };
 
 export function useApprovalSetting(type: DocumentApprovalType): { requireApproval: boolean | undefined; refetch: () => Promise<unknown> } {
-  const list = masterTrpc.approvalSetting.list.useQuery(undefined, APPROVAL_SETTING_QUERY);
+  // load-to-stock FE-LS-009 / FE-LS-014 (ADR-0052 D8): inventory types read `GET /api/inventory/v1/approval-settings`.
+  const inventory = isInventoryApprovalType(type);
+  const list = masterTrpc.approvalSetting.list.useQuery(undefined, { ...APPROVAL_SETTING_QUERY, enabled: !inventory });
+  const inventoryList = useInventoryApprovalSettings(inventory);
+  const source = inventory ? inventoryList : list;
   return {
-    requireApproval: list.data?.items.find((item) => item.type === type)?.requireApproval,
-    refetch: () => list.refetch(),
+    requireApproval: source.data?.items.find((item) => item.type === type)?.requireApproval,
+    refetch: () => source.refetch(),
   };
 }
 

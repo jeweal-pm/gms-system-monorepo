@@ -25,6 +25,30 @@ export type ApprovalSettingItem = {
   waiting: number | null;
 };
 
+type InventorySetting = { type: string; requireApproval: boolean; version: number; waitingCount?: { pending: number; revision: number } | null };
+
+/**
+ * FE-LS-014 (ADR-0052 D8): master's rows without the three inventory types plus backend-api-inventory's rows in the
+ * same shape. Only Load to Stock has a page (Merge/Split and Transfer Location stay not available). `undefined` until
+ * master's list has loaded; inventory rows join when theirs has.
+ */
+export function mergeSettings(master: readonly ApprovalSettingItem[] | undefined, inventory: readonly InventorySetting[] | undefined): ApprovalSettingItem[] | undefined {
+  if (!master) return undefined;
+  const own = master.filter((item) => !INVENTORY_TYPES.has(item.type));
+  const fromInventory = (inventory ?? []).map((item) => ({
+    type: item.type,
+    requireApproval: item.requireApproval,
+    available: item.type === "load-to-stock",
+    version: item.version,
+    updatedAt: "",
+    updatedByName: null,
+    waiting: item.waitingCount ? Math.min(WAITING_CAP, item.waitingCount.pending + item.waitingCount.revision) : null,
+  }));
+  return [...own, ...fromInventory];
+}
+
+const INVENTORY_TYPES = new Set(["load-to-stock", "merge-split", "stock-transfer-location"]);
+
 export const settingOf = (items: readonly ApprovalSettingItem[] | undefined, type: ApprovalSettingType) => items?.find((item) => item.type === type);
 
 /** A row can be switched only when the page has it, the server says it is available and the user has EDIT. */

@@ -18,3 +18,5 @@ playwright-report
 backend-api-master/storage
 backend-api-auth/storage
 /storage
+backend-api-inventory/storage
+/storage-inventory

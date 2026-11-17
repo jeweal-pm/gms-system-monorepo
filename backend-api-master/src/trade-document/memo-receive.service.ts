@@ -68,12 +68,21 @@ export function formatStockId(year: number, runningNo: number): string {
  *   starts at 270006 (`last_no` 5 → 6), never at 270001, so Stock IDs stay unique although 2026 used the 27… prefix;
  * - the year's own row takes `GREATEST(last_no, that floor) + count` under its row lock (INSERT … ON CONFLICT DO UPDATE).
  * Only the INTEGER limit `STOCK_NO_MAX` refuses (`MEMO_RECEIVE_STOCK_ID_EXHAUSTED`) and the transaction then rolls back.
- * The unique Stock ID indexes remain the final backstop. Memo Receive is the only caller: Purchase lines no longer get a
- * Stock ID (ADR-0051, 2026-11-13); a later Load to Stock design reuses this counter.
+ * The unique Stock ID indexes remain the final backstop.
+ *
+ * ADR-0052 D5 (BE-LS-003): two callers now issue from this counter — Memo Receive and Load to Stock (the inventory
+ * allocation API, `partner.load_stock_id`). Every issue first takes ONE fixed transaction advisory lock
+ * (`STOCK_ID_LOCK_KEY`) and only then reads the clock (`now` may be a clock function), so two transactions can't pick
+ * different years around the Bangkok New Year and hand out the same number from two year rows (INV-20261113-001
+ * Part B). The lock is held until the caller commits; issuing is always the last lock a caller takes before the counter.
  */
-export async function issueStockIds(tx: Tx, count: number, now: Date): Promise<string[]> {
+export const STOCK_ID_LOCK_KEY = "partner.memo_stock_id_counter.issue";
+
+export async function issueStockIds(tx: Tx, count: number, now: Date | (() => Date)): Promise<string[]> {
   if (count === 0) return [];
-  const year = stockIdYear(now);
+  // pg_advisory_xact_lock returns void, which the driver can't read; select a constant instead.
+  await tx.$queryRaw(Prisma.sql`SELECT 1 AS locked FROM (SELECT pg_advisory_xact_lock(hashtext(${STOCK_ID_LOCK_KEY}))) AS l`);
+  const year = stockIdYear(typeof now === "function" ? now() : now);
   const rows = await tx.$queryRaw<{ last_no: number }[]>(Prisma.sql`
     WITH prior AS (
       SELECT "year", "last_no" FROM "partner"."memo_stock_id_counter" WHERE "year" < ${year}::smallint ORDER BY "year" FOR SHARE
@@ -126,7 +135,8 @@ export class MemoReceiveService {
       const errors: FieldError[] = input.lines.flatMap((line, index) => (line.id && !kept.has(line.id) ? [{ path: `lines.${index}.id`, code: "unknown_line" }] : []));
       if (errors.length > 0) throw validationException(errors);
       await checkLinePhotos(tx, input.lines);
-      const fresh = await issueStockIds(tx, input.lines.filter((line) => !line.id).length, this.clock());
+      // ADR-0052 D5: the clock is read after the Stock ID lock (pass the function, not its value).
+      const fresh = await issueStockIds(tx, input.lines.filter((line) => !line.id).length, this.clock);
       let next = 0;
       return input.lines.map((line) => (line.id ? { id: line.id, stockId: kept.get(line.id) } : { stockId: fresh[next++] }));
     },

@@ -1,4 +1,5 @@
 import { isTRPCClientError } from "@trpc/client";
+import { isInventoryApiError } from "./inventory-client";
 
 /**
  * Shared reading of auth/master domain tRPC errors (moved unchanged from
@@ -17,6 +18,17 @@ const DOMAIN_CODE_PATTERN = /^[A-Z][A-Z_]{1,63}$/;
  * message code). A 401 has no domain code ("Authentication required"), so it is reported as "UNAUTHORIZED".
  */
 export function readDomainError(error: unknown): DomainErrorInfo {
+  // load-to-stock FE-LS-016: the inventory REST client's envelope errors read the same way, so the shared mappers
+  // (flow-status, document-api, approve-center) handle `LOAD_TO_STOCK_*` codes; its 401 code reads as "UNAUTHORIZED".
+  if (isInventoryApiError(error)) {
+    const details = error.details && Object.fromEntries(Object.entries(error.details).filter(([, value]) => typeof value === "string" || typeof value === "number")) as Record<string, string | number>;
+    return {
+      domainCode: error.code === "UNAUTHENTICATED" ? "UNAUTHORIZED" : error.code,
+      fieldErrors: error.fieldErrors.map(({ path, code }) => ({ path, code })),
+      httpStatus: error.status || null,
+      details,
+    };
+  }
   if (!isTRPCClientError(error)) return { domainCode: null, fieldErrors: [], httpStatus: null, details: null };
   const data = error.data;
   const domainCode =

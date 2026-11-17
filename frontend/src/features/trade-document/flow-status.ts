@@ -11,8 +11,11 @@ import { readDomainError } from "@/lib/trpc-error";
 export const APPROVAL_DOC_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REVISION_REQUESTED", "REJECTED"] as const;
 export type ApprovalDocStatus = (typeof APPROVAL_DOC_STATUSES)[number];
 
-/** The eight document types with a page (approval setting keys, kebab-case as `approvalSetting.list`). */
-export type DocumentApprovalType = "quotation" | "reserve" | "memo-receive" | "memo-return" | "memo-out" | "memo-out-return" | "purchase-order" | "purchase";
+/**
+ * The document types with a page (approval setting keys, kebab-case as `approvalSetting.list`). `load-to-stock` is an
+ * inventory type (ADR-0052 D8): its setting is read from `backend-api-inventory`.
+ */
+export type DocumentApprovalType = "quotation" | "reserve" | "memo-receive" | "memo-return" | "memo-out" | "memo-out-return" | "purchase-order" | "purchase" | "load-to-stock";
 
 /** Error code prefix (`<CODE>_*`) and the menu name used in messages ("Approval is now off for {Menu}."). */
 export const APPROVAL_DOCUMENTS: Record<DocumentApprovalType, { code: string; menu: string }> = {
@@ -24,6 +27,7 @@ export const APPROVAL_DOCUMENTS: Record<DocumentApprovalType, { code: string; me
   "memo-out-return": { code: "MEMO_OUT_RETURN", menu: "Memo Out Return" },
   "purchase-order": { code: "PURCHASE_ORDER", menu: "Purchase Order" },
   purchase: { code: "PURCHASE", menu: "Purchase" },
+  "load-to-stock": { code: "LOAD_TO_STOCK", menu: "Load to Stock" },
 };
 
 export type DocReview = { action: "REVISE" | "REJECT"; note: string; at: string; byName: string | null };

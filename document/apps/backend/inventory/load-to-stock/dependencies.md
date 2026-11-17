@@ -36,3 +36,11 @@ The master auth context (`MasterJwksCache`, `current_authorization` row mapping,
 ## Integration-owned files (parent serializes)
 
 `backend-api-inventory/package.json`, `pnpm-lock.yaml`, `backend-api-inventory/Dockerfile`, `docker-compose*.yml`, `docker/nginx/gms-dev.conf`, `.env.example`, `.github/**`, `document/adr/tech-stack.md`, `document/infra/service-index.md`, `document/devops/service-index.md`, `document/task/index.md`, `document/task/frontend-latest.md`, `backend-api-master/src/app.module.ts`.
+
+## Installed (backend, 2026-11-17, BE-LS-006)
+
+| Package | Exact version | Note |
+|---|---|---|
+| `hono` | 4.13.18 | security release inside the 2-week window (INV-20261117-001); `hono/body-limit`, `hono/streaming` used; no `serveStatic` |
+| `@hono/node-server` | 2.1.7 | 2.x instead of 1.x: the advisory database lists all 1.x ≥ 1.19.10 under GHSA-rmxm-3fg6-px4f; peer `hono ^4`, Node ≥ 20 |
+| reused | `@prisma/client` / `@prisma/adapter-pg` / `prisma` 7.10.0, `jose` 6.2.12, `zod` ^4.4.3 (4.6.5), `pino` ^10 (10.4.0), `pg` ^8.16.3 (8.23.1), `vitest` 5.0.3, `typescript` ~5.9.3, `@gms/storage` workspace | no other new package |

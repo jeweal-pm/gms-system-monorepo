@@ -1,5 +1,6 @@
-# Production host: 4 GB RAM / 2 vCPU (ADR-0024, project owner). App caps total 1.45 vCPU / 2560 MiB;
-# GMS Nginx overlay adds 0.1 vCPU / 64 MiB, preserving host headroom; see document/infra/capacity.md.
+# Production host: 4 GB RAM / 2 vCPU (ADR-0024, project owner). App caps total 1.65 vCPU / 2816 MiB
+# (incl. backend-api-inventory 0.20 vCPU / 256 MiB, ADR-0052 D14); the GMS Nginx overlay adds 0.1 vCPU / 64 MiB
+# for 1.75 vCPU / 2880 MiB, preserving host headroom; see document/infra/capacity.md.
 # Node heaps are capped below each memory limit. docker-compose.dev.yml raises the limits for watch mode.
 services:
   postgres:
@@ -21,6 +22,8 @@ services:
     networks:
       - default
       - partner-db
+      # ADR-0052 D1 / infra bundle backend-api-inventory/1: dedicated internal DB network for inventory.
+      - inventory-db
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U f1_user -d f1_system"]
       interval: 5s
@@ -119,6 +122,109 @@ services:
         max-file: "3"
     # no ports: must not be published (ADR-0018)
 
+  # ADR-0052 D1/D13/D14, infra bundle document/infra/services/backend-api-inventory/1/security.md.
+  # Hono on Node; owns schema `inventory`. Internal only: reached through Nginx (GMS overlay), never published.
+  # The GMS overlay adds its auth/master service tokens, authz reader URL and the auth/master/web networks.
+  backend-api-inventory:
+    build:
+      context: .
+      dockerfile: backend-api-inventory/Dockerfile
+    image: f1-system-backend-api-inventory:local
+    restart: unless-stopped
+    init: true
+    read_only: true
+    user: "1000:1000"
+    tmpfs:
+      - /tmp:size=16m,mode=1777,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 256M
+          pids: 128
+    environment:
+      NODE_ENV: production
+      PORT: 3301
+      NODE_OPTIONS: --max-old-space-size=160
+      CHECKPOINT_DISABLE: "1"
+      PRISMA_HIDE_UPDATE_MESSAGE: "1"
+      GMS_STORAGE_ROOT: /app/backend-api-inventory/storage
+      # Runtime role gms_inventory_app (schema inventory DML only); no superuser fallback. Left empty when unset so
+      # postgres-only commands (pnpm infra:up) keep working; the service refuses to start without it (fail closed).
+      INVENTORY_DATABASE_URL: ${INVENTORY_DATABASE_URL:-}
+    # Inventory's own persistent upload root (not master's); the app writes only files/load-to-stock/.
+    volumes:
+      - type: bind
+        source: ${GMS_INVENTORY_STORAGE_HOST_PATH:-/srv/gms/inventory-storage}
+        target: /app/backend-api-inventory/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend-api-inventory-migrate:
+        condition: service_completed_successfully
+    networks:
+      - inventory-db
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3301/health/ready',{signal:AbortSignal.timeout(2000)}).then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # no ports: must not be published (ADR-0052 D1)
+
+  # One-off migration job (ADR-0052, handoff INF-LS-001): runs after master is healthy (master migrates
+  # at its own start) and before the inventory service; never concurrent with the app. Role gms_inventory_migrator.
+  backend-api-inventory-migrate:
+    build:
+      context: .
+      dockerfile: backend-api-inventory/Dockerfile
+    image: f1-system-backend-api-inventory:local
+    restart: "no"
+    init: true
+    read_only: true
+    user: "1000:1000"
+    tmpfs:
+      - /tmp:size=16m,mode=1777,noexec,nosuid,nodev
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.2"
+          memory: 256M
+          pids: 128
+    environment:
+      NODE_ENV: production
+      CHECKPOINT_DISABLE: "1"
+      PRISMA_HIDE_UPDATE_MESSAGE: "1"
+      # Unset -> prisma migrate deploy fails with no datasource and the service does not start.
+      INVENTORY_MIGRATE_DATABASE_URL: ${INVENTORY_MIGRATE_DATABASE_URL:-}
+    command: ["./node_modules/.bin/prisma", "migrate", "deploy"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api-master:
+        condition: service_healthy
+    networks:
+      - inventory-db
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   frontend:
     build:
       context: .
@@ -145,4 +251,6 @@ volumes:
 
 networks:
   partner-db:
+    internal: true
+  inventory-db:
     internal: true

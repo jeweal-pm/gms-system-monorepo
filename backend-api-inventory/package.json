@@ -1,0 +1,33 @@
+{
+  "name": "@gem-crm/backend-api-inventory",
+  "private": true,
+  "scripts": {
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput & node --watch dist/main.js",
+    "build": "prisma generate && tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "typecheck": "prisma generate && tsc --noEmit",
+    "lint": "eslint src \"test/**/*.ts\"",
+    "test": "prisma generate && vitest run",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "sync:redrive": "node dist/scripts/sync-redrive.js"
+  },
+  "dependencies": {
+    "@gms/storage": "workspace:*",
+    "@hono/node-server": "2.1.7",
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "dotenv": "^16.6.1",
+    "hono": "4.13.18",
+    "jose": "6.2.12",
+    "pg": "^8.16.3",
+    "pino": "^10.0.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "prisma": "7.10.0",
+    "typescript": "~5.9.3",
+    "vitest": "5.0.3"
+  }
+}

@@ -52,12 +52,12 @@ const domainError = (domainCode: string, details?: Record<string, number>) =>
   TRPCClientError.from({ error: { message: domainCode, code: -32000, data: { code: "CONFLICT", httpStatus: 409, domainCode, details } } } as never);
 
 describe("UT-AS-01 rows", () => {
-  it("11 rows in sidebar order with the Memo rows (owner answer 2); the three inventory rows are not available", () => {
+  it("11 rows in sidebar order with the Memo rows (owner answer 2); Merge/Split and Transfer Location are not available (Load to Stock has its page, FE-LS-014)", () => {
     expect(SETUP_ROWS.map((entry) => entry.label)).toEqual([
       "Quotation", "Reserve", "Memo Receive", "Memo Return", "Memo Out", "Memo Out Return",
       "Purchase Order (PO)", "Purchase", "Load to Stock", "Merge/Split Stock", "Transfer Location",
     ]);
-    expect(SETUP_ROWS.filter(isNotAvailable).map((entry) => entry.slug)).toEqual(["load-to-stock", "merge-split", "transfer-location"]);
+    expect(SETUP_ROWS.filter(isNotAvailable).map((entry) => entry.slug)).toEqual(["merge-split", "transfer-location"]);
   });
 
   it("FE-AS-008: each row reads its server item by the setting key; unavailable or loading rows are locked", () => {

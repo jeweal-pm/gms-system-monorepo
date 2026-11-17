@@ -20,13 +20,13 @@ Envelope: `{ error: { code, message, requestId, details? } }`. `message` is a fi
 | 409 | `LOAD_TO_STOCK_EXCEEDS_REMAINING` | master refused the allocation | `{ lines: [{ purchaseLineId, rowPaths: string[], remainingPcs, remainingWeightCt }] }` | "Row n: only {p} pcs / {w} ct left on {PU}", refetch picker |
 | 409 | `LOAD_TO_STOCK_REVISE_LIMIT` | second Revise | — | Revise disabled |
 | 409 | `APPROVAL_SETTING_CHANGED` / `APPROVAL_SETTING_HAS_WAITING` | setting version stale / turn-OFF with waiting docs | `{ pending, revision }` | as master `mapFlowError` |
-| 409 | `LOCATION_INACTIVE` | location unknown or deactivated in master's Location Master between pick and Save | `{ rowPaths }` | choose another location |
+| 409 | `LOCATION_INACTIVE` | the row's location name is not an active Location Master name (and is not the name already stored on that row) | `{ rowPaths }` | choose another location |
 | 413 | `PHOTO_TOO_LARGE` | > 5 MiB | — | ADR-0048 text |
 | 415 | `PHOTO_TYPE_INVALID` | not JPEG/PNG by signature | — | ADR-0048 text |
 | 422 | `VALIDATION_ERROR` | Zod or business validation | `fieldErrors: [{ path, code, params? }]` | field/row errors, focus first |
 | 422 | `LOAD_TO_STOCK_LINE_UNAVAILABLE` | a source PU line is no longer approved/loadable/same vendor | `{ purchaseLineIds, rowPaths }` | remove the row(s) |
 | 422 | `LOAD_TO_STOCK_PHOTO_INVALID` | photo id not READY or wrong source | `fieldErrors rows.N.photoIds.M` | re-upload |
-| 429 | `RATE_LIMITED` | photo limiter / SSE per-user cap | `Retry-After` | retry |
+| 429 | `RATE_LIMITED` | photo limiter (≤ 3 uploads / copies, ≤ 6 reads per process; an upload is refused before its body is read, INV-20261117-003 F1) | `Retry-After` | retry |
 | 503 | `INVENTORY_UNAVAILABLE` (returned by **master**, phase 2) | a master document with own-stock lines cannot reach inventory | `Retry-After: 5` | "Our stock can't be checked right now; try again"; Memo-Stock-only documents unaffected |
 | 503 | `MASTER_UNAVAILABLE` | master internal call failed on a **read** path | `Retry-After: 5` | inline error + Retry |
 | 503 | `SYNC_PENDING` | master call outcome unknown on a **write** (timeout/5xx); op kept for re-drive | `{ id, retryAfterSeconds: 5 }` | "Saving in progress — refreshing", refetch `get` |
@@ -55,3 +55,5 @@ Envelope: `{ error: { code, message, requestId, details? } }`. `message` is a fi
 - **Inventory DB down:** 503, readiness fails, Compose restarts per policy; no master call is made without a committed op row.
 - **Timeout ordering:** master WRITE_TX 4 s < inventory client 5 s, so an inventory timeout means master either committed or rolled back — never a half-applied transaction.
 - **Logging:** `warn` for 4xx business codes (code, requestId, id), `error` for 5xx with internal cause; never request bodies, prices, notes, tokens or cookies.
+
+- **Apply re-check (INV-20261117-003 F2):** the apply transaction of an applied edit / delete re-asserts "stock not in use" under the stock row locks. If stock became used after tx0, nothing is reversed or overwritten, the caller gets `409 LOAD_TO_STOCK_IN_USE`, and the op is parked `STUCK` (`last_error = in_use`, load stays `SYNCING`) until the hold is released and `sync:redrive` re-applies the stored revision.

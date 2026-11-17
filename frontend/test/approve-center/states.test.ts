@@ -25,7 +25,7 @@ describe("UT-AP-06 states", () => {
     expect(markup).toContain("Every document in this menu has been reviewed.");
     expect(EMPTY_SEARCH_TITLE).toBe("No matching documents");
     expect(emptySearchText(reserve)).toBe("Try another document no., customer, stone or Stock ID.");
-    expect(emptySearchText(approveMenuFor("load-to-stock")!)).toBe("Try another document no., stone or Stock ID.");
+    expect(emptySearchText(approveMenuFor("merge-split")!)).toBe("Try another document no., stone or Stock ID.");
   });
 
   it("not available: provisional header + 'Not available yet' (FE-AP-008)", () => {

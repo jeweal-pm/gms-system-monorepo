@@ -67,6 +67,8 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   "purchase-outstanding": "/purchase-order/purchase-outstanding",
   // purchase UI rev 1 (FE-PU-006, owner 2026-11-04): Purchase Order › Purchase (PU), linked before the API exists.
   purchase: "/purchase-order/purchase",
+  // load-to-stock UI rev 1 (FE-LS-012, ADR-0052): Inventory › Load to Stock.
+  "load-to-stock": "/inventory/load-to-stock",
   // approve-center UI rev 1 (FE-AP-001): the Approve page.
   approve: APPROVE_HREF,
 };
@@ -254,7 +256,7 @@ export const sidebarSections: NavSection[] = [
     id: "inventory",
     title: "Inventory",
     items: [
-      link("load-to-stock", "Load to Stock", BoxClockIcon),
+      { ...link("load-to-stock", "Load to Stock", BoxClockIcon, REAL_PAGE_HREFS["load-to-stock"]), activePrefix: REAL_PAGE_HREFS["load-to-stock"] },
       link("merge-split", "Merge/Split", SplitVerticalIcon),
       link("stock-transfer-location", "Stock Transfer Location", StockTransferIcon),
       link("stock-adjustment", "Stock Adjustment", FileOutstandingIcon),

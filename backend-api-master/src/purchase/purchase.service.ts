@@ -124,7 +124,9 @@ export class PurchaseService {
       await giveBackForPurchase(tx, lines.map((line, index) => ({ ...line, index })), () => purchaseErrors.inUse(null), now);
       await tx.purchaseLine.updateMany({ where: { purchaseId: doc.id, memoGroup: "MERGED" }, data: { soldPartPcs: null, soldPartWeightCt: null } });
     },
-    usedBy: async () => null,
+    // ADR-0052 D9 (BE-LS-005): a Purchase is used once an applied Load to Stock took any of its lines (loaded > 0);
+    // edit / delete then answer PURCHASE_IN_USE {usedBy: "Load to Stock"}. Drafts / pending loads hold nothing.
+    usedBy: purchaseUsedByLoad,
   };
 
   private readonly engine = new TradeDocumentEngine<EngineInput, VendorOut, PurchaseStatus>({
@@ -264,3 +266,12 @@ export type PurchaseLineOut = EngineLineOut & {
 };
 /** api-contract `Purchase`. */
 export type PurchaseDetail = Omit<EngineDetail, "lines"> & { lines: PurchaseLineOut[]; approvedAt: string | null; approvedBy: string | null };
+
+/** Label returned as `usedBy` when an applied Load to Stock holds a line (master does not know the load's number). */
+export const PURCHASE_USED_BY_LOAD = "Load to Stock";
+
+/** ADR-0052 D9: one indexed probe (`purchase_line_position_key` prefix); null when no line has been loaded. */
+export async function purchaseUsedByLoad(client: Pick<Prisma.TransactionClient, "purchaseLine">, id: string): Promise<string | null> {
+  const loaded = await client.purchaseLine.findFirst({ where: { purchaseId: id, OR: [{ loadedPcs: { gt: 0 } }, { loadedWeightCt: { gt: 0 } }] }, select: { id: true } });
+  return loaded ? PURCHASE_USED_BY_LOAD : null;
+}

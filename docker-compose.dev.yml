@@ -11,6 +11,8 @@ x-dev-volumes: &dev-volumes
   - dev-auth-prisma:/app/backend-api-auth/src/generated/prisma
   - dev-partner-node-modules:/app/backend-api-master/node_modules
   - dev-partner-prisma:/app/backend-api-master/src/generated/prisma
+  - dev-inventory-node-modules:/app/backend-api-inventory/node_modules
+  - dev-inventory-prisma:/app/backend-api-inventory/src/generated/prisma
 
 # Watch mode (compilers, Next dev server) needs more than the production limits (ADR-0024):
 # a developer workstation, not the 4 GB / 2 vCPU host. Production heap caps are cleared.
@@ -78,7 +80,64 @@ services:
       - dev-auth-prisma:/app/backend-api-auth/src/generated/prisma
       - dev-partner-node-modules:/app/backend-api-master/node_modules
       - dev-partner-prisma:/app/backend-api-master/src/generated/prisma
+      - dev-inventory-node-modules:/app/backend-api-inventory/node_modules
+      - dev-inventory-prisma:/app/backend-api-inventory/src/generated/prisma
       - ./storage:/app/backend-api-master/storage
+
+  # Dev watch profile for backend-api-inventory (infra bundle backend-api-inventory/1): shared root dev image,
+  # bind mount + watch, writable root (as api-master). Networks stay internal (no egress, no published port).
+  # Its own upload root ./storage-inventory is separate from master's ./storage.
+  backend-api-inventory-migrate:
+    image: f1-system-dev:local
+    build: *dev-build
+    command: ["sh", "-c", "pnpm --filter @gem-crm/backend-api-inventory db:generate && pnpm --filter @gem-crm/backend-api-inventory db:migrate"]
+    environment:
+      NODE_ENV: development
+    # pnpm + prisma generate in watch-mode tooling need more than the production job's 256M.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    user: !reset null
+    read_only: false
+    cap_drop: !reset []
+    tmpfs: !reset []
+    volumes:
+      - .:/app
+      - dev-root-node-modules:/app/node_modules
+      - dev-frontend-node-modules:/app/frontend/node_modules
+      - dev-auth-node-modules:/app/backend-api-auth/node_modules
+      - dev-partner-node-modules:/app/backend-api-master/node_modules
+      - dev-inventory-node-modules:/app/backend-api-inventory/node_modules
+      - dev-inventory-prisma:/app/backend-api-inventory/src/generated/prisma
+
+  backend-api-inventory:
+    image: f1-system-dev:local
+    build: *dev-build
+    command: ["sh", "-c", "pnpm --filter @gem-crm/backend-api-inventory db:generate && exec pnpm --filter @gem-crm/backend-api-inventory dev"]
+    environment:
+      NODE_ENV: development
+      # Dev watch only; production keeps 256M / --max-old-space-size=160 (ADR-0052 D14).
+      NODE_OPTIONS: --max-old-space-size=512
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 768M
+    user: !reset null
+    read_only: false
+    cap_drop: !reset []
+    tmpfs: !reset []
+    volumes: !override
+      - .:/app
+      - dev-root-node-modules:/app/node_modules
+      - dev-frontend-node-modules:/app/frontend/node_modules
+      - dev-auth-node-modules:/app/backend-api-auth/node_modules
+      - dev-partner-node-modules:/app/backend-api-master/node_modules
+      - dev-inventory-node-modules:/app/backend-api-inventory/node_modules
+      - dev-inventory-prisma:/app/backend-api-inventory/src/generated/prisma
+      - ${GMS_INVENTORY_STORAGE_DEV_PATH:-./storage-inventory}:/app/backend-api-inventory/storage
 
 volumes:
   dev-root-node-modules:
@@ -88,3 +147,5 @@ volumes:
   dev-auth-prisma:
   dev-partner-node-modules:
   dev-partner-prisma:
+  dev-inventory-node-modules:
+  dev-inventory-prisma:

@@ -1,14 +1,14 @@
 import type { MasterMenu } from "../master/authorization";
 
 /**
- * Approval type registry (approval-setup SA rev 1 / ADR-0050, api-contract "Shared types"): the 11 setting keys in
- * sidebar order. The first eight have document pages and a header table in schema `partner`; the last three
- * (inventory) have a setting row only until they are designed (SA-AS-10). Every SQL identifier used by the approval
- * modules comes from this fixed map, never from input.
+ * Approval type registry (approval-setup SA rev 1 / ADR-0050, api-contract "Shared types"): the setting keys in
+ * sidebar order, each with a document page and a header table in schema `partner`. ADR-0052 D8 (load-to-stock SA rev 1,
+ * Q-LS-25 default, BE-LS-005): the three inventory types (`load-to-stock`, `merge-split`, `stock-transfer-location`)
+ * moved to `inventory.approval_setting` in backend-api-inventory; master no longer lists or accepts them. Every SQL
+ * identifier used by the approval modules comes from this fixed map, never from input.
  */
 export const APPROVAL_TYPES = [
   "quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase",
-  "load-to-stock", "merge-split", "stock-transfer-location",
 ] as const;
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
 

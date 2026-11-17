@@ -209,7 +209,8 @@ const lines = (count: number) => `${count} ${count === 1 ? "line" : "lines"}`;
 export function detailSubLine(menu: AvailableMenu, row: ApprovalRow): string {
   const parts = [
     menu.dueLabel && row.dueDate ? `${menu.dueLabel} ${shortDate(row.dueDate)}` : null,
-    lines(row.lineCount),
+    // Inventory pending rows carry no line count (SA rev 1): no "0 lines".
+    row.lineCount > 0 ? lines(row.lineCount) : null,
     row.stoneNames.length > 0 ? stoneSummary(row.stoneNames, row.moreStoneCount) : null,
   ].filter((part): part is string => Boolean(part));
   return parts.join(" · ");
@@ -252,11 +253,13 @@ export function nextSort(current: SortState, key: SortKey): SortState {
 /** Column → `approval.pending` sort key. */
 export const SERVER_SORT = { document: "docNo", detail: "party", qty: "qty", value: "value", submitted: "submittedAt" } as const satisfies Record<SortKey, string>;
 
-export type PendingInput = { type: DocumentApprovalType; q?: string; sort: (typeof SERVER_SORT)[SortKey]; dir: SortDir; limit: number };
+/** Master's `approval.pending` types; Load to Stock is listed by backend-api-inventory with the same input (FE-LS-011). */
+export type MasterApprovalType = Exclude<DocumentApprovalType, "load-to-stock">;
+export type PendingInput = { type: MasterApprovalType; q?: string; sort: (typeof SERVER_SORT)[SortKey]; dir: SortDir; limit: number };
 
 /** The `approval.pending` input of one menu, search and sort (the cursor is added by the infinite query). */
 export function pendingInput(menu: AvailableMenu, q: string | undefined, sort: SortState): PendingInput {
-  const input: PendingInput = { type: menu.type, sort: SERVER_SORT[sort.key], dir: sort.dir, limit: PAGE_SIZE };
+  const input: PendingInput = { type: menu.type as MasterApprovalType, sort: SERVER_SORT[sort.key], dir: sort.dir, limit: PAGE_SIZE };
   return q ? { ...input, q } : input;
 }
 

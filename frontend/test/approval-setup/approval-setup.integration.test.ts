@@ -150,7 +150,7 @@ describe("IT-AS-S02 approvalSetting.update through the real link", () => {
     const changed = await createMasterTrpcClient().approvalSetting.update.mutate({ type: "reserve", requireApproval: false, expectedVersion: 1 }).catch((caught: unknown) => caught);
     expect(updateFailure(changed, reserve, true)).toMatchObject({ message: "Approval for Reserve was changed by someone else.", refetchSettings: true });
     respond = () => fail(400, "VALIDATION_ERROR");
-    const invalid = await createMasterTrpcClient().approvalSetting.update.mutate({ type: "merge-split", requireApproval: false, expectedVersion: 1 }).catch((caught: unknown) => caught);
+    const invalid = await createMasterTrpcClient().approvalSetting.update.mutate({ type: "reserve", requireApproval: false, expectedVersion: 1 }).catch((caught: unknown) => caught);
     expect(updateFailure(invalid, approveMenuFor("merge-split")!, true)).toMatchObject({ message: "Approval for Merge/Split Stock is not available yet." });
   });
 });

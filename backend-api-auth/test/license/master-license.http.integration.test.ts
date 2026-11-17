@@ -10,16 +10,27 @@ import { LicenseService } from "../../src/license/license.service";
 import { prisma } from "../../src/database/prisma-client";
 
 const originalTokenFile = process.env.MASTER_AUTH_SERVICE_TOKEN_FILE;
+const originalInventoryTokenFile = process.env.INVENTORY_AUTH_SERVICE_TOKEN_FILE;
 const servers: Server[] = [];
 const dirs: string[] = [];
 
-async function start() {
+async function start(options: { master?: boolean; inventory?: boolean } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "gms-master-license-"));
   dirs.push(dir);
   const token = randomBytes(32).toString("base64url");
   const tokenFile = join(dir, "service-token");
   await writeFile(tokenFile, `${token}\n`, { mode: 0o600 });
-  process.env.MASTER_AUTH_SERVICE_TOKEN_FILE = tokenFile;
+  if (options.master === false) delete process.env.MASTER_AUTH_SERVICE_TOKEN_FILE;
+  else process.env.MASTER_AUTH_SERVICE_TOKEN_FILE = tokenFile;
+  // BE-LS-001 (ADR-0052): backend-api-inventory has its own token file for the same endpoint.
+  const inventoryToken = randomBytes(32).toString("base64url");
+  if (options.inventory) {
+    const inventoryFile = join(dir, "inventory-token");
+    await writeFile(inventoryFile, `${inventoryToken}\n`, { mode: 0o600 });
+    process.env.INVENTORY_AUTH_SERVICE_TOKEN_FILE = inventoryFile;
+  } else {
+    delete process.env.INVENTORY_AUTH_SERVICE_TOKEN_FILE;
+  }
   const query = vi.spyOn(prisma, "$queryRaw").mockResolvedValue([{
     user_id: "user-1", session_id: "session-1", session_expires_at: new Date(Date.now() + 60_000), account_active: true,
   }] as never);
@@ -43,7 +54,7 @@ async function start() {
   servers.push(server);
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("test server did not bind");
-  return { url: `http://127.0.0.1:${address.port}/internal/v1/license/current`, token, query, license };
+  return { url: `http://127.0.0.1:${address.port}/internal/v1/license/current`, token, inventoryToken, query, license };
 }
 
 afterEach(async () => {
@@ -52,6 +63,8 @@ afterEach(async () => {
   await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
   if (originalTokenFile === undefined) delete process.env.MASTER_AUTH_SERVICE_TOKEN_FILE;
   else process.env.MASTER_AUTH_SERVICE_TOKEN_FILE = originalTokenFile;
+  if (originalInventoryTokenFile === undefined) delete process.env.INVENTORY_AUTH_SERVICE_TOKEN_FILE;
+  else process.env.INVENTORY_AUTH_SERVICE_TOKEN_FILE = originalInventoryTokenFile;
 });
 
 describe("private current-license HTTP boundary", () => {
@@ -89,5 +102,34 @@ describe("private current-license HTTP boundary", () => {
     });
     expect(response.status).toBe(401);
     expect(app.license.resolveCurrentStatus).not.toHaveBeenCalled();
+  });
+
+  it("IT-LS-AUTH-01 (BE-LS-001) accepts the inventory token beside the master token; any other token stays refused", async () => {
+    const app = await start({ inventory: true });
+    const ask = (token: string) => fetch(app.url, {
+      method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ userId: "user-1", sessionId: "session-1" }),
+    });
+    expect((await ask(app.inventoryToken)).status).toBe(200);
+    expect((await ask(app.token)).status).toBe(200);
+    expect((await ask(randomBytes(32).toString("base64url"))).status).toBe(401);
+    expect(app.license.resolveCurrentStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it("IT-LS-AUTH-02 (BE-LS-001) works with only the inventory file configured; no file at all is 503, never open", async () => {
+    const onlyInventory = await start({ master: false, inventory: true });
+    const response = await fetch(onlyInventory.url, {
+      method: "POST", headers: { authorization: `Bearer ${onlyInventory.inventoryToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ userId: "user-1", sessionId: "session-1" }),
+    });
+    expect(response.status).toBe(200);
+    const none = await start({ master: false, inventory: false });
+    none.query.mockClear();
+    const refused = await fetch(none.url, {
+      method: "POST", headers: { authorization: `Bearer ${none.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ userId: "user-1", sessionId: "session-1" }),
+    });
+    expect(refused.status).toBe(503);
+    expect(none.query).not.toHaveBeenCalled();
   });
 });

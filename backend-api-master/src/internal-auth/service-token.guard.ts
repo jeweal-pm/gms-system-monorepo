@@ -5,6 +5,7 @@ import type { Request } from "express";
 import { partnerException } from "../common/errors";
 import { loadServiceTokenDigest } from "../config";
 import { PUBLIC_ROUTE } from "./public.decorator";
+import { INVENTORY_INTERNAL_ROUTE } from "../inventory-internal/inventory-token.guard";
 
 const BEARER = /^Bearer ([\x21-\x7E]{1,512})$/;
 
@@ -28,6 +29,8 @@ export class ServiceTokenGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     if (this.reflector.getAllAndOverride<boolean>(PUBLIC_ROUTE, [context.getHandler(), context.getClass()])) return true;
+    // ADR-0052 (BE-LS-004): `/internal/v1/inventory/*` has its own token and guard; the partner token is not valid there.
+    if (this.reflector.getAllAndOverride<boolean>(INVENTORY_INTERNAL_ROUTE, [context.getHandler(), context.getClass()])) return true;
     const request = context.switchToHttp().getRequest<Request>();
     if (!serviceTokenMatches(request.headers.authorization, this.expected)) throw partnerException("UNAUTHORIZED", HttpStatus.UNAUTHORIZED);
     return true;

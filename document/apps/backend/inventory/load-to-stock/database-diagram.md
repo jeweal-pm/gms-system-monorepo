@@ -73,8 +73,7 @@ erDiagram
     uuid id PK
     uuid load_id FK
     smallint position
-    uuid location_id "master Location Master id"
-    varchar location_snapshot "code and name"
+    varchar location "Location Master name snapshot"
     varchar parcel
     uuid stone_code_id
     varchar stone_attrs "stone..cer_no columns"
@@ -106,8 +105,7 @@ erDiagram
     uuid load_row_id UK,FK
     uuid load_id
     varchar status "ACTIVE REVERSED"
-    uuid location_id "master Location Master id"
-    varchar location_snapshot "code and name"
+    varchar location "Location Master name snapshot"
     varchar parcel
     varchar stone_attrs
     varchar price_unit
@@ -206,10 +204,10 @@ erDiagram
 |---|---|---|
 | `load_to_stock` | `doc_no` varchar(40) UNIQUE; UNIQUE (`numbering_id`, `running_no`) + partial UNIQUE (`running_no`) WHERE `numbering_id IS NULL`; CHECK status set; CHECK mode set; CHECK `revision_count BETWEEN 0 AND 1`; CHECK `(deleted_at IS NULL) = (deleted_by IS NULL)`; CHECK review columns all-or-none (ADR-0046); CHECK `NOT provisional OR status = 'APPROVED'`; `ref` ≤ 100, `document_note` ≤ 250; `total_weight_ct` numeric(15,3), `total_cost_base` numeric(18,2) | list `(doc_date DESC, created_at DESC, id DESC)` WHERE `deleted_at IS NULL AND NOT provisional`; deleted list partial; pending `(submitted_at, id)` WHERE status = 'PENDING_APPROVAL' AND deleted_at IS NULL; revision partial; `(vendor_id, doc_date DESC)`; `(sync_state)` WHERE sync_state = 'SYNCING' |
 | `load_to_stock_source` | FK `load_id` ON DELETE CASCADE; UNIQUE (`load_id`, `purchase_line_id`); UNIQUE (`load_id`, `position`); `exchange_rate` numeric(18,6) > 0; `net_unit_price`, `unit_cost_base` numeric(18,4) ≥ 0 | `(purchase_line_id)` (find drafts naming a line) |
-| `load_to_stock_row` | FK `load_id` CASCADE; `location_id` uuid (master id, no FK) + `location_code_snapshot` varchar(20) + `location_name_snapshot` varchar(100); UNIQUE (`load_id`, `position`); CHECK `pcs ≥ 1`, `weight_ct ≥ 0` (0 only when the source weight is 0, checked by the service, Q-LS-26); `weight_ct` numeric(12,3); money numeric(18,2) ≥ 0; `unit_cost_base` numeric(18,4); `parcel` ≤ 50; `item_note` ≤ 500; CHECK price_unit set | `(location_id)` |
+| `load_to_stock_row` | FK `load_id` CASCADE; `location` varchar(40) NOT NULL, the Location Master name snapshot (no id/FK, ADR-0053 D2); UNIQUE (`load_id`, `position`); CHECK `pcs ≥ 1`, `weight_ct ≥ 0` (0 only when the source weight is 0, checked by the service, Q-LS-26); `weight_ct` numeric(12,3); money numeric(18,2) ≥ 0; `unit_cost_base` numeric(18,4); `parcel` ≤ 50; `item_note` ≤ 500; CHECK price_unit set | `(location)` |
 | `load_to_stock_row_source` | FKs CASCADE; CHECK `pcs ≥ 0`, `weight_ct ≥ 0` | `(source_id)` |
 | `load_to_stock_row_photo` | position 1–5; FK file RESTRICT | `(file_id)` |
-| `stock` | `stock_id` varchar(10) UNIQUE (never reused, kept after reversal); `location_id` + code/name snapshots as the row; `load_row_id` UNIQUE FK RESTRICT; CHECK status; buckets `reserved_*`, `memo_out_*`, `sold_*`, `consumed_*` (int / numeric(12,3), default 0, all ≥ 0); CHECK `pcs = on_hand_pcs + reserved_pcs + memo_out_pcs + sold_pcs + consumed_pcs` and the same for weight (ADR-0052 D15, phase 1); CHECK `status = 'ACTIVE' OR (on_hand_pcs = 0 AND on_hand_weight_ct = 0)`; `first_used_at` audit only | `(load_id)`; available list `(location_id, stock_id)` WHERE status = 'ACTIVE' AND on_hand_pcs > 0 (phase 2 picker); in-use probe `(load_id)` WHERE `on_hand_pcs <> pcs OR on_hand_weight_ct <> weight_ct` |
+| `stock` | `stock_id` varchar(10) UNIQUE (never reused, kept after reversal); `location` varchar(40) name snapshot as the row; `load_row_id` UNIQUE FK RESTRICT; CHECK status; buckets `reserved_*`, `memo_out_*`, `sold_*`, `consumed_*` (int / numeric(12,3), default 0, all ≥ 0); CHECK `pcs = on_hand_pcs + reserved_pcs + memo_out_pcs + sold_pcs + consumed_pcs` and the same for weight (ADR-0052 D15, phase 1); CHECK `status = 'ACTIVE' OR (on_hand_pcs = 0 AND on_hand_weight_ct = 0)`; `first_used_at` audit only | `(load_id)`; available list `(location, stock_id)` WHERE status = 'ACTIVE' AND on_hand_pcs > 0 (phase 2 picker); in-use probe `(load_id)` WHERE `on_hand_pcs <> pcs OR on_hand_weight_ct <> weight_ct` |
 | `stock_hold` | UNIQUE (`document_type`, `document_id`, `line_id`); FK stock RESTRICT; CHECK kind set, pcs ≥ 0, weight ≥ 0; created in phase 1, written from phase 2 | `(stock_uuid)`; `(document_type, document_id)` |
 | `stock_photo` | as row photo | `(file_id)` |
 | `stock_movement` | append-only: app role has INSERT, SELECT only; CHECK kind set | `(stock_uuid, created_at)`; `(document_type, document_id)`; `(created_at)` for reports |

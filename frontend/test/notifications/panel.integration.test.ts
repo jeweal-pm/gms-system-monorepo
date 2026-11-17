@@ -4,6 +4,7 @@ import { createElement, type ComponentProps, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NotificationsBell, NotificationsPanel } from "@/features/notifications/components/NotificationsBell";
+import { inventoryNotificationKeys } from "@/features/inventory/notifications";
 import { NOTIFICATION_PAGE_SIZE, type NotificationItem } from "@/features/notifications/model";
 import { createMasterTrpcClient, masterTrpc } from "@/lib/master-trpc";
 
@@ -45,7 +46,10 @@ function render(queryClient: QueryClient, children: ReactNode) {
 function seeded(count: number, items: NotificationItem[] | null) {
   const queryClient = new QueryClient();
   queryClient.setQueryData(getQueryKey(masterTrpc.notification.unreadCount, undefined, "query"), { count });
+  // FE-LS-015: the inventory feed is seeded empty (its own tests are in load-to-stock/notifications.integration).
+  queryClient.setQueryData(inventoryNotificationKeys.unread(), { count: 0 });
   if (items) {
+    queryClient.setQueryData(inventoryNotificationKeys.list("for-me"), { pages: [{ items: [], nextCursor: null }], pageParams: [null] });
     queryClient.setQueryData(getQueryKey(masterTrpc.notification.list, { scope: "for-me", limit: NOTIFICATION_PAGE_SIZE }, "infinite"), {
       pages: [{ items, nextCursor: null }],
       pageParams: [null],
