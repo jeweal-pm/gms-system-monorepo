@@ -8,7 +8,7 @@ flowchart TD
     N -->|other paths| F[Next frontend]
     N -->|/api/auth/*| A[api-auth Better Auth plus auth tRPC]
     N -->|/api/master/*| M[api-master domain tRPC]
-    N -->|/api/inventory/*| I[api-inventory REST v1]
+    N -->|/api/inventory/*| I[backend-api-inventory REST v1<br/>Inventory, Sale, Account Outstanding, Reports modules]
     A -->|own writes| AD[(auth schema)]
     M -->|own writes| MD[(master schema after migration)]
     I -->|own writes| ID[(inventory schema)]
@@ -23,6 +23,8 @@ flowchart TD
     I --> S
     S --> FS[fs default or approved S3 profile]
 ```
+
+Inventory service identity (proposed by [ADR-0052](../adr/0052-load-to-stock-in-backend-api-inventory.md), pending approval): Compose/DNS `backend-api-inventory:3301`, schema `inventory`; it calls the master internal API `/internal/v1/inventory/*` with its own service token for Purchase remaining, Stock IDs and numbering. First slice: [Load to Stock](../apps/backend/inventory/load-to-stock/architecture.md).
 
 1. Login continues through Better Auth; auth issues distinct short access JWT and rotating refresh credential after eligibility checks.
 2. A protected request verifies the JWT locally in its domain API and reads current account/session/grants from the auth-owned read-only view. The proposed license path asks auth for a fresh signed remote decision. Explicit revoked/expired state denies. On a transient outage, auth may use the last signed eligible result only until the earlier of its expiry or the fixed last-success timestamp plus `LICENSE_OFFLINE_GRACE_DAYS` (0–7, default 2); otherwise it returns 503. Remote revocation during an outage may remain unknown within that bound. This revises the current seven-day grace only after the ADR/spec exception and remote contract are approved.

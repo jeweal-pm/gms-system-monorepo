@@ -6,6 +6,7 @@
 - SA revision: 1
 - Deciders: project owner
 - Approval evidence: 2026-10-20 owner reply "อนุมัติ SA revision 1 และเริ่มงานที่ไม่ติด blocker" to the linked SA review
+- **Proposed amendment (pending owner approval):** [ADR-0052](0052-load-to-stock-in-backend-api-inventory.md) D1/D6 — the inventory service is `backend-api-inventory` (workspace/package `backend-api-inventory`, Compose/DNS `backend-api-inventory`, port 3301, schema `inventory`), one Hono process for the owner-selected modules Load to Stock, Merge/Split, Stock Transfer Location, Stock Adjustment, Barcode Printing, Sale, Account Outstanding and the Stock Movement / Closing Stock / Sale reports, each owning its own tables; no cross-schema writes, no direct reads of another service's tables, no shared transaction across owners. Gem stock is keyed per Stock ID (`inventory.stock` + append-only `stock_movement`) instead of the generic item/SKU/balance candidate; storage follows ADR-0030 (permanent), not D3's 30-day soft delete.
 - Related: [ADR-0018](0018-customer-master-partner-service.md), [ADR-0019](0019-vendor-master.md), [ADR-0021 company profile](0021-company-profile-in-partner-service.md), [ADR-0024 stone](0024-stone-master-in-partner-service.md), [GMS spec](../gms-platform-spec.md)
 
 ## Context
