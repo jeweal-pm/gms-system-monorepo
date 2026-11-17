@@ -44,7 +44,7 @@ function MemoReturnInfoForm({ options }: { options: MemoReturnOptions | undefine
     const lines = getValues("lines");
     if (lines.some(isFilledLine)) setValue("lines", lines.map((line) => (isFilledLine(line) ? emptyMemoReturn().lines[0] : line)), { shouldDirty: true });
   };
-  return <VendorDocumentInfoForm options={options} onVendorChange={onVendorChange} />;
+  return <VendorDocumentInfoForm options={options} onVendorChange={onVendorChange} showDueDate={false} />;
 }
 
 function MemoReturnDaybook() {
@@ -78,7 +78,7 @@ const CONFIG: DocumentFormConfig<MemoReturnFormValues, MemoReturnInput, MemoRetu
   useApi: useMemoReturnApi,
   partyId: (values) => values?.vendorId,
   header: ({ options }) => <MemoReturnInfoForm options={options} />,
-  viewHeader: ({ values, options }) => <VendorDocumentDetails title="Memo Return Details" values={values} options={options} />,
+  viewHeader: ({ values, options }) => <VendorDocumentDetails title="Memo Return Details" values={values} options={options} showDueDate={false} />,
   mapSaveError: mapMemoReturnSaveError,
   mapRestoreError: memoReturnRestoreError,
   pickLabel: "Memo Stock",

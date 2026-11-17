@@ -55,6 +55,8 @@ const db = vi.hoisted(() => ({
   getRow: null as unknown,
   calls: [] as string[],
   lines: [] as Record<string, unknown>[],
+  activeLocations: [] as string[],
+  storedLocations: [] as string[],
 }));
 
 vi.mock("../../src/database/prisma-client", () => {
@@ -93,7 +95,11 @@ vi.mock("../../src/database/prisma-client", () => {
     purchaseLine: {
       createMany: vi.fn(async ({ data }: { data: Record<string, unknown>[] }) => { db.calls.push("purchaseLine.createMany"); db.lines = data; return { count: data.length }; }),
       deleteMany: track("purchaseLine.deleteMany", { count: 1 }),
+      // location-master SA-LM-05: the stored lines' locations may stay.
+      findMany: vi.fn(async () => db.storedLocations.map((location) => ({ location }))),
     },
+    // location-master (ADR-0053): the active locations a typed row may choose.
+    location: { findMany: vi.fn(async () => db.activeLocations.map((name) => ({ name }))) },
     purchaseCharge: { createMany: track("purchaseCharge.createMany", {}), deleteMany: track("purchaseCharge.deleteMany", {}) },
     // ADR-0049: create (pending approval) and approve record a notification in the same transaction.
     notificationEvent: { create: vi.fn(async () => ({})) },
@@ -114,6 +120,8 @@ async function failure(promise: Promise<unknown>) {
 }
 
 beforeEach(() => {
+  db.activeLocations = ["Shelf 1", "Safe A"];
+  db.storedLocations = [];
   db.items = [memoItem()];
   db.poLines = [purchaseOrderLine()];
   db.counter = 0;

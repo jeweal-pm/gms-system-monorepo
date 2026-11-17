@@ -7,6 +7,7 @@ import { Prisma } from "../generated/prisma/client";
 import { TradeDocumentEngine, type DocumentActor, type DocumentEffects, type LineHook } from "../trade-document/document-engine";
 import { documentErrors } from "../trade-document/document-errors";
 import { vendorDocumentOptions, vendorParty, type VendorOut } from "../trade-document/memo-out-return.service";
+import { activeLocationNames, checkLineLocations } from "../location-master/location-master.service";
 import type { PurchaseOrderInput, PurchaseOrderListInput, PurchaseOrderStatus } from "./purchase-order.schemas";
 
 export const purchaseOrderErrors = documentErrors("PURCHASE_ORDER", "PurchaseOrder", "purchase_order");
@@ -101,6 +102,12 @@ export class PurchaseOrderService {
     party: vendorParty<PurchaseOrderInput>(purchaseOrderErrors),
     approvalType: "purchase-order",
     effects: purchaseOrderEffects,
+    // location-master SA-LM-05: every PO line is typed; its location is an active master name or one already stored.
+    prepare: async (tx, input, documentId) => ({
+      ...input,
+      lines: await checkLineLocations(tx, input.lines, () => true, async () =>
+        documentId ? (await tx.purchaseOrderLine.findMany({ where: { purchaseOrderId: documentId }, select: { location: true } })).map((line) => line.location) : []),
+    }),
     lineHook: this.photos,
     detailExtra: (row) => ({
       approvedAt: row.approvedAt ? (row.approvedAt as Date).toISOString() : null,
@@ -155,11 +162,13 @@ export class PurchaseOrderService {
   /** `memoReceive.options` shape with stone codes kept, for the Stone Code field (SA-PO-10). */
   async options(includeVendorId?: string) {
     try {
-      const [options, setup] = await Promise.all([
+      const [options, setup, locations] = await Promise.all([
         vendorDocumentOptions(includeVendorId),
         prisma.documentSetup.findUnique({ where: { transactionKey: "purchase-order" }, select: { transactionKey: true } }),
+        activeLocationNames(),
       ]);
-      return { ...options, numbering: { configured: setup !== null } };
+      // location-master SA-LM-04: the Location dropdown's choices (active names, ≤ 500).
+      return { ...options, numbering: { configured: setup !== null }, locations };
     } catch (error) {
       throw purchaseOrderErrors.map(error, "options");
     }

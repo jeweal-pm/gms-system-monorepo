@@ -72,6 +72,7 @@ async function startHttp(authReader = vi.fn(async () => ({
     decimalSetup: decimalSetup as unknown as DecimalSetupService,
     approvalSetting: {} as never,
     currency: { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as unknown as CurrencyService,
+    locationMaster: {} as never,
     quotation: {} as unknown as QuotationService,
     memoOut: {} as unknown as MemoOutService,
     memoOutReturn: {} as unknown as MemoOutReturnService,

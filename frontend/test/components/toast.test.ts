@@ -51,4 +51,13 @@ describe("Toast", () => {
     expect(html).toContain("sm:right-6");
     expect(html).not.toContain("left-1/2");
   });
+
+  it("UT-TOAST-06 (owner 2026-11-16) a toast may stay longer than 5 s, e.g. the tab Undo toast for 6 s", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync("src/components/ui/toast.tsx", "utf8");
+    expect(source).toContain("window.setTimeout(() => onDismiss(toast.id), toast.durationMs ?? AUTO_DISMISS_MS)");
+    expect(source).toContain("{ id, tone, message, action, durationMs: options?.durationMs }");
+    const host = readFileSync("src/features/home/tabs/tab-host.tsx", "utf8");
+    expect(host).toContain('{ label: "Undo", onClick: undo }, { durationMs: TAB_UNDO_MS }');
+  });
 });

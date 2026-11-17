@@ -670,6 +670,22 @@ model Currency {
   @@schema("partner")
 }
 
+/// Location Master (ADR-0053, SA location-master rev 1): names offered on Purchase Order / Purchase rows. Documents copy
+/// the name into their own `location` column (no FK), so a rename or delete never changes a saved document. The name is
+/// unique ignoring case (`location_name_lower_key ON lower(name)`, raw SQL; Prisma can't declare expression indexes).
+model Location {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(40)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp(3)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamp(3)
+  createdBy String   @map("created_by") @db.VarChar(64)
+  updatedBy String   @map("updated_by") @db.VarChar(64)
+
+  @@map("location")
+  @@schema("partner")
+}
+
 /// Memo Out (memo-out SA revision 1 / ADR-0033, owner 2026-10-28): stones sent to a customer on memo. Same
 /// engine as Quotation (Document Setup number, snapshots, server totals, version); no stock posting yet.
 model MemoOut {

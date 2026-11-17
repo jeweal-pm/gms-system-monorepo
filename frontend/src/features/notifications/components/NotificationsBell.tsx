@@ -101,6 +101,8 @@ export function NotificationsPanel({ id, unread, onClose }: Readonly<{ id: strin
     <div
       id={id}
       role="dialog"
+      // Owner 2026-11-16: like the sidebar, a notification opens (or switches to) its page's tab.
+      data-opens-tab
       aria-labelledby={titleId}
       className="absolute right-0 top-10 z-50 flex h-[650px] max-h-[calc(100vh-56px)] w-[440px] flex-col overflow-hidden rounded-gms-md border border-[#E3E6EA] bg-gms-surface shadow-gms-overlay max-[471px]:fixed max-[471px]:inset-x-4 max-[471px]:top-14 max-[471px]:w-auto"
     >

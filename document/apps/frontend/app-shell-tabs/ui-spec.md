@@ -44,9 +44,23 @@ Source 02 shows the strip empty with the count and Close all disabled: the state
 | ID | Rule |
 |---|---|
 | T-01 | **One tab per page** (Q-TAB-01). A tab is identified by its URL path; its query (e.g. memo outstanding filters) stays with the tab and comes back when switching to it. Opening a page that already has a tab (sidebar, link, breadcrumb, Create New, a daybook entry) switches to that tab and keeps its data. A different saved document (`/memo/memo-out/A` vs `/memo/memo-out/B`) is a different tab. |
+| T-01b | **Where a tab opens** (owner 2026-11-16).
+
+- **Opens or switches tabs:** only the sidebar (with its rail and context panel) and the notification panel.
+- **Moves the shown tab:** every other navigation shows its page in the shown tab. This covers a daybook row, Create New, a document link and Back/Forward.
+- **Page that already has a tab:** that tab is shown instead.
+- **Unsaved changes:** a tab with unsaved changes is never moved; the link opens another tab as before.
+- **Example:** Purchase opened from the sidebar, then a document picked from its daybook, stays one tab. Clicking Purchase in the sidebar again opens a new tab. |
 | T-02 | **Kept alive.** Hidden tabs stay mounted in the browser (React `Activity`, ADR-0037). Their typed data, row panels, pickers and scroll position stay; their background work (timers, listeners, live queries) pauses until shown again. |
 | T-03 | **Titles.** The page's name from its last breadcrumb (e.g. "Stone Code", "Memo Out"). A saved document adds its number: "Memo Out · MO-1"; a new one shows "New Memo Out". |
-| T-04 | **Limit 15** (Q-TAB-02). Opening a 16th page shows "Close a tab to open another (15 tabs open)" and stays on the current tab. Nothing closes by itself. |
+| T-04 | **Limit 15** (Q-TAB-02). **Revised 2026-11-16 (owner):**
+
+- **At 15 tabs:** opening a 16th page automatically closes the least recently used tab, meaning the one opened or shown longest ago.
+- **Never closed automatically:** a tab with unsaved changes, the shown tab, or a pinned tab once pinning exists.
+- **Toast:** "Automatically closed “{closed}” (least recently used) to open “{new}”" with **Undo** for 6 s. Undo closes the new page (unless it has unsaved changes), returns the tab to its place and shows the previous page.
+- **When nothing can close:** the page is refused with "Close a tab to open another (15 tabs open)".
+- **Count box:** at 15 tabs it turns red (border and number).
+- **Before revision:** the 16th page was refused and nothing closed by itself. |
 | T-05 | **Unsaved changes** (Q-TAB-03). Closing a tab with unsaved changes asks "Discard unsaved changes in {title}?". Close all asks once: "Discard unsaved changes in {n} tabs?". Cancel keeps everything open. |
 | T-06 | **Closing the active tab** shows the tab to its right, else to its left. Closing the last tab opens Home. |
 | T-07 | **Reload / sign-in** (Q-TAB-04). The tab list (paths, titles, which is active) is kept per user in this browser and reopens after a refresh or the next sign-in. Only the active tab loads at once; the others load when first shown. Unsaved data can't survive a reload. Signing out keeps the list for that user; another user on the same browser has their own list. |

@@ -1,4 +1,5 @@
 import { FLOW_DETAIL } from "../trade-document/flow-fixture";
+import { readFileSync } from "node:fs";
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FormProvider, useForm } from "react-hook-form";
@@ -184,6 +185,30 @@ describe("view header (UT-MRT-07, design view)", () => {
     expect(html).toContain("V001 · BC Stone Shop Co., Ltd.");
     expect(html).toContain("BC Stone Shop, Silom Rd.");
     expect(html).toContain("03/10/2026");
+  });
+});
+
+describe("no Due Date on Memo Return (UT-MRT-08, owner 2026-11-16)", () => {
+  it("the view card drops Due Date for Memo Return only; other vendor documents keep it", () => {
+    const options = { vendors: [{ id: ID, code: "V001", name: "BC Stone Shop Co., Ltd.", active: true, currency: "THB", addresses: [{ id: ID, label: "A", isDefault: true }] }] };
+    const card = (showDueDate?: boolean) =>
+      renderToStaticMarkup(createElement(VendorDocumentDetails, { title: "T", values: { ...values(), docDate: "2026-10-03", dueDate: "2026-10-09" }, options, showDueDate }));
+    expect(card(false)).not.toContain(">Due Date<");
+    expect(card(false)).not.toContain("09/10/2026");
+    expect(card(false)).toContain(">Doc Date<");
+    expect(card()).toContain(">Due Date<");
+    const page = readFileSync("src/features/memo-return/components/MemoReturnPage.tsx", "utf8");
+    expect(page).toContain("<VendorDocumentInfoForm options={options} onVendorChange={onVendorChange} showDueDate={false} />");
+    expect(page).toContain('title="Memo Return Details" values={values} options={options} showDueDate={false}');
+  });
+
+  it("the API gets the Doc Date as its required Due Date, and a hidden empty or older Due Date never blocks Save", () => {
+    expect(toMemoReturnInput(values({ docDate: "2026-11-16", dueDate: "" })).dueDate).toBe("2026-11-16");
+    expect(toMemoReturnInput(values({ docDate: "2026-11-16", dueDate: "2026-12-31" })).dueDate).toBe("2026-11-16");
+    for (const dueDate of ["", "2026-01-01"]) {
+      const result = memoReturnSchema.safeParse(values({ docDate: "2026-11-16", dueDate }));
+      expect(result.success ? [] : result.error.issues.filter((issue) => issue.path[0] === "dueDate")).toEqual([]);
+    }
   });
 });
 

@@ -74,7 +74,8 @@ export const masterCodeDestinations: SetupLinkDestination[] = [
   { kind: "link", id: "currency", label: "Currency", href: "/setup/currency", icon: CurrencyIcon, color: "neutral", permission: ["currency"] },
   // stone-master FE-SM-002: real pages (Stone Group first); `stone-master:VIEW` (Q-SM-04).
   { kind: "link", id: "stone-master", label: "Stone Master", href: stonePageHref(DEFAULT_STONE_SLUG), icon: StoneMasterIcon, color: "neutral", permission: [STONE_MENU_KEY] },
-  placeholder("location-master", LocationMasterIcon, "neutral"),
+  // location-master UI rev 1 (ADR-0053, owner 2026-11-16): real page, gated by the `location-master` leaf.
+  { kind: "link", id: "location-master", label: "Location Master", href: "/setup/location-master", icon: LocationMasterIcon, color: "neutral", permission: ["location-master"] },
   placeholder("certificate-master", CertificateMasterIcon, "neutral"),
   placeholder("labor-name", ServiceFeeIcon, "neutral"),
   placeholder("sale-person", SalePersonIcon, "neutral"),

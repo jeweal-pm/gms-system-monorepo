@@ -108,6 +108,8 @@ const isQuantityShort = (entry: FieldError) => /^lines\.\d+\.(pcs|weightCt)$/.te
 /** rev 3 (ADR-0043): a row below the Sold part, a Sold row not bought whole, or an item with nothing left to merge. */
 const isSoldRule = (entry: FieldError) => ["below_sold", "must_equal_sold", "not_mergeable"].includes(entry.code);
 export const PURCHASE_BELOW_SOLD = "At least the quantity already sold to customers";
+/** location-master SA-LM-05 (ADR-0053). */
+export const PURCHASE_LOCATION_UNKNOWN = "Choose a location from Location Master";
 export const PURCHASE_MUST_EQUAL_SOLD = "A sold item is purchased whole";
 const isRowReference = (entry: FieldError) => /^lines\.\d+\.(memoStockId|purchaseOrderLineId|stoneCodeId)$/.test(entry.path);
 
@@ -135,7 +137,12 @@ export function mapPurchaseSaveError(error: unknown): SaveOutcome {
         message: `${all.length > 0 ? rowsText(all) : "Some rows"}: not enough is available any more. Lower the quantity or remove the row, then save again. Nothing was saved.`,
       };
     }
-    case "VALIDATION_ERROR":
+    case "VALIDATION_ERROR": {
+      // location-master SA-LM-05: a typed name that isn't an active Location Master name.
+      const locations = fieldErrors.filter((entry) => entry.code === "unknown_location");
+      // The server names `lines.i.location`; the row form field is `lines.i.locationId`.
+      const locationRows = locations.map((entry) => ({ name: `${entry.path}Id`, message: PURCHASE_LOCATION_UNKNOWN }));
+      if (locations.length > 0) return { fieldErrors: locationRows, message: `${rowsText(locations)}: choose a location from Location Master.` };
       if (soldRules.some((entry) => entry.code === "not_mergeable")) {
         return { fieldErrors: soldRuleRows, message: `${rowsText(soldRules)}: this item has nothing left in stock to merge. Remove the row and choose again.` };
       }
@@ -144,6 +151,7 @@ export function mapPurchaseSaveError(error: unknown): SaveOutcome {
       }
       if (short.length > 0) return { fieldErrors: onRows(short, PURCHASE_AVAILABLE_SHORT), message: `${rowsText(short)}: more than the available quantity. Nothing was saved.` };
       break;
+    }
     case "PURCHASE_REFERENCE_INVALID":
       if (references.length > 0) return { fieldErrors: onRows(references, "No longer available"), message: `${rowsText(references)}: this item is no longer available. Remove the row and choose again.` };
       break;

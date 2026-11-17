@@ -7,8 +7,9 @@ import { cx } from "./button";
 export type ToastTone = "success" | "info" | "warning" | "error";
 /** Optional text action at the right of the card (the design's "Settings"). */
 export type ToastAction = { label: string; onClick: () => void };
-export type ToastItem = { id: number; tone: ToastTone; message: string; action?: ToastAction };
-type ToastApi = { show: (tone: ToastTone, message: string, action?: ToastAction) => void };
+/** `durationMs`: how long it stays (default 5 s), e.g. the tab Undo toast stays 6 s (owner 2026-11-16). */
+export type ToastItem = { id: number; tone: ToastTone; message: string; action?: ToastAction; durationMs?: number };
+type ToastApi = { show: (tone: ToastTone, message: string, action?: ToastAction, options?: { durationMs?: number }) => void };
 
 const MAX_TOASTS = 3;
 /** Proposal pending Q-UP-24: success/info/warning dismiss after 5 s; errors stay until closed. */
@@ -28,9 +29,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const nextId = useRef(1);
 
   const dismiss = useCallback((id: number) => setToasts((current) => current.filter((toast) => toast.id !== id)), []);
-  const show = useCallback((tone: ToastTone, message: string, action?: ToastAction) => {
+  const show = useCallback((tone: ToastTone, message: string, action?: ToastAction, options?: { durationMs?: number }) => {
     const id = nextId.current++;
-    setToasts((current) => [...current, { id, tone, message, action }].slice(-MAX_TOASTS));
+    setToasts((current) => [...current, { id, tone, message, action, durationMs: options?.durationMs }].slice(-MAX_TOASTS));
   }, []);
   const api = useMemo(() => ({ show }), [show]);
 
@@ -76,9 +77,9 @@ export function ToastMark({ tone }: { tone: ToastTone }) {
 export function ToastCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: number) => void }) {
   useEffect(() => {
     if (toast.tone === "error") return;
-    const timer = window.setTimeout(() => onDismiss(toast.id), AUTO_DISMISS_MS);
+    const timer = window.setTimeout(() => onDismiss(toast.id), toast.durationMs ?? AUTO_DISMISS_MS);
     return () => window.clearTimeout(timer);
-  }, [onDismiss, toast.id, toast.tone]);
+  }, [onDismiss, toast.id, toast.tone, toast.durationMs]);
 
   return (
     <div

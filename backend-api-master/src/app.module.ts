@@ -12,6 +12,7 @@ import { DecimalSetupService } from "./decimal-setup/decimal-setup.service";
 import { ApprovalSettingService } from "./approval-setting/approval-setting.service";
 import { ApprovalService } from "./approval/approval.service";
 import { CurrencyService } from "./currency/currency.service";
+import { LocationMasterService } from "./location-master/location-master.service";
 import { PrismaLifecycleService } from "./database/prisma-lifecycle.service";
 import { QuotationPhotoPublicController } from "./quotation/quotation-photo.public.controller";
 import { MemoReceivePhotoPublicController } from "./trade-document/memo-receive-photo.public.controller";
@@ -69,6 +70,7 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
     ApprovalSettingService,
     ApprovalService,
     CurrencyService,
+    LocationMasterService,
     QuotationService,
     MemoOutService,
     MemoOutReturnService,

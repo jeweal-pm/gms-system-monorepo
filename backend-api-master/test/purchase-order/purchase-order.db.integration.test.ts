@@ -83,6 +83,8 @@ describe.runIf(canRun)("IT-PO purchase order on PostgreSQL", () => {
     photos = await import("../../src/purchase-order/purchase-order-photo.public.controller");
     memoReceivePhotos = await import("../../src/trade-document/memo-receive-photo.public.controller");
     ({ prisma } = await import("../../src/database/prisma-client"));
+    // location-master (ADR-0053): the locations these PO / Purchase rows type must be in the master.
+    await (await import("../partner-shared/locations")).ensureTestLocations(prisma);
     const { PurchaseOrderService } = await import("../../src/purchase-order/purchase-order.service");
     const { DocumentSetupService } = await import("../../src/document-setup/document-setup.service");
     ({ calculateTotals } = await import("../../src/quotation/quotation.calculate"));

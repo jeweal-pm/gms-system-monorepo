@@ -12,6 +12,7 @@ import { completeSourceLines, giveBackForPurchase, memoLineRange, purchaseOrderA
 import { purchaseErrors, purchasePendingShort } from "./purchase.errors";
 import type { LineMemoGroup, PurchaseInput, PurchaseLineSource, PurchaseListInput, PurchaseMemoStockInput, PurchaseOrderLinesInput, PurchaseStatus } from "./purchase.schemas";
 import { LINE_PHOTO_DOCUMENTS, withLinePhotos } from "../trade-document/line-photos";
+import { activeLocationNames, checkLineLocations } from "../location-master/location-master.service";
 
 /** Statuses in which the lines show their current range (`limit*` / `min*`): the purchase can still be saved. */
 const LIMITED: readonly string[] = ["DRAFT", "REVISION_REQUESTED"];
@@ -138,7 +139,13 @@ export class PurchaseService {
     party: vendorParty<EngineInput>(purchaseErrors),
     approvalType: "purchase",
     effects: this.effects,
-    prepare: async (tx, input) => (await completeSourceLines(tx, input as unknown as PurchaseInput)) as unknown as EngineInput,
+    prepare: async (tx, input, documentId) => {
+      const completed = (await completeSourceLines(tx, input as unknown as PurchaseInput)) as unknown as PurchaseInput;
+      // location-master SA-LM-05: typed (MANUAL) rows choose an active master name; copied rows keep theirs.
+      const lines = await checkLineLocations(tx, completed.lines, (line) => line.source === "MANUAL", async () =>
+        documentId ? (await tx.purchaseLine.findMany({ where: { purchaseId: documentId }, select: { location: true } })).map((line) => line.location) : []);
+      return { ...completed, lines } as unknown as EngineInput;
+    },
     // INV-20261111-002 F1: the named POs FOR SHARE before prepare / line writes when the Save applies effects.
     lockSources: async (tx, input) => {
       await lockSourceHeaders(tx, "purchaseOrder", (input as unknown as PurchaseInput).lines.flatMap((line) => (line.source === "PURCHASE_ORDER" && line.purchaseOrderLineId ? [line.purchaseOrderLineId] : [])));
@@ -200,11 +207,13 @@ export class PurchaseService {
   /** `purchaseOrder.options` shape (stone lists with codes) plus `numbering` for Document Setup key `purchase`. */
   async options(includeVendorId?: string) {
     try {
-      const [options, setup] = await Promise.all([
+      const [options, setup, locations] = await Promise.all([
         vendorDocumentOptions(includeVendorId),
         prisma.documentSetup.findUnique({ where: { transactionKey: "purchase" }, select: { transactionKey: true } }),
+        activeLocationNames(),
       ]);
-      return { ...options, numbering: { configured: setup !== null } };
+      // location-master SA-LM-04: the Location dropdown's choices (active names, ≤ 500).
+      return { ...options, numbering: { configured: setup !== null }, locations };
     } catch (error) {
       throw purchaseErrors.map(error, "options");
     }

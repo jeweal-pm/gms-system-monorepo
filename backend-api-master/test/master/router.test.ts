@@ -12,6 +12,7 @@ import type { VendorService } from "../../src/vendor/vendor.service";
 import type { CompanyProfileService } from "../../src/company-profile/company-profile.service";
 import type { StoneMasterService } from "../../src/stone-master/stone-master.service";
 import type { CurrencyService } from "../../src/currency/currency.service";
+import type { LocationMasterService } from "../../src/location-master/location-master.service";
 import type { QuotationService } from "../../src/quotation/quotation.service";
 import type { MemoOutService } from "../../src/trade-document/memo-out.service";
 import type { MemoOutReturnService } from "../../src/trade-document/memo-out-return.service";
@@ -39,6 +40,7 @@ const documentSetup = { list: vi.fn(), get: vi.fn(), save: vi.fn() };
 const decimalSetup = { get: vi.fn(), save: vi.fn() };
 const approvalSetting = { list: vi.fn(), update: vi.fn(), readForSave: vi.fn() };
 const currency = { list: vi.fn(), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
+const locationMaster = { list: vi.fn(async () => ({ items: [], nextCursor: null, total: 0 })), get: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
 const quotation = {
   list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(),
   submit: vi.fn(), approve: vi.fn(), reject: vi.fn(), requestRevision: vi.fn(), cancel: vi.fn(), delete: vi.fn(), restore: vi.fn(),
@@ -65,6 +67,7 @@ const router = createMasterRouter({
   decimalSetup: decimalSetup as unknown as DecimalSetupService,
   approvalSetting: approvalSetting as unknown as ApprovalSettingService,
   currency: currency as unknown as CurrencyService,
+  locationMaster: locationMaster as unknown as LocationMasterService,
   quotation: quotation as unknown as QuotationService,
   memoOut: memoOut as unknown as MemoOutService,
   memoOutReturn: memoOutReturn as unknown as MemoOutReturnService,
@@ -1070,5 +1073,35 @@ describe("staged master domain tRPC boundary", () => {
     await expect(viewer.purchaseOutstanding.items({ memoReceiveIds: ids(26) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     await expect(viewer.purchaseOutstanding.summary({ from: "2026-11-06", to: "2026-11-01" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
     expect(memoOutstanding.purchaseList).toHaveBeenCalledTimes(5);
+  });
+});
+
+/** UT-LM-B02 (location-master SA rev 1, ADR-0053): grants per operation, CSRF on writes, the actor from the context. */
+describe("locationMaster router", () => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  const at = "2026-11-16T03:00:00.000Z";
+  const as = (grants: string[], overrides: Partial<MasterContext> = {}) => router.createCaller(context(grants.map((action) => `location-master:${action}`), overrides)).locationMaster;
+
+  it("VIEW lists and reads; ADD / EDIT / DELETE write with CSRF; other grants are refused", async () => {
+    for (const fn of Object.values(locationMaster)) fn.mockReset().mockResolvedValue({ ok: true });
+    await as(["VIEW"]).list({ q: " safe ", limit: 20 });
+    expect(locationMaster.list).toHaveBeenCalledWith({ q: "safe", limit: 20 });
+    await as(["VIEW"]).get({ id });
+    await expect(as(["ADD"]).list({})).rejects.toMatchObject({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
+
+    await as(["ADD"]).create({ name: " Safe A " });
+    expect(locationMaster.create).toHaveBeenCalledWith("user-1", { name: "Safe A", active: true });
+    await expect(as(["VIEW", "EDIT"]).create({ name: "A" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(as(["ADD"], { csrfVerified: false }).create({ name: "A" })).rejects.toMatchObject({ message: "CSRF_INVALID" });
+    await expect(as(["ADD"]).create({ name: "x".repeat(41) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    await as(["EDIT"]).update({ id, name: "B", active: false, expectedUpdatedAt: at });
+    expect(locationMaster.update).toHaveBeenCalledWith("user-1", id, { name: "B", active: false, expectedUpdatedAt: at });
+    await expect(as(["ADD"]).update({ id, name: "B", active: true, expectedUpdatedAt: at })).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    await as(["DELETE"]).delete({ id, expectedUpdatedAt: at });
+    expect(locationMaster.delete).toHaveBeenCalledWith("user-1", id, at);
+    await expect(as(["EDIT"]).delete({ id, expectedUpdatedAt: at })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(as(["DELETE"]).delete({ id } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 });

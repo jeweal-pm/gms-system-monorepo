@@ -23,5 +23,5 @@ export function EditPurchaseOrderPage({ id }: { id: string }) {
   if (!access || (access.view && detail.isPending)) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{denied}</p>;
   if (detail.isError || !detail.data) return <p className={message}>{detail.error ? purchaseOrderLoadError(detail.error) : "This purchase order no longer exists."}</p>;
-  return <PurchaseOrderForm key={id} access={access} initial={fromPurchaseOrder(detail.data)} deleted={deletedInfo(detail.data)} flow={flowOf(detail.data)} />;
+  return <PurchaseOrderForm key={`${id}:${detail.data.version}`} access={access} initial={fromPurchaseOrder(detail.data)} deleted={deletedInfo(detail.data)} flow={flowOf(detail.data)} />;
 }

@@ -146,6 +146,8 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     vi.stubEnv("PARTNER_DATABASE_URL", testUrl!);
     vi.stubEnv("DATABASE_URL", testUrl!);
     ({ prisma } = await import("../../src/database/prisma-client"));
+    // location-master (ADR-0053): the locations these PO / Purchase rows type must be in the master.
+    await (await import("../partner-shared/locations")).ensureTestLocations(prisma);
     const { PurchaseService } = await import("../../src/purchase/purchase.service");
     const { MemoReceiveService } = await import("../../src/trade-document/memo-receive.service");
     const { PurchaseOrderService } = await import("../../src/purchase-order/purchase-order.service");

@@ -28,6 +28,7 @@ import { RailButtons, RailPanelView, type RailPanel } from "@/features/quotation
 import { SummaryValue } from "@/features/quotation/components/summary/SummaryValue";
 import { Button, Toast } from "@/features/quotation/components/ui";
 import { DocumentKindContext } from "@/features/quotation/document-kind";
+import { locationOptions } from "@/features/location-master/location-options";
 import { calculateTotals } from "@/features/quotation/lib/calculate";
 import { emptyLine, newKey } from "@/features/quotation/lib/defaults";
 import { LinePhotoContext, type LinePhotoTarget } from "@/features/quotation/options-context";
@@ -100,7 +101,8 @@ export function PurchaseOrderForm({ initial, deleted: initialDeleted = null, flo
   const next = useNextPurchaseOrderNo(values.docDate ?? "", !saved?.id);
   const writes = usePurchaseOrderWrites();
   const docNo = saved?.docNo ?? next.data?.docNo ?? "—";
-  const kind = useMemo(() => ({ ...PURCHASE_ORDER_KIND, stone: stoneChoices(options.data) }), [options.data]);
+  // location-master FE-LM-003 (ADR-0053): the Location dropdown's choices are the active Location Master names.
+  const kind = useMemo(() => ({ ...PURCHASE_ORDER_KIND, stone: stoneChoices(options.data), locations: locationOptions(options.data?.locations) }), [options.data]);
   useTabDocument(saved?.docNo);
   useTabDirty(formState.isDirty && !readOnly);
 

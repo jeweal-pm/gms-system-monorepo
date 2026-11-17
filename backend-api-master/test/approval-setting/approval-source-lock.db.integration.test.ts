@@ -108,6 +108,8 @@ describe.runIf(canRun)("IT-AS-B15 source header lock vs auto-approved delete (IN
     vi.stubEnv("PARTNER_DATABASE_URL", testUrl!);
     vi.stubEnv("DATABASE_URL", testUrl!);
     ({ prisma } = await import("../../src/database/prisma-client"));
+    // location-master (ADR-0053): the locations these PO / Purchase rows type must be in the master.
+    await (await import("../partner-shared/locations")).ensureTestLocations(prisma);
     schemas = await import("../../src/trade-document/memo-schemas");
     const { MemoReceiveService } = await import("../../src/trade-document/memo-receive.service");
     const { MemoOutService } = await import("../../src/trade-document/memo-out.service");

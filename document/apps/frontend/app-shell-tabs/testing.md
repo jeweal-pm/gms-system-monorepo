@@ -4,7 +4,7 @@ Results 2026-11-02: UT-TAB-01…05 pass (`frontend/test/home/tabs.test.ts`, 17 t
 
 | ID | Level | What |
 |---|---|---|
-| UT-TAB-01 | unit | tab store: open / switch by path (T-01), 15 limit refuses a 16th (T-04), close picks right then left neighbour, last close opens Home (T-06), Close all leaves Home, titles (T-03) |
+| UT-TAB-01 | unit | tab store: open / switch by path (T-01), 15 limit (T-04, revised 2026-11-16: UT-TAB-12…17 least recently used close, unsaved/shown tabs kept, Undo, stored usage times, red count box, sidebar labels), close picks right then left neighbour, last close opens Home (T-06), Close all leaves Home, titles (T-03) |
 | UT-TAB-02 | unit | persistence: tab list saved per user and restored (T-07); bad / foreign stored data ignored; another user's list not shown |
 | UT-TAB-03 | unit | unsaved tracking: a page reporting dirty marks its tab; close asks; Close all counts dirty tabs (T-05) |
 | UT-TAB-04 | unit | tab bar render: states (default / active / unsaved dot), roles and names, count box and Close all disabled states, arrows only on overflow |

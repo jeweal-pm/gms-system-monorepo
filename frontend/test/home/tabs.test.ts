@@ -13,14 +13,19 @@ import {
   emptyTabs,
   fallbackTitle,
   MAX_TABS,
+  navigateInTab,
   openUrl,
   parseStoredTabs,
   retargetTab,
   serializeTabs,
   TAB_LIMIT_MESSAGE,
+  TAB_UNDO_MS,
+  tabEvictedMessage,
   tabPath,
   tabsStorageKey,
   tabTitle,
+  touchTab,
+  undoEviction,
   type TabsState,
 } from "@/features/home/tabs/tab-state";
 
@@ -71,16 +76,122 @@ describe("tab list (app-shell-tabs UI rev 1)", () => {
     expect(titles(openUrl(home.state, "/setup/customer", "Customer", "z").state)).toEqual(["/setup", "/setup/vendor", "/setup/customer"]);
   });
 
-  it("UT-TAB-01 the 16th page is refused and nothing closes by itself (T-04)", () => {
-    const urls = Array.from({ length: MAX_TABS }, (_, index) => `/modules/m${index}`);
-    const full = openAll(urls);
+  /** 15 tabs m0…m14 used at t = 100 + index (m0 used longest ago), the last one shown. */
+  function fullStrip(): TabsState {
+    let state = emptyTabs;
+    for (let index = 0; index < MAX_TABS; index++) state = openUrl(state, `/modules/m${index}`, `M${index}`, `t${index}`, { now: 100 + index }).state;
+    return state;
+  }
+
+  it("UT-TAB-12 (owner 2026-11-16, replaces T-04 refuse) a 16th page closes the least recently used tab to make room", () => {
+    const full = fullStrip();
     expect(full.tabs).toHaveLength(15);
-    const refused = openUrl(full, "/setup", "Setup", "x");
+    // m0 is the least recently used: it closes; the new page opens after the shown one.
+    const opened = openUrl(full, "/setup", "Setup", "x", { now: 500 });
+    expect(opened.outcome).toBe("evicted");
+    expect(opened.evicted).toMatchObject({ index: 0, tab: { path: "/modules/m0", title: "M0" } });
+    expect(opened.state.tabs).toHaveLength(15);
+    expect(titles(opened.state)).not.toContain("/modules/m0");
+    expect(activePath(opened.state)).toBe("/setup");
+    expect(tabEvictedMessage("Stone Certificate", "Stone Shape")).toBe("Automatically closed “Stone Certificate” (least recently used) to open “Stone Shape”");
+    expect(TAB_UNDO_MS).toBe(6_000);
+    // Showing a tab makes it recently used, so the next one closes instead.
+    const shownM0 = touchTab(full, "t0", 400);
+    expect(openUrl(shownM0, "/setup", "Setup", "x", { now: 500 }).evicted?.tab.path).toBe("/modules/m1");
+    // an open page still switches at the limit (and is marked used)
+    const switched = openUrl(full, "/modules/m3", "M3", "y", { now: 600 });
+    expect(switched.outcome).toBe("switched");
+    expect(switched.state.tabs.find((tab) => tab.path === "/modules/m3")?.usedAt).toBe(600);
+  });
+
+  it("UT-TAB-13 tabs with unsaved changes and the shown tab never close; when every tab must stay the page is refused", () => {
+    const full = fullStrip();
+    // m0 and m1 have unsaved changes: m2 closes.
+    expect(openUrl(full, "/setup", "Setup", "x", { now: 500, keep: new Set(["t0", "t1"]) }).evicted?.tab.path).toBe("/modules/m2");
+    // the shown tab (m14) is never picked, even when it is the oldest
+    const oldShown = { ...full, tabs: full.tabs.map((tab) => (tab.id === full.activeId ? { ...tab, usedAt: 1 } : tab)) };
+    expect(openUrl(oldShown, "/setup", "Setup", "x", { now: 500 }).evicted?.tab.path).toBe("/modules/m0");
+    // every other tab unsaved → refused, nothing changes
+    const keepAll = new Set(full.tabs.map((tab) => tab.id));
+    const refused = openUrl(full, "/setup", "Setup", "x", { now: 500, keep: keepAll });
     expect(refused.outcome).toBe("limit");
     expect(refused.state).toBe(full);
     expect(TAB_LIMIT_MESSAGE).toBe("Close a tab to open another (15 tabs open)");
-    // an open page still switches at the limit
-    expect(openUrl(full, "/modules/m3", "M3", "y").outcome).toBe("switched");
+  });
+
+  it("UT-TAB-14 Undo closes the new page, brings the tab back where it was and shows the previous page", () => {
+    const full = fullStrip();
+    const previous = full.activeId;
+    const opened = openUrl(full, "/setup", "Setup", "x", { now: 500 });
+    const undone = undoEviction(opened.state, opened.evicted!, "x", previous, false);
+    expect(titles(undone)).toEqual(titles(full));
+    expect(undone.activeId).toBe(previous);
+    expect(undone.tabs[0]).toMatchObject({ id: "t0", path: "/modules/m0" });
+    // a new page with unsaved changes stays open, so there is no room: Undo changes nothing
+    expect(undoEviction(opened.state, opened.evicted!, "x", previous, true)).toBe(opened.state);
+    // the closed page was opened again meanwhile: nothing to bring back
+    const reopened = openUrl(opened.state, "/modules/m0", "M0", "z", { now: 700 }).state;
+    expect(undoEviction(reopened, opened.evicted!, "x", previous, false)).toBe(reopened);
+  });
+
+  it("UT-TAB-15 usage times are stored; an older stored list uses its strip order", () => {
+    const full = fullStrip();
+    const restored = parseStoredTabs(serializeTabs(full), idGenerator("r"))!;
+    expect(restored.tabs.map((tab) => tab.usedAt)).toEqual(full.tabs.map((tab) => tab.usedAt));
+    const legacy = parseStoredTabs(JSON.stringify({ tabs: [{ url: "/a", title: "A" }, { url: "/b", title: "B" }], active: 1 }), idGenerator("l"))!;
+    expect(legacy.tabs.map((tab) => tab.usedAt)).toEqual([0, 1]);
+    const bad = parseStoredTabs(JSON.stringify({ tabs: [{ url: "/a", title: "A", usedAt: "soon" }, { url: "/b", title: "B", usedAt: -5 }] }), idGenerator("b"))!;
+    expect(bad.tabs.map((tab) => tab.usedAt)).toEqual([0, 1]);
+  });
+
+  it("UT-TAB-17 a new tab (and its toast) is named by its sidebar label before the page names itself", async () => {
+    const { navigationLabelFor } = await import("@/features/home/navigation");
+    expect(navigationLabelFor("/modules/merge-split")).toBe("Merge/Split");
+    expect(navigationLabelFor("/pre-sale/quotation")).toBe("Quotation");
+    expect(navigationLabelFor("/setup/vendor")).toBe("Vendor");
+    expect(navigationLabelFor("/no/such/page")).toBeUndefined();
+    expect(readFileSync("src/features/home/tabs/tab-host.tsx", "utf8")).toContain("return navigationLabelFor(path) ?? fallbackTitle(path);");
+  });
+
+  it("UT-TAB-18 (owner 2026-11-16) a link inside a page moves the shown tab; only the sidebar opens tabs", () => {
+    const state = openAll(["/setup", "/purchase-order/purchase"]);
+    const shown = state.activeId;
+    // Daybook row → the Purchase tab shows that document; no new tab.
+    const moved = navigateInTab(state, "/purchase-order/purchase/PU-1", "Purchase", 900)!;
+    expect(moved.tabs).toHaveLength(2);
+    expect(moved.activeId).toBe(shown);
+    expect(moved.tabs.find((tab) => tab.id === shown)).toMatchObject({ path: "/purchase-order/purchase/PU-1", url: "/purchase-order/purchase/PU-1", title: "Purchase", usedAt: 900 });
+    // Create New → back to the new form in the same tab
+    expect(titles(navigateInTab(moved, "/purchase-order/purchase", "Purchase")!)).toEqual(["/setup", "/purchase-order/purchase"]);
+    // a page that already has a tab switches to it (one tab per page); the shown tab stays as it was
+    const toSetup = navigateInTab(moved, "/setup?x=1", "Setup")!;
+    expect(activePath(toSetup)).toBe("/setup");
+    expect(toSetup.tabs.find((tab) => tab.path === "/setup")?.url).toBe("/setup?x=1");
+    expect(titles(toSetup)).toEqual(["/setup", "/purchase-order/purchase/PU-1"]);
+    // nothing to move from Home, and Home / login are not tab pages
+    expect(navigateInTab({ ...state, activeId: "" }, "/pre-sale/quotation", "Quotation")).toBeNull();
+    expect(navigateInTab(state, "/", "Home")).toBeNull();
+    expect(navigateInTab(state, "/login", "Login")).toBeNull();
+  });
+
+  it("UT-TAB-19 the sidebar, rail, context panel and notification panel are the clicks that open tabs", async () => {
+    const { OPENS_TAB_SELECTOR } = await import("@/features/home/tabs/tab-host");
+    expect(OPENS_TAB_SELECTOR).toBe("#app-sidebar a[href], [data-opens-tab] a[href], [data-opens-tab] button");
+    expect(readFileSync("src/features/notifications/components/NotificationsBell.tsx", "utf8")).toMatch(/role="dialog"\s*\/\/[^\n]*\n\s*data-opens-tab/);
+    const host = readFileSync("src/features/home/tabs/tab-host.tsx", "utf8");
+    // unsaved changes keep their tab: the link opens another tab as before
+    expect(host).toContain("if (!fromShell && shown && !metaRef.current[shown.id]?.dirty) {");
+    // a moved tab starts its new page fresh
+    expect(host).toContain("<TabPane key={tab.path} tabId={tab.id} controls={controls}>");
+  });
+
+  it("UT-TAB-16 the count box turns red at 15 tabs (owner design 2026-11-16)", () => {
+    const tab = (index: number) => ({ id: `t${index}`, path: `/m${index}`, url: `/m${index}`, title: `M${index}`, dirty: false });
+    const bar = (count: number) =>
+      renderToStaticMarkup(createElement(TabBar, { tabs: Array.from({ length: count }, (_, index) => tab(index)), activeId: "t0", onSelect: () => undefined, onClose: () => undefined, onCloseAll: () => undefined }));
+    expect(bar(15)).toMatch(/aria-label="15 open tabs, the most allowed" data-tabs-full="true"[^>]*class="[^"]*border-gms-danger text-gms-danger/);
+    expect(bar(14)).toMatch(/aria-label="14 open tabs"[^>]*class="[^"]*border-gms-border text-gms-text/);
+    expect(bar(14)).not.toContain("data-tabs-full");
   });
 
   it("UT-TAB-01 closing the shown tab shows the right neighbour, else the left; the last close shows Home (T-06)", () => {
