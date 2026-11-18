@@ -81,3 +81,7 @@ Owner request (verbatim): "เปลี่ยนเป็นการอัป�
 | SA-QT-21 | **Not in this revision:** our own stock (inventory, ADR-0027); hiding prices without PRICE (Q-QT-07); converting a quotation to a Reserve, Memo Out or Sale; copying Memo Receive photos; warnings on saved quotations whose stock moved (Q-QTS-09). |
 
 Capacity: a save reads ≤ 200 `memo_stock` rows by primary key and locks none of them. The picker is the existing bounded `memoStock.list` (≤ 51 rows per page). Pool and container limits are unchanged.
+
+## Load to Stock phase 2 note (SA revision 2, Proposed, 2026-11-18)
+
+Phase 2a: lines may name our stock (`ownStockId`, source `OWN_STOCK`, `quotation_line.own_stock_id`); copy only, no hold; pre-read `POST /internal/v1/master/stock/batch` before the save transaction unless every own-stock line is kept; picker `fromStock.list` (one list with Memo Stock). Inventory down → 503 `INVENTORY_UNAVAILABLE` (kept lines still save). Contract, schema and tests live in the [inventory/load-to-stock bundle](../../inventory/load-to-stock/api-contract.md#phase-2-sa-revision-2-proposed) and [ADR-0052 Amendment 2](../../../adr/0052-load-to-stock-in-backend-api-inventory.md#amendment-2--d15-phases-2a--2b-sa-revision-2-proposed); TODO BE-LS-P2-*. No change here until the owner approves SA revision 2.

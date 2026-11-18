@@ -1,7 +1,8 @@
 import { HttpException, HttpStatus } from "@nestjs/common";
 import type { z } from "zod";
 
-export type FieldError = { path: string; code: string };
+/** `params` (ADR-0052 SA-LS-P2-09): small numbers a client shows with the code, e.g. `exceeds_pending {availablePcs}`. */
+export type FieldError = { path: string; code: string; params?: Readonly<Record<string, string | number>> };
 
 export const MAX_FIELD_ERRORS = 50;
 
@@ -119,6 +120,11 @@ const messages: Record<string, string> = {
   UNSUPPORTED_MEDIA_TYPE: "The request content type is not supported",
   NOT_FOUND: "The resource was not found",
   PARTNER_UNAVAILABLE: "The service is temporarily unavailable",
+  // ADR-0052 Amendment 2 (load-to-stock SA rev 2 error-handling "Master public codes").
+  INVENTORY_UNAVAILABLE: "Our stock can't be checked right now; nothing was saved",
+  RESERVE_BUSY: "Updating our stock; try again in a few seconds",
+  MEMO_OUT_BUSY: "Updating our stock; try again in a few seconds",
+  MEMO_OUT_RETURN_BUSY: "Updating our stock; try again in a few seconds",
   INTERNAL_SERVER_ERROR: "The request could not be completed",
 };
 

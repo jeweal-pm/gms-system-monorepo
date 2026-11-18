@@ -80,13 +80,14 @@ export function customerStockConfig(options: CustomerStockPageOptions): Document
     mapSaveError: options.mapSaveError,
     mapRestoreError: options.mapRestoreError,
     pickLabel: "From Stock",
-    pickHint: "Pick stones from stock (Memo Stock)",
+    pickHint: "Pick stones from stock (Memo Stock and our stock)",
     kind,
     picker: {
       blockedReason: () => null,
       render: ({ values, onClose, onAdd }) => (
         <MemoStockModal
           title={options.pickerTitle}
+          fromStock
           showPrice={false}
           emptyText="No stock with anything pending."
           pickedIds={pickedStockIds(values.lines)}

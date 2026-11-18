@@ -15,6 +15,7 @@ import { listForTypes, listForUser, markAllRead, markRead, NOTIFICATION_PAGE_MAX
 import { approvalPending, approvalSummary, getDetail, listDocuments, nextNumber } from "./modules/load-to-stock/read";
 import { LoadToStockService } from "./modules/load-to-stock/service";
 import { PhotoService, PHOTO_MAX_BYTES } from "./modules/load-to-stock/photos";
+import { createMasterRoutes } from "./internal/master-routes";
 import {
   listQuerySchema, loadInputSchema, loadUpdateSchema, nextNumberSchema, pendingQuerySchema, rejectSchema, reviseSchema, searchSchema, vendorsQuerySchema, versionSchema,
 } from "./modules/load-to-stock/schemas";
@@ -40,6 +41,11 @@ export type AppDeps = {
   approvers(leaf: string): Promise<string[]>;
   storageRoot: string;
   hub?: NotificationHub;
+  /**
+   * ADR-0052 D21: digest of MASTER_INVENTORY_SERVICE_TOKEN (`/internal/v1/master/*`) and of the inventory → master token,
+   * which must differ (equal → the internal routes refuse every call). Absent → every internal call gets 401.
+   */
+  internal?: { tokenDigest: Buffer | null; otherTokenDigest: Buffer | null };
   /** Readiness probe (own DB `SELECT 1` ≤ 1 s); master is not part of readiness. */
   ready?: () => Promise<boolean>;
 };
@@ -265,5 +271,7 @@ export function createApp(deps: AppDeps) {
   });
 
   app.route("/api/inventory/v1", api);
+  // api-master → inventory (not routed by nginx).
+  app.route("/internal/v1/master", createMasterRoutes({ db: deps.db, logger: deps.logger, tokenDigest: deps.internal?.tokenDigest ?? null, otherTokenDigest: deps.internal?.otherTokenDigest ?? null }));
   return { app, service, hub, photos };
 }

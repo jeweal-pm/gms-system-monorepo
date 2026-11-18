@@ -16,3 +16,7 @@
 | IT-MO-01…05 | DB integration (disposable PostgreSQL) | save reserves nothing; approve moves pending → Reserve and keeps `memo_stock_balance`; over-pull guard (two memo outs, second short → PENDING_SHORT, nothing changes); parallel approvals never exceed pending; manual-only document approves with no stock change; migration turns DRAFT into PENDING_APPROVAL |
 | UT-MO-201…205 | frontend unit | From Stock row mapping (Stock ID, read-only fields, full pending, empty Sale Price); schema (≤ pending, > 0, Sale Price required on stock rows only); Approve visibility and messages; status badges; picker leaves picked items out |
 | TC-MO-02 | browser (:8080) | approved Memo Receive → From Stock → part of an item + a manual row → Save (stock unchanged) → Approve → Memo Stock pending and Memo Outstanding Reserve change; second memo out over the rest → PENDING_SHORT |
+
+## Load to Stock phase 2 (2026-11-18)
+
+Own stock in From Stock / Memo Outstanding: results in [quotation testing — Load to Stock phase 2](../quotation/testing.md#load-to-stock-phase-2--own-stock-in-from-stock-revision-3-shared-picker--2026-11-18) (UT-LS-P2-FE-02/04, IT-LS-P2-FE-01/03/04). Live checks and reviews pending.

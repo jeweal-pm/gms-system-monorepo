@@ -29,6 +29,7 @@ import { MemoReceiveService } from "./trade-document/memo-receive.service";
 import { MemoReturnService } from "./trade-document/memo-return.service";
 import { MemoStockService } from "./trade-document/memo-stock.service";
 import { MemoOutstandingService } from "./trade-document/memo-outstanding.service";
+import { InventorySyncSweep } from "./inventory-client/inventory-sync.sweep";
 import { HealthController } from "./health/health.controller";
 import { InventoryInternalController } from "./inventory-internal/inventory-internal.controller";
 import { InventoryInternalService } from "./inventory-internal/inventory-internal.service";
@@ -64,6 +65,7 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
   providers: [
     PrismaLifecycleService,
     NotificationRetention,
+    InventorySyncSweep,
     CustomerService,
     VendorService,
     CompanyProfileService,

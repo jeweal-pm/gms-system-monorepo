@@ -8,6 +8,7 @@ import { dec } from "@/features/quotation/lib/decimal";
 import { formatMoneyText, formatUnitPrice, formatWeight } from "@/features/quotation/lib/format";
 import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import { memoStockLoadError, useMemoStock, type MemoStockItem } from "./memo-stock-api";
+import { OWN_STOCK_UNAVAILABLE_TEXT, ownStockUnavailable, pickKey, useFromStock, type FromStockItem } from "./from-stock-api";
 import { stockRef, stockRefLabel, type StockRefSource } from "./stock-ref";
 
 /**
@@ -37,17 +38,37 @@ export function RefCell({ item }: { item: StockRefSource }) {
  * Each row shows Stock ID, location Memo and Pending Pcs / Weight. Search + Start → Due (memo receive Doc Date, Q-MR-10)
  * filter; rows already on the document are left out; 50 a page with Load more. OK adds the checked rows.
  */
-export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText, pickedIds, onCancel, onConfirm }: {
+type PickerItem = MemoStockItem | FromStockItem;
+type MemoStockModalProps = {
   title: string;
-  /** Leave out to list every vendor (From Stock). */
-  vendorId?: string;
-  currency?: string;
   showPrice: boolean;
   emptyText: string;
+  /** Keys of rows already on the document (`pickKey`: Memo Stock id, or `own:<uuid>` for our stock). */
   pickedIds: Set<string>;
   onCancel: () => void;
-  onConfirm: (items: MemoStockItem[]) => void;
-}) {
+} & (
+  | {
+      /** Memo Stock only (Memo Return: the vendor's items in its currency). Leave `vendorId` out to list every vendor. */
+      fromStock?: false;
+      vendorId?: string;
+      currency?: string;
+      onConfirm: (items: MemoStockItem[]) => void;
+    }
+  | {
+      /**
+       * load-to-stock phase 2 (quotation ui-spec Revision 3): the customer-side "Add From Stock" list of Memo Stock and
+       * our stock (`fromStock.list`); Location tells the source.
+       */
+      fromStock: true;
+      vendorId?: undefined;
+      currency?: undefined;
+      onConfirm: (items: FromStockItem[]) => void;
+    }
+);
+
+export function MemoStockModal(props: MemoStockModalProps) {
+  const { title, vendorId, currency, showPrice, emptyText, pickedIds, onCancel } = props;
+  const fromStock = props.fromStock === true;
   const [search, setSearch] = useState("");
   const nf = useNumberFormat();
   const [q, setQ] = useState("");
@@ -66,9 +87,14 @@ export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
 
-  const stock = useMemoStock({ vendorId, currency, q, from, to });
-  const items = (stock.data?.pages ?? []).flatMap((page) => page.items).filter((item) => !pickedIds.has(item.id));
-  const allChecked = items.length > 0 && items.every((item) => checked.has(item.id));
+  const memoStock = useMemoStock(fromStock ? { vendorId: "", currency: "", q, from, to } : { vendorId, currency, q, from, to });
+  const ownAndMemo = useFromStock({ q, from, to }, fromStock);
+  const stock = fromStock ? ownAndMemo : memoStock;
+  const pages = (stock.data?.pages ?? []) as { items: PickerItem[]; ownStock?: "OK" | "UNAVAILABLE" }[];
+  const items = pages.flatMap((page) => page.items).filter((item) => !pickedIds.has(pickKey(item)));
+  // FE-LS-P2-03: our stock down → Memo Stock rows stay listed and pickable under a notice (also instead of the empty text).
+  const ownDown = fromStock && ownStockUnavailable(pages as { ownStock: "OK" | "UNAVAILABLE" }[]);
+  const allChecked = items.length > 0 && items.every((item) => checked.has(pickKey(item)));
   const columns = showPrice ? 12 : 10;
   const toggle = (id: string) =>
     setChecked((prev) => {
@@ -128,7 +154,7 @@ export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText
                         className="size-5 accent-[#0E5E63]"
                         checked={allChecked}
                         disabled={items.length === 0}
-                        onChange={() => setChecked(allChecked ? new Set() : new Set(items.map((item) => item.id)))}
+                        onChange={() => setChecked(allChecked ? new Set() : new Set(items.map(pickKey)))}
                       />
                     </th>
                     <th rowSpan={2} className="w-8 font-normal text-[#6B7480]">#</th>
@@ -158,20 +184,31 @@ export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText
                       <td colSpan={columns} className="py-16 text-center text-[#E5484D]">{memoStockLoadError(stock.error)}</td>
                     </tr>
                   )}
-                  {stock.isSuccess && items.length === 0 && (
+                  {ownDown && (
+                    <tr>
+                      <td colSpan={columns} className="bg-[#FFF8E6] px-4 py-3 text-sm text-[#7A5A00]">
+                        <span role="status">{OWN_STOCK_UNAVAILABLE_TEXT}</span>
+                        {" — "}
+                        <button type="button" className="font-medium underline" disabled={stock.isRefetching} onClick={() => void stock.refetch()}>
+                          Retry
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+                  {stock.isSuccess && items.length === 0 && !ownDown && (
                     <tr>
                       <td colSpan={columns} className="py-16 text-center text-[#6B7480]">{emptyText}</td>
                     </tr>
                   )}
                   {items.map((item, index) => (
-                    <tr key={item.id} onClick={() => toggle(item.id)} className="cursor-pointer border-b border-[#EEF0F2] align-top hover:bg-[#FAFBFB]">
+                    <tr key={pickKey(item)} onClick={() => toggle(pickKey(item))} className="cursor-pointer border-b border-[#EEF0F2] align-top hover:bg-[#FAFBFB]">
                       <td className="px-4 py-4">
                         <input
                           type="checkbox"
                           aria-label={`Select ${item.stockId} from ${stockRefLabel(item)}`}
                           className="size-5 accent-[#0E5E63]"
-                          checked={checked.has(item.id)}
-                          onChange={() => toggle(item.id)}
+                          checked={checked.has(pickKey(item))}
+                          onChange={() => toggle(pickKey(item))}
                           onClick={(event) => event.stopPropagation()}
                         />
                       </td>
@@ -182,7 +219,7 @@ export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6B7480]">
                           <span>{item.stockId}</span>
                           {item.lot && <Badge variant="lot">{item.lot}</Badge>}
-                          {vendorId === undefined && <span>{item.vendor.code}</span>}
+                          {vendorId === undefined && item.vendor?.code && <span>{item.vendor.code}</span>}
                         </div>
                         {item.itemNote && (
                           <div className="mt-1 flex items-center gap-1.5 text-xs text-[#6B7480]">
@@ -208,11 +245,11 @@ export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText
                       <td className="px-3 py-4 text-right">{formatWeight(dec(item.pendingWeightCt), nf.weightPlaces)}</td>
                       {showPrice && (
                         <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">
-                          {formatUnitPrice(item.netUnitPrice, nf.pricePlaces)} {item.currency}
+                          {formatUnitPrice(item.netUnitPrice ?? "0", nf.pricePlaces)} {item.currency}
                           <div className="mt-1 text-xs text-[#6B7480]">{item.priceUnit === "PCS" ? "pcs" : "cts"}</div>
                         </td>
                       )}
-                      {showPrice && <td className="px-3 py-4 text-right">{formatMoneyText(item.amount, nf.pricePlaces)}</td>}
+                      {showPrice && <td className="px-3 py-4 text-right">{formatMoneyText(item.amount ?? "0", nf.pricePlaces)}</td>}
                     </tr>
                   ))}
                   {stock.hasNextPage && (
@@ -230,7 +267,11 @@ export function MemoStockModal({ title, vendorId, currency, showPrice, emptyText
             <footer className="flex items-center justify-end gap-2 border-t border-[#E3E6EA] px-5 py-3">
               {checked.size > 0 && <span className="mr-auto text-sm font-medium text-[#1C252E]">{checked.size} selected</span>}
               <Button onClick={onCancel}>Cancel</Button>
-              <Button variant="primary" className="min-w-24" disabled={checked.size === 0} onClick={() => onConfirm(items.filter((item) => checked.has(item.id)))}>
+              <Button variant="primary" className="min-w-24" disabled={checked.size === 0} onClick={() => {
+                  const picked = items.filter((item) => checked.has(pickKey(item)));
+                  if (props.fromStock) props.onConfirm(picked as FromStockItem[]);
+                  else props.onConfirm(picked as MemoStockItem[]);
+                }}>
                 OK
               </Button>
             </footer>

@@ -75,3 +75,11 @@ A Reserve **holds stones for a customer so they can be sold later** (the Sale pa
 - Sale (later; it will move Reserve to Sold).
 - Our own stock in From Stock (inventory).
 - Line photos (as Memo Out).
+
+## Revision 2 — own stock in From Stock (load-to-stock phase 2) — pending-review
+
+- Owner 2026-11-18 "2a + 2b เลย" / "ตามFrom Stock เดิมให้ user ดูที่ location เองว่าเป็น memo หรือ ของจากคลังเรา". Picker and our-stock rows follow the shared section in [quotation Revision 3](../quotation/ui-spec.md#revision-3--own-stock-in-from-stock-load-to-stock-phase-2--pending-review) (one list; Location tells the source). ADR-0052 D15 phase 2b. TODO: [load-to-stock Phase 2](../../../task/todo/load-to-stock.md#phase-2--own-stock-in-from-stock).
+- Q-RS-01 ("รวมของ จาก memo และ คลัง") is now met; "Until then, Memo Stock only" and the Not-in-scope line are dropped.
+- Pending Save holds nothing; availability is checked at Save for new/raised rows and again at Approve, when inventory holds our stock as RESERVED (also on auto-approved Save).
+- Errors: our stock short → cell "More than available (x pcs / y ct)", toast "Row N: only x pcs left"; at Approve the existing "Some stock items no longer have enough pending. Edit the row and approve again." `INVENTORY_UNAVAILABLE` → "Our stock can't be checked right now; try again"; the Reserve stays as it was. Memo-only Reserves are unaffected.
+- After Approve, while inventory's hold is still being applied (`sync_state` pending), a grey hint "Updating our stock…" shows next to the status chip (Q-LS-P2-05); the document is Approved and read-only; no user action.

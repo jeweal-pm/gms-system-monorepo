@@ -115,5 +115,5 @@ export function EditMemoOutReturnPage({ id }: { id: string }) {
   if (!access || (access.view && detail.isPending)) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{DENIED}</p>;
   if (detail.isError || !detail.data) return <p className={message}>{detail.error ? memoOutReturnLoadError(detail.error) : "Memo out return not found."}</p>;
-  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromMemoOutReturn(detail.data)} deleted={deletedInfo(detail.data)} flow={flowOf(detail.data)} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} />;
+  return <DocumentForm key={`${id}:${detail.data.version}`} config={CONFIG} initial={fromMemoOutReturn(detail.data)} deleted={deletedInfo(detail.data)} flow={flowOf(detail.data)} syncing={detail.data.syncState === "SYNCING"} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} />;
 }

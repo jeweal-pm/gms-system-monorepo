@@ -15,11 +15,20 @@ import type { MemoOutOutstandingInput, MemoOutReturnInput, MemoReceiveListInput,
 import { latestStockUser, releaseToMemoStock, takeFromMemoStock, type MemoStockTake } from "./memo-stock.service";
 import { lockSourceHeaders } from "./source-lock";
 import { LINE_PHOTO_DOCUMENTS, withLinePhotos } from "./line-photos";
+import { uuidV7 } from "@gms/storage";
+import { peekApprovalSetting } from "../approval-setting/approval-setting.service";
+import { DOC_SPECS, holdSaga, lineIndexOf, registerHoldErrors, sumLines } from "./inventory-hold-saga";
 
 const Decimal = Prisma.Decimal;
 type Dec = Prisma.Decimal;
 
 export const memoOutReturnErrors = documentErrors("MEMO_OUT_RETURN", "MemoOutReturn", "memo_out_return");
+registerHoldErrors("memo-out-return", memoOutReturnErrors);
+
+/** SA-LS-P2-06: a Memo Out whose own-stock holds are being updated can't be returned meanwhile. */
+function refuseSyncingSources(sources: Map<string, { syncing: boolean }>) {
+  if ([...sources.values()].some((source) => source.syncing)) throw holdSaga.busy("memo-out-return");
+}
 const VENDOR_OPTIONS_LIMIT = 1_000;
 
 /** Vendor + one of its addresses (memo receive, memo return; memo out return used it until SA-MOR-11). */
@@ -90,7 +99,7 @@ async function completeReturnLines(tx: Tx, input: MemoOutReturnInput): Promise<M
   const quantities: FieldError[] = [];
   const lines = input.lines.map((line, index) => {
     const row = byId.get(line.memoOutLineId);
-    if (!row || !row.memoStockId || row.document.status !== APPROVED || row.document.deletedAt || row.document.customerId !== input.customerId || row.document.currencyCode !== input.currency) {
+    if (!row || (!row.memoStockId && !row.ownStockId) || row.document.status !== APPROVED || row.document.deletedAt || row.document.customerId !== input.customerId || row.document.currencyCode !== input.currency) {
       references.push({ path: `lines.${index}.memoOutLineId`, code: "invalid_reference" });
       return line;
     }
@@ -168,7 +177,8 @@ type OutstandingRow = {
   doc_date: Date;
   due_date: Date;
   currency_code: string;
-  memo_stock_id: string;
+  memo_stock_id: string | null;
+  own_stock_id: string | null;
   stock_id: string;
   lot: string;
   location: string;
@@ -203,6 +213,8 @@ export function toOutstandingItem(row: OutstandingRow) {
     memoOutLineId: row.id,
     memoOut: { id: row.memo_out_id, docNo: row.doc_no, docDate: fromDbDate(row.doc_date), dueDate: fromDbDate(row.due_date) },
     memoStockId: row.memo_stock_id,
+    ownStockId: row.own_stock_id,
+    source: (row.own_stock_id ? "OWN_STOCK" : "MEMO_STOCK") as "OWN_STOCK" | "MEMO_STOCK",
     stockId: row.stock_id,
     lot: row.lot,
     location: row.location,
@@ -273,6 +285,7 @@ const memoOutReturnEffects: DocumentEffects = {
     const lines = await returnLines(tx, doc.id);
     // INV-20261111-002 F1: the Memo Outs stay APPROVED and live under FOR SHARE until this transaction ends.
     const sources = await lockSourceHeaders(tx, "memoOut", lines.map((line) => line.memoOutLineId));
+    refuseSyncingSources(sources);
     const gone = lines.flatMap((line, index) => (sources.get(line.memoOutLineId)?.live ? [] : [{ path: `lines.${index}.memoOutLineId`, code: "invalid_reference" }]));
     if (gone.length > 0) throw memoOutReturnErrors.referenceInvalid(gone);
     const outLines = await lockOutLines(tx, lines);
@@ -353,8 +366,10 @@ export class MemoOutReturnService {
     outstanding: true,
     prepare: completeReturnLines,
     lockSources: async (tx, input) => {
-      await lockSourceHeaders(tx, "memoOut", input.lines.map((line) => line.memoOutLineId));
+      refuseSyncingSources(await lockSourceHeaders(tx, "memoOut", input.lines.map((line) => line.memoOutLineId)));
     },
+    afterWrite: (tx, id, action) => holdSaga.inTx("memo-out-return", tx, id, action),
+    syncState: true,
     lineHook: withLinePhotos(LINE_PHOTO_DOCUMENTS.memoOutReturn, memoOutLines),
     detailExtra: (row) => ({
       approvedAt: row.approvedAt ? (row.approvedAt as Date).toISOString() : null,
@@ -371,25 +386,67 @@ export class MemoOutReturnService {
   nextNumber(docDate: string) {
     return this.engine.nextNumber(docDate);
   }
-  create(actorId: string, input: MemoOutReturnInput, viewer: FlowPrincipal | null = null) {
-    return this.engine.create(actorId, input, viewer);
+  /**
+   * ADR-0052 D18/D19: a return of own-stock Memo Out lines moves memo_out -> on-hand in inventory (MEMO_OUT_RETURN hold,
+   * release kind, after the local commit); its reversal (edit / delete) is the acquire kind, done first (refused ->
+   * MEMO_OUT_RETURN_IN_USE, nothing changed).
+   */
+  async create(actorId: string, input: MemoOutReturnInput, viewer: FlowPrincipal | null = null) {
+    const id = uuidV7();
+    const owned = await this.ownStockOf(input);
+    return holdSaga.withHolds(owned.size > 0, {
+      type: "memo-out-return", id, isCreate: true, actorId,
+      next: async () => ((await peekApprovalSetting(prisma, "memo-out-return")) ? new Map() : this.inputHolds(input, owned)),
+      lineIndex: lineIndexOf(input.lines.map((line) => owned.get(line.memoOutLineId))),
+      call: () => this.engine.create(actorId, input, viewer, { id }),
+    });
   }
-  update(actorId: string, id: string, expectedVersion: number, input: MemoOutReturnInput, viewer: FlowPrincipal | null = null) {
-    return this.engine.update(actorId, id, expectedVersion, input, viewer);
+  async update(actorId: string, id: string, expectedVersion: number, input: MemoOutReturnInput, viewer: FlowPrincipal | null = null) {
+    const owned = await this.ownStockOf(input);
+    return holdSaga.withHolds(owned.size > 0, async () => {
+      const header = await prisma.memoOutReturn.findUnique({ where: { id }, select: { status: true, autoApproved: true } });
+      return {
+      type: "memo-out-return", id, isCreate: false, actorId, expectedVersion,
+      next: async () => {
+        if (header?.status === "APPROVED" && header.autoApproved) return this.inputHolds(input, owned);
+        if (header?.status === "DRAFT" && !(await peekApprovalSetting(prisma, "memo-out-return"))) return this.inputHolds(input, owned);
+        return null;
+      },
+      lineIndex: lineIndexOf(input.lines.map((line) => owned.get(line.memoOutLineId))),
+      call: () => this.engine.update(actorId, id, expectedVersion, input, viewer),
+      };
+    }, () => this.engine.update(actorId, id, expectedVersion, input, viewer));
   }
   delete(actorId: string, id: string, expectedVersion: number) {
-    return this.engine.delete(actorId, id, expectedVersion);
+    return holdSaga.withHolds(false, { type: "memo-out-return", id, isCreate: false, actorId, expectedVersion, next: () => new Map(), call: () => this.engine.delete(actorId, id, expectedVersion) });
   }
   /** transaction-soft-delete D6 / approval-setup G3. */
   restore(actorId: string, id: string, expectedVersion: number) {
-    return this.engine.restore(actorId, id, expectedVersion);
+    return holdSaga.withHolds(false, {
+      type: "memo-out-return", id, isCreate: false, actorId, expectedVersion,
+      next: async () => ((await peekApprovalSetting(prisma, "memo-out-return")) ? new Map() : DOC_SPECS["memo-out-return"].lines(prisma, id, false)),
+      call: () => this.engine.restore(actorId, id, expectedVersion),
+    });
   }
   submit(actor: DocumentActor, id: string, expectedVersion: number) {
     return this.engine.submit(actor, id, expectedVersion);
   }
-  /** PENDING_APPROVAL → APPROVED with the moves above (SA-MOR-17). */
+  /** PENDING_APPROVAL -> APPROVED with the moves above (SA-MOR-17) and the own-stock return in inventory. */
   approve(actorId: string, id: string, expectedVersion: number) {
-    return this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED" }>;
+    return holdSaga.withHolds(false, {
+      type: "memo-out-return", id, isCreate: false, actorId, expectedVersion,
+      next: () => DOC_SPECS["memo-out-return"].lines(prisma, id, false),
+      call: () => this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED" }>,
+    });
+  }
+
+  /** Memo Out line id -> its own stock (one indexed read; lines of Memo Stock are absent). */
+  private async ownStockOf(input: MemoOutReturnInput): Promise<Map<string, string>> {
+    const rows = await prisma.memoOutLine.findMany({ where: { id: { in: (input.lines ?? []).map((line) => line.memoOutLineId) }, ownStockId: { not: null } }, select: { id: true, ownStockId: true } });
+    return new Map(rows.flatMap((row) => (row.ownStockId ? [[row.id, row.ownStockId] as const] : [])));
+  }
+  private inputHolds(input: MemoOutReturnInput, owned: Map<string, string>) {
+    return sumLines(input.lines.map((line) => ({ stock: owned.get(line.memoOutLineId), pcs: line.pcs, weightCt: line.weightCt })));
   }
 
   /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction. */
@@ -422,7 +479,8 @@ export class MemoOutReturnService {
       Prisma.sql`o.status = 'APPROVED' AND o.deleted_at IS NULL`,
       Prisma.sql`o.customer_id = ${input.customerId}::uuid`,
       Prisma.sql`o.currency_code = ${input.currency}::char(3)`,
-      Prisma.sql`l.memo_stock_id IS NOT NULL AND (l.returned_pcs < l.pcs OR l.returned_weight_ct < l.weight_ct)`,
+      // ADR-0052 D20: lines of Memo Stock and of our stock (Q-LS-P2-04: items carry `source` and `location`).
+      Prisma.sql`(l.memo_stock_id IS NOT NULL OR l.own_stock_id IS NOT NULL) AND (l.returned_pcs < l.pcs OR l.returned_weight_ct < l.weight_ct)`,
     ];
     if (input.q) {
       const pattern = `%${escapeLike(input.q)}%`;
@@ -440,7 +498,7 @@ export class MemoOutReturnService {
     try {
       const rows = await prisma.$queryRaw<OutstandingRow[]>(Prisma.sql`
         SELECT l.id::text AS id, o.id::text AS memo_out_id, o.doc_no, o.doc_date, o.due_date, o.currency_code,
-          l.memo_stock_id::text AS memo_stock_id, l.stock_id, l.lot, l.location, l.stone, l.shape, l.size, l.color, l.clarity,
+          l.memo_stock_id::text AS memo_stock_id, l.own_stock_id::text AS own_stock_id, l.stock_id, l.lot, l.location, l.stone, l.shape, l.size, l.color, l.clarity,
           l.cutting, l.quality, l.cer_type, l.cer_no, l.item_note, l.pcs, l.weight_ct, l.returned_pcs, l.returned_weight_ct,
           l.price_unit, l.unit_price, l.amount
         FROM "partner"."memo_out_line" l
@@ -472,7 +530,7 @@ type MemoOutReturnLineOut = Omit<EngineDetail["lines"][number], "stoneCodeId" | 
   stockId: string | null;
 };
 /** api-contract `MemoOutReturn` rev 2 (the line hook and `detailExtra` shape the engine output at run time). */
-export type MemoOutReturnDetail = Omit<EngineDetail, "lines"> & { lines: MemoOutReturnLineOut[]; approvedAt: string | null; approvedBy: string | null };
+export type MemoOutReturnDetail = Omit<EngineDetail, "lines"> & { lines: MemoOutReturnLineOut[]; approvedAt: string | null; approvedBy: string | null; syncState: "IDLE" | "SYNCING" };
 
 /** Active vendors with their addresses (plus a stored inactive one), currencies and the stone lists. */
 export async function vendorDocumentOptions(includeVendorId?: string) {

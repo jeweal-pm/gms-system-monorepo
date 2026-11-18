@@ -79,10 +79,10 @@ describe("mapping (UT-RS-03/04)", () => {
       id: ID, docNo: "RS-1", status: "APPROVED", version: 2, docDate: "2026-11-02", dueDate: "2026-11-30",
       customerId: ID, customer: { code: "C001", name: "Aom" }, shippingAddressId: ID, shippingAddressText: "S", invoiceAddressId: null, invoiceAddressText: "I",
       currency: "THB", exchangeRate: null, ref: "", documentNote: "",
-      lines: [{ ...base, source: "STOCK" as const, stone: "Tourmaline", location: "Memo", pcs: 1, weightCt: "0.680", unitPrice: "5000.00", amount: "3400.00", memoStockId: STOCK, stockId: "260003", stockPendingPcs: 2, stockPendingWeightCt: "1.360" }],
+      lines: [{ ...base, source: "STOCK" as const, stone: "Tourmaline", location: "Memo", pcs: 1, weightCt: "0.680", unitPrice: "5000.00", amount: "3400.00", memoStockId: STOCK, ownStockId: null, stockId: "260003", stockPendingPcs: 2, stockPendingWeightCt: "1.360" }],
       discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "3400.00", discountAmount: "0.00", priceBeforeTax: "3400.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "3400.00" },
-      approvedAt: "2026-11-02T03:00:00.000Z", approvedBy: "u", createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, ...FLOW_DETAIL,
+      approvedAt: "2026-11-02T03:00:00.000Z", approvedBy: "u", createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, syncState: "IDLE" as const, ...FLOW_DETAIL,
     } satisfies ReserveDetail;
     // ADR-0048 (owner 2026-11-11): saved photos load back in order, read from this document's own photo route.
     expect(fromReserve({ ...detail, lines: detail.lines.map((line) => ({ ...line, photoIds: ["p1", "p2"] })) } as typeof detail).lines[0]?.photos).toEqual([

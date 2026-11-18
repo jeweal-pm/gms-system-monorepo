@@ -44,6 +44,7 @@ const memoOut = new CustomerStockDocument({
   parentKey: "memoOutId",
   approvalType: "memo-out",
   usedBy: memoOutUsedBy,
+  holdType: "memo-out",
   photos: LINE_PHOTO_DOCUMENTS.memoOut,
 });
 

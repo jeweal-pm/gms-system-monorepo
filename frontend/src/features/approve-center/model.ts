@@ -1,5 +1,6 @@
 import type { DocumentApprovalType } from "@/features/trade-document/flow-status";
 import { isCallerLicenseCode, readDomainError } from "@/lib/trpc-error";
+import { INVENTORY_UNAVAILABLE_TEXT, STOCK_BUSY_TEXT } from "@/features/trade-document/stock-row-errors";
 import type { ApproveMenu, AvailableMenu } from "./menus";
 
 /**
@@ -337,6 +338,9 @@ export function actionFailure(error: unknown, menu: ApproveMenu, docNo: string, 
     const inline = "Some stock items no longer have enough pending. Open the document to fix it.";
     return { ...base, toast: `Couldn't approve ${docNo}. ${inline}`, inline, link: true };
   }
+  // load-to-stock phase 2 (reserve Revision 2): inventory down or the hold still syncing; the document stays as it was.
+  if (code === "INVENTORY_UNAVAILABLE") return { ...base, toast: `Couldn't ${verb} ${docNo}. ${INVENTORY_UNAVAILABLE_TEXT}.`, inline: `${INVENTORY_UNAVAILABLE_TEXT}.` };
+  if (code.endsWith("_BUSY")) return { ...base, toast: `${docNo}: ${STOCK_BUSY_TEXT}.`, inline: `${STOCK_BUSY_TEXT}.` };
   if (code.endsWith("_REVISE_LIMIT")) return { ...base, toast: `${docNo} was already sent back once. Approve or reject it.`, refetch: true };
   if (code.endsWith("_CHANGED")) return { ...base, toast: `${docNo} was changed by someone else. The list was refreshed.`, refetch: true };
   if (code.endsWith("_STATUS_INVALID")) return { ...base, toast: `${docNo} is no longer pending.`, refetch: true };

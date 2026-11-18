@@ -57,3 +57,42 @@ Envelope: `{ error: { code, message, requestId, details? } }`. `message` is a fi
 - **Logging:** `warn` for 4xx business codes (code, requestId, id), `error` for 5xx with internal cause; never request bodies, prices, notes, tokens or cookies.
 
 - **Apply re-check (INV-20261117-003 F2):** the apply transaction of an applied edit / delete re-asserts "stock not in use" under the stock row locks. If stock became used after tx0, nothing is reversed or overwritten, the caller gets `409 LOAD_TO_STOCK_IN_USE`, and the op is parked `STUCK` (`last_error = in_use`, load stays `SYNCING`) until the hold is released and `sync:redrive` re-applies the stored revision.
+
+---
+
+## Phase 2 (SA revision 2, Proposed)
+
+ADR-0052 D16–D23, SA-LS-P2-09. `<CODE>` = `QUOTATION` (batch-read codes only), `RESERVE`, `MEMO_OUT`, `MEMO_OUT_RETURN`.
+
+### Inventory internal codes (`/internal/v1/master/*`, mapped by master)
+
+| HTTP | Code | When | details | Master maps to |
+|---|---|---|---|---|
+| 401 | `SERVICE_UNAUTHENTICATED` | missing/wrong `MASTER_INVENTORY_SERVICE_TOKEN` (or the inventory → master token) | — | 503 `INVENTORY_UNAVAILABLE` + log `master.inventory_auth_failed` (config error) |
+| 409 | `STOCK_HOLD_STALE` | revision < applied, or same revision with another hash | `{ appliedRevision }` | op `STUCK`, log; user sees `<CODE>_BUSY` until the operator redrives |
+| 409 | `STOCK_HOLD_EXCEEDS_AVAILABLE` | RESERVED/MEMO_OUT increase > on-hand | `{ items:[{stockUuid, stockId, availablePcs, availableWeightCt}] }` | 409 `<CODE>_PENDING_SHORT`, `fieldErrors lines.N.pcs/weightCt exceeds_pending {availablePcs, availableWeightCt}` ("Row N: only x pcs left") |
+| 409 | `STOCK_HOLD_EXCEEDS_MEMO_OUT` | MEMO_OUT_RETURN increase > memo_out (drift) | `{ items }` | op `STUCK` + log `master.inventory_sync_stuck` (not user-recoverable) |
+| 409 | `STOCK_HOLD_IN_USE` | MEMO_OUT decrease > memo_out, or MEMO_OUT_RETURN decrease > on-hand | `{ items }` | 409 `<CODE>_IN_USE { usedBy: null }` |
+| 409 | `STOCK_HOLD_BUSY` | a stock's load is `SYNCING` (SA-LS-18) | `{ stockIds }` | 409 `<CODE>_BUSY { retryAfterSeconds: 5 }` |
+| 422 | `STOCK_HOLD_UNAVAILABLE` | stock unknown or `REVERSED` on an increase | `{ stockUuids }` | 422 `<CODE>_REFERENCE_INVALID`, `lines.N.ownStockId invalid_reference` ("Row N is no longer in our stock") |
+| 503 | `INVENTORY_BUSY` | more than 4 internal requests in flight | `Retry-After: 1` | retried once after 1 s, then 503 `INVENTORY_UNAVAILABLE` |
+
+### Master public codes (new or extended)
+
+| HTTP | Code | When | UI recovery |
+|---|---|---|---|
+| 409 | `RESERVE_BUSY` / `MEMO_OUT_BUSY` / `MEMO_OUT_RETURN_BUSY` | document `SYNCING`, a source Memo Out `SYNCING`, or `STOCK_HOLD_BUSY` | "Updating our stock… try again in a few seconds", refetch after 5 s |
+| 503 | `INVENTORY_UNAVAILABLE` | batch read or acquire PUT failed or timed out; **nothing was saved** (an unknown acquire is abandoned by re-drive) | "Our stock can't be checked right now; try again"; edits kept |
+| 409 | `<CODE>_PENDING_SHORT` | existing code, now also for own-stock rows | existing text |
+| 422 | `<CODE>_REFERENCE_INVALID` | existing code; path `lines.N.ownStockId` | remove the row |
+| — | `fromStock.list` partial | inventory failed or timed out (2 s) | `ownStock: "UNAVAILABLE"` notice + Retry (not an error) |
+
+### Failure behaviour (phase 2)
+
+- **No HTTP inside a DB transaction**, on either side.
+- **Acquire unknown** (timeout/5xx/connection after `PUT r`): the user gets 503 and the op stays PREPARED/ACQUIRE. Re-drive (on access, at start, 60 s sweep) sends `PUT r+1 = H_old`, then sets ABANDONED and IDLE. A retry inside that window may see less available for ≤ 60 s. Accepted and documented.
+- **Local failure after acquire:** compensation `PUT r+1 = H_old` (release-only). If it does not answer, the op stays PREPARED/COMPENSATE and is re-driven. The user gets the local error; nothing was saved.
+- **Release unknown:** the document is saved and the user sees success. The op is re-driven forward with the same revision until DONE. Meanwhile the document is `SYNCING` (writes get `_BUSY`) and the extra quantity stays held.
+- **STUCK** (10 attempts, STALE, or EXCEEDS_MEMO_OUT): log `master.inventory_sync_stuck` (doc type, id, revision, code). The document stays `SYNCING`. After the cause is fixed, the operator runs `pnpm --filter backend-api-master inventory-sync:redrive <type> <id>`.
+- **Inventory down:** Memo-Stock-only documents and pickers are unaffected. Own-stock saves get 503, except a Quotation whose own-stock lines are all kept.
+- **Load to Stock:** edit/delete of a load with held stock → `LOAD_TO_STOCK_IN_USE {stockIds, holders}`.

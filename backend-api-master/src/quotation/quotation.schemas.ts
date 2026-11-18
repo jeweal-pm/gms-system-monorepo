@@ -70,7 +70,8 @@ export const tradeDocumentFields = {
  * Stock item (once per quotation), has no stone code, pcs or weight > 0 and a Sale Price > 0 (Q-QTS-04/06/08). The
  * server copies the item fields and checks pending on save; nothing is held.
  */
-const quotationLineSchema = lineInputSchema.extend({ source: z.enum(["MANUAL", "STOCK"]), memoStockId: uuid.nullish() });
+// ADR-0052 D17 (phase 2a): OWN_STOCK lines name our stock (`ownStockId`); copy only, nothing held.
+const quotationLineSchema = lineInputSchema.extend({ source: z.enum(["MANUAL", "STOCK", "OWN_STOCK"]), memoStockId: uuid.nullish(), ownStockId: uuid.nullish() });
 const quotationFields = { ...tradeDocumentFields, lines: z.array(quotationLineSchema).min(1).max(LINES_MAX), customerId: uuid, shippingAddressId: uuid, invoiceAddressId: uuid };
 
 type TradeDocumentValues = z.output<z.ZodObject<typeof tradeDocumentFields>>;
@@ -97,11 +98,16 @@ function quotationRules(value: QuotationValues, ctx: z.RefinementCtx) {
   value.lines.forEach((line, index) => {
     if (line.source === "MANUAL") {
       if (line.memoStockId) issue(["lines", index, "memoStockId"], "invalid");
+      if (line.ownStockId) issue(["lines", index, "ownStockId"], "invalid");
       return;
     }
-    if (!line.memoStockId) return issue(["lines", index, "memoStockId"], "required");
-    if (seen.has(line.memoStockId)) issue(["lines", index, "memoStockId"], "duplicate");
-    seen.add(line.memoStockId);
+    const field = line.source === "STOCK" ? "memoStockId" : "ownStockId";
+    const other = line.source === "STOCK" ? "ownStockId" : "memoStockId";
+    if (line[other]) issue(["lines", index, other], "invalid");
+    const item = line[field];
+    if (!item) return issue(["lines", index, field], "required");
+    if (seen.has(`${field}:${item}`)) issue(["lines", index, field], "duplicate");
+    seen.add(`${field}:${item}`);
     if (line.stoneCodeId) issue(["lines", index, "stoneCodeId"], "invalid");
     if (line.pcs <= 0 && Number(line.weightCt) <= 0) issue(["lines", index, "pcs"], "required");
     if (Number(line.unitPrice) <= 0) issue(["lines", index, "unitPrice"], "required");

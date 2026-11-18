@@ -105,3 +105,11 @@ Recovery triggers: (1) any GET/mutation on a load whose op is `PREPARED`/`CONFIR
 | Expected data | hundreds of loads/month, ≤ 200 rows each; stock rows grow linearly (tens of thousands/year) — keyset indexes only |
 
 Rollout order: infra research → auth (reader role, token) → master migration + internal API → inventory migration + service → infra Compose/nginx/secrets (parent serialized) → devops pipeline → frontend. Rollback: disable nginx `/api/inventory/` and stop the container; master additions are inert defaults. Release applied loads through the API before dropping inventory data. Measurements required before claiming production fit: idle RSS of the built image, RSS and p95 during a 200-row apply, and total host `free -m` with all containers.
+
+## Phase 2 (SA revision 2, Proposed) — module layout and capacity delta
+
+ADR-0052 D16–D23; [decisions SA rev 2](decisions.md#sa-revision-2--phase-2a--2b-proposed).
+
+- **Inventory:** `src/internal/master-routes.ts` mounted at `/internal/v1/master` (token guard, limiter ≤ 4 in flight, strict ≤ 64 KiB). `modules/stock/stock.ts` gains `availablePage`, `batch` and `applyHolds` (set-based), and `createStocks` / `applyStockEdit` maintain `ref_doc_*` (lot is already handled). `load-to-stock/read.ts` returns `holders`. No public route is added.
+- **Master:** `src/inventory-client/**` (config `INVENTORY_INTERNAL_URL` and `MASTER_INVENTORY_SERVICE_TOKEN_FILE`, an agent with ≤ 4 sockets, timeouts 2 s / 5 s, sweep 60 s, script `inventory-sync:redrive`). `trade-document/from-stock.service.ts` does the merge. `own-stock-lines.ts` does the pre-read and complete. `inventory-hold-saga.ts` wraps `CustomerStockDocument` and `MemoOutReturnService`. The engine changes only to accept a pre-generated id and a `SYNCING` guard.
+- **Capacity delta:** no new container, network, pool or cache; Compose stays at 1.75 vCPU / 2880 MiB. Master gets about +10 MiB RSS (estimate, to measure). The inventory pool of 5 is shared by public and internal traffic (internal ≤ 4 in flight, short transactions).

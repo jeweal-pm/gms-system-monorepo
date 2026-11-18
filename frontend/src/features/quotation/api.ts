@@ -9,6 +9,7 @@ import { authTrpc } from "@/lib/auth-trpc";
 import { masterTrpc } from "@/lib/master-trpc";
 import { isCallerLicenseCode, readDomainError, retryTransient } from "@/lib/trpc-error";
 import { daybookInput, daybookQueryOptions, deletedMessage, mapDocumentRestoreError } from "@/features/trade-document/document-api";
+import { INVENTORY_UNAVAILABLE_TEXT, stockRowMessage as sharedStockRowMessage } from "@/features/trade-document/stock-row-errors";
 import { isFilledLine, type QuotationFormValues, type QuotationLine } from "./schema";
 
 export type QuotationDetail = InferQueryLikeData<typeof masterTrpc.quotation.get>;
@@ -51,9 +52,12 @@ export function toQuotationInput(values: QuotationFormValues) {
   return {
     ...shared,
     // quotation rev 2 (SA-QT-16): a From Stock row names its Memo Stock item; the server copies the item fields.
+    // Revision 3 (ADR-0052 D17): an our-stock row is `OWN_STOCK` + `ownStockId`; the server copies the stock fields.
     lines: shared.lines.map((line, index) => {
       const memoStockId = filled[index]?.memoStockId || null;
-      return { ...line, source: memoStockId ? ("STOCK" as const) : ("MANUAL" as const), memoStockId, ...(memoStockId ? { stoneCodeId: null, stoneCode: "" } : {}) };
+      const ownStockId = memoStockId ? null : filled[index]?.ownStockId || null;
+      const source = memoStockId ? ("STOCK" as const) : ownStockId ? ("OWN_STOCK" as const) : ("MANUAL" as const);
+      return { ...line, source, memoStockId, ownStockId, ...(memoStockId || ownStockId ? { stoneCodeId: null, stoneCode: "" } : {}) };
     }),
     customerId: values.customerId,
     shippingAddressId: values.shippingAddressId,
@@ -110,12 +114,13 @@ export function fromQuotation(detail: QuotationDetail): QuotationFormValues {
     // quotation rev 2: From Stock rows keep their item, Stock ID and the pending they were picked with.
     lines: shared.lines.map((line, index) => {
       const saved = detail.lines[index];
-      if (!saved?.memoStockId) return line;
+      if (!saved?.memoStockId && !saved?.ownStockId) return line;
       return {
         ...line,
         source: "STOCK" as const,
         stockId: saved.stockId ?? "",
-        memoStockId: saved.memoStockId,
+        memoStockId: saved.memoStockId ?? "",
+        ownStockId: saved.ownStockId ?? "",
         stockPendingPcs: saved.stockPendingPcs === null ? "" : String(saved.stockPendingPcs),
         stockPendingWeightCt: saved.stockPendingWeightCt ?? "",
       };
@@ -130,7 +135,7 @@ export function fromQuotation(detail: QuotationDetail): QuotationFormValues {
 
 /** The contract fields every saved trade document returns (quotation and the memo documents share them). */
 /** The stock fields of a quotation line (rev 2); the memo documents' lines don't all carry them. */
-type StockLineFields = "source" | "memoStockId" | "stockId" | "stockPendingPcs" | "stockPendingWeightCt";
+type StockLineFields = "source" | "memoStockId" | "ownStockId" | "stockId" | "stockPendingPcs" | "stockPendingWeightCt";
 export type TradeDocumentDetail = Pick<QuotationDetail, "id" | "docNo" | "version" | "docDate" | "dueDate" | "currency" | "exchangeRate" | "ref" | "discount" | "tax" | "serviceCharges" | "labor" | "documentNote"> & {
   lines: (Omit<QuotationDetail["lines"][number], StockLineFields> & Partial<Pick<QuotationDetail["lines"][number], StockLineFields>>)[];
 };
@@ -300,6 +305,9 @@ export function mapSaveError(error: unknown): SaveOutcome {
       return { fieldErrors: [], message: "This quotation can't be changed in its current status.", stale: true };
     case "QUOTATION_NOT_FOUND":
       return { fieldErrors: [], message: "This quotation no longer exists." };
+    // Revision 3: inventory couldn't check our-stock rows; nothing saved, the edits stay.
+    case "INVENTORY_UNAVAILABLE":
+      return { fieldErrors: [], message: INVENTORY_UNAVAILABLE_TEXT };
     case "VALIDATION_ERROR": {
       const mapped = onFields("Check this field");
       return { fieldErrors: mapped, message: stockMessage ?? "Some details couldn't be saved. Check the form and try again." };
@@ -314,17 +322,7 @@ export function mapSaveError(error: unknown): SaveOutcome {
 }
 
 /** A From Stock row the server refused (quotation rev 2 ui-spec "Errors on Save"), as "Row N: …". */
-function stockRowMessage(fieldErrors: { path: string; code: string }[]): string | undefined {
-  for (const entry of fieldErrors) {
-    const match = /^lines\.(\d+)\.(memoStockId|pcs|weightCt)$/.exec(entry.path);
-    if (!match) continue;
-    const row = `Row ${Number(match[1]) + 1}`;
-    if (entry.code === "exceeds_pending") return `${row}: More than pending`;
-    if (match[2] === "memoStockId" && entry.code === "invalid_reference") return `${row}: This stock item no longer exists. Remove the row.`;
-    if (match[2] === "memoStockId" && entry.code === "duplicate") return `${row}: This stock item is already on the quotation.`;
-  }
-  return undefined;
-}
+const stockRowMessage = (fieldErrors: Parameters<typeof sharedStockRowMessage>[0]) => sharedStockRowMessage(fieldErrors, "quotation", () => "More than available");
 
 export function loadErrorMessage(error: unknown): string {
   const { domainCode } = readDomainError(error);

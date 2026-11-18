@@ -4,6 +4,7 @@
 - Date: 2026-11-16
 - Feature / source UI revision: `load-to-stock` / UI revision 1 (draft) with the owner answers of 2026-11-16 ([open-questions](../apps/frontend/load-to-stock/open-questions.md#owner-answers-2026-11-16))
 - SA revision: 1 ([decisions](../apps/backend/inventory/load-to-stock/decisions.md))
+- **Amendment 2 — phase 2a + 2b (SA revision 2): Accepted** 2026-11-18 (owner 2026-11-18 "อนุมัติ UI rev phase 2 + SA rev 2" (Q-LS-P2-01…07 take the recorded answers/defaults; Q-LS-P2-02 Lot; Q-LS-P2-05 as explained in chat)). Adds D16–D23 at the end of this ADR. Accepted phase-1 text (D1–D15) is unchanged; D16 replaces only the D15 bullets "Picker read" and "two sections (tabs)" (owner 2026-11-18: one list, no tabs).
 - Deciders: project owner
 - Approval evidence: owner 2026-11-17 "อนุมัติ UI rev 1 + ADR-0052 + SA rev 1" (open questions take the recorded owner answers; unanswered rows take their defaults; Q-LS-32 notifications as explained: approvers on Send to approve, creator on Approve/Revise/Reject)
 - Supersedes / related ADRs: **amends** [ADR-0027](0027-gms-master-inventory-data-and-operations.md) D2 (inventory service identity, module scope and stock model), [ADR-0050](0050-approval-setting-draft-send-to-approve.md) D1 (setting rows of inventory types) and D4 ("used" table), [ADR-0051](0051-purchase-lines-without-stock-id.md) §6 (Stock ID issuing), [ADR-0049](0049-notifications-sse.md) D10 (inventory stream path). Follows [ADR-0025](0025-gms-domain-routing-and-trpc.md), [ADR-0026](0026-gms-access-tokens-and-live-authorization.md), [ADR-0030](0030-permanent-retention-for-user-uploaded-files.md), [ADR-0031](0031-private-master-authorization-boundary.md), [ADR-0042](0042-purchase-document-and-stock-deduction.md), [ADR-0045](0045-transaction-document-soft-delete.md), [ADR-0046](0046-approval-review-status-and-approve-center-api.md), [ADR-0048](0048-line-photos-on-stock-documents.md), [ADR-0024](0024-production-host-4gb-2vcpu.md), [ADR-0053](0053-location-master.md) (Location Master; its migration comment `20261116090000_location_master` says "ADR-0052" but means ADR-0053 — this ADR-0052 is Load to Stock).
@@ -136,3 +137,99 @@ Each has a recommended default; approving this ADR "with the defaults" accepts t
 - Observable checks: IT-LS-B* in [testing](../apps/backend/inventory/load-to-stock/testing.md) — partial load leaves 3 of 10 pcs; a closed line leaves the picker; concurrent approves of the same PU line → one succeeds, the other `LOAD_TO_STOCK_EXCEEDS_REMAINING`; a killed process between steps recovers to one consistent state; no Stock ID is duplicated across `memo_stock` and `inventory.stock` in the New Year two-session test; Purchase edit after a load → `PURCHASE_IN_USE`; N+1 budgets met.
 - Order after approval: infra research of the new container → master + auth backend changes → inventory service → infra Compose/nginx (serialized by the parent) → devops pipeline → frontend FE-LS-*.
 - Keep **Proposed** until the owner approves this exact revision.
+
+---
+
+## Amendment 2 — D15 phases 2a + 2b (SA revision 2, **Accepted**)
+
+- Status: **Accepted** (2026-11-18; owner 2026-11-18 "อนุมัติ UI rev phase 2 + SA rev 2" (Q-LS-P2-01…07 take the recorded answers/defaults; Q-LS-P2-02 Lot; Q-LS-P2-05 as explained in chat)). Phase-1 decisions above stay Accepted and implemented.
+- Owner input 2026-11-18: "2a + 2b เลย"; "งั้นทำ ก" (Q-LS-36 option A final: `backend-api-inventory` stays the owner of our stock; master documents hold/move it through inventory); picker: keep the existing From Stock picker as **one list, no tabs** — users tell the stocks apart by **Location** (`Memo` = Memo Stock, any other name = our stock). Q-LS-35 default stands: Purchase `STOCK` rows and Memo Return list Memo Stock only.
+- Bundle: [decisions SA rev 2](../apps/backend/inventory/load-to-stock/decisions.md#sa-revision-2--phase-2a--2b-proposed), [api-contract](../apps/backend/inventory/load-to-stock/api-contract.md#phase-2-sa-revision-2-proposed), [sequence-diagram](../apps/backend/inventory/load-to-stock/sequence-diagram.md#phase-2-sa-revision-2-proposed), [database-diagram](../apps/backend/inventory/load-to-stock/database-diagram.md#c-phase-2-sa-revision-2-proposed), [error-handling](../apps/backend/inventory/load-to-stock/error-handling.md#phase-2-sa-revision-2-proposed), [testing](../apps/backend/inventory/load-to-stock/testing.md#phase-2-verification-plan-sa-revision-2-proposed); TODO BE-LS-P2-* in [task/todo/load-to-stock.md](../task/todo/load-to-stock.md); infra/devops delta in [load-to-stock-infra-devops](../coordination/handoffs/load-to-stock-infra-devops.md#phase-2b-delta-sa-revision-2-proposed).
+
+**D16 — One From Stock list, merged by master (replaces D15 "Picker read" and "two sections").** The customer-side pickers (Quotation, Reserve, Memo Out) call a new master tRPC query `fromStock.list` (VIEW on any of quotation / reserve / memo-out); `memoStock.list` stays unchanged for Memo Return and the Purchase pickers (Q-LS-35).
+
+- *Order and cursor:* both stocks are sorted by the existing Memo Stock key **(ref doc date DESC, Stock ID DESC)**; the ref date is the Memo Receive date for Memo Stock and the Load to Stock doc date for our stock. Stock IDs come from one counter (D5) and are unique across `partner.memo_stock` and `inventory.stock`, so this key is a **total order over both stocks**. The existing opaque cursor `base64url(date|stockId)` is therefore reused unchanged: each side applies `(date, stock_id) < cursor`. No composite or per-side cursor is needed, and paging is stable.
+- *Per page:* master runs, in parallel, (a) its Memo Stock query `LIMIT limit+1` and (b) one call `POST /internal/v1/master/stock/available` to inventory with the same filters, the cursor key and `limit+1` (one indexed query on a new partial index). It merges the two sorted lists (≤ 102 rows), returns the first `limit`, and sets `nextCursor` to the key of the last returned row when either side still has rows. The cost is 2 queries + 1 HTTP call per page, whatever the row count (no N+1). There is no count.
+- *Filters:* `q` (Stock ID, lot, stone, cer no, ref doc no), `from`/`to` (ref date), optional `location` (`Memo` → Memo Stock only, inventory not called; another name → our stock only, Memo Stock not queried). No vendor or currency (customer pickers list every vendor, as SA-MO-15).
+- *Row shape:* the Memo Stock item plus `source: "MEMO_STOCK" | "OWN_STOCK"`; our stock rows have `location` = the stock's location name, `ref.type = "LOAD"` (already reserved in `StockSourceRef`), `load {id, docNo, docDate}`, `lot` (the stock's lot, shown as the Lot badge like Memo Stock; owner Q-LS-P2-02, D23), available = on-hand, and **no price** (price fields null, as ui-spec Q-LS-P2-03: the line's Sale Price starts empty and required). Cost is never sent to the picker.
+- *Inventory down / slow (2 s read timeout):* the page returns Memo Stock rows only with `ownStock: "UNAVAILABLE"`. The UI shows "Our stock is unavailable — Retry" above the list, and Retry restarts from page 1. Memo Stock picking keeps working.
+- *Why master merges, not the browser (decides ui-spec SA-LS-P2-01/02 and its Q-LS-P2-01 "merged in the browser").* The owner wants one list. Master already serves this picker and needs an inventory client for 2b anyway. A merge in the browser would need:
+  - a second public route (`GET /api/inventory/v1/stock/available`) with its own permission check;
+  - two cursors, plus the "show only up to the oldest reached key" bookkeeping;
+  - partial-page logic in the client for each source.
+
+  The server merge needs none of these. The cursor stays the single existing one, and the client keeps one `useInfiniteQuery`. A merge in inventory would make inventory read master's Memo Stock, which is the same cross-service read in the other direction. The order Q-LS-P2-01 asked for (ref doc date DESC, Stock ID DESC) is kept. Affected FE items:
+  - FE-LS-P2-01 calls `fromStock.list` (master tRPC), with no inventory client.
+  - FE-LS-P2-02 (browser merge) is **dropped**.
+  - FE-LS-P2-03 reads `ownStock: "UNAVAILABLE"` for the notice. "You can't view our stock" goes away, because master authorizes the user. "Memo Stock is unavailable" is the whole query's error state.
+  - FE-LS-P2-04 sends `ownStockId` (not `stockUuid`).
+
+**D17 — Phase 2a: Quotation copies our stock (no hold).** `quotation_line` gets `own_stock_id` (inventory `stock.id`, no foreign key across services) and `source 'OWN_STOCK'`. Before its save transaction, master reads `POST /internal/v1/master/stock/batch` (≤ 200 ids) and copies the Stock ID, stone code and attributes, lot, location, cer and price unit, with the available quantity as the snapshot (`stock_pending_*`). It checks pcs/weight ≤ available. A line is **kept** without the call, using its stored snapshot, when the same stock is already on the stored quotation and its quantity is not raised, as the Memo Stock `kept` rule does. So a quotation with unchanged own-stock lines still saves while inventory is down. Otherwise the save gets `503 INVENTORY_UNAVAILABLE` and nothing is saved. A quotation never holds stock and never makes a load "used".
+
+**D18 — Phase 2b: holds in inventory.** Inventory remains the only writer of our stock. Hold kinds per document type:
+
+| Document | Kind | Bucket move per +q (reverse per −q) |
+|---|---|---|
+| Reserve | `RESERVED` | on-hand → reserved |
+| Memo Out | `MEMO_OUT` | on-hand → memo_out |
+| Memo Out Return | `MEMO_OUT_RETURN` | memo_out → on-hand |
+
+Holds are stored per **(document type, document id, stock)** (`stock_hold`, re-keyed from `line_id`, which phase 1 never wrote), so line ids that change on edit do not matter. A `stock_hold_document` row per document keeps the applied revision, the request hash and the result. `PUT /internal/v1/master/stock-holds/{documentType}/{documentId}` sets the whole set in one inventory transaction:
+
+1. Lock the document row.
+2. Run the revision checks. A higher revision applies; the same revision with the same hash replays the stored result; anything else gets `409 STOCK_HOLD_STALE`. Gaps are allowed.
+3. Lock the stocks `FOR UPDATE` in id order, joined to their load's `sync_state`.
+4. Refuse any stock whose load is `SYNCING` (`409 STOCK_HOLD_BUSY`, SA-LS-18).
+5. Check each per-stock delta. An increase of RESERVED or MEMO_OUT needs ACTIVE stock with on-hand ≥ q (`STOCK_HOLD_EXCEEDS_AVAILABLE` or `STOCK_HOLD_UNAVAILABLE`). A decrease of MEMO_OUT needs memo_out ≥ q, and a decrease of MEMO_OUT_RETURN needs on-hand ≥ q; otherwise `STOCK_HOLD_IN_USE`. An increase of MEMO_OUT_RETURN needs memo_out ≥ q (`STOCK_HOLD_EXCEEDS_MEMO_OUT`, a drift guard, because master checks outstanding first).
+6. Move the buckets with one set-based UPDATE (the phase-1 CHECK keeps `pcs = Σ buckets`), replace the hold rows, and append movements (`HOLD_RESERVE`, `RELEASE_RESERVE`, `MEMO_OUT`, `MEMO_OUT_REVERSAL`, `MEMO_OUT_RETURN`, `MEMO_OUT_RETURN_REVERSAL`; the deltas are on-hand changes and cost delta is 0).
+
+The transaction uses ≤ 8 statements for ≤ 200 stocks. **Load "used" (D9) is unchanged and now live:** any hold makes on-hand ≠ pcs, so the load becomes read-only (`LOAD_TO_STOCK_IN_USE`, details add `holders`), and releasing every hold makes it editable again.
+
+**D19 — Phase 2b: master saga "acquire → local → release" (mirror of D4, master → inventory).** Reserve, Memo Out and Memo Out Return headers get `sync_state` (`IDLE`/`SYNCING`) and `hold_revision`. A new `partner.inventory_sync_op` holds one active op per document. For each operation that changes the document's applied hold set (approval OFF: create / edit / delete / restore; approval ON: Approve), master computes H_old (applied set) and H_new and splits the per-stock delta:
+
+- **acquire** = changes that need free quantity in inventory and can be refused: RESERVED/MEMO_OUT up, MEMO_OUT_RETURN down;
+- **release** = changes that cannot be refused by construction: RESERVED/MEMO_OUT down (this document's own holds; returns already block a Memo Out edit/delete via `usedBy`), MEMO_OUT_RETURN up (master has checked the Memo Out line outstanding under its lock).
+
+The operation then runs in three steps:
+
+1. If there is an acquire part, a short tx0 sets `SYNCING` and stores the op (revision r, H_old/H_mid/H_new, action). Master then sends `PUT r = H_mid` (H_old plus the acquire part). A refusal ends the op, sets `IDLE` and maps the error per row; nothing has changed. An unknown outcome returns `503 INVENTORY_UNAVAILABLE` ("nothing was saved") and the op is **abandoned** by re-drive (`PUT r+1 = H_old`, release-only).
+2. tx1 runs today's engine body unchanged (numbering, lines, Memo Stock effects, status) and records `hold_revision`. If tx1 fails for a business reason (e.g. Memo Stock short), master compensates with `PUT r+1 = H_old`. That PUT only undoes this op's acquire part, so it cannot be refused.
+3. If there is a release part, master sends `PUT = H_new` after tx1 commits. The user gets success. If the outcome is unknown, re-drive repeats the same revision until DONE, with the document `SYNCING` meanwhile; until then the extra quantity stays held (conservative, never oversold).
+
+No HTTP call is made inside a database transaction. Re-drive happens on access, at start, and in a 60 s sweep (≤ 20 ops, 15 s lease, backoff ≤ 60 s, `STUCK` after 10 attempts, operator script `inventory-sync:redrive`). While a document is `SYNCING`, its writes and Memo Out Returns of it get `<CODE>_BUSY`. Drafts (ON), Submit, Revise and Reject call nothing; drafts are validated with the D17 pre-read.
+
+**D20 — Master line model.** `reserve_line`, `memo_out_line` and `quotation_line` get `own_stock_id uuid NULL`, source `OWN_STOCK`, a CHECK that exactly one of `memo_stock_id` / `own_stock_id` is set for a stock line, and a unique key (document, own_stock_id). `memo_out_return_line` is unchanged: it reaches our stock through `memo_out_line.own_stock_id`. The Memo Out Return outstanding picker, its open index and the customer Memo Outstanding report include own-stock Memo Out lines. Divergence: Memo Out of Memo Stock still moves pending → reserved in `memo_stock` (existing SA-MO-14), while our stock uses its separate `memo_out` bucket.
+
+**D21 — Credential and network.** New secret `master_inventory_service_token`, mounted as `MASTER_INVENTORY_SERVICE_TOKEN_FILE` in api-master and inventory. Inventory checks it constant-time on `/internal/v1/master/*` only. The two directions' tokens are never accepted for each other. The existing `inventory-master` network now also carries master → `backend-api-inventory:3301` (`INVENTORY_INTERNAL_URL`). There is no new network and no nginx change (nginx routes only `/api/inventory/`). Master gets **no** `depends_on` inventory (inventory already depends on master), so master starts and serves Memo-Stock-only work without inventory.
+
+**D22 — Capacity (4 GB / 2 vCPU).** No container, worker, Redis or pool change. Master gets an outbound client with ≤ 4 keep-alive sockets and timeouts of 2 s (picker) / 5 s (batch, holds), a 60 s sweep, and an estimated +10 MiB RSS within its 384 MiB limit. Inventory internal routes are limited to ≤ 4 in flight (excess → `503 INVENTORY_BUSY`, retryable), each using one short transaction from the existing pool of 5. Per picker page: 1 master query + 1 HTTP + 1 inventory query. Per own-stock save: ≤ 1 batch read + ≤ 2 hold PUTs. Compose stays at 1.75 vCPU / 2880 MiB. Measure picker p95 with 5,000 available stocks and a 200-stock hold before claiming fit.
+
+### Alternatives (phase 2)
+
+| Alternative | Why not chosen |
+|---|---|
+| Two tabs / sections (D15 draft) | Owner 2026-11-18: one list, Location tells them apart |
+| Browser merges two endpoints | Two auth paths and cursors in the client, and a new public inventory endpoint; master already serves the picker |
+| Per-side composite cursor | Not needed: Stock IDs are globally unique, so one (date, Stock ID) key orders both sides |
+| Local-first saga (master tx then hold, compensate master on refusal) | Compensating master would re-take Memo Stock that others may have taken meanwhile; acquire-first keeps every compensation release-only |
+| Complete an unknown acquire later (as D4 does for loads) | Would need the full save intent replayed by the sweep; abandoning is simpler and the user retries |
+| Move Reserve / Memo Out / Memo Out Return to inventory | Owner chose option A (Q-LS-36) |
+
+### Open questions (phase 2)
+
+| ID | Question | Recommended default |
+|---|---|---|
+Q-LS-P2-01…05 are ui-spec's (central TODO). SA positions: Q-LS-P2-01 order kept, **merge moved to master** (D16); Q-LS-P2-02 **answered by the owner 2026-11-18 "load ต้องเพิ่ม มี lot"** → D23; Q-LS-P2-03 adopted (picker sends no price for our stock); Q-LS-P2-04 adopted (Memo Outstanding returns `location` and `source`); Q-LS-P2-05 adopted (`syncState` on get **and** list rows).
+
+| ID | Question | Recommended default |
+|---|---|---|
+| Q-LS-P2-06 | After a Memo Out of our stock, does the stock's Location change? | **No.** Location stays. The quantity leaves "available" (memo_out bucket) and comes back with Memo Out Return |
+| Q-LS-P2-07 | Is Lot required on a load row? | **Optional**, as Memo Receive / Memo Stock (free text ≤ 40, trimmed, may be empty). It is pre-filled from the PU line's lot and stays editable |
+
+**D23 — Lot on Load to Stock rows and our stock (owner 2026-11-18 Q-LS-P2-02, source 07).** No schema change is needed: phase 1 already stores `load_to_stock_row.lot` and `stock.lot` as `varchar(40) NOT NULL DEFAULT ''`. Like `memo_stock.lot` / `memo_receive_line.lot`, the value is free text ≤ 40, trimmed and optional (Q-LS-P2-07). It is pre-filled from the PU line lot (ui-spec M-02, editable), copied to the stock at apply, and kept in sync by `applyStockEdit` on an applied edit. The public contract already carries `lot` in `StoneAttrs` on rows and in `GET /load-to-stock/{id}`. Phase 2 adds `lot` to `OwnStockPickerRow` / `FromStockItem` and to the `q` search (as Memo Stock), and master copies it to the document line (D17). Existing phase-1 rows: **no migration or backfill**. Their lot is already the PU line's value or what the user typed, and an empty lot shows no badge. The row panel "Info" group (Stock ID, Lot, Location) is a frontend layout change (FE-LS-018).
+
+### Acceptance (phase 2)
+
+- Covers: this amendment D16–D23; the SA revision 2 sections of the inventory/load-to-stock bundle; the phase-2 notes in the master quotation / reserve / memo-out / memo-out-return bundles; BE-LS-P2-*, INF-LS-P2-01 and DO-LS-P2-01; the infra/devops phase-2b delta. No new package.
+- Observable checks: IT-LS-P2-* in [testing](../apps/backend/inventory/load-to-stock/testing.md#phase-2-verification-plan-sa-revision-2-proposed). One list is ordered across both stocks with stable keyset paging, and the 2 queries + 1 HTTP budget holds. Two Memo Outs of the same own stock: one wins and the other gets `MEMO_OUT_PENDING_SHORT`. A killed process at each saga step ends consistent. A held stock makes its load read-only, and the release makes it editable. A stock of a SYNCING load is refused. Inventory down: Memo Stock picking and documents still work.
+- Order after approval: infra secret + env (parent-serialized) → inventory migration + internal API → master migration + client + picker → Quotation (2a) → Reserve / Memo Out / Memo Out Return saga (2b) → devops variables → frontend FE-LS-P2-*.

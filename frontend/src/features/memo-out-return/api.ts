@@ -1,5 +1,6 @@
 "use client";
 
+import { INVENTORY_UNAVAILABLE_TEXT, STOCK_BUSY_TEXT, syncRefetchInterval } from "@/features/trade-document/stock-row-errors";
 import { skipToken } from "@tanstack/react-query";
 import type { InferQueryLikeData } from "@trpc/react-query/shared";
 import { z } from "zod";
@@ -168,9 +169,13 @@ export const pickedOutLineIds = (lines: QuotationLine[]) =>
 
 export function mapMemoOutReturnSaveError(error: unknown) {
   // Approval found less outstanding than a row returns: another memo out return took it first.
-  if (readDomainError(error).domainCode === "MEMO_OUT_RETURN_OUTSTANDING_SHORT") {
+  const { domainCode } = readDomainError(error);
+  if (domainCode === "MEMO_OUT_RETURN_OUTSTANDING_SHORT") {
     return { fieldErrors: [], message: "Some items were already returned by another document. Edit the Return quantity and save again. Nothing was saved." };
   }
+  // Revision 5 (load-to-stock phase 2): our-stock rows go back to on hand in inventory.
+  if (domainCode === "INVENTORY_UNAVAILABLE") return { fieldErrors: [], message: INVENTORY_UNAVAILABLE_TEXT };
+  if (domainCode === "MEMO_OUT_RETURN_BUSY") return { fieldErrors: [], message: STOCK_BUSY_TEXT };
   return mapDocumentSaveError(error, "MEMO_OUT_RETURN", "memo out return", HEADER_FIELDS);
 }
 export const memoOutReturnLoadError = (error: unknown) => documentLoadError(error, "MEMO_OUT_RETURN", "memo out return", "memo out returns");
@@ -179,7 +184,7 @@ export const memoOutReturnLoadError = (error: unknown) => documentLoadError(erro
 export const memoOutReturnRestoreError = (error: unknown) => mapDocumentRestoreError(error, "MEMO_OUT_RETURN", "memo out return");
 
 export function useMemoOutReturnDetail(id: string | null) {
-  return masterTrpc.memoOutReturn.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient });
+  return masterTrpc.memoOutReturn.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient, refetchInterval: syncRefetchInterval });
 }
 
 /** FE-SD-001: the daybook's active or deleted memo out returns, newest first, 50 a page; a new view starts on page one. */
@@ -239,6 +244,7 @@ export function useMemoOutReturnApi(customerId: string | undefined, docDate: str
         utils.memoOutReturn.nextNumber.invalidate(),
         utils.memoOutReturn.outstanding.invalidate(),
         utils.memoStock.list.invalidate(),
+        utils.fromStock.list.invalidate(),
       ]),
     busy: create.isPending || update.isPending || remove.isPending || submit.isPending || restore.isPending,
   };

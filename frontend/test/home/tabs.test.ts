@@ -233,6 +233,16 @@ describe("tab list (app-shell-tabs UI rev 1)", () => {
     expect(titles(deleted)).toEqual(["/memo/memo-out"]);
     expect(deleted.activeId).toBe(both.tabs[0].id);
   });
+
+  it("UT-TAB-01b Save of a new document opens the saved document, not a blank New form (owner 2026-11-18)", () => {
+    // The pane is keyed by path (b268332), so the host must drop the old "New" element on retarget rather than move
+    // it to the saved path (where it remounted as an empty form); the routed detail page then registers itself.
+    const host = readFileSync("src/features/home/tabs/tab-host.tsx", "utf8");
+    const retarget = host.slice(host.indexOf("const retarget = useCallback"), host.indexOf("}, [apply, router]);", host.indexOf("const retarget = useCallback")));
+    expect(retarget).toContain("map.delete(from.path);");
+    expect(retarget).not.toContain("map.set(moved.path");
+    expect(host).toContain("<TabPane key={tab.path}");
+  });
 });
 
 describe("tab storage per user (T-07)", () => {

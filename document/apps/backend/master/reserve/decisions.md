@@ -23,3 +23,7 @@
 | SA-RS-09 | **Not in this revision:** release / cancel of an approved Reserve (Q-RS-03); Sale moving Reserve → Sold; our own stock in From Stock (inventory, ADR-0027); line photos; links from a Reserve to a Memo Out of the same stones. |
 
 Capacity: the same as Memo Out SA rev 2. Approval locks ≤ 200 `memo_stock` rows in one transaction; From Stock is ≤ 51 rows on `memo_stock_pending_all_idx`. Thousands of documents a year are expected, so the pool and container limits are unchanged.
+
+## Load to Stock phase 2 note (SA revision 2, Proposed, 2026-11-18)
+
+Phase 2b: lines may name our stock (`reserve_line.own_stock_id`); Approve (ON) / Save-Edit-Delete-Restore (OFF) hold RESERVED in inventory through the master saga acquire → local → release (`sync_state`, `hold_revision`, `partner.inventory_sync_op`); `RESERVE_BUSY`, `INVENTORY_UNAVAILABLE`; own-stock short reuses `RESERVE_PENDING_SHORT`. Picker `fromStock.list`. Supersedes SA-RS-09 "our own stock … not in this revision". Contract, schema and tests live in the [inventory/load-to-stock bundle](../../inventory/load-to-stock/api-contract.md#phase-2-sa-revision-2-proposed) and [ADR-0052 Amendment 2](../../../adr/0052-load-to-stock-in-backend-api-inventory.md#amendment-2--d15-phases-2a--2b-sa-revision-2-proposed); TODO BE-LS-P2-*. No change here until the owner approves SA revision 2.

@@ -11,7 +11,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
-    "go-live:approve-pending": "node dist/scripts/approve-pending.js"
+    "go-live:approve-pending": "node dist/scripts/approve-pending.js",
+    "inventory-sync:redrive": "node dist/scripts/inventory-sync-redrive.js"
   },
   "dependencies": {
     "@gms/storage": "workspace:*",

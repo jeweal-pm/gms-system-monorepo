@@ -192,7 +192,7 @@ Auth: `Authorization: Bearer <INVENTORY_MASTER_SERVICE_TOKEN>` (constant-time; s
 | `GET /purchase-lines/{id}/photos` | — | `{ items: {fileId, position, contentType, sizeBytes, sha256}[] }` (≤ 5) | only lines of approved, not deleted PUs |
 | `GET /files/{fileId}/content` | — | stream | only files linked from `purchase_line_photo`; else 404 |
 
-## Phase 2 endpoints (ADR-0052 D15, owner Q-LS-30; designed here, implemented in a later revision)
+## Phase 2 endpoints (ADR-0052 D15 draft — superseded by [Phase 2 (SA revision 2)](#phase-2-sa-revision-2-proposed) below)
 
 | Side | Method / path | Purpose |
 |---|---|---|
@@ -202,3 +202,73 @@ Auth: `Authorization: Bearer <INVENTORY_MASTER_SERVICE_TOKEN>` (constant-time; s
 | inventory internal | `GET /stock-holds/{documentType}/{documentId}` | recovery read for master's saga |
 
 Compatibility: all master changes are additive. Existing tRPC procedures keep their contracts, except `approvalSetting.list/update` stop returning/accepting the three inventory keys (Q-LS-25) — the frontend reads them from inventory in the same release.
+
+---
+
+## Phase 2 (SA revision 2, Proposed)
+
+ADR-0052 D16–D23; decisions SA-LS-P2-01…12. This section replaces the earlier "Phase 2 endpoints" table above (owner 2026-11-18: one list, no tabs; there is no public inventory picker route). Consumers: FE-LS-P2-* (ui-spec, parallel) and BE-LS-P2-* in the [central TODO](../../../../task/todo/load-to-stock.md#phase-2).
+
+### Master public (tRPC, api-master)
+
+```ts
+// fromStock.list — permittedAny(["quotation","reserve","memo-out"], "VIEW")
+type FromStockListInput = {
+  q?: string;            // ≤ 100; ILIKE on stockId, lot, stone, cerNo, ref docNo
+  from?: string; to?: string;   // ref doc date range (YYYY-MM-DD, ≤ 366 days as today)
+  location?: string;     // ≤ 40, case-insensitive exact; "Memo" → Memo Stock only; other → our stock only
+  cursor?: string | null;       // unchanged format base64url("YYYY-MM-DD|stockId")
+  limit?: number;        // 1–50, default 50
+};
+type FromStockItem = MemoStockItem & {          // MemoStockItem = today's memoStock.list item
+  source: "MEMO_STOCK" | "OWN_STOCK";
+  // OWN_STOCK: id = inventory stock.id; location = stock location name; ref = { type: "LOAD", id, docNo, docDate };
+  // memoReceive = null; receivedPcs/WeightCt = stock pcs/weight; pendingPcs/WeightCt = on-hand (available);
+  // unitPrice = netUnitPrice = amount = null (no price for our stock, ui-spec Q-LS-P2-03); lot = stock lot (badge, D23); currency = company currency;
+  // vendor = { id, code, name } snapshot of the load; stoneCode = stock stone code text.
+  load: { id: string; docNo: string; docDate: string } | null;
+  ownStock: { stockPrice: Dec; salePrice: Dec; priceUnit: "PER_CT" | "PER_PCS" } | null;
+};
+type FromStockListOutput = { items: FromStockItem[]; nextCursor: string | null; ownStock: "OK" | "UNAVAILABLE" };
+```
+
+Merge rule: `items` = the first `limit` of merge(memoPage, ownPage) by (refDate DESC, stockId DESC); `nextCursor` = the key of the last item returned when `memoPage.length + ownPage.length > limit`, else null. `ownStock: "UNAVAILABLE"` means the inventory call failed or timed out (2 s); items are Memo Stock only.
+
+### Master document inputs (Quotation, Reserve, Memo Out)
+
+- Line input gains `ownStockId?: uuid`. A line has at most one of `memoStockId` / `ownStockId` (`invalid` otherwise). Memo Out keeps "every line From Stock": exactly one of the two.
+- Line output gains `ownStockId: string | null` and `source: "MANUAL" | "STOCK" | "OWN_STOCK"`; `stockId`, `stockPendingPcs`, `stockPendingWeightCt` keep their meaning (available at save for own stock).
+- Reserve / Memo Out / Memo Out Return detail **and list rows** gain `syncState: "IDLE" | "SYNCING"` (ui-spec Q-LS-P2-05 hint "Updating our stock…").
+- Memo Out Return: `memoOutReturn.outstanding` lists own-stock Memo Out lines too (items add `source` and `location`, ui-spec Q-LS-P2-04); the return line input is unchanged (`memoOutLineId`).
+- New error codes: see [error-handling](error-handling.md#phase-2-sa-revision-2-proposed).
+
+### Inventory internal (`/internal/v1/master/*` on `backend-api-inventory:3301`)
+
+Auth: `Authorization: Bearer <MASTER_INVENTORY_SERVICE_TOKEN>` (constant-time; the inventory → master token is refused). `X-Request-Id` propagated; `X-Actor-User-Id` for audit columns only. Strict JSON ≤ 64 KiB. Errors use the inventory envelope. ≤ 4 requests in flight per process (else `503 INVENTORY_BUSY`, `Retry-After: 1`). Not routed by nginx.
+
+| Method / path | Input | Output | Rule / budget |
+|---|---|---|---|
+| `POST /stock/available` | `{ q?, from?, to?, location?, after?: {date, stockId}, limit: 1–51 }` | `{ items: OwnStockPickerRow[] }` | 1 query on `stock_picker_idx`, `(ref_doc_date, stock_id) < after`, ORDER BY ref_doc_date DESC, stock_id DESC |
+| `POST /stock/batch` | `{ ids: uuid[] /* 1–200 distinct */ }` | `{ items: (OwnStockPickerRow & { status: "ACTIVE" \| "REVERSED", stoneCodeId: string \| null })[] }` | 1 query by PK; unknown ids absent |
+| `PUT /stock-holds/{documentType}/{documentId}` | `{ revision: int ≥ 1, documentNo: string \| null /* ≤ 40 */, holds: { stockUuid, pcs: int ≥ 0, weightCt: Dec }[] /* ≤ 200 distinct stocks; empty = release all */ }` | `200 { revision, replayed: boolean, holds: {stockUuid, pcs, weightCt}[], stocks: {stockUuid, stockId, availablePcs, availableWeightCt}[] }` | `documentType ∈ reserve \| memo-out \| memo-out-return` (kind follows the type, D18); one transaction, ≤ 8 statements |
+| `GET /stock-holds/{documentType}/{documentId}` | — | `{ revision, documentNo, holds } \| 404` | recovery / operator read |
+
+```ts
+type OwnStockPickerRow = StoneAttrs & {
+  stockUuid: string; stockId: string; location: string; priceUnit: PriceUnit;
+  pcs: number; weightCt: Dec; availablePcs: number; availableWeightCt: Dec;
+  stockPrice: Dec; salePrice: Dec; currency: string;
+  vendor: { id: string; code: string; name: string };
+  load: { id: string; docNo: string; docDate: string };   // ref_doc_*
+  itemNote: string;
+};
+```
+
+PUT errors: `409 STOCK_HOLD_STALE` `{appliedRevision}`; `409 STOCK_HOLD_EXCEEDS_AVAILABLE` `{items:[{stockUuid, stockId, availablePcs, availableWeightCt}]}`; `409 STOCK_HOLD_EXCEEDS_MEMO_OUT` `{items}`; `409 STOCK_HOLD_IN_USE` `{items}`; `409 STOCK_HOLD_BUSY` `{stockIds}`; `422 STOCK_HOLD_UNAVAILABLE` `{stockUuids}`; `400 VALIDATION_ERROR`.
+
+### Inventory public changes
+
+- `GET /load-to-stock/{id}`: `inUse` unchanged; adds `holders: { documentType: "reserve" | "memo-out" | "memo-out-return"; documentNo: string | null }[]` (≤ 5, from `stock_hold`).
+- `LOAD_TO_STOCK_IN_USE` details: `{ stockIds, holders }`.
+
+Compatibility: additive. `memoStock.list` and every existing procedure keep their contracts; Memo Out's "line must name `memoStockId`" rule becomes "exactly one of `memoStockId` / `ownStockId`".

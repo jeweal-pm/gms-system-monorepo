@@ -21,6 +21,7 @@ type HeaderRow = {
   review_action: string | null; review_note: string | null; reviewed_at: Date | null; reviewed_by: string | null; reviewed_by_name: string | null;
   deleted_at: Date | null; deleted_by: string | null; created_at: Date; created_by: string; updated_at: Date; updated_by: string;
   sync_state: string; provisional: boolean; in_use: boolean; require_approval: boolean | null;
+  holders: { documentType: "reserve" | "memo-out" | "memo-out-return"; documentNo: string | null }[];
 };
 
 export async function getDetail(db: Db, master: MasterApi, id: string, requestId: string) {
@@ -30,7 +31,10 @@ export async function getDetail(db: Db, master: MasterApi, id: string, requestId
       h."auto_approved", h."revision_count", h."submitted_at", h."submitted_by", h."submitted_by_name", h."review_action", h."review_note", h."reviewed_at", h."reviewed_by",
       h."reviewed_by_name", h."deleted_at", h."deleted_by", h."created_at", h."created_by", h."updated_at", h."updated_by", h."sync_state", h."provisional",
       EXISTS (SELECT 1 FROM "inventory"."stock" s WHERE s."load_id" = h."id" AND (s."on_hand_pcs" <> s."pcs" OR s."on_hand_weight_ct" <> s."weight_ct")) AS "in_use",
-      (SELECT a."require_approval" FROM "inventory"."approval_setting" a WHERE a."type" = 'load-to-stock') AS "require_approval"
+      (SELECT a."require_approval" FROM "inventory"."approval_setting" a WHERE a."type" = 'load-to-stock') AS "require_approval",
+      COALESCE((SELECT json_agg(json_build_object('documentType', x."document_type", 'documentNo', x."document_no") ORDER BY x."document_type", x."document_no")
+        FROM (SELECT DISTINCT k."document_type", k."document_no" FROM "inventory"."stock_hold" k JOIN "inventory"."stock" s2 ON s2."id" = k."stock_uuid"
+              WHERE s2."load_id" = h."id" ORDER BY 1, 2 LIMIT 5) x), '[]'::json) AS "holders"
     FROM "inventory"."load_to_stock" h WHERE h."id" = ${id}::uuid`;
   if (!header) throw new AppError(404, "LOAD_TO_STOCK_NOT_FOUND");
   const [sources, rows] = await Promise.all([
@@ -79,6 +83,7 @@ export async function getDetail(db: Db, master: MasterApi, id: string, requestId
       review: header.review_action ? { action: header.review_action, note: header.review_note ?? "", at: iso(header.reviewed_at), by: header.reviewed_by ?? "", byName: header.reviewed_by_name } : null,
     },
     inUse: header.in_use,
+    holders: header.holders,
     syncing: header.sync_state === "SYNCING",
     deleted: header.deleted_at ? { at: header.deleted_at.toISOString(), by: header.deleted_by ?? "" } : null,
     created: { at: header.created_at.toISOString(), by: header.created_by },

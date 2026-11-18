@@ -101,3 +101,10 @@ Owner 2026-10-31 (verbatim): "Q-MOR-13 ไม่ใช่คือหน้า m
 - The row panel opens only for picked rows; it edits Pcs / Weight (≤ pending), Sale Price, discount and item note, as revision 2. Next row stops at the last row instead of adding one.
 - Duplicate stays hidden (an item appears once per document). Clear empties a row, which is then filled from From Stock.
 - The server rejects a line without `memoStockId` (`VALIDATION_ERROR lines.N.memoStockId required`).
+
+## Revision 4 — own stock in From Stock (load-to-stock phase 2) — pending-review
+
+- Owner 2026-11-18 "2a + 2b เลย" / "ตามFrom Stock เดิมให้ user ดูที่ location เองว่าเป็น memo หรือ ของจากคลังเรา". Picker and our-stock rows follow the shared section in [quotation Revision 3](../quotation/ui-spec.md#revision-3--own-stock-in-from-stock-load-to-stock-phase-2--pending-review) (one list; Location tells the source). ADR-0052 D15 phase 2b. TODO: [load-to-stock Phase 2](../../../task/todo/load-to-stock.md#phase-2--own-stock-in-from-stock).
+- Drops "Our own stock in From Stock (inventory)" from Not-in-scope.
+- At Approve (or auto-approved Save) our-stock rows move to memo-out in inventory; Memo rows behave as today. Approve confirm text unchanged.
+- Errors and the "Updating our stock…" hint: as [reserve Revision 2](../reserve/ui-spec.md#revision-2--own-stock-in-from-stock-load-to-stock-phase-2--pending-review).

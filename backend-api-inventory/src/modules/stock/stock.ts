@@ -16,7 +16,8 @@ export type StockSource = {
   priceUnit: string; pcs: number; weightCt: string; unitCostBase: string; costAmountBase: string; stockPrice: string; salePrice: string; itemNote: string;
   photoIds: string[];
 };
-export type StockHeader = { loadId: string; currency: string; vendorId: string; vendorName: string; revision: number; actorId: string; documentType?: string };
+/** `refDocDate` (YYYY-MM-DD) / `refDocNo`: the load's date and number, the picker key of the one From Stock list (ADR-0052 D16). */
+export type StockHeader = { loadId: string; currency: string; vendorId: string; vendorName: string; revision: number; actorId: string; refDocDate: string; refDocNo: string; documentType?: string };
 
 const stockData = (header: StockHeader, row: StockSource, id: string) => ({
   id, stock_id: row.stockId, load_row_id: row.loadRowId, load_id: header.loadId, status: "ACTIVE", location: row.location, parcel: row.parcel,
@@ -25,6 +26,7 @@ const stockData = (header: StockHeader, row: StockSource, id: string) => ({
   price_unit: row.priceUnit, pcs: row.pcs, weight_ct: row.weightCt, on_hand_pcs: row.pcs, on_hand_weight_ct: row.weightCt,
   unit_cost_base: row.unitCostBase, cost_amount_base: row.costAmountBase, stock_price: row.stockPrice, sale_price: row.salePrice,
   currency_code: header.currency, vendor_id: header.vendorId, vendor_name_snapshot: header.vendorName, item_note: row.itemNote,
+  ref_doc_date: new Date(`${header.refDocDate}T00:00:00Z`), ref_doc_no: header.refDocNo,
 });
 
 /** New stocks (LOAD_IN): ≤ 3 statements for any number of rows. */
@@ -88,7 +90,7 @@ export async function applyStockEdit(tx: Tx, header: StockHeader, rows: readonly
         "stone" = v.stone, "shape" = v.shape, "size" = v.size, "color" = v.color, "clarity" = v.clarity, "cutting" = v.cutting, "quality" = v.quality, "lot" = v.lot,
         "cer_type" = v.cer_type, "cer_no" = v.cer_no, "price_unit" = v.price_unit, "pcs" = v.pcs, "weight_ct" = v.weight, "on_hand_pcs" = v.pcs, "on_hand_weight_ct" = v.weight,
         "unit_cost_base" = v.unit_cost, "cost_amount_base" = v.cost, "stock_price" = v.stock_price, "sale_price" = v.sale_price, "item_note" = v.note,
-        "version" = s."version" + 1, "updated_at" = now()
+        "ref_doc_date" = ${header.refDocDate}::date, "ref_doc_no" = ${header.refDocNo}, "version" = s."version" + 1, "updated_at" = now()
       FROM (VALUES ${Prisma.join(values)}) AS v(id, row_id, location, parcel, code_id, code, stone, shape, size, color, clarity, cutting, quality, lot, cer_type, cer_no,
         price_unit, pcs, weight, unit_cost, cost, stock_price, sale_price, note)
       WHERE s."id" = v.id`);

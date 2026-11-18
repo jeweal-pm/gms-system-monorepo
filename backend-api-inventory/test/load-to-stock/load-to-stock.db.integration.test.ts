@@ -323,19 +323,28 @@ describe.runIf(canRun)("IT-LS load to stock on PostgreSQL", () => {
     expect([listOne.queries, listMany.queries]).toEqual([1, 1]);
   });
 
-  it("IT-LS-B18 stock CHECKs: pcs / weight must equal on-hand + buckets (23514); a reversed stock has nothing on hand; stock_hold unique per document line", async () => {
+  it("IT-LS-B18 stock CHECKs: pcs / weight must equal on-hand + buckets (23514); a reversed stock has nothing on hand; stock_hold unique per (document, stock)", async () => {
     const [stock] = await h.db.stock.findMany({ where: { load_id: { in: LOADS }, status: "ACTIVE" }, take: 1 });
     const state = (sql: Promise<unknown>) => sql.then(() => "accepted", (error: unknown) => {
       const text = JSON.stringify(error, Object.getOwnPropertyNames(error));
-      return /23505|P2002|unique constraint/i.test(text) ? "23505" : /23514|check constraint/i.test(text) ? "23514" : text;
+      // Matched on the driver message only: Prisma's error text also quotes the test source (which names both codes).
+      return /violates check constraint/i.test(text) ? "23514" : /P2002|Unique constraint failed|violates unique constraint/i.test(text) ? "23505" : text;
     });
     expect(await state(h.db.$executeRaw`UPDATE "inventory"."stock" SET "reserved_pcs" = 1 WHERE "id" = ${stock.id}::uuid`)).toBe("23514");
     expect(await state(h.db.$executeRaw`UPDATE "inventory"."stock" SET "on_hand_weight_ct" = "on_hand_weight_ct" + 0.001 WHERE "id" = ${stock.id}::uuid`)).toBe("23514");
     expect(await state(h.db.$executeRaw`UPDATE "inventory"."stock" SET "status" = 'REVERSED' WHERE "id" = ${stock.id}::uuid`)).toBe("23514");
-    const hold = { document_type: "reserve", document_id: randomUUID(), line_id: randomUUID(), stock_uuid: stock.id, kind: "RESERVED", pcs: 0, weight_ct: "0", revision: 1 };
+    // SA rev 2 (D18): one hold per (document type, document, stock); zero holds and a kind that does not match the type are refused.
+    const documentId = randomUUID();
+    await h.db.stock_hold_document.create({ data: { document_type: "reserve", document_id: documentId, applied_revision: 1, request_hash: "0".repeat(64) } });
+    const hold = { document_type: "reserve", document_id: documentId, stock_uuid: stock.id, kind: "RESERVED", pcs: 1, weight_ct: "0", revision: 1 };
     await h.db.stock_hold.create({ data: { id: randomUUID(), ...hold } });
     expect(await state(h.db.stock_hold.create({ data: { id: randomUUID(), ...hold } }))).toBe("23505");
-    await h.db.stock_hold.deleteMany({ where: { stock_uuid: stock.id } });
+    const otherId = randomUUID();
+    await h.db.stock_hold_document.create({ data: { document_type: "reserve", document_id: otherId, applied_revision: 1, request_hash: "0".repeat(64) } });
+    expect(await state(h.db.stock_hold.create({ data: { id: randomUUID(), ...hold, document_id: otherId, pcs: 0 } }))).toBe("23514");
+    expect(await state(h.db.stock_hold.create({ data: { id: randomUUID(), ...hold, document_id: otherId, kind: "MEMO_OUT" } }))).toBe("23514");
+    await h.db.stock_hold_document.deleteMany({ where: { document_id: { in: [documentId, otherId] } } });
+    expect(await h.db.stock_hold.count({ where: { stock_uuid: stock.id } })).toBe(0);
   });
 
   it("NP-LS-02/04/05 N+1 budgets and IT-LS-B12 measurement: GET ≤ 4 statements + 1 master batch; create ON ≤ 8 + 3 master calls; OFF apply bounded — the same for 1 and 200 rows", async () => {

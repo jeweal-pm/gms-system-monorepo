@@ -126,6 +126,7 @@ export function loadOut(overrides: Partial<LoadOut> = {}): LoadOut {
     ],
     totals: { rowCount: 1, pcs: 7, weightCt: "8.700", costAmountBase: "456663.00" },
     approval: { requireApproval: true, autoApproved: false, revisionCount: 0, submitted: null, review: null },
+    holders: [],
     inUse: false,
     syncing: false,
     deleted: null,

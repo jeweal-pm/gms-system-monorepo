@@ -129,7 +129,7 @@ describe("form and mapping (UT-MOR-04)", () => {
       discount: { type: "NONE", value: "0" },
       tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "0.00", discountAmount: "0.00", priceBeforeTax: "0.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "0.00" },
-      createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, ...FLOW_DETAIL,
+      createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, syncState: "IDLE" as const, ...FLOW_DETAIL,
     } satisfies MemoOutReturnDetail;
     // ADR-0048 (owner 2026-11-11): saved photos load back in order, read from this document's own photo route.
     expect(fromMemoOutReturn({ ...detail, lines: detail.lines.map((line) => ({ ...line, photoIds: ["p1", "p2"] })) } as typeof detail).lines[0]?.photos).toEqual([
@@ -146,7 +146,7 @@ describe("form and mapping (UT-MOR-04)", () => {
 describe("Memo Outstanding picker (UT-MOR-21/22, rev 4)", () => {
   const item: MemoOutstandingItem = {
     memoOutLineId: ID, memoOut: { id: ID, docNo: "MO-7", docDate: "2026-10-31", dueDate: "2026-11-30" },
-    memoStockId: ID, stockId: "260003", lot: "LOT-R", location: "Memo", stone: "Sapphire", shape: "Cushion", size: "", color: "Blue", clarity: "", cutting: "", quality: "",
+    memoStockId: ID, ownStockId: null, source: "MEMO_STOCK", stockId: "260003", lot: "LOT-R", location: "Memo", stone: "Sapphire", shape: "Cushion", size: "", color: "Blue", clarity: "", cutting: "", quality: "",
     cerType: "GIA", cerNo: "C-9", itemNote: "viewing", outPcs: 4, outWeightCt: "2.000", returnedPcs: 1, returnedWeightCt: "0.500",
     outstandingPcs: 3, outstandingWeightCt: "1.500", priceUnit: "PER_CT", unitPrice: "2700.00", amount: "4050.00", currency: "THB",
   };
