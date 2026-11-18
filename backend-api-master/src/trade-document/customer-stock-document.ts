@@ -115,6 +115,8 @@ const stockLines: LineHook<CustomerStockInput> = {
     memoStockId: (line.memoStockId as string | null) ?? null,
     stockPendingPcs: (line.stockPendingPcs as number | null) ?? null,
     stockPendingWeightCt: line.stockPendingWeightCt === null || line.stockPendingWeightCt === undefined ? null : (line.stockPendingWeightCt as Prisma.Decimal).toFixed(3),
+    // sale ADR-0054 D4 / SQ-SL-04: Reserve lines carry the quantity applied Sales consumed (display only; Memo Out has none).
+    ...(line.soldPcs === undefined ? {} : { soldPcs: line.soldPcs as number, soldWeightCt: (line.soldWeightCt as Prisma.Decimal).toFixed(3) }),
   }),
   result: () => ({}),
 };
@@ -276,6 +278,9 @@ type CustomerStockLineOut = Omit<EngineDetail["lines"][number], "source"> & {
   stockId: string | null;
   stockPendingPcs: number | null;
   stockPendingWeightCt: string | null;
+  /** Reserve only (sale ADR-0054 D4, SQ-SL-04). */
+  soldPcs?: number;
+  soldWeightCt?: string;
 };
 /** api-contract `MemoOut` rev 2 / `Reserve` rev 1 (the line hook and `detailExtra` shape the engine output at run time). */
 export type CustomerStockDetail = Omit<EngineDetail, "lines"> & { lines: CustomerStockLineOut[]; approvedAt: string | null; approvedBy: string | null };

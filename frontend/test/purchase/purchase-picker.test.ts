@@ -5,7 +5,7 @@ import type { PurchaseMemoStockRow, PurchaseOrderLineRow } from "@/features/purc
 import {
   expandedRows,
   groupStarts,
-  PurchasePickerView,
+  StockPickerView as PurchasePickerView,
   selectAllState,
   shownGroups,
   tabAfterKey,
@@ -16,8 +16,8 @@ import {
   type PickerData,
   type PickerGroup,
   type PickerViewState,
-  type PurchasePickerProps,
-} from "@/features/purchase/components/purchase-picker";
+  type StockPickerProps as PurchasePickerProps,
+} from "@/features/trade-document/stock-picker";
 import {
   IN_STOCK_GROUP_LABEL,
   MEMO_STOCK_COLUMNS,

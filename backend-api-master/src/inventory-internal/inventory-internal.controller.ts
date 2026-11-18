@@ -9,6 +9,10 @@ import {
   loadableSearchSchema,
   masterDataResolveSchema,
   numberingResolveSchema,
+  saleConsumptionPutSchema,
+  salePrepareSchema,
+  saleReferenceQuerySchema,
+  saleReserveLineSearchSchema,
   vendorsQuerySchema,
 } from "./inventory-internal.schemas";
 import { InventoryInternalService } from "./inventory-internal.service";
@@ -87,6 +91,44 @@ export class InventoryInternalController {
   @Header("Cache-Control", "no-store")
   getAllocation(@Param("loadId") loadId: string) {
     return this.service.getAllocation(parseId(loadId));
+  }
+
+  // ---------- sale SA rev 1 api-contract "Master internal API" (BE-SL-002) ----------
+
+  @Get("sale/reference")
+  @Header("Cache-Control", "no-store")
+  saleReference(@Query() query: unknown) {
+    return this.service.saleReference(parseOrThrow(saleReferenceQuerySchema, query));
+  }
+
+  @Post("sale/reserve-lines/search")
+  @HttpCode(200)
+  @Header("Cache-Control", "no-store")
+  saleReserveLines(@Req() request: Request, @Body() body: unknown) {
+    requireJson(request);
+    return this.service.saleReserveLines(parseOrThrow(saleReserveLineSearchSchema, body));
+  }
+
+  @Post("sale/prepare")
+  @HttpCode(200)
+  @Header("Cache-Control", "no-store")
+  salePrepare(@Req() request: Request, @Body() body: unknown) {
+    requireJson(request);
+    return this.service.salePrepare(parseOrThrow(salePrepareSchema, body));
+  }
+
+  @Put("sale-consumptions/:saleId")
+  @Header("Cache-Control", "no-store")
+  putSaleConsumption(@Req() request: Request, @Param("saleId") saleId: string, @Body() body: unknown) {
+    requireJson(request);
+    const id = parseId(saleId);
+    return this.service.putSaleConsumption(id, parseOrThrow(saleConsumptionPutSchema, body), actorOf(request));
+  }
+
+  @Get("sale-consumptions/:saleId")
+  @Header("Cache-Control", "no-store")
+  getSaleConsumption(@Param("saleId") saleId: string) {
+    return this.service.getSaleConsumption(parseId(saleId));
   }
 
   @Get("purchase-lines/:id/photos")

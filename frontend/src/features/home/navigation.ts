@@ -69,6 +69,8 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   purchase: "/purchase-order/purchase",
   // load-to-stock UI rev 1 (FE-LS-012, ADR-0052): Inventory › Load to Stock.
   "load-to-stock": "/inventory/load-to-stock",
+  // sale UI rev 1 (FE-SL-008, owner 2026-11-18 "ทำแค่ ui พอ ยังไม่ต้องต่อ api"): Sale › Sale, linked before the API exists.
+  sale: "/sale/sale",
   // approve-center UI rev 1 (FE-AP-001): the Approve page.
   approve: APPROVE_HREF,
 };
@@ -204,7 +206,8 @@ const setupLink: NavLink = {
  * approve-center FE-AP-001/002: Approve opens `/approve` and stays active on `/approve/*`; it is shown when the user
  * may approve any Approve menu (`<leaf>:APPROVE`, Q-AP-13).
  */
-const saleLink = link("sale", "Sale", SaleIcon);
+// sale UI rev 1 (FE-SL-008): the sidebar opens the real page and stays active on /sale/sale/[id].
+const saleLink: NavLink = { ...link("sale", "Sale", SaleIcon, REAL_PAGE_HREFS.sale), activePrefix: REAL_PAGE_HREFS.sale };
 const approveLink: NavLink = { kind: "link", id: "approve", label: "Approve", href: APPROVE_HREF, icon: ApproveIcon, activePrefix: APPROVE_HREF, permission: APPROVE_PERMISSIONS };
 
 /**

@@ -9,9 +9,15 @@ import { activeLocationNames } from "../location-master/location-master.service"
 import { stoneLineOptions } from "../quotation/quotation.service";
 import { createPhotoStore, sizeGuard, PHOTO_MAX_BYTES } from "../quotation/quotation-photo.storage";
 import { LINE_PHOTO_DOCUMENTS } from "../trade-document/line-photos";
+import { customerDocumentOptions } from "../trade-document/customer-stock-document";
 import { allocationException, applyAllocation, unpackResult, type AllocationResult } from "./allocation";
-import type { AllocationPutInput, LineBatchInput, LoadableSearchInput, MasterDataResolveInput, NumberingResolveInput, VendorsQuery } from "./inventory-internal.schemas";
+import type {
+  AllocationPutInput, LineBatchInput, LoadableSearchInput, MasterDataResolveInput, NumberingResolveInput, SaleConsumptionPutInput, SalePrepareInput, SaleReferenceQuery,
+  SaleReserveLineSearchInput, VendorsQuery,
+} from "./inventory-internal.schemas";
 import { lineBatch, loadableVendors, searchLoadableLines } from "./purchase-lines";
+import { applyConsumption, consumptionException, unpackCaps, type ConsumptionResult } from "./sale-consumption";
+import { prepareSale, searchSaleReserveLines } from "./sale-reads";
 
 const PURCHASE_PHOTO = LINE_PHOTO_DOCUMENTS.purchase;
 
@@ -101,6 +107,46 @@ export class InventoryInternalService {
         lines: header.lines.map((line) => ({ purchaseLineId: line.purchaseLineId, pcs: line.pcs, weightCt: line.weightCt.toFixed(3) })),
         stockIds: unpackResult(header.result).stockIds,
       };
+    });
+  }
+
+  // ---------- sale SA rev 1 / ADR-0054 (BE-SL-002) ----------
+
+  /** Options of the Sale page: the `quotation.options` shape for Document Setup key `sale`. */
+  saleReference(query: SaleReferenceQuery) {
+    return this.read("sale_reference", () => customerDocumentOptions("sale", query.includeCustomerId));
+  }
+
+  /** From Reserve picker page (one keyset query, no count). */
+  saleReserveLines(input: SaleReserveLineSearchInput) {
+    return this.read("sale_reserve_lines", () => searchSaleReserveLines(input));
+  }
+
+  /** Save / Submit / detail validation reads (≤ 4 queries, no lock). */
+  salePrepare(input: SalePrepareInput) {
+    return this.read("sale_prepare", () => prepareSale(input));
+  }
+
+  /** ADR-0054 D6: one WRITE_TX (4 s, below inventory's 5 s client timeout); no lock is held outside it. */
+  async putSaleConsumption(saleId: string, input: SaleConsumptionPutInput, actorId: string | null): Promise<ConsumptionResult> {
+    try {
+      const result = await prisma.$transaction((tx) => applyConsumption(tx, saleId, input, actorId), WRITE_TX);
+      this.logger.log({ event: result.replayed ? "sale_consumption.replayed" : "sale_consumption.applied", saleId, revision: result.revision, lineCount: input.lines.length });
+      return result;
+    } catch (error) {
+      throw this.mapError(error, "sale_consumption");
+    }
+  }
+
+  /** Recovery read of the applied revision and lines (set + caps of the last apply). */
+  async getSaleConsumption(saleId: string) {
+    return this.read("sale_consumption_get", async () => {
+      const header = await prisma.saleConsumption.findUnique({
+        where: { saleId },
+        select: { revision: true, result: true },
+      });
+      if (!header) throw consumptionException("SALE_CONSUMPTION_NOT_FOUND", HttpStatus.NOT_FOUND);
+      return { revision: header.revision, lines: unpackCaps(header.result) };
     });
   }
 

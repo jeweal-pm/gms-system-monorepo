@@ -61,8 +61,11 @@ export const masterDataResolveSchema = z.object({
 }).strict();
 export type MasterDataResolveInput = z.output<typeof masterDataResolveSchema>;
 
+/** Document Setup keys an inventory document may resolve (ADR-0052 D10; sale ADR-0054 D10 widens the allow-list). */
+export const INVENTORY_NUMBERING_KEYS = ["load-to-stock", "sale"] as const;
+
 export const numberingResolveSchema = z.object({
-  transactionKey: z.literal("load-to-stock"),
+  transactionKey: z.enum(INVENTORY_NUMBERING_KEYS),
   docDate: isoDate,
   markUsed: z.boolean(),
 }).strict();
@@ -89,3 +92,72 @@ export const allocationPutSchema = z.object({
   });
 });
 export type AllocationPutInput = z.output<typeof allocationPutSchema>;
+
+// ---------- sale SA rev 1 / ADR-0054 (BE-SL-002) ----------
+
+export const SALE_LINES_MAX = 200;
+const currencyCode = z.string().regex(/^[A-Z]{3}$/);
+
+export const saleReferenceQuerySchema = z.object({ includeCustomerId: z.uuid().optional() }).strict();
+export type SaleReferenceQuery = z.output<typeof saleReferenceQuerySchema>;
+
+export const saleReserveLineSearchSchema = z.object({
+  customerId: z.uuid(),
+  currency: currencyCode,
+  q: z.string().trim().max(100).optional(),
+  from: isoDate.optional(),
+  to: isoDate.optional(),
+  exclude: z.array(z.uuid()).max(BATCH_MAX).default([]),
+  cursor: z.string().max(CURSOR_MAX).nullish(),
+  limit: z.number().int().min(1).max(LOADABLE_PAGE_MAX).default(LOADABLE_PAGE_MAX),
+}).strict().superRefine((value, ctx) => {
+  if (value.from && value.to && daysBetween(value.from, value.to) < 0) ctx.addIssue({ code: "custom", path: ["to"], params: { code: "before_from" }, message: "to < from" });
+});
+export type SaleReserveLineSearchInput = z.output<typeof saleReserveLineSearchSchema>;
+
+export const salePrepareSchema = z.object({
+  party: z.object({ customerId: z.uuid(), shippingAddressId: z.uuid(), invoiceAddressId: z.uuid(), keepCustomerId: z.uuid().optional() }).strict().optional(),
+  currency: currencyCode,
+  reserveLineIds: z.array(z.uuid()).max(SALE_LINES_MAX),
+  memoStockIds: z.array(z.uuid()).max(SALE_LINES_MAX),
+  saleId: z.uuid().optional(),
+}).strict();
+export type SalePrepareInput = z.output<typeof salePrepareSchema>;
+
+export const saleConsumptionLineSchema = z.object({
+  lineId: z.uuid(),
+  source: z.enum(["RESERVE", "STOCK"]),
+  reserveLineId: z.uuid().nullish(),
+  memoStockId: z.uuid(),
+  pcs: z.number().int().min(0).max(1_000_000_000),
+  weightCt: weightString,
+}).strict();
+
+/** ADR-0054 D6: the Sale's full desired consumption (set semantics). An empty `lines` releases everything. */
+export const saleConsumptionPutSchema = z.object({
+  revision: z.number().int().min(1).max(2_000_000_000),
+  saleDocNo: z.string().trim().min(1).max(40),
+  customerId: z.uuid(),
+  currency: currencyCode,
+  lines: z.array(saleConsumptionLineSchema).max(SALE_LINES_MAX),
+}).strict().superRefine((value, ctx) => {
+  const issue = (path: (string | number)[], code: string) => ctx.addIssue({ code: "custom", path, params: { code }, message: code });
+  const lineIds = new Set<string>();
+  const reserveLines = new Set<string>();
+  const stocks = new Set<string>();
+  value.lines.forEach((line, index) => {
+    if (lineIds.has(line.lineId)) issue(["lines", index, "lineId"], "duplicate");
+    lineIds.add(line.lineId);
+    if (line.source === "RESERVE") {
+      if (!line.reserveLineId) issue(["lines", index, "reserveLineId"], "required");
+      else if (reserveLines.has(line.reserveLineId)) issue(["lines", index, "reserveLineId"], "duplicate");
+      else reserveLines.add(line.reserveLineId);
+    } else {
+      if (line.reserveLineId) issue(["lines", index, "reserveLineId"], "invalid");
+      if (stocks.has(line.memoStockId)) issue(["lines", index, "memoStockId"], "duplicate");
+      stocks.add(line.memoStockId);
+    }
+    if (line.pcs === 0 && Number(line.weightCt) === 0) issue(["lines", index, "pcs"], "too_small");
+  });
+});
+export type SaleConsumptionPutInput = z.output<typeof saleConsumptionPutSchema>;

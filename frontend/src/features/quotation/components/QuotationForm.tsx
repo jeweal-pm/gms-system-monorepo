@@ -288,143 +288,143 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, flow = 
 
   return (
     <QuotationOptionsContext.Provider value={options.data}>
-    <FormProvider {...form}>
-      {/* AppShell <main> เป็นตัว scroll: ฝั่งซ้าย scroll เอง, editor panel สูงเต็มจอไม่ถูกตัด */}
-      <div className="relative flex h-full bg-gms-page">
-        <div className="min-w-0 flex-1 overflow-y-auto">
-          {isDeleted && deleted && <DocumentDeletedBanner info={deleted} canRestore={access.delete} busy={busy} onRestore={() => void onRestore()} />}
-          <QuotationHeader
-            docNo={docNo}
-            isPreview={!saved?.docNo}
-            status={saved ? ((flow?.status as typeof status | undefined) ?? status) : undefined}
-            statusLabels={approvalFlow.statusLabels}
-            statusNote={approvalFlow.statusNote}
-            statusReason={saved?.statusReason}
-            mode={isDeleted ? "view" : mode}
-            saving={busy}
-            canSave={!isDeleted && (saved ? access.edit : access.add)}
-            canCreate={access.add}
-            canEdit={approvalFlow.canEdit}
-            canDelete={approvalFlow.canDelete}
-            hideEditDelete={approvalFlow.hideEditDelete}
-            extraActions={approvalFlow.sendButton}
-            actions={{
-              onCancel: () => void onCancel(),
-              onSave: () => void onSave(),
-              onEdit: () => setMode("edit"),
-              onDelete: () => void onDelete(),
-              onDuplicate,
-              onRefresh: () => void mutations.invalidate().then(() => setToast("Refreshed")),
-            }}
-          />
+      <FormProvider {...form}>
+        {/* AppShell <main> เป็นตัว scroll: ฝั่งซ้าย scroll เอง, editor panel สูงเต็มจอไม่ถูกตัด */}
+        <div className="relative flex h-full bg-gms-page">
+          <div className="min-w-0 flex-1 overflow-y-auto">
+            {isDeleted && deleted && <DocumentDeletedBanner info={deleted} canRestore={access.delete} busy={busy} onRestore={() => void onRestore()} />}
+            <QuotationHeader
+              docNo={docNo}
+              isPreview={!saved?.docNo}
+              status={saved ? ((flow?.status as typeof status | undefined) ?? status) : undefined}
+              statusLabels={approvalFlow.statusLabels}
+              statusNote={approvalFlow.statusNote}
+              statusReason={saved?.statusReason}
+              mode={isDeleted ? "view" : mode}
+              saving={busy}
+              canSave={!isDeleted && (saved ? access.edit : access.add)}
+              canCreate={access.add}
+              canEdit={approvalFlow.canEdit}
+              canDelete={approvalFlow.canDelete}
+              hideEditDelete={approvalFlow.hideEditDelete}
+              extraActions={approvalFlow.sendButton}
+              actions={{
+                onCancel: () => void onCancel(),
+                onSave: () => void onSave(),
+                onEdit: () => setMode("edit"),
+                onDelete: () => void onDelete(),
+                onDuplicate,
+                onRefresh: () => void mutations.invalidate().then(() => setToast("Refreshed")),
+              }}
+            />
 
-          <fieldset disabled={readOnly} className="mx-6 rounded-gms-md bg-gms-surface">
-            <QuotationInfoForm />
-          </fieldset>
+            <fieldset disabled={readOnly} className="mx-6 rounded-gms-md bg-gms-surface">
+              <QuotationInfoForm />
+            </fieldset>
 
 
-          <div className="mx-6 rounded-gms-md bg-gms-surface mt-4 mb-6 flex gap-4 px-6 py-6">
-            <div className="min-w-0 flex-1">
-              <div className="mb-4 flex items-center gap-3">
-                <h2 className="text-lg font-medium text-[#1C252E]">Item</h2>
-                <span className="text-xs text-[#6B7480]">{lines.length} rows</span>
-                {/* quotation rev 2 (ADR-0038): Memo Stock now, our own stock later; it only copies the item's details. */}
-                <span title="Pick stones from stock (Memo Stock)">
-                  <Button variant="dark" size="sm" disabled={readOnly} onClick={() => setFromStockOpen(true)}>
-                    From Stock
-                  </Button>
-                </span>
-                {/* TODO: scan barcode เพื่อเพิ่มรายการ */}
-                <IconButton label="Scan to add" disabled={readOnly} className="bg-[#F6F7F8]">
-                  <ScanIcon />
-                </IconButton>
-                {checkedKeys.size > 0 && !readOnly && (
-                  <Button size="sm" variant="danger-outline" onClick={removeChecked}>
-                    <Trash2 className="size-4" /> Remove {checkedKeys.size} selected
-                  </Button>
-                )}
-                {formState.errors.lines?.message && (
-                  <span className="text-sm text-[#E5484D]">{formState.errors.lines.message}</span>
-                )}
-              </div>
+            <div className="mx-6 rounded-gms-md bg-gms-surface mt-4 mb-6 flex gap-4 px-6 py-6">
+              <div className="min-w-0 flex-1">
+                <div className="mb-4 flex items-center gap-3">
+                  <h2 className="text-lg font-medium text-[#1C252E]">Item</h2>
+                  <span className="text-xs text-[#6B7480]">{lines.length} rows</span>
+                  {/* quotation rev 2 (ADR-0038): Memo Stock now, our own stock later; it only copies the item's details. */}
+                  <span title="Pick stones from stock (Memo Stock)">
+                    <Button variant="dark" size="sm" disabled={readOnly} onClick={() => setFromStockOpen(true)}>
+                      From Stock
+                    </Button>
+                  </span>
+                  {/* TODO: scan barcode เพื่อเพิ่มรายการ */}
+                  <IconButton label="Scan to add" disabled={readOnly} className="bg-[#F6F7F8]">
+                    <ScanIcon />
+                  </IconButton>
+                  {checkedKeys.size > 0 && !readOnly && (
+                    <Button size="sm" variant="danger-outline" onClick={removeChecked}>
+                      <Trash2 className="size-4" /> Remove {checkedKeys.size} selected
+                    </Button>
+                  )}
+                  {formState.errors.lines?.message && (
+                    <span className="text-sm text-[#E5484D]">{formState.errors.lines.message}</span>
+                  )}
+                </div>
 
-              <div className="flex items-start gap-4">
-                {/* อยู่นอก fieldset เพื่อให้เลื่อนดูรูปได้ใน view mode */}
-                <ItemPhotoBox index={selectedIndex} />
-                <fieldset disabled={readOnly} className="min-w-0 flex-1">
-                <ItemTable
-                  lines={lines}
-                  currency={values.currency ?? ""}
-                  totals={totals}
-                  selectedIndex={selectedIndex}
-                  checkedKeys={checkedKeys}
-                  readOnly={readOnly}
-                  onSelectRow={openRow}
-                  onToggleCheck={(key) =>
-                    setCheckedKeys((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(key)) next.delete(key);
-                      else next.add(key);
-                      return next;
-                    })
-                  }
-                  onToggleAll={(checked) => setCheckedKeys(checked ? new Set(lines.map((l) => l.key)) : new Set())}
-                  onRowAction={onRowAction}
-                  onAddRow={addRow}
-                />
+                <div className="flex items-start gap-4">
+                  {/* อยู่นอก fieldset เพื่อให้เลื่อนดูรูปได้ใน view mode */}
+                  <ItemPhotoBox index={selectedIndex} />
+                  <fieldset disabled={readOnly} className="min-w-0 flex-1">
+                    <ItemTable
+                      lines={lines}
+                      currency={values.currency ?? ""}
+                      totals={totals}
+                      selectedIndex={selectedIndex}
+                      checkedKeys={checkedKeys}
+                      readOnly={readOnly}
+                      onSelectRow={openRow}
+                      onToggleCheck={(key) =>
+                        setCheckedKeys((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(key)) next.delete(key);
+                          else next.add(key);
+                          return next;
+                        })
+                      }
+                      onToggleAll={(checked) => setCheckedKeys(checked ? new Set(lines.map((l) => l.key)) : new Set())}
+                      onRowAction={onRowAction}
+                      onAddRow={addRow}
+                    />
+                  </fieldset>
+                </div>
+
+                {/* Same column as the table, so Summary Value ends exactly where the table ends (owner 2026-10-23),
+                  with or without the right rail. */}
+                <fieldset disabled={readOnly} className="mt-6 flex flex-col gap-10 pb-6 lg:flex-row">
+                  <DocumentNote />
+                  <div className="w-full shrink-0 lg:w-[440px]">
+                    <h2 className="mb-2 text-lg font-medium text-[#1C252E]">Summary Value</h2>
+                    <SummaryValue totals={totals} currency={values.currency ?? ""} />
+                  </div>
                 </fieldset>
               </div>
 
-              {/* Same column as the table, so Summary Value ends exactly where the table ends (owner 2026-10-23),
-                  with or without the right rail. */}
-              <fieldset disabled={readOnly} className="mt-6 flex flex-col gap-10 pb-6 lg:flex-row">
-                <DocumentNote />
-                <div className="w-full shrink-0 lg:w-[440px]">
-                  <h2 className="mb-2 text-lg font-medium text-[#1C252E]">Summary Value</h2>
-                  <SummaryValue totals={totals} currency={values.currency ?? ""} />
-                </div>
-              </fieldset>
+              {editorIndex === null && <RailButtons active={railPanel} onChange={setRailPanel} />}
+              {editorIndex !== null && (
+                <ItemEditorDock>
+                  <ItemEditorPanel
+                    index={editorIndex}
+                    total={lines.length}
+                    readOnly={readOnly}
+                    onPrev={() => setSelectedIndex(Math.max(0, editorIndex - 1))}
+                    onNext={() => setSelectedIndex(Math.min(lines.length - 1, editorIndex + 1))}
+                    onNextRow={() => setSelectedIndex(editorIndex < lines.length - 1 ? editorIndex + 1 : addRow())}
+                    onRemove={() => removeRow(editorIndex)}
+                    onClose={() => setEditorOpen(false)}
+                  />
+                </ItemEditorDock>
+              )}
             </div>
 
-            {editorIndex === null && <RailButtons active={railPanel} onChange={setRailPanel} />}
-            {editorIndex !== null && (
-              <ItemEditorDock>
-                <ItemEditorPanel
-                  index={editorIndex}
-                  total={lines.length}
-                  readOnly={readOnly}
-                  onPrev={() => setSelectedIndex(Math.max(0, editorIndex - 1))}
-                  onNext={() => setSelectedIndex(Math.min(lines.length - 1, editorIndex + 1))}
-                  onNextRow={() => setSelectedIndex(editorIndex < lines.length - 1 ? editorIndex + 1 : addRow())}
-                  onRemove={() => removeRow(editorIndex)}
-                  onClose={() => setEditorOpen(false)}
-                />
-              </ItemEditorDock>
-            )}
           </div>
 
+          {railPanel && editorIndex === null && (
+            <fieldset disabled={readOnly && railPanel === "summary"} className="absolute top-4 right-16 bottom-4 z-30 w-[440px]">
+              <RailPanelView panel={railPanel} totals={totals} currency={values.currency ?? ""} onClose={() => setRailPanel(null)} />
+            </fieldset>
+          )}
         </div>
 
-        {railPanel && editorIndex === null && (
-          <fieldset disabled={readOnly && railPanel === "summary"} className="absolute top-4 right-16 bottom-4 z-30 w-[440px]">
-            <RailPanelView panel={railPanel} totals={totals} currency={values.currency ?? ""} onClose={() => setRailPanel(null)} />
-          </fieldset>
+        {fromStockOpen && (
+          <MemoStockModal
+            title="Add From Stock"
+            showPrice={false}
+            emptyText="No stock with anything pending."
+            pickedIds={pickedStockIds(lines)}
+            onCancel={() => setFromStockOpen(false)}
+            onConfirm={fillFromStock}
+          />
         )}
-      </div>
-
-      {fromStockOpen && (
-        <MemoStockModal
-          title="Add From Stock"
-          showPrice={false}
-          emptyText="No stock with anything pending."
-          pickedIds={pickedStockIds(lines)}
-          onCancel={() => setFromStockOpen(false)}
-          onConfirm={fillFromStock}
-        />
-      )}
-      {confirmDialog}
-      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
-    </FormProvider>
+        {confirmDialog}
+        {toast && <Toast message={toast} onClose={() => setToast(null)} />}
+      </FormProvider>
     </QuotationOptionsContext.Provider>
   );
 }

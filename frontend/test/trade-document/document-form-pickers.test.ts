@@ -50,7 +50,7 @@ describe("UT-PU-01 item tool buttons", () => {
     expect(darkButtons(readOnly).every((b) => b.includes('disabled=""'))).toBe(true);
   });
 
-  it("only the purchase page configures a second picker (existing pages keep one button)", () => {
+  it("only purchase and sale configure a second picker (existing pages keep one button)", () => {
     const root = join(process.cwd(), "src");
     const files: string[] = [];
     const walk = (dir: string) => {
@@ -62,6 +62,7 @@ describe("UT-PU-01 item tool buttons", () => {
     };
     walk(root);
     const users = files.filter((file) => /secondaryPicker:/.test(readFileSync(file, "utf8"))).map((file) => file.slice(root.length + 1).replaceAll("\\", "/"));
-    expect(users).toEqual(["features/purchase/components/PurchasePage.tsx"]);
+    // sale FE-SL-003: Sale is the second page with two item buttons (From Reserve, then From Stock).
+    expect(users.sort()).toEqual(["features/purchase/components/PurchasePage.tsx", "features/sale/components/SalePage.tsx"]);
   });
 });
