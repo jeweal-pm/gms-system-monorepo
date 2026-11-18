@@ -327,7 +327,7 @@ describe.runIf(canRun)("IT-SL master sale consumption on PostgreSQL", () => {
     try {
       expect(await domainCode(reserve.update(ACTOR, rs.id, version, docInput([stockLine(a.id, 1, "0.5")])))).toEqual({ code: "RESERVE_IN_USE", details: { usedBy: "SL-USED-1" } });
       expect((await domainCode(reserve.delete(ACTOR, rs.id, version))).code).toBe("RESERVE_IN_USE");
-      expect((await reserve.get(rs.id))).toMatchObject({ usedBy: "SL-USED-1" });
+      expect((await reserve.get(rs.id)).flow).toMatchObject({ usedBy: "SL-USED-1" });
       await put(saleId, 2, [], { saleDocNo: "SL-USED-1" });
       expect((await domainCode(reserve.delete(ACTOR, rs.id, version))).code).toBe("ok");
     } finally {
