@@ -283,4 +283,4 @@ type CustomerStockLineOut = Omit<EngineDetail["lines"][number], "source"> & {
   soldWeightCt?: string;
 };
 /** api-contract `MemoOut` rev 2 / `Reserve` rev 1 (the line hook and `detailExtra` shape the engine output at run time). */
-export type CustomerStockDetail = Omit<EngineDetail, "lines"> & {lines: CustomerStockLineOut[]; approvedAt: string | null; approvedBy: string | null };
+export type CustomerStockDetail = Omit<EngineDetail, "lines"> & { flow: {}, lines: CustomerStockLineOut[]; approvedAt: string | null; approvedBy: string | null };
