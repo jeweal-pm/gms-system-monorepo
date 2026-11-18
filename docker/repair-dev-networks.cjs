@@ -45,6 +45,8 @@ if (!config.name) throw new Error("Compose did not resolve a project name.");
 const required = [
   { service: "postgres", network: "partner-db", alias: "postgres" },
   { service: "api-master", network: "partner-db", alias: "api-master" },
+  // ADR-0052 / infra bundle backend-api-inventory/1: inventory resolves postgres on its own DB network.
+  { service: "postgres", network: "inventory-db", alias: "postgres" },
 ];
 
 const containers = new Map();

@@ -34,7 +34,7 @@ export type ApproveMenuSlug =
   | "transfer-location";
 
 /** The `masterTrpc` router key of a document that can be approved today. */
-export type ApprovalProc = "quotation" | "reserve" | "memoReceive" | "memoReturn" | "memoOut" | "memoOutReturn" | "purchaseOrder" | "purchase";
+export type ApprovalProc = "quotation" | "reserve" | "memoReceive" | "memoReturn" | "memoOut" | "memoOutReturn" | "purchaseOrder" | "purchase" | "loadToStock";
 
 /** approval-setup api-contract `ApprovalType`: the kebab-case setting keys (G13), in sidebar order. */
 export type ApprovalSettingType =
@@ -179,7 +179,20 @@ export const APPROVE_MENUS: readonly ApproveMenu[] = [
     dueLabel: null,
     consequence: (count) => `Its ${items(count, "item is", "items are")} recorded as bought, and it can no longer be edited.`,
   },
-  { slug: "load-to-stock", label: "Load to Stock", icon: BoxClockIcon, leaf: "load-to-stock", type: "load-to-stock", party: "none", availability: "not-available" },
+  // load-to-stock FE-LS-011 (ADR-0052 D12): served by backend-api-inventory (`approve-center/inventory.ts`).
+  {
+    slug: "load-to-stock",
+    label: "Load to Stock",
+    icon: BoxClockIcon,
+    leaf: "load-to-stock",
+    type: "load-to-stock",
+    party: "vendor",
+    availability: "available",
+    proc: "loadToStock",
+    documentBase: "/inventory/load-to-stock",
+    dueLabel: null,
+    consequence: () => "Its rows go into stock with their Stock IDs and the PU lines are deducted. It can no longer be edited.",
+  },
   { slug: "merge-split", label: "Merge/Split Stock", icon: SplitVerticalIcon, leaf: "merge-split", type: "merge-split", party: "none", availability: "not-available" },
   { slug: "transfer-location", label: "Transfer Location", icon: StockTransferIcon, leaf: "stock-transfer-location", type: "stock-transfer-location", party: "none", availability: "not-available" },
 ];

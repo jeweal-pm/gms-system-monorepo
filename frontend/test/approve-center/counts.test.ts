@@ -20,7 +20,8 @@ describe("UT-AP-03 counts", () => {
     expect(menuBadge(reserve, undefined)).toEqual({ kind: "none" });
     expect(menuBadge(approveMenuFor("quotation")!, { status: "success", off: true })).toEqual({ kind: "off" });
     expect(menuBadge(approveMenuFor("quotation")!, ok(3))).toEqual({ kind: "count", text: "3" });
-    expect(menuBadge(approveMenuFor("load-to-stock")!, ok(1))).toEqual({ kind: "none" });
+    expect(menuBadge(approveMenuFor("load-to-stock")!, ok(1))).toEqual({ kind: "count", text: "1" });
+    expect(menuBadge(approveMenuFor("merge-split")!, ok(1))).toEqual({ kind: "none" });
     expect(capCount(99)).toBe("99");
     expect(capCount(100)).toBe("99+");
   });

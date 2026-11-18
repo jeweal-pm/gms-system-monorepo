@@ -30,6 +30,9 @@ import { MemoReturnService } from "./trade-document/memo-return.service";
 import { MemoStockService } from "./trade-document/memo-stock.service";
 import { MemoOutstandingService } from "./trade-document/memo-outstanding.service";
 import { HealthController } from "./health/health.controller";
+import { InventoryInternalController } from "./inventory-internal/inventory-internal.controller";
+import { InventoryInternalService } from "./inventory-internal/inventory-internal.service";
+import { InventoryServiceTokenGuard } from "./inventory-internal/inventory-token.guard";
 import { ServiceTokenGuard } from "./internal-auth/service-token.guard";
 import { MasterAuthzDatabase } from "./master/authz-database";
 import { MasterLicenseClient } from "./master/license-client";
@@ -51,13 +54,13 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
           req: (req: SerializedRequest) => ({ id: req.id, method: req.method, path: typeof req.url === "string" ? req.url.split("?")[0] : undefined }),
         },
         redact: {
-          paths: ["req.headers.authorization", "req.headers.cookie", "*.connectionString", "*.databaseUrl", "*.PARTNER_DATABASE_URL", "*.PARTNER_SERVICE_TOKEN"],
+          paths: ["req.headers.authorization", "req.headers.cookie", "*.connectionString", "*.databaseUrl", "*.PARTNER_DATABASE_URL", "*.PARTNER_SERVICE_TOKEN", "req.headers[\"x-actor-user-id\"]"],
           censor: "[REDACTED]",
         },
       },
     }),
   ],
-  controllers: [HealthController, CustomerController, VendorController, CompanyProfileController, CompanyLogoPublicController, StoneMasterController, QuotationPhotoPublicController, MemoReceivePhotoPublicController, PurchaseOrderPhotoPublicController, ...LINE_PHOTO_CONTROLLERS, NotificationStreamController],
+  controllers: [HealthController, CustomerController, VendorController, CompanyProfileController, CompanyLogoPublicController, StoneMasterController, QuotationPhotoPublicController, MemoReceivePhotoPublicController, PurchaseOrderPhotoPublicController, ...LINE_PHOTO_CONTROLLERS, NotificationStreamController, InventoryInternalController],
   providers: [
     PrismaLifecycleService,
     NotificationRetention,
@@ -81,6 +84,8 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
     MemoStockService,
     MemoOutstandingService,
     ReserveService,
+    InventoryInternalService,
+    InventoryServiceTokenGuard,
     MasterAuthzDatabase,
     MasterLicenseClient,
     MasterTrpcHandler,

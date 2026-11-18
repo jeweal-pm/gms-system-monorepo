@@ -10,6 +10,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY frontend/package.json frontend/package.json
 COPY backend-api-auth/package.json backend-api-auth/package.json
 COPY backend-api-master/package.json backend-api-master/package.json
+COPY backend-api-inventory/package.json backend-api-inventory/package.json
 COPY packages/gms-storage/package.json packages/gms-storage/package.json
 RUN pnpm install --frozen-lockfile
 

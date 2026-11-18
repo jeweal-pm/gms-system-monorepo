@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Prisma } from "../../src/generated/prisma/client";
 import { HttpException } from "@nestjs/common";
 import type { Tx } from "../../src/common/persistence";
-import { formatStockId, issueStockIds, netUnitPrice, STOCK_NO_MAX, stockIdYear } from "../../src/trade-document/memo-receive.service";
+import { formatStockId, issueStockIds, netUnitPrice, STOCK_ID_LOCK_KEY, STOCK_NO_MAX, stockIdYear } from "../../src/trade-document/memo-receive.service";
 import { encodeStockCursor, pendingAmount, totalPerItem } from "../../src/trade-document/memo-stock.service";
 import { createMemoReceiveSchema, memoStockListSchema, updateMemoReceiveSchema } from "../../src/trade-document/memo-schemas";
 
@@ -93,7 +93,10 @@ describe("Stock ID (SA-MR-04)", () => {
 });
 
 describe("issueStockIds (SA-MR-04; Memo Receive only since ADR-0051)", () => {
-  const counter = (lastNo: number | null) => ({ $queryRaw: vi.fn(async () => (lastNo === null ? [] : [{ last_no: lastNo }])) }) as unknown as Tx & { $queryRaw: ReturnType<typeof vi.fn> };
+  // BE-LS-003: the first statement is the fixed advisory lock, the second the counter upsert.
+  const counter = (lastNo: number | null) => ({
+    $queryRaw: vi.fn().mockResolvedValueOnce([{ locked: 1 }]).mockImplementation(async () => (lastNo === null ? [] : [{ last_no: lastNo }])),
+  }) as unknown as Tx & { $queryRaw: ReturnType<typeof vi.fn> };
   const code = async (promise: Promise<unknown>) => {
     try { await promise; } catch (error) { return error instanceof HttpException ? (error.getResponse() as { error: { code: string } }).error.code : String(error); }
     return "issued";
@@ -103,7 +106,7 @@ describe("issueStockIds (SA-MR-04; Memo Receive only since ADR-0051)", () => {
   it("UT-PU-B05 issues consecutive ids from the shared counter; none needed → no query", async () => {
     const tx = counter(12);
     expect(await issueStockIds(tx, 3, now)).toEqual(["260010", "260011", "260012"]);
-    expect(tx.$queryRaw).toHaveBeenCalledOnce();
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
     const idle = counter(1);
     expect(await issueStockIds(idle, 0, now)).toEqual([]);
     expect(idle.$queryRaw).not.toHaveBeenCalled();
@@ -117,12 +120,30 @@ describe("issueStockIds (SA-MR-04; Memo Receive only since ADR-0051)", () => {
   it("UT-MR-ID3 no 9,999 ceiling: 9,998 + 3 → 269999, 270000, 270001; one statement that seeds from earlier years", async () => {
     const tx = counter(10_001);
     expect(await issueStockIds(tx, 3, now)).toEqual(["269999", "270000", "270001"]);
-    expect(tx.$queryRaw).toHaveBeenCalledOnce();
-    const sql = (tx.$queryRaw.mock.calls[0][0] as { sql: string }).sql;
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
+    const sql = (tx.$queryRaw.mock.calls[1][0] as { sql: string }).sql;
     expect(sql).toMatch(/WITH prior AS \([\s\S]*"year" < \?::smallint ORDER BY "year" FOR SHARE/);
     expect(sql).toContain(`ON CONFLICT ("year") DO UPDATE SET "last_no" = GREATEST(`);
     expect(sql).not.toContain("9999");
     expect(await code(issueStockIds(counter(STOCK_NO_MAX), 1, now))).toBe("issued");
+  });
+
+  it("UT-LS-B09 (BE-LS-003, ADR-0052 D5) takes the fixed advisory lock first and reads the clock only after it", async () => {
+    const order: string[] = [];
+    const tx = {
+      $queryRaw: vi.fn(async (query: { sql: string }) => {
+        order.push(query.sql.includes("pg_advisory_xact_lock") ? "lock" : "counter");
+        return query.sql.includes("pg_advisory_xact_lock") ? [{ locked: 1 }] : [{ last_no: 3 }];
+      }),
+    } as unknown as Tx;
+    const clock = vi.fn(() => {
+      order.push("clock");
+      return new Date("2026-12-31T17:00:00Z"); // 2027-01-01 00:00 in Bangkok
+    });
+    expect(await issueStockIds(tx, 2, clock)).toEqual(["270002", "270003"]);
+    expect(order).toEqual(["lock", "clock", "counter"]);
+    const lockSql = ((tx.$queryRaw as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as { sql: string; values: unknown[] });
+    expect(lockSql.values).toEqual([STOCK_ID_LOCK_KEY]);
   });
 });
 

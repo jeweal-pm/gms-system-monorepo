@@ -9,7 +9,11 @@ const MAX_BODY_BYTES = 1_024;
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 const HANDLER_DEADLINE_MS = 1_900;
 
-/** Private partner-to-auth decision API. The token is read only from a mounted file. */
+/**
+ * Private service-to-auth decision API. Tokens are read only from mounted files: api-master's
+ * (`MASTER_AUTH_SERVICE_TOKEN_FILE`) and, since ADR-0052 / BE-LS-001, backend-api-inventory's
+ * (`INVENTORY_AUTH_SERVICE_TOKEN_FILE`). Either caller may ask this one endpoint; neither token grants anything else.
+ */
 @Controller()
 export class MasterLicenseController {
   constructor(private readonly licenseService: LicenseService) {}
@@ -22,10 +26,9 @@ export class MasterLicenseController {
     if (typeof presented !== "string" || !/^Bearer [A-Za-z0-9_-]{43}$/.test(presented)) {
       throw internalError(401, "SERVICE_UNAUTHENTICATED");
     }
-    const expected = await readServiceTokenDigest();
-    if (!expected) throw internalError(503, "LICENSE_UNVERIFIABLE");
-    const actual = createHash("sha256").update(presented.slice(7)).digest();
-    if (!timingSafeEqual(actual, expected)) throw internalError(401, "SERVICE_UNAUTHENTICATED");
+    const expected = await readServiceTokenDigests();
+    if (expected.length === 0) throw internalError(503, "LICENSE_UNVERIFIABLE");
+    if (!presentedTokenMatches(presented.slice(7), expected)) throw internalError(401, "SERVICE_UNAUTHENTICATED");
 
     let encoded: string;
     try { encoded = JSON.stringify(body); } catch { throw internalError(400, "VALIDATION_ERROR"); }
@@ -67,8 +70,24 @@ export class MasterLicenseController {
   }
 }
 
-async function readServiceTokenDigest(): Promise<Buffer | null> {
-  const path = process.env.MASTER_AUTH_SERVICE_TOKEN_FILE;
+/** Token files of the services allowed to ask (ADR-0052 D2 / authorization.md "Service-to-service"). */
+export const LICENSE_CALLER_TOKEN_FILES = ["MASTER_AUTH_SERVICE_TOKEN_FILE", "INVENTORY_AUTH_SERVICE_TOKEN_FILE"] as const;
+
+/** Digests of every configured caller token; an unset, unreadable or malformed file is skipped (never a wildcard). */
+export async function readServiceTokenDigests(env: NodeJS.ProcessEnv = process.env): Promise<Buffer[]> {
+  const digests = await Promise.all(LICENSE_CALLER_TOKEN_FILES.map((key) => readServiceTokenDigest(env[key])));
+  return digests.filter((digest): digest is Buffer => digest !== null);
+}
+
+/** Compares the presented token with every configured digest in constant time (no early exit on a match). */
+export function presentedTokenMatches(presented: string, expected: readonly Buffer[]): boolean {
+  const actual = createHash("sha256").update(presented).digest();
+  let matched = false;
+  for (const digest of expected) matched = timingSafeEqual(actual, digest) || matched;
+  return matched;
+}
+
+async function readServiceTokenDigest(path: string | undefined): Promise<Buffer | null> {
   if (!path || path.length > 512) return null;
   try {
     let token = await readFile(path, "utf8");

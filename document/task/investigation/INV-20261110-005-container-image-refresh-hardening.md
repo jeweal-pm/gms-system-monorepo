@@ -23,6 +23,8 @@
 - Sanitized evidence sufficient for owner review: yes; official release information and source references are provided. No registry credentials were used.
 - Raw report/run links: none; full run incomplete.
 
+- **Infra evidence update 2026-11-17 (INF-LS-001 research, no ticket-revision change):** Node 24.22.3 (2026-11-11) is a security release with high-severity HTTP/2 and TLS fixes plus llhttp 9.4.4 / undici 7.30.2 ([release notes](https://nodejs.org/en/blog/release/v24.22.3)); official image `node:24.22.3-bookworm-slim` index digest `sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54`. The new `backend-api-inventory/Dockerfile` uses it; frontend/auth/master and `docker/dev.Dockerfile` remain on 24.22.1, so the refresh target in this ticket is now 24.22.3, not 24.22.2. Nginx 1.30.6 is still not affected by any published nginx advisory as of this date.
+
 ## Proposed work
 
 - Allowed code scope and assigned implementation role: infra owns Dockerfiles and image baselines; devops owns CI image build/publish metadata; parent integration owner serializes Dockerfiles and workflow changes.

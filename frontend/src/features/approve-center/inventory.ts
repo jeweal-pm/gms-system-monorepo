@@ -1,0 +1,87 @@
+import { loadToStockApi, type LoadOut } from "@/features/load-to-stock/api";
+import type { InventoryPendingItem } from "@/features/inventory/approval";
+import type { PendingApprovalItem } from "./model";
+import type { PreviewDetail } from "./preview";
+
+/**
+ * load-to-stock FE-LS-011 (ADR-0052 D12): Approve Center adapters for the inventory document Load to Stock. Its
+ * pending rows and detail come from `backend-api-inventory` and are shaped like master's so the same table, preview
+ * and review dialogs serve it.
+ */
+
+/** `LoadOut` → the preview modal's fields: one line per load row, value = the row's company-currency cost. */
+export function loadToStockPreview(detail: LoadOut): PreviewDetail {
+  return {
+    id: detail.id,
+    docNo: detail.docNo,
+    status: detail.status,
+    version: detail.version,
+    docDate: detail.docDate,
+    currency: detail.currency,
+    exchangeRate: null,
+    documentNote: detail.documentNote,
+    vendor: { name: detail.vendor.name },
+    lines: [...detail.rows]
+      .sort((a, b) => a.position - b.position)
+      .map((row) => ({
+        stoneCode: row.attrs.stoneCode,
+        stockId: row.stockId,
+        stone: row.attrs.stone,
+        shape: row.attrs.shape,
+        size: row.attrs.size,
+        pcs: row.pcs,
+        weightCt: row.weightCt,
+        amount: row.costAmountBase,
+        location: row.location,
+      })),
+    totals: { grandTotal: detail.totals.costAmountBase },
+    deletedAt: detail.deleted?.at ?? null,
+    revisionCount: detail.approval.revisionCount,
+  };
+}
+
+/**
+ * An inventory pending row in master's row shape. SA rev 1 lists no `version` on pending rows: 0 means "read it with
+ * `get` before the call" (`withVersion`), so an approve still sends the current `expectedVersion`.
+ */
+export function toPendingItem(item: InventoryPendingItem, currency: string): PendingApprovalItem {
+  return {
+    type: "load-to-stock",
+    id: item.id,
+    docNo: item.docNo,
+    docDate: item.docDate,
+    dueDate: "",
+    version: item.version ?? 0,
+    status: "PENDING_APPROVAL",
+    party: { id: "", code: "", name: item.partyName },
+    ref: "",
+    currency,
+    grandTotal: item.valueBase,
+    lineCount: 0,
+    totalPcs: item.totalPcs,
+    totalWeightCt: item.totalWeightCt,
+    stoneNames: [],
+    moreStoneCount: 0,
+    submittedAt: item.submittedAt,
+    submittedBy: "",
+    submittedByName: item.submittedByName,
+    revisionCount: item.revisionCount,
+    lastReview: null,
+    updatedAt: "",
+  };
+}
+
+type Calls = Pick<typeof loadToStockApi, "get" | "approve" | "reject" | "requestRevision">;
+
+/** The Approve menu's per-document client for Load to Stock (same surface as master's `DocumentClient`). */
+export function loadToStockDocumentClient(calls: Calls = loadToStockApi) {
+  const withVersion = async (id: string, expectedVersion: number) => (expectedVersion > 0 ? expectedVersion : (await calls.get(id)).version);
+  return {
+    get: { query: async ({ id }: { id: string }) => loadToStockPreview(await calls.get(id)) },
+    approve: { mutate: async ({ id, expectedVersion }: { id: string; expectedVersion: number }) => calls.approve(id, await withVersion(id, expectedVersion)) },
+    reject: { mutate: async ({ id, expectedVersion, reason }: { id: string; expectedVersion: number; reason: string }) => calls.reject(id, await withVersion(id, expectedVersion), reason) },
+    requestRevision: {
+      mutate: async ({ id, expectedVersion, note }: { id: string; expectedVersion: number; note: string }) => calls.requestRevision(id, await withVersion(id, expectedVersion), note),
+    },
+  };
+}

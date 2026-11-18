@@ -38,6 +38,29 @@ origin for hot reload, while this checkout's `127.0.0.1` origin is blocked. Port
 currently belongs to another local project. The dev auth service receives a matching
 `FRONTEND_URL`.
 
+### Inventory service (Load to Stock, ADR-0052) — one-time setup per machine
+
+`backend-api-inventory` needs two service tokens, five `.env` entries and three dev database roles that are
+not in git. `pnpm docker:gms:preview` and `pnpm docker:gms:preview:install` now run the setup automatically first,
+so after pulling this change the usual commands are enough:
+
+```
+pnpm docker:gms:preview:install    # first time / after lockfile changes (runs the inventory setup first)
+pnpm docker:gms:preview            # runs the inventory setup (no-op when done), then starts everything
+```
+
+`pnpm docker:inventory:setup` runs only the setup. It is idempotent: the script
+([docker/setup-inventory-dev.cjs](../../docker/setup-inventory-dev.cjs)) only appends missing `INVENTORY_*` entries
+(existing values are kept), writes the token files to `%LOCALAPPDATA%/f1-system-secrets` (or
+`~/.config/f1-system-secrets`), starts PostgreSQL (and auth once if its views are missing) and runs the reviewed role
+scripts `backend-api-auth/prisma/roles/provision-inventory-authz-reader.sql` and
+`backend-api-inventory/prisma/roles/provision-inventory-roles.sql`. It never prints secrets or removes data.
+Production roles and secrets are provisioned by the operator, not by this script.
+
+If the inventory service itself fails to start, every other page still works: Nginx resolves the inventory upstream
+per request and does not wait for it, so only `/api/inventory/*` (Load to Stock, inventory approval/notifications)
+answers 502.
+
 ## Prisma Studio
 
 Prisma Studio runs on the host against the PostgreSQL container's published local port.

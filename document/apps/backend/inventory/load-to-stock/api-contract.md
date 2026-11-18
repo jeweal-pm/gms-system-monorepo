@@ -32,7 +32,7 @@ type StoneAttrs = {
 type PurchaseLineRef = StoneAttrs & {
   purchaseLineId: string;
   purchase: { id: string; docNo: string; docDate: string; currency: string; rate: Dec /* to the company currency; "1" when equal */ };
-  location: string;                                          // PU line text (Item table IT-3)
+  location: string;                                          // PU line location name (Item table IT-3, read-only; not copied to the load row)
   priceUnit: PriceUnit;
   unitPrice: Dec;                                            // as entered on the PU, PU currency
   netUnitPrice: Dec;                                         // after line discount, PU currency (4 dp)
@@ -57,7 +57,7 @@ type Approval = {
 
 | Method / path | Permission | Input | Output | Notes / TODO |
 |---|---|---|---|---|
-| `GET /load-to-stock/options` | `load-to-stock:VIEW` | — | `{ companyCurrency: string, stone: StoneLineOptions /* same shape as master purchase.options.stone */, locations: {id, code, name}[] /* active, from master Location Master, ≤ 500 */ }` | one master call (`reference`), no local query. FE-LS-002/008 |
+| `GET /load-to-stock/options` | `load-to-stock:VIEW` | — | `{ companyCurrency: string, stone: StoneLineOptions /* same shape as master purchase.options.stone */, locations: string[] /* active Location Master names, ≤ 500 (ADR-0053) */ }` | one master call (`reference`), no local query. FE-LS-002/008 |
 | `GET /load-to-stock/vendors?q=&cursor=&limit=` | VIEW | `q` ≤ 100 | `{ items: {id, code, name}[], nextCursor }` — vendors having ≥ 1 loadable line | Account select (I-02). FE-LS-003 |
 | `GET /load-to-stock/next-number?docDate=YYYY-MM-DD` | ADD | — | `{ docNo: string }` preview (not reserved) | master `resolve` with `markUsed:false`. H-01 |
 | `GET /approval-settings` | signed in + licensed | — | `{ items: {type, requireApproval, version, waitingCount?: {pending, revision}}[] }` for the 3 inventory types; counts only with `approval-setup:VIEW` | FE-LS-009, FE-LS-014 |
@@ -87,7 +87,7 @@ Rows: lines of **approved, not deleted** Purchases, source `MANUAL` / `PURCHASE_
 type RowInput = {
   id?: string;                                    // existing row id (update); keeps the Stock ID once issued
   sources: { purchaseLineId: string; pcs: number; weightCt: Dec }[];   // NONE/SPLIT: exactly 1; MERGE: ≥ 2 (server overwrites qty with full remaining)
-  locationId: string;                              // required (Q-LS-11)
+  location: string;                               // required, 1–40, an active Location Master name (case-insensitive; stored in master's spelling) or, on update, the row's stored name (Q-LS-11/28, ADR-0053)
   parcel?: string;                                 // ≤ 50
   attrs: StoneAttrs;                               // editable in every mode
   stockPrice: Dec;                                 // required ≥ 0, company currency, per row price unit (Q-LS-13/23)
@@ -107,7 +107,7 @@ type RowOut = Omit<RowInput, "sources"> & {
   id: string; position: number;
   stockId: string | null;                          // null = "Auto" (not issued yet)
   sources: { purchaseLineId: string; pcs: number; weightCt: Dec; costAmountBase: Dec }[];
-  location: { id: string; code: string; name: string };   // snapshot taken at Save
+
   priceUnit: PriceUnit;                            // NONE/SPLIT: the source's; MERGE: Q-LS-27
   pcs: number; weightCt: Dec;
   unitCostBase: Dec; costAmountBase: Dec;            // read-only "Price" / "Amount"
@@ -155,7 +155,7 @@ Preview opens `GET /load-to-stock/{id}` read-only.
 
 | Method / path | Permission | Input | Output |
 |---|---|---|---|
-| `POST /load-to-stock/photos` | ADD or EDIT + CSRF | multipart `file` (JPEG/PNG, ≤ 5 MiB, signature checked) | `201 { id }` |
+| `POST /load-to-stock/photos` | ADD or EDIT + CSRF | multipart `file` (JPEG/PNG, ≤ 5 MiB, signature checked) | `201 { id }`; `429 RATE_LIMITED` (`Retry-After: 2`) when 3 uploads/copies are already in flight — the slot is taken before the body is read (INV-20261117-003 F1) |
 | `POST /load-to-stock/photos/from-purchase-line` | ADD or EDIT + CSRF | `{ purchaseLineId }` (a loadable line) | `{ ids: string[] /* ≤ 5, PU order */ }` — copies once per master file, then reuses |
 | `GET /load-to-stock/photos/{id}` | VIEW | — | image stream, `Content-Type` stored, `Cache-Control: private, max-age=300`, `X-Content-Type-Options: nosniff` |
 
@@ -181,11 +181,11 @@ Auth: `Authorization: Bearer <INVENTORY_MASTER_SERVICE_TOKEN>` (constant-time; s
 
 | Method / path | Input | Output | Rule |
 |---|---|---|---|
-| `GET /reference` | — | `{ companyCurrency, stone: StoneLineOptions, locations: {id, code, name}[] }` | stone as `vendorDocumentOptions().stone`; active locations of Location Master (field names aligned after that branch merges) |
+| `GET /reference` | — | `{ companyCurrency, stone: StoneLineOptions, locations: string[] }` | stone as `vendorDocumentOptions().stone`; locations = active names, same source as master `options.locations` (ADR-0053 D3) |
 | `GET /vendors/loadable?q&cursor&limit≤50` | — | `{ items: {id,code,name}[], nextCursor }` | DISTINCT vendors of open lines (index-backed) |
 | `POST /purchase-lines/loadable/search` | `SearchInput` | `SearchOutput` | 1 page query + 1 count (capped) |
 | `POST /purchase-lines/batch` | `{ ids: uuid[] /* 1–200 */, excludeAllocationOf?: uuid }` | `{ items: (PurchaseLineRef & { status: "OPEN"|"CLOSED"|"UNAVAILABLE", vendorId })[] }` | 1 query; UNAVAILABLE = PU not approved/deleted/STOCK |
-| `POST /master-data/resolve` | `{ stoneCodeIds: uuid[] ≤ 200, locationIds: uuid[] ≤ 200 }` | `{ stoneCodes: {id, code, active}[], locations: {id, code, name, active}[] }` | ≤ 2 queries (one per kind), no per-id query |
+| `POST /master-data/resolve` | `{ stoneCodeIds: uuid[] ≤ 200, locationNames: string[] ≤ 200 (1–40) }` | `{ stoneCodes: {id, code, active}[], locations: {input, name /* master spelling */}[] }` — only **active** names are returned; unmatched inputs are absent | ≤ 2 queries (one per kind, `lower(name) = ANY(...)`), no per-item query |
 | `POST /document-numbering/resolve` | `{ transactionKey: "load-to-stock", docDate, markUsed: boolean }` | `{ numbering: {id, prefix, separator, startNo} | null }` | `markUsed` sets `external_used_at` once (idempotent) |
 | `PUT /load-allocations/{loadId}` | `{ revision: int ≥ 1, vendorId, lines: {purchaseLineId, pcs, weightCt}[] /* ≤ 200 distinct */, newStockIdCount: int 0–200 }` | `200 { revision, stockIds: string[], lines: {purchaseLineId, remainingPcs, remainingWeightCt}[], replayed: boolean }` | D4 semantics; `409 LOAD_ALLOCATION_STALE` (revision < applied, or same revision with another hash); `409 LOAD_ALLOCATION_EXCEEDS_REMAINING` `{lines:[{purchaseLineId, remainingPcs, remainingWeightCt}]}`; `422 LOAD_ALLOCATION_LINE_UNAVAILABLE` `{purchaseLineIds}` (not approved / deleted / STOCK / other vendor) |
 | `GET /load-allocations/{loadId}` | — | `{ revision, lines, stockIds } | 404` | recovery read |
@@ -196,7 +196,7 @@ Auth: `Authorization: Bearer <INVENTORY_MASTER_SERVICE_TOKEN>` (constant-time; s
 
 | Side | Method / path | Purpose |
 |---|---|---|
-| inventory public | `GET /api/inventory/v1/stock/available?q&locationId&cursor&limit≤50` (VIEW on any of quotation / reserve / memo-out / load-to-stock) | own-stock section of the From Stock picker (Stock ID, location, stone attrs, available pcs/weight; price columns as the Memo Stock picker) |
+| inventory public | `GET /api/inventory/v1/stock/available?q&location&cursor&limit≤50` (VIEW on any of quotation / reserve / memo-out / load-to-stock) | own-stock section of the From Stock picker (Stock ID, location, stone attrs, available pcs/weight; price columns as the Memo Stock picker) |
 | inventory internal (`/internal/v1/master/*`, token `MASTER_INVENTORY_SERVICE_TOKEN`) | `POST /stock/batch` `{ids ≤ 200}` | availability + snapshot for master Save validation |
 | inventory internal | `PUT /stock-holds/{documentType}/{documentId}` `{revision, holds: [{lineId, stockUuid, kind: RESERVED or MEMO_OUT or MEMO_OUT_RETURN, pcs, weightCt}] ≤ 200}` | set the document's holds; idempotent; 409 `STOCK_HOLD_EXCEEDS_AVAILABLE` with ids; empty = release |
 | inventory internal | `GET /stock-holds/{documentType}/{documentId}` | recovery read for master's saga |

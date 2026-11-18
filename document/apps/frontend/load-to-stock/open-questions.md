@@ -51,3 +51,9 @@ Owner answers so far are in [Owner answers](#owner-answers-2026-11-16); the rest
 New source image 06 (`source/06-load-mode-dialog-states.png`, 2026-11-16): None / Split / Merge selected states; Merge primary button "Merge · create 1 load row". Consistent with one mode per document (Split starts with one row per PU line); on later picks the dialog must keep the document's mode (other cards disabled). ui-spec to update the text.
 
 All other Q-LS rows: owner moved on to SA design 2026-11-16 ("ทำเอกสาร ออก adr diagram") without changing them; the defaults stand for the SA draft and are confirmed with the bundle approval.
+
+## Owner answers 2026-11-17
+
+| ID | Owner (verbatim) | Decision |
+|---|---|---|
+| Q-LS-01 (revised) | "Account เอาแบบ ข สิ มีหน้าบางหน้าบังคับให้เลือก vendor ก่อนถึงจะเรียกของใน stock ได้ อันนี้เช่นกัน" | The user **chooses Account (vendor) first**; From Purchase then lists only that vendor's PU lines. Account locks while the Load table has rows. Replaces the "auto-fill from the first pick" default (matches the implemented frontend) |

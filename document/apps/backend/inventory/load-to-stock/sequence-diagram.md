@@ -47,8 +47,8 @@ sequenceDiagram
   participant MS as api-master internal
   UI->>INV: POST /load-to-stock {docDate, vendorId, mode, rows}
   INV->>INV: authz ADD + CSRF, Zod, mode shape rules
-  INV->>MS: POST purchase-lines/batch {ids} + master-data/resolve (stone codes + locations) + document-numbering/resolve markUsed=true
-  MS-->>INV: lines (status, vendor, remaining), stone codes + locations (active, code, name), numbering row
+  INV->>MS: POST purchase-lines/batch {ids} + master-data/resolve (stone codes + location names) + document-numbering/resolve markUsed=true
+  MS-->>INV: lines (status, vendor, remaining), stone codes + active location names in master spelling, numbering row
   INV->>INV: validate vendor, Σ per source ≤ remaining, location, prices, photos (no lock)
   alt invalid
     INV-->>UI: 422 VALIDATION_ERROR fieldErrors rows.N.*

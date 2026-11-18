@@ -88,19 +88,20 @@ describe("ApprovalSettingService", () => {
     service = new ApprovalSettingService();
   });
 
-  it("list: 11 items in sidebar order; counts only when asked, capped at 100, 0 for the three future types", async () => {
+  it("list: 8 items in sidebar order (ADR-0052 D8: no inventory keys); counts only when asked, capped at 100", async () => {
     const withoutCounts = await service.list({ withCounts: false });
     expect(withoutCounts.items.map((item) => item.type)).toEqual([...APPROVAL_TYPES]);
     expect(withoutCounts.items.every((item) => item.waiting === null)).toBe(true);
     expect(db.raw).toHaveLength(0);
     expect(withoutCounts.items[0]).toEqual({ type: "quotation", requireApproval: false, available: true, version: 1, updatedAt: seededAt.toISOString(), updatedByName: null, waiting: null });
-    expect(withoutCounts.items.filter((item) => !item.available).map((item) => item.type)).toEqual(["load-to-stock", "merge-split", "stock-transfer-location"]);
+    expect(withoutCounts.items.filter((item) => !item.available).map((item) => item.type)).toEqual([]);
+    expect(withoutCounts.items.map((item) => item.type)).not.toContain("load-to-stock");
 
     db.waiting.set("reserve", { pending: 2, revision: 1 });
     db.waiting.set("purchase", { pending: 100, revision: 7 });
     const counted = await service.list({ withCounts: true });
     const waiting = Object.fromEntries(counted.items.map((item) => [item.type, item.waiting]));
-    expect(waiting).toMatchObject({ reserve: 3, purchase: 100, quotation: 0, "load-to-stock": 0, "stock-transfer-location": 0 });
+    expect(waiting).toMatchObject({ reserve: 3, purchase: 100, quotation: 0 });
     // One statement for the eight document types; table names are fixed identifiers, the cap is a bound parameter.
     expect(db.raw).toHaveLength(1);
     expect(db.raw[0].sql).toContain(`FROM "partner"."memo_out_return" WHERE "status" = 'PENDING_APPROVAL' AND "deleted_at" IS NULL LIMIT`);
@@ -141,19 +142,15 @@ describe("ApprovalSettingService", () => {
     expect(db.raw).toHaveLength(1);
   });
 
-  it("UT-AS-B07b update: the three future types (available = false) → VALIDATION_ERROR type/not_available before any read; no row change (G6, INV-20261111-002 item 1)", async () => {
-    for (const type of ["load-to-stock", "merge-split", "stock-transfer-location"] as const) {
-      for (const requireApproval of [true, false]) {
-        db.raw = [];
-        db.updates = [];
-        expect(await failure(service.update(actor, { type, requireApproval, expectedVersion: 1 }))).toEqual({
-          status: 400, body: { error: { code: "VALIDATION_ERROR", message: expect.any(String), fieldErrors: [{ path: "type", code: "not_available" }] } },
-        });
-        expect(db.raw).toHaveLength(0);
-        expect(db.updates).toHaveLength(0);
-      }
-      expect(db.rows.get(type)).toMatchObject({ version: 1 });
+  it("UT-AS-B07b / BE-LS-005 the three inventory types are no longer master keys (ADR-0052 D8): the input schema refuses them; a non-document type is refused before any read", async () => {
+    for (const type of ["load-to-stock", "merge-split", "stock-transfer-location"]) {
+      expect(approvalSettingUpdateSchema.safeParse({ type, requireApproval: true, expectedVersion: 1 }).success).toBe(false);
     }
+    db.raw = [];
+    expect(await failure(service.update(actor, { type: "load-to-stock" as never, requireApproval: false, expectedVersion: 1 }))).toEqual({
+      status: 400, body: { error: { code: "VALIDATION_ERROR", message: expect.any(String), fieldErrors: [{ path: "type", code: "not_available" }] } },
+    });
+    expect(db.raw).toHaveLength(0);
   });
 
   it("update: stale version or a missing row → APPROVAL_SETTING_CHANGED; database unavailable → PARTNER_UNAVAILABLE", async () => {
@@ -174,7 +171,7 @@ describe("ApprovalSettingService", () => {
     expect(await service.readForSave(tx, "purchase")).toBe(true);
   });
 
-  it("UT-AS-B07 input: strict, 11 type keys, boolean switch, expectedVersion ≥ 1", () => {
+  it("UT-AS-B07 input: strict, 8 type keys, boolean switch, expectedVersion ≥ 1", () => {
     for (const type of APPROVAL_TYPES) expect(approvalSettingUpdateSchema.safeParse({ type, requireApproval: true, expectedVersion: 1 }).success).toBe(true);
     expect(approvalSettingUpdateSchema.safeParse({ type: "sale", requireApproval: true, expectedVersion: 1 }).success).toBe(false);
     expect(approvalSettingUpdateSchema.safeParse({ type: "reserve", requireApproval: "true", expectedVersion: 1 }).success).toBe(false);

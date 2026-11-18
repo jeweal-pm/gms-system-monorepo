@@ -12,6 +12,7 @@ import { ReviewDialog } from "@/features/approve-center/components/ReviewDialog"
 import { approveMenuFor, type AvailableMenu } from "@/features/approve-center/menus";
 import { actionFailure, approveFailure, DEFAULT_SORT, listLoadError, pendingInput, reviewFieldError, rowsOf, runBulkApprove } from "@/features/approve-center/model";
 import { Sidebar } from "@/features/home/sidebar";
+import { inventoryApprovalKeys } from "@/features/inventory/approval";
 import { authTrpc, createAuthTrpcClient } from "@/lib/auth-trpc";
 import { createMasterTrpcClient, masterTrpc } from "@/lib/master-trpc";
 import { listItem, page, reserveDetail, RS1, RS2, sourceTwoItems, summary } from "./fixtures";
@@ -86,6 +87,9 @@ function seeded(permissions: string[], data = summary()) {
   queryClient.setQueryData(getQueryKey(authTrpc.permission.mine, undefined, "query"), { isSuperAdmin: false, permissions });
   queryClient.setQueryData(summaryQueryKey(), data);
   queryClient.setQueryData(pendingQueryKey(reserveInput), { pages: [page(sourceTwoItems(), { nextCursor: "c2" })], pageParams: [null] });
+  // FE-LS-011: Load to Stock counts come from backend-api-inventory (approval OFF here, so no badge).
+  queryClient.setQueryData(inventoryApprovalKeys.summary(), { items: [], countCap: 100 });
+  queryClient.setQueryData(inventoryApprovalKeys.settings(), { items: [{ type: "load-to-stock", requireApproval: false, version: 1 }] });
   return queryClient;
 }
 
@@ -141,14 +145,14 @@ describe("IT-AP-02 counts from approval.summary: panel badges and the sidebar to
     expect(calls).toEqual([{ path: "approval.summary", method: "GET", input: undefined, csrf: "1" }]);
   });
 
-  it("Reserve 2, Purchase 1, Quotation off, no badge at 0 or on inventory menus; sidebar 3", () => {
+  it("Reserve 2, Purchase 1, Quotation off, no badge at 0; Load to Stock off from inventory; sidebar 3", () => {
     const queryClient = seeded(ALL_GRANTS);
     const panel = panelOf(render(queryClient, createElement(ApproveMenuPage, { slug: "reserve" })));
     expect(badgeIn(panel, "Reserve")).toBe("2");
     expect(badgeIn(panel, "Purchase")).toBe("1");
     expect(badgeIn(panel, "Quotation")).toBe("off");
     expect(badgeIn(panel, "Memo Out")).toBeNull();
-    expect(badgeIn(panel, "Load to Stock")).toBeNull();
+    expect(badgeIn(panel, "Load to Stock")).toBe("off");
     const sidebar = render(queryClient, createElement(Sidebar, { pathname: "/approve/reserve" }));
     expect(sidebar).toMatch(/>Approve<\/span><span[^>]*>(<span[^>]*>[^<]*<\/span>)?3<span class="sr-only"> waiting for approval<\/span>/);
   });

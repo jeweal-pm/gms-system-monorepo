@@ -16,6 +16,8 @@ export type NotificationItem = {
   summary: { partyName?: string; amount?: string; currency?: string; reason?: string };
   createdAt: string;
   readAt: string | null;
+  /** The owning service (FE-LS-015); absent = master. */
+  source?: "master" | "inventory";
 };
 
 export const NOTIFICATION_PAGE_SIZE = 20;
@@ -140,4 +142,42 @@ export function groupByDay<T extends Pick<NotificationItem, "id" | "createdAt">>
     else groups.push({ label, items: [item] });
   }
   return groups;
+}
+
+// ---------- two feeds (load-to-stock FE-LS-015, ADR-0049 D10) ----------
+
+export type FeedState = {
+  items: NotificationItem[];
+  isPending: boolean;
+  isError: boolean;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  isFetchNextPageError: boolean;
+};
+
+/**
+ * Master + inventory feeds as one list, newest first (ties keep master first). A feed that failed is left out while the
+ * other has items; the panel shows its error only when neither feed has anything to show.
+ */
+export function combineFeeds(master: FeedState, inventory: FeedState): FeedState & { feedErrors: number } {
+  const items = [...master.items, ...inventory.items]
+    .map((item, order) => ({ item, order, at: Date.parse(item.createdAt) || 0 }))
+    .sort((a, b) => b.at - a.at || a.order - b.order)
+    .map(({ item }) => item);
+  const settled = (feed: FeedState) => !feed.isPending || feed.isError;
+  return {
+    items,
+    isPending: items.length === 0 && !(settled(master) && settled(inventory)),
+    isError: master.isError && inventory.isError,
+    hasNextPage: master.hasNextPage || inventory.hasNextPage,
+    isFetchingNextPage: master.isFetchingNextPage || inventory.isFetchingNextPage,
+    isFetchNextPageError: master.isFetchNextPageError || inventory.isFetchNextPageError,
+    feedErrors: Number(master.isError) + Number(inventory.isError),
+  };
+}
+
+/** Mark-read ids per owning service. */
+export function splitIdsBySource(ids: readonly string[], items: readonly Pick<NotificationItem, "id" | "source">[]): { master: string[]; inventory: string[] } {
+  const inventoryIds = new Set(items.filter((item) => item.source === "inventory").map((item) => item.id));
+  return { master: ids.filter((id) => !inventoryIds.has(id)), inventory: ids.filter((id) => inventoryIds.has(id)) };
 }

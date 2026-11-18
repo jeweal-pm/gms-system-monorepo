@@ -1,6 +1,16 @@
 "use client";
 
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import {
+  inventoryApprovalKeys,
+  isInventoryApprovalType,
+  useInventoryApprovalSettings,
+  useInventoryApprovalSummary,
+  useInventoryPendingList,
+  type InventoryApprovalType,
+  type InventoryPendingInput,
+} from "@/features/inventory/approval";
+import { INVENTORY_QUERY_KEY } from "@/features/inventory/query-keys";
 import { getQueryKey } from "@trpc/react-query";
 import { useCallback } from "react";
 import { authTrpc } from "@/lib/auth-trpc";
@@ -8,7 +18,8 @@ import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
 import { APPROVE_MENUS, type ApprovalProc, type ApproveMenu, type AvailableMenu } from "./menus";
 import type { PreviewDetail } from "./preview";
-import { approvalTotal, pendingInput, summaryCount, visibleMenus, type CountState, type Mine, type PendingInput, type ReviewAction, type SortState } from "./model";
+import { loadToStockDocumentClient, toPendingItem } from "./inventory";
+import { approvalTotal, pendingInput, summaryCount, visibleMenus, type ApprovalSummary, type CountState, type Mine, type PendingInput, type ReviewAction, type SortState } from "./model";
 
 /**
  * Approve Center data access (approve-center UI rev 1; phase 2 FE-AP-009/010, approval-setup FE-AS-009/013):
@@ -39,6 +50,8 @@ export function documentClients(client: MasterClient): Record<ApprovalProc, Docu
     memoOutReturn: client.memoOutReturn,
     purchaseOrder: client.purchaseOrder,
     purchase: client.purchase,
+    // FE-LS-011: Load to Stock is served by backend-api-inventory (REST), adapted to the same surface.
+    loadToStock: loadToStockDocumentClient(),
   };
 }
 
@@ -69,35 +82,72 @@ export function useVisibleMenus(): { menus: ApproveMenu[]; mine: Mine; isPending
  */
 export function useApprovalCounts(mine: Mine): { countOf: (menu: ApproveMenu) => CountState | undefined; counts: CountState[]; refetch: () => Promise<unknown> } {
   const menus = visibleMenus(mine, APPROVE_MENUS).filter((menu) => menu.availability === "available");
-  const enabled = menus.length > 0;
+  const masterEnabled = menus.some((menu) => !isInventoryApprovalType(menu.type));
+  // FE-LS-011 (ADR-0052 D12): inventory types count from backend-api-inventory; their on/off from its settings.
+  const inventoryEnabled = menus.some((menu) => isInventoryApprovalType(menu.type));
   const summary = masterTrpc.approval.summary.useQuery(undefined, {
     staleTime: SUMMARY_STALE_MS,
     retry: retryTransient,
     refetchOnWindowFocus: true,
-    enabled,
+    enabled: masterEnabled,
   });
+  const inventorySummary = useInventoryApprovalSummary(inventoryEnabled);
+  const inventorySettings = useInventoryApprovalSettings(inventoryEnabled);
   const state = { status: summary.status, data: summary.data };
-  const countOf = (menu: ApproveMenu) => (enabled ? summaryCount(state, menu) : undefined);
+  const inventoryState = inventoryCountState(inventorySummary, inventorySettings);
+  const countOf = (menu: ApproveMenu) => {
+    if (isInventoryApprovalType(menu.type)) return inventoryEnabled ? summaryCount(inventoryState, menu) : undefined;
+    return masterEnabled ? summaryCount(state, menu) : undefined;
+  };
   const counts = menus.map(countOf).filter((count): count is CountState => count !== undefined);
-  return { countOf, counts, refetch: () => summary.refetch() };
+  return { countOf, counts, refetch: () => Promise.all([summary.refetch(), inventoryEnabled ? inventorySummary.refetch() : null]) };
+}
+
+type QueryState<T> = { status: "pending" | "error" | "success"; data?: T };
+
+/** Inventory summary + settings -> master's summary shape (`types` = each inventory type's setting). */
+export function inventoryCountState(
+  summary: QueryState<{ items: readonly { type: string; count: number }[]; countCap: number }>,
+  settings: QueryState<{ items: readonly { type: string; requireApproval: boolean }[] }>,
+): { status: CountState["status"]; data?: ApprovalSummary } {
+  if (summary.status === "error" || settings.status === "error") return { status: "error" };
+  if (summary.status !== "success" || settings.status !== "success" || !summary.data || !settings.data) return { status: "pending" };
+  return {
+    status: "success",
+    data: { items: summary.data.items, countCap: summary.data.countCap, types: settings.data.items.map((item) => ({ type: item.type, requireApproval: item.requireApproval })) },
+  };
 }
 
 /** FE-AP-009: pending documents of one menu, 50 a page, in the server's sort; search on the server. */
 export function usePendingList(menu: AvailableMenu, q: string | undefined, sort: SortState, enabled = true) {
-  return masterTrpc.approval.pending.useInfiniteQuery(pendingInput(menu, q, sort), {
+  const inventory = isInventoryApprovalType(menu.type);
+  const input = pendingInput(menu, q, sort);
+  const master = masterTrpc.approval.pending.useInfiniteQuery(input, {
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     staleTime: LIST_STALE_MS,
     retry: retryTransient,
     refetchOnWindowFocus: true,
-    enabled,
+    enabled: enabled && !inventory,
   });
+  // FE-LS-011: the inventory list in master's row shape (same table, paging, search and sort).
+  const baseCurrency = useBaseCurrency();
+  const inventoryList = useInventoryPendingList(inventoryPendingInput(input, menu.type), enabled && inventory);
+  if (!inventory) return master;
+  const data = inventoryList.data
+    ? { ...inventoryList.data, pages: inventoryList.data.pages.map((page) => ({ nextCursor: page.nextCursor, items: page.items.map((item) => toPendingItem(item, baseCurrency ?? "")) })) }
+    : undefined;
+  return { ...inventoryList, data } as unknown as typeof master;
 }
+
+export const inventoryPendingInput = (input: PendingInput, type: string): InventoryPendingInput => ({ ...input, type: type as InventoryApprovalType });
 
 /**
  * After an approve / reject / revise: the Approve views (summary + every pending list), the document's own list / get,
  * the approval-setting waiting counts and, after an approve, the stock lists it moves.
  */
 export function invalidateAfterReview(queryClient: QueryClient, proc: ApprovalProc, action: ReviewAction) {
+  // FE-LS-011: an inventory review refreshes every inventory read (its list, document, picker, summary, settings).
+  if (proc === "loadToStock") return Promise.all([queryClient.invalidateQueries({ queryKey: INVENTORY_QUERY_KEY }), queryClient.invalidateQueries({ queryKey: [["purchase"]] })]);
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: [["approval"]] }),
     queryClient.invalidateQueries({ queryKey: [[proc]] }),
@@ -116,15 +166,25 @@ export function useReviewCalls(menu: AvailableMenu) {
   const requestRevision = useCallback((id: string, expectedVersion: number, note: string) => document.requestRevision.mutate({ id, expectedVersion, note }), [document]);
   const invalidate = useCallback((action: ReviewAction = "approve") => invalidateAfterReview(queryClient, menu.proc, action), [menu.proc, queryClient]);
   const refetchAccess = useCallback(
-    () => Promise.all([queryClient.invalidateQueries({ queryKey: [["permission", "mine"]] }), queryClient.invalidateQueries({ queryKey: [["approval"]] })]),
+    () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: [["permission", "mine"]] }),
+        queryClient.invalidateQueries({ queryKey: [["approval"]] }),
+        queryClient.invalidateQueries({ queryKey: [...INVENTORY_QUERY_KEY, "approval"] }),
+      ]),
     [queryClient],
   );
-  const resetPaging = useCallback((input: PendingInput) => queryClient.resetQueries({ queryKey: pendingQueryKey(input) }), [queryClient]);
+  const inventory = isInventoryApprovalType(menu.type);
+  const resetPaging = useCallback(
+    (input: PendingInput) => queryClient.resetQueries({ queryKey: inventory ? inventoryApprovalKeys.pending(inventoryPendingInput(input, menu.type)) : pendingQueryKey(input) }),
+    [queryClient, inventory, menu.type],
+  );
   return { approve, reject, requestRevision, invalidate, refetchAccess, resetPaging };
 }
 
 /** The tRPC react-query key of `<proc>.get` (shares the cache with the document page). */
 export function detailQueryKey(proc: ApprovalProc, id: string) {
+  if (proc === "loadToStock") return [...INVENTORY_QUERY_KEY, "load-to-stock", "preview", id] as const;
   return [[proc, "get"], { input: { id }, type: "query" }] as const;
 }
 

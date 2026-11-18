@@ -24,6 +24,8 @@ const db = vi.hoisted(() => ({
   purchaseOrderUsedIds: new Set<string>(),
   /** Numbering rows referenced by a purchase (SA-PU-11). */
   purchaseUsedIds: new Set<string>(),
+  /** Numbering rows an inventory document took a number from (ADR-0052 D10, `external_used_at`). */
+  externalUsedIds: new Set<string>(),
   failWith: null as unknown,
 }));
 
@@ -58,7 +60,8 @@ vi.mock("../../src/database/prisma-client", () => {
       findUniqueOrThrow: vi.fn(async ({ where }: { where: { transactionKey: string } }) => withRows(db.setups.get(where.transactionKey)!)),
     },
     documentNumbering: {
-      findMany: vi.fn(async ({ where }: { where: { transactionKey: string } }) => db.rows.filter((row) => row.transactionKey === where.transactionKey)),
+      findMany: vi.fn(async ({ where }: { where: { transactionKey?: string; id?: { in: string[] }; externalUsedAt?: unknown } }) =>
+        where.id ? where.id.in.filter((id) => db.externalUsedIds.has(id)).map((id) => ({ id })) : db.rows.filter((row) => row.transactionKey === where.transactionKey)),
       deleteMany: vi.fn(async ({ where }: { where: { transactionKey: string; id: { notIn: string[] } } }) => {
         db.rows = db.rows.filter((row) => row.transactionKey !== where.transactionKey || where.id.notIn.includes(row.id));
         return { count: 1 };
@@ -133,6 +136,7 @@ beforeEach(() => {
   db.reserveUsedIds = new Set();
   db.purchaseOrderUsedIds = new Set();
   db.purchaseUsedIds = new Set();
+  db.externalUsedIds = new Set();
   db.failWith = null;
 });
 
@@ -250,5 +254,15 @@ describe("saveDocumentSetupBodySchema", () => {
 
     expect(await domainCode(service.save("actor", body({ rows: [{ ...twoRows[0], prefix: "QQ" }], expectedVersion: 2 })))).toBe("DOCUMENT_SETUP_ROW_IN_USE");
     expect(await domainCode(service.save("actor", body({ rows: [twoRows[1]], expectedVersion: 2 })))).toBe("DOCUMENT_SETUP_ROW_IN_USE");
+  });
+
+  it("UT-LS-B10 (BE-LS-005, ADR-0052 D10) a row an inventory document numbered from (external_used_at) is used and locked", async () => {
+    await service.save("user-1", body({ transactionKey: "load-to-stock", code: "LS", rows: [{ effectiveDate: "2026-01-01", prefix: "LS", separator: "-", startNo: 1 }] }));
+    const [row] = db.rows.filter((item) => item.transactionKey === "load-to-stock");
+    db.externalUsedIds.add(row.id);
+    const read = await service.get("load-to-stock");
+    expect(read.setup?.rows).toEqual([expect.objectContaining({ id: row.id, used: true })]);
+    const changed = body({ transactionKey: "load-to-stock", code: "LS", expectedVersion: 1, rows: [{ effectiveDate: "2026-01-01", prefix: "LX", separator: "-", startNo: 1 }] });
+    expect(await domainCode(service.save("user-1", changed))).toBe("DOCUMENT_SETUP_ROW_IN_USE");
   });
 });

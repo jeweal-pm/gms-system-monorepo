@@ -82,6 +82,7 @@ export function QuotationHeader({
   hideEditDelete = false,
   hideDelete = false,
   statusNote,
+  canDuplicate = true,
 }: {
   docNo: string;
   isPreview: boolean;
@@ -108,6 +109,8 @@ export function QuotationHeader({
   hideDelete?: boolean;
   /** approval-setup FE-AS-010: the Revise / Reject reason or why the document is read-only, under the badge. */
   statusNote?: { text: string; tone: "warning" | "danger" | "muted" } | null;
+  /** false keeps Duplicate disabled (Load to Stock: rows are bound to PU remaining quantities, Q-LS-17). */
+  canDuplicate?: boolean;
 }) {
   const editing = mode === "edit";
   return (
@@ -141,7 +144,7 @@ export function QuotationHeader({
           <IconButton label="Export Excel" disabled className="text-[#1D6F42]">
             <FileSpreadsheet className="size-4" />
           </IconButton>
-          <IconButton label="Duplicate" disabled={isPreview || !canCreate} onClick={actions.onDuplicate}>
+          <IconButton label="Duplicate" disabled={isPreview || !canCreate || !canDuplicate} onClick={actions.onDuplicate}>
             <Copy className="size-4" />
           </IconButton>
           <IconButton label="Refresh" disabled={isPreview || saving} onClick={actions.onRefresh}>

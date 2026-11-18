@@ -26,6 +26,20 @@ export const RECONNECT_BASE_MS = 5_000;
 export const REAUTH_JITTER_MS = 3_000;
 export const HEALTHY_MS = 30_000;
 
+/**
+ * load-to-stock FE-LS-015 (ADR-0049 D10 as amended by ADR-0052 D12): one native EventSource per owning service. Each
+ * service's stream has its own URL, lock, relay channel and lease key, so the master and inventory streams never
+ * replace each other.
+ */
+export type StreamChannelNames = { url: string; lockName: string; channelName: string; leaderKey: string };
+export const MASTER_STREAM: StreamChannelNames = { url: NOTIFICATION_STREAM_URL, lockName: STREAM_LOCK, channelName: STREAM_CHANNEL, leaderKey: LEADER_KEY };
+export const INVENTORY_STREAM: StreamChannelNames = {
+  url: "/api/inventory/v1/notifications/stream",
+  lockName: "gms-notification-stream-inventory",
+  channelName: "gms-notifications-inventory",
+  leaderKey: "gms.notifications.leader.inventory",
+};
+
 type EventSourceLike = Pick<EventSource, "addEventListener" | "close"> & { onerror: ((event: Event) => void) | null };
 type ChannelLike = Pick<BroadcastChannel, "postMessage" | "close" | "onmessage">;
 type LockManagerLike = { request(name: string, options: { signal: AbortSignal }, callback: () => Promise<void>): Promise<unknown> };
@@ -51,6 +65,8 @@ export type StreamDeps = {
   clearTimer?: (timer: unknown) => void;
   now?: () => number;
   random?: () => number;
+  /** Which service's stream (default master). */
+  names?: StreamChannelNames;
 };
 
 /** What a `notification` event says (ids only, ADR-0049 D6): never rendered, only used to pick what to refetch. */
@@ -117,7 +133,7 @@ function runStream(deps: StreamDeps, relay: (message: RelayMessage) => void): ()
 
   function open() {
     if (stopped) return;
-    const next = deps.createEventSource(NOTIFICATION_STREAM_URL);
+    const next = deps.createEventSource((deps.names ?? MASTER_STREAM).url);
     source = next;
     next.addEventListener("ready", () => {
       readyAt = now();
@@ -154,6 +170,7 @@ function runStream(deps: StreamDeps, relay: (message: RelayMessage) => void): ()
 }
 
 export function startNotificationStream(deps: StreamDeps): () => void {
+  const names = deps.names ?? MASTER_STREAM;
   let stopped = false;
   let stopStream: (() => void) | null = null;
   let releaseLock: (() => void) | null = null;
@@ -180,18 +197,18 @@ export function startNotificationStream(deps: StreamDeps): () => void {
     const tick = async () => {
       tickTimer = null;
       if (stopped) return;
-      const current = readLease(lease.storage, LEADER_KEY);
+      const current = readLease(lease.storage, names.leaderKey);
       if (stopStream) {
         if (current && current.owner !== lease.owner && current.until > now()) {
           // Another tab took over (this one was asleep past the lease): it streams now.
           stopStream();
           stopStream = null;
         } else {
-          writeLease(lease.storage, LEADER_KEY, lease.owner, now() + LEADER_TTL_MS);
+          writeLease(lease.storage, names.leaderKey, lease.owner, now() + LEADER_TTL_MS);
         }
-      } else if (await claimLease(lease.storage, LEADER_KEY, lease.owner, LEADER_TTL_MS, now, wait)) {
+      } else if (await claimLease(lease.storage, names.leaderKey, lease.owner, LEADER_TTL_MS, now, wait)) {
         // Stopped while claiming (e.g. an effect cleanup): hand the lease straight back.
-        if (stopped) releaseLease(lease.storage, LEADER_KEY, lease.owner);
+        if (stopped) releaseLease(lease.storage, names.leaderKey, lease.owner);
         else stopStream = runStream(deps, relay);
       }
       if (!stopped) tickTimer = setTimer(() => void tick(), LEADER_TICK_MS);
@@ -200,7 +217,7 @@ export function startNotificationStream(deps: StreamDeps): () => void {
   } else if (deps.locks) {
     // Waits (without polling) until no other tab of this browser holds the stream.
     void deps.locks
-      .request(STREAM_LOCK, { signal: abort.signal }, () => new Promise<void>((release) => {
+      .request(names.lockName, { signal: abort.signal }, () => new Promise<void>((release) => {
         if (stopped) {
           release();
           return;
@@ -219,7 +236,7 @@ export function startNotificationStream(deps: StreamDeps): () => void {
     abort.abort();
     if (tickTimer !== null) (deps.clearTimer ?? ((timer) => clearTimeout(timer as ReturnType<typeof setTimeout>)))(tickTimer);
     // Only removes the lease when this instance owns it (also a claim still settling).
-    if (lease) releaseLease(lease.storage, LEADER_KEY, lease.owner);
+    if (lease) releaseLease(lease.storage, names.leaderKey, lease.owner);
     stopStream?.();
     releaseLock?.();
     if (channel) {

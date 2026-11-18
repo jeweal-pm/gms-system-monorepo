@@ -85,7 +85,7 @@ export function NotificationsPanel({ id, unread, onClose }: Readonly<{ id: strin
   const titleId = `${id}-title`;
 
   function openItem(item: NotificationItem) {
-    if (scope === "for-me" && item.readAt === null) markRead.mutate({ ids: [item.id] });
+    if (scope === "for-me" && item.readAt === null) markRead.mutate({ ids: [item.id] }, [item]);
     const href = openHref(item);
     onClose(false);
     if (href) router.push(href);

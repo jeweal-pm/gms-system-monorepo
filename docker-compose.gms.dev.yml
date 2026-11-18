@@ -31,9 +31,14 @@ services:
         condition: service_started
       api-master:
         condition: service_healthy
+      # Optional in dev: other pages keep working when inventory is not set up (pnpm docker:inventory:setup).
+      backend-api-inventory:
+        condition: service_started
+        required: false
     networks:
       - default
       - master-web
+      - inventory-web
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/nginx-healthz"]
       interval: 10s
@@ -58,11 +63,15 @@ services:
       AUTH_ACCESS_JWT_ISSUER: ${AUTH_ACCESS_JWT_ISSUER:?AUTH_ACCESS_JWT_ISSUER must be set for GMS access-token signing}
       AUTH_ACCESS_JWT_KEYS: ${AUTH_ACCESS_JWT_KEYS:?AUTH_ACCESS_JWT_KEYS must be set for GMS access-token signing}
       MASTER_AUTH_SERVICE_TOKEN_FILE: /run/secrets/master_auth_service_token
+      # ADR-0052 / BE-LS-001: second accepted caller token on the private license endpoint.
+      INVENTORY_AUTH_SERVICE_TOKEN_FILE: /run/secrets/inventory_auth_service_token
     secrets:
       - master_auth_service_token
+      - inventory_auth_service_token
     networks:
       - default
       - auth-master
+      - auth-inventory
     ports: !reset []
 
   api-master:
@@ -73,19 +82,59 @@ services:
       MASTER_TRUSTED_ORIGINS: ${DEV_LAN_ORIGINS:-}
       MASTER_AUTH_SERVICE_TOKEN_FILE: /run/secrets/master_auth_service_token
       MASTER_AUTHZ_DATABASE_URL: ${MASTER_AUTHZ_DATABASE_URL:?MASTER_AUTHZ_DATABASE_URL must be set for the dedicated auth-view reader}
+      # ADR-0052 / BE-LS-004: accepted only on /internal/v1/inventory/* (InventoryServiceTokenGuard).
+      INVENTORY_MASTER_SERVICE_TOKEN_FILE: /run/secrets/inventory_master_service_token
     secrets:
       - master_auth_service_token
+      - inventory_master_service_token
     networks:
       - partner-db
       - auth-master
       - master-web
+      - inventory-master
+
+  # ADR-0052 D1/D2, infra bundle backend-api-inventory/1: auth JWKS + license (auth-inventory),
+  # master internal API (inventory-master), Nginx ingress (inventory-web), DB (inventory-db, base). No egress.
+  backend-api-inventory:
+    environment:
+      AUTH_SERVICE_URL: http://backend-api-auth:3101
+      AUTH_ACCESS_JWT_ISSUER: ${AUTH_ACCESS_JWT_ISSUER:?AUTH_ACCESS_JWT_ISSUER must be set for GMS inventory authorization}
+      MASTER_INTERNAL_URL: http://api-master:3201
+      FRONTEND_URL: http://localhost:8080
+      INVENTORY_TRUSTED_ORIGINS: ${DEV_LAN_ORIGINS:-}
+      INVENTORY_AUTHZ_DATABASE_URL: ${INVENTORY_AUTHZ_DATABASE_URL:?INVENTORY_AUTHZ_DATABASE_URL must be set (gms_inventory_authz_reader) (run pnpm docker:inventory:setup)}
+      INVENTORY_MASTER_SERVICE_TOKEN_FILE: /run/secrets/inventory_master_service_token
+      INVENTORY_AUTH_SERVICE_TOKEN_FILE: /run/secrets/inventory_auth_service_token
+    secrets:
+      - inventory_master_service_token
+      - inventory_auth_service_token
+    depends_on:
+      backend-api-auth:
+        condition: service_started
+      api-master:
+        condition: service_healthy
+    networks:
+      - inventory-db
+      - auth-inventory
+      - inventory-master
+      - inventory-web
 
 secrets:
   master_auth_service_token:
     file: ${MASTER_AUTH_SERVICE_TOKEN_SOURCE:?Set MASTER_AUTH_SERVICE_TOKEN_SOURCE to a host secret file outside the repository/build context}
+  inventory_master_service_token:
+    file: ${INVENTORY_MASTER_SERVICE_TOKEN_SOURCE:?Set INVENTORY_MASTER_SERVICE_TOKEN_SOURCE to a host secret file outside the repository/build context (run pnpm docker:inventory:setup)}
+  inventory_auth_service_token:
+    file: ${INVENTORY_AUTH_SERVICE_TOKEN_SOURCE:?Set INVENTORY_AUTH_SERVICE_TOKEN_SOURCE to a host secret file outside the repository/build context (run pnpm docker:inventory:setup)}
 
 networks:
   auth-master:
     internal: true
   master-web:
+    internal: true
+  auth-inventory:
+    internal: true
+  inventory-master:
+    internal: true
+  inventory-web:
     internal: true

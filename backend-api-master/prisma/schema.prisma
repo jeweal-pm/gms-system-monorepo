@@ -470,6 +470,8 @@ model DocumentNumbering {
   prefix         String          @default("") @db.VarChar(10)
   separator      String          @default("") @db.VarChar(3)
   startNo        Int             @map("start_no")
+  /// ADR-0052 D10: set once when an inventory document (Load to Stock) took a number from this row → "used".
+  externalUsedAt DateTime?       @map("external_used_at") @db.Timestamptz(3)
   setup          DocumentSetup   @relation(fields: [transactionKey], references: [transactionKey], onDelete: Cascade)
   /// Owner 2026-10-26 (SA-QT-04/05): a row referenced by a quotation is "used" and locked.
   quotations     Quotation[]
@@ -1870,6 +1872,10 @@ model PurchaseLine {
   discountAmount      Decimal            @default(0) @map("discount_amount") @db.Decimal(18, 2)
   amount              Decimal            @db.Decimal(18, 2)
   itemNote            String             @default("") @map("item_note") @db.VarChar(500)
+  /// ADR-0052 D3 (BE-LS-002): quantity taken by applied Load to Stock documents; remaining = pcs/weight − loaded.
+  /// CHECK purchase_line_loaded_check (0 ≤ loaded ≤ line qty; STOCK lines always 0). Written only by the allocation API.
+  loadedPcs           Int                @default(0) @map("loaded_pcs")
+  loadedWeightCt      Decimal            @default(0) @map("loaded_weight_ct") @db.Decimal(12, 3)
   document            Purchase           @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
   stoneCode           StoneCode?         @relation(fields: [stoneCodeId], references: [id], onDelete: SetNull)
   memoStock           MemoStock?         @relation(fields: [memoStockId], references: [id], onDelete: Restrict)
@@ -1877,6 +1883,7 @@ model PurchaseLine {
 
   /// Line photos in order (ADR-0048, owner 2026-11-11).
   photos PurchaseLinePhoto[]
+  loadAllocations LoadAllocationLine[]
 
   @@unique([purchaseId, position], map: "purchase_line_position_key")
   @@unique([purchaseId, memoStockId, memoGroup], map: "purchase_line_memo_stock_key")
@@ -1884,6 +1891,8 @@ model PurchaseLine {
   @@index([memoStockId], map: "purchase_line_memo_stock_idx")
   @@index([purchaseOrderLineId], map: "purchase_line_po_line_idx")
   @@index([stoneCodeId], map: "purchase_line_stone_code_idx")
+  /// ADR-0052: the Load to Stock picker (remaining pcs > 0, non-STOCK lines).
+  @@index([purchaseId, position], where: raw("(((source)::text <> 'STOCK'::text) AND (pcs > loaded_pcs))"), map: "purchase_line_loadable_idx")
   @@map("purchase_line")
   @@schema("partner")
 }
@@ -1929,5 +1938,52 @@ model NotificationRecipient {
   @@id([eventId, userId])
   @@index([userId, createdAt(sort: Desc), eventId(sort: Desc)], map: "notification_recipient_user_created_idx")
   @@map("notification_recipient")
+  @@schema("partner")
+}
+
+/// ADR-0052 D4 (BE-LS-002): one per inventory Load to Stock document (`load_document_id` = inventory id, no FK). Set by
+/// the idempotent `PUT /internal/v1/inventory/load-allocations/{loadId}`: monotonically increasing revision + request
+/// hash; `result` (≤ 16 KiB) is replayed for the same revision and hash.
+model LoadAllocation {
+  loadDocumentId  String               @id @map("load_document_id") @db.Uuid
+  vendorId        String               @map("vendor_id") @db.Uuid
+  appliedRevision Int                  @default(0) @map("applied_revision")
+  requestHash     String               @default("") @map("request_hash") @db.Char(64)
+  result          Json                 @default("{}")
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime             @default(now()) @map("updated_at") @db.Timestamptz(3)
+  updatedBy       String?              @map("updated_by") @db.VarChar(64)
+  lines           LoadAllocationLine[]
+  stockIds        LoadStockId[]
+
+  @@map("load_allocation")
+  @@schema("partner")
+}
+
+/// The load's current allocation per purchase line (Σ per line = purchase_line.loaded_*).
+model LoadAllocationLine {
+  loadDocumentId String         @map("load_document_id") @db.Uuid
+  purchaseLineId String         @map("purchase_line_id") @db.Uuid
+  pcs            Int
+  weightCt       Decimal        @map("weight_ct") @db.Decimal(12, 3)
+  allocation     LoadAllocation @relation(fields: [loadDocumentId], references: [loadDocumentId], onDelete: Cascade, map: "load_allocation_line_allocation_fkey")
+  purchaseLine   PurchaseLine   @relation(fields: [purchaseLineId], references: [id], onDelete: Restrict, map: "load_allocation_line_purchase_line_fkey")
+
+  @@id([loadDocumentId, purchaseLineId])
+  @@index([purchaseLineId], map: "load_allocation_line_purchase_line_idx")
+  @@map("load_allocation_line")
+  @@schema("partner")
+}
+
+/// ADR-0052 D5: every Stock ID issued for a load (from memo_stock_id_counter); kept forever, never reused.
+model LoadStockId {
+  stockId        String         @id @map("stock_id") @db.VarChar(10)
+  loadDocumentId String         @map("load_document_id") @db.Uuid
+  issuedRevision Int            @map("issued_revision")
+  issuedAt       DateTime       @default(now()) @map("issued_at") @db.Timestamptz(3)
+  allocation     LoadAllocation @relation(fields: [loadDocumentId], references: [loadDocumentId], onDelete: Restrict, map: "load_stock_id_allocation_fkey")
+
+  @@index([loadDocumentId], map: "load_stock_id_load_idx")
+  @@map("load_stock_id")
   @@schema("partner")
 }

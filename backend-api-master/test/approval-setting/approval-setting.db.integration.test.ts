@@ -124,13 +124,15 @@ describe.runIf(canRun)("approval settings and approval columns on PostgreSQL", (
     vi.unstubAllEnvs();
   });
 
-  it("IT-AS-B01 migration: 11 seeded settings, approval columns, CHECKs and partial indexes on all eight headers", async () => {
+  it("IT-AS-B01 migration: 8 master settings (ADR-0052 D8 moved the 3 inventory rows out), approval columns, CHECKs and partial indexes on all eight headers", async () => {
     const seeded = await prisma.$queryRawUnsafe<{ type: string; require_approval: boolean }[]>(`SELECT type, require_approval FROM "partner"."approval_setting" ORDER BY type`);
     expect(Object.fromEntries(seeded.map((row) => [row.type, row.require_approval]))).toEqual({
       quotation: false, reserve: true, "memo-receive": true, "memo-return": true, "memo-out": true, "memo-out-return": true,
-      "purchase-order": true, purchase: true, "load-to-stock": true, "merge-split": true, "stock-transfer-location": true,
+      "purchase-order": true, purchase: true,
     });
     expect(await sqlState(`INSERT INTO "partner"."approval_setting" (type, require_approval) VALUES ('sale', true)`)).toBe("23514");
+    // IT-LS-B01 (BE-LS-002): the narrowed CHECK refuses the inventory keys again.
+    expect(await sqlState(`INSERT INTO "partner"."approval_setting" (type, require_approval) VALUES ('load-to-stock', true)`)).toBe("23514");
     expect(await sqlState(`UPDATE "partner"."approval_setting" SET version = 0 WHERE type = 'reserve'`)).toBe("23514");
 
     const columns = await prisma.$queryRawUnsafe<{ table_name: string; column_name: string; is_nullable: string }[]>(`
