@@ -325,12 +325,14 @@ export function TabsProvider({ userId, children }: Readonly<{ userId: string; ch
     const next = retargetTab(stateRef.current, id, url);
     const moved = next.tabs.find((tab) => tab.id === id);
     if (from && moved && from.path !== moved.path) {
+      // Drop the old page's element instead of moving it to the new path: the pane is keyed by path (b268332), so a
+      // moved element remounted as a blank "New" form after Save (owner 2026-11-18). Without an entry the routed page
+      // for the new URL renders and registers itself, i.e. the saved document opens in the same tab.
       setEntries((current) => {
-        const entry = current.get(from.path);
-        if (!entry || current.has(moved.path)) return current;
+        if (!current.has(from.path)) return current;
         const map = new Map(current);
         map.delete(from.path);
-        return map.set(moved.path, entry);
+        return map;
       });
     }
     syncedPath.current = tabPath(url);

@@ -1,5 +1,6 @@
 "use client";
 
+import { syncRefetchInterval } from "@/features/trade-document/stock-row-errors";
 import { skipToken } from "@tanstack/react-query";
 import type { InferQueryLikeData } from "@trpc/react-query/shared";
 import { customerStockSaveError, fromCustomerStock, type toCustomerStockInput } from "@/features/trade-document/customer-stock";
@@ -29,7 +30,7 @@ export const reserveLoadError = (error: unknown) => documentLoadError(error, "RE
 export const reserveRestoreError = (error: unknown) => mapDocumentRestoreError(error, "RESERVE", "reserve");
 
 export function useReserveDetail(id: string | null) {
-  return masterTrpc.reserve.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient });
+  return masterTrpc.reserve.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient, refetchInterval: syncRefetchInterval });
 }
 
 /** FE-SD-001: the daybook's active or deleted reserves, newest first, 50 a page; a new view starts on page one. */
@@ -58,7 +59,7 @@ export function useReserveApi(customerId: string | undefined, docDate: string, i
     submit: (args) => submit.mutateAsync(args),
     restore: (args) => restore.mutateAsync(args),
     invalidate: () =>
-      Promise.all([utils.reserve.list.invalidate(), utils.reserve.get.invalidate(), utils.reserve.nextNumber.invalidate(), utils.memoStock.list.invalidate()]),
+      Promise.all([utils.reserve.list.invalidate(), utils.reserve.get.invalidate(), utils.reserve.nextNumber.invalidate(), utils.memoStock.list.invalidate(), utils.fromStock.list.invalidate()]),
     busy: create.isPending || update.isPending || remove.isPending || submit.isPending || restore.isPending,
   };
 }

@@ -6,13 +6,16 @@ import { Prisma } from "../generated/prisma/client";
  * Purchase → Purchase Order. Fixed identifiers only, never input.
  */
 const SOURCES = {
-  memoOut: { header: Prisma.raw(`"partner"."memo_out"`), lines: Prisma.raw(`"partner"."memo_out_line"`), parent: Prisma.raw(`"memo_out_id"`) },
-  purchaseOrder: { header: Prisma.raw(`"partner"."purchase_order"`), lines: Prisma.raw(`"partner"."purchase_order_line"`), parent: Prisma.raw(`"purchase_order_id"`) },
+  memoOut: { header: Prisma.raw(`"partner"."memo_out"`), lines: Prisma.raw(`"partner"."memo_out_line"`), parent: Prisma.raw(`"memo_out_id"`), syncing: Prisma.raw(`(sync_state = 'SYNCING')`) },
+  purchaseOrder: { header: Prisma.raw(`"partner"."purchase_order"`), lines: Prisma.raw(`"partner"."purchase_order_line"`), parent: Prisma.raw(`"purchase_order_id"`), syncing: Prisma.raw(`false`) },
 } as const;
 export type SourceKind = keyof typeof SOURCES;
 
-/** A locked source header: live = APPROVED and not soft-deleted. */
-export type SourceHeader = { id: string; live: boolean };
+/**
+ * A locked source header: live = APPROVED and not soft-deleted; syncing = a Memo Out whose own-stock holds are being
+ * updated in inventory (ADR-0052 SA-LS-P2-06: a Memo Out Return of it is refused with MEMO_OUT_RETURN_BUSY).
+ */
+export type SourceHeader = { id: string; live: boolean; syncing: boolean };
 
 /**
  * Locks the source headers of `lineIds` `FOR SHARE`, in id order, and returns line id → header (state read under the
@@ -34,10 +37,10 @@ export async function lockSourceHeaders(tx: Tx, kind: SourceKind, lineIds: reado
     SELECT id::text AS id, ${source.parent}::text AS parent FROM ${source.lines} WHERE id = ANY(${ids}::uuid[])`);
   const parents = [...new Set(owners.map((row) => row.parent))].sort();
   if (parents.length === 0) return result;
-  const headers = await tx.$queryRaw<{ id: string; live: boolean }[]>(Prisma.sql`
-    SELECT id::text AS id, (status = 'APPROVED' AND deleted_at IS NULL) AS live FROM ${source.header}
+  const headers = await tx.$queryRaw<{ id: string; live: boolean; syncing: boolean }[]>(Prisma.sql`
+    SELECT id::text AS id, (status = 'APPROVED' AND deleted_at IS NULL) AS live, ${source.syncing} AS syncing FROM ${source.header}
     WHERE id = ANY(${parents}::uuid[]) ORDER BY id FOR SHARE`);
-  const byId = new Map(headers.map((row) => [row.id, { id: row.id, live: row.live === true }]));
+  const byId = new Map(headers.map((row) => [row.id, { id: row.id, live: row.live === true, syncing: row.syncing === true }]));
   for (const owner of owners) {
     const header = byId.get(owner.parent);
     if (header) result.set(owner.id, header);

@@ -288,3 +288,113 @@ Note: deletion of an allocation is "set to empty": lines removed, header kept wi
 - **Master:** one additive migration. Backfill: none (`loaded_*` = 0 is correct: nothing was ever loaded). The approval rows deleted were inactive (no document type used them).
 - **Order:** master migration → inventory migration → services.
 - **Rollback:** inventory route off; master columns stay (inert). Full down (only if no applied load exists, checked by `SELECT count(*) FROM partner.load_allocation_line` = 0): drop master additions, re-insert the three approval rows (seed values) and restore the CHECK. Applied loads must first be deleted through the API so PU remaining returns; schema rollback never silently drops stock history.
+
+---
+
+## C. Phase 2 (SA revision 2, Proposed)
+
+ADR-0052 D16–D20. Two additive migrations: inventory `2026111x_stock_holds_phase2` and master `2026111x_own_stock_lines`. Each owner writes only its own schema.
+
+```mermaid
+erDiagram
+  %% schema inventory (backend-api-inventory)
+  stock ||--o{ stock_hold : "held by"
+  stock_hold_document ||--o{ stock_hold : "set of"
+  stock ||--o{ stock_movement : ledger
+  load_to_stock ||--o{ stock : created
+  stock {
+    uuid id PK
+    varchar stock_id UK
+    uuid load_id
+    date ref_doc_date "NEW: load doc_date"
+    varchar ref_doc_no "NEW: load doc_no (40)"
+    int on_hand_pcs
+    int reserved_pcs
+    int memo_out_pcs
+  }
+  stock_hold_document {
+    varchar document_type PK "reserve | memo-out | memo-out-return"
+    uuid document_id PK
+    int applied_revision
+    char request_hash "sha-256 hex"
+    varchar document_no "nullable (40)"
+    jsonb result "≤ 16 KiB"
+    timestamptz updated_at
+  }
+  stock_hold {
+    uuid id PK
+    varchar document_type
+    uuid document_id
+    uuid stock_uuid FK
+    varchar kind
+    int pcs
+    numeric weight_ct
+    int revision
+  }
+  %% schema partner (api-master)
+  reserve ||--o{ reserve_line : has
+  memo_out ||--o{ memo_out_line : has
+  quotation ||--o{ quotation_line : has
+  memo_out_line ||--o{ memo_out_return_line : "returned by"
+  inventory_sync_op }o--|| reserve : "for (by type,id)"
+  reserve {
+    varchar sync_state "NEW IDLE|SYNCING"
+    int hold_revision "NEW default 0"
+  }
+  memo_out {
+    varchar sync_state "NEW"
+    int hold_revision "NEW"
+  }
+  reserve_line {
+    varchar source "STOCK | MANUAL | OWN_STOCK (NEW)"
+    uuid memo_stock_id
+    uuid own_stock_id "NEW, no FK (inventory)"
+    varchar stock_id "snapshot"
+  }
+  memo_out_line {
+    uuid own_stock_id "NEW"
+    int returned_pcs
+  }
+  quotation_line {
+    uuid own_stock_id "NEW"
+  }
+  inventory_sync_op {
+    uuid id PK
+    varchar document_type
+    uuid document_id
+    varchar stage "ACQUIRE | RELEASE | COMPENSATE"
+    varchar state "PREPARED | DONE | REFUSED | ABANDONED | STUCK"
+    int revision
+    char request_hash
+    jsonb payload "H_old, H_mid, H_new, action ≤ 64 KiB"
+    smallint attempts
+    timestamptz next_attempt_at
+    varchar last_error
+  }
+```
+
+### Inventory changes (schema `inventory`)
+
+| Change | Detail |
+|---|---|
+| `stock.ref_doc_date date NOT NULL`, `stock.ref_doc_no varchar(40) NOT NULL` | Added nullable, backfilled `UPDATE stock s SET … FROM load_to_stock l WHERE l.id = s.load_id`, then NOT NULL. Set by `createStocks`; `applyStockEdit` updates them when the load's date or number changes (one set-based UPDATE) |
+| Index `stock_picker_idx` | `(ref_doc_date DESC, stock_id DESC) WHERE status = 'ACTIVE' AND (on_hand_pcs > 0 OR on_hand_weight_ct > 0)`. `stock_available_idx` is dropped (no reader after D16) |
+| `stock_hold` re-key | Drop `stock_hold_line_key` and column `line_id` (the table is empty: phase 1 never writes it; the migration asserts `count(*) = 0`). Add unique `stock_hold_doc_stock_key (document_type, document_id, stock_uuid)` and `document_no varchar(40) NULL`. The kind CHECK is unchanged; add CHECK that kind matches document_type (`reserve`→RESERVED, `memo-out`→MEMO_OUT, `memo-out-return`→MEMO_OUT_RETURN, `sale`→SOLD); CHECK `pcs > 0 OR weight_ct > 0` (zero rows are deleted, not stored) |
+| `stock_hold_document` (new) | PK (`document_type`, `document_id`); `applied_revision int ≥ 1`; `request_hash char(64)`; `document_no varchar(40) NULL`; `result jsonb`; `updated_at`; CHECK document_type as `stock_hold` |
+| `stock_movement_kind_check` | Adds `HOLD_RESERVE`, `RELEASE_RESERVE`, `MEMO_OUT`, `MEMO_OUT_REVERSAL`, `MEMO_OUT_RETURN`, `MEMO_OUT_RETURN_REVERSAL` (deltas = on-hand change; cost 0) |
+| Grants | `gms_inventory_app`: DML on `stock_hold_document`; `stock_movement` stays INSERT/SELECT only |
+
+### Master changes (schema `partner`)
+
+| Change | Detail |
+|---|---|
+| `quotation_line`, `reserve_line`, `memo_out_line`: `own_stock_id uuid NULL` | No FK (cross-service id). Source CHECK adds `OWN_STOCK`; CHECK `(source = 'OWN_STOCK') = (own_stock_id IS NOT NULL)` and `NOT (memo_stock_id IS NOT NULL AND own_stock_id IS NOT NULL)`; unique `(<doc>_id, own_stock_id)`; index `(own_stock_id)` |
+| `memo_out_line_open_idx` | Recreated with `(memo_stock_id IS NOT NULL OR own_stock_id IS NOT NULL) AND (returned_pcs < pcs OR returned_weight_ct < weight_ct)` |
+| `reserve`, `memo_out`, `memo_out_return`: `sync_state varchar(10) NOT NULL DEFAULT 'IDLE'` (CHECK IDLE/SYNCING), `hold_revision int NOT NULL DEFAULT 0` | Partial index `(<table>_syncing_idx) WHERE sync_state = 'SYNCING'` |
+| `inventory_sync_op` (new) | Columns as in the diagram + `created_by`, `created_at`, `updated_at`. Unique `(document_type, document_id, revision)`; partial unique `(document_type, document_id) WHERE state IN ('PREPARED','STUCK')` (one active op per document); due index `(next_attempt_at) WHERE state = 'PREPARED'`; DONE / REFUSED / ABANDONED rows deleted after 30 days by the existing bounded cleanup pattern |
+
+### Migration, backfill, rollback (phase 2)
+
+- Order: inventory migration → master migration → services (master tolerates a missing inventory route: picker degrades, own-stock saves get 503).
+- Backfill: only `stock.ref_doc_*` from `load_to_stock` (one statement; tens of thousands of rows at most). No own-stock lines exist in master.
+- Rollback: turn off `fromStock.list` own-stock part by config (`INVENTORY_INTERNAL_URL` unset → `ownStock: "UNAVAILABLE"`, own-stock saves refused). A schema down is allowed only when `partner.*_line.own_stock_id` is all NULL and `inventory.stock_hold` is empty; otherwise release documents through the API first.

@@ -7,7 +7,8 @@ import { isInventoryApiError } from "./inventory-client";
  * puts the domain code in `data.domainCode` and field errors in `data.fieldErrors`.
  */
 
-export type ServerFieldError = { path: string; code: string };
+/** `params` (ADR-0052 SA-LS-P2-09): small values shown with the code, e.g. `exceeds_pending {availablePcs, availableWeightCt}`. */
+export type ServerFieldError = { path: string; code: string; params?: Readonly<Record<string, string | number>> };
 /** `details`: structured error data (approval-setup G5), e.g. `{ usedBy }` of `<CODE>_IN_USE`. */
 export type DomainErrorInfo = { domainCode: string | null; fieldErrors: ServerFieldError[]; httpStatus: number | null; details: Record<string, string | number> | null };
 

@@ -51,6 +51,7 @@ import {
   type LoadFormValues,
   type LoadOut,
   type LoadRowValues,
+  holdersText,
 } from "../api";
 import type { LoadMode, PurchaseLineRef } from "../types";
 import { LoadModeDialog } from "./load-mode-dialog";
@@ -65,6 +66,11 @@ export const LOAD_NOTE_HINT = "Kept with this load; not printed";
 export const CHOOSE_ACCOUNT_FIRST = "Choose an account first";
 export const ACCOUNT_LOCKED_HINT = "Empty the Load table to change the account";
 export const IN_USE_NOTE = "Some stock from this load is already used · Read-only";
+/** SA rev 2: the in-use note names the documents holding the stock (≤ 5) when the load detail lists them. */
+export const inUseNote = (holders: Parameters<typeof holdersText>[0]) => {
+  const by = holdersText(holders);
+  return by ? `Some stock from this load is already used by ${by} · Read-only` : IN_USE_NOTE;
+};
 export const SYNCING_NOTE = "Saving in progress — refreshing";
 /** ADR-0052 D14: at most 3 photo transfers at a time. */
 export const PHOTO_COPY_CONCURRENCY = 3;
@@ -391,7 +397,7 @@ export function LoadToStockForm({ access, detail }: { access: DocumentAccess; de
   const status = detail ? (detail.status as QuotationStatus) : undefined;
   let statusNote = approvalFlow.statusNote;
   if (detail?.syncing) statusNote = { text: SYNCING_NOTE, tone: "muted" };
-  else if (detail?.inUse && !deleted) statusNote = { text: IN_USE_NOTE, tone: "muted" };
+  else if (detail?.inUse && !deleted) statusNote = { text: inUseNote(detail.holders), tone: "muted" };
 
   return (
     <FormProvider {...form}>

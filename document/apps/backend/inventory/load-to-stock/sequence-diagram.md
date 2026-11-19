@@ -199,3 +199,137 @@ sequenceDiagram
   end
   Note over INV,IDB: every create/update/submit reads the row FOR SHARE in its own tx, so it follows the committed value (ADR-0050 D5).
 ```
+
+---
+
+## Phase 2 (SA revision 2, Proposed)
+
+ADR-0052 D16–D19. No gateway: the browser reaches api-master through nginx; master calls inventory directly on the internal network. No HTTP call runs inside a database transaction.
+
+### 8. One From Stock list (Quotation / Reserve / Memo Out picker)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant UI as Browser (From Stock picker)
+  participant NX as Nginx
+  participant MA as api-master
+  participant PG as PostgreSQL partner
+  participant INV as backend-api-inventory
+  participant IG as PostgreSQL inventory
+  UI->>NX: tRPC fromStock.list {q, from, to, location?, cursor, limit 50}
+  NX->>MA: same origin
+  MA->>MA: authz VIEW any of quotation/reserve/memo-out; decode cursor (date|stockId)
+  par Memo Stock
+    MA->>PG: SELECT … FROM memo_stock WHERE pending>0 AND filters AND (received_doc_date, stock_id) < cursor ORDER BY 1 DESC, 2 DESC LIMIT 51
+  and Our stock (2 s timeout, bearer MASTER_INVENTORY_SERVICE_TOKEN)
+    MA->>INV: POST /internal/v1/master/stock/available {filters, after, limit 51}
+    INV->>IG: SELECT … FROM stock s JOIN load_to_stock l ON l.id=s.load_id WHERE ACTIVE AND available AND (ref_doc_date, stock_id) < after ORDER BY … LIMIT 51 (stock_picker_idx)
+    IG-->>INV: ≤ 51 rows
+    INV-->>MA: items
+  end
+  MA->>MA: merge by (date DESC, stockId DESC), take 50, nextCursor = last key if more
+  MA-->>UI: {items (source MEMO_STOCK / OWN_STOCK, Location column), nextCursor, ownStock: "OK"}
+  alt inventory error / timeout
+    MA-->>UI: Memo Stock items only, ownStock: "UNAVAILABLE" → banner "Our stock is unavailable — Retry" (restart page 1)
+  else location = "Memo" / another name
+    MA->>MA: skip the other side's query
+  end
+```
+
+### 9. Quotation save with own-stock lines (2a, copy only)
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant UI as Browser
+  participant MA as api-master
+  participant INV as backend-api-inventory
+  participant PG as PostgreSQL partner
+  UI->>MA: quotation.create/update {lines[{ownStockId, pcs, weightCt, …}]}
+  MA->>PG: (update) read stored lines (kept rule)
+  alt some own-stock line new or raised
+    MA->>INV: POST /internal/v1/master/stock/batch {ids ≤ 200} (5 s)
+    INV-->>MA: snapshots + available
+    MA->>MA: unknown → REFERENCE_INVALID lines.N.ownStockId; qty > available → exceeds_pending
+  else every own-stock line kept
+    MA->>MA: use stored snapshot, no call
+  end
+  MA->>PG: one save transaction (as today) storing source OWN_STOCK, own_stock_id, Stock ID + attribute copy
+  MA-->>UI: saved (nothing held)
+  Note over MA,INV: inventory down and a call needed → 503 INVENTORY_UNAVAILABLE, nothing saved
+```
+
+### 10. Acquire → local → (release): Approve (ON) or Save (OFF) of Reserve / Memo Out
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant UI as Browser
+  participant MA as api-master
+  participant PG as PostgreSQL partner
+  participant INV as backend-api-inventory
+  participant IG as PostgreSQL inventory
+  UI->>MA: reserve.approve / memoOut.create (OFF) …
+  MA->>MA: pre-read batch (new/raised lines); compute H_old, H_new; split acquire / release
+  MA->>PG: tx0: lock header, version, status, not SYNCING → sync_state=SYNCING; INSERT inventory_sync_op (ACQUIRE, r, H_old/H_mid/H_new, action)
+  MA->>INV: PUT /stock-holds/{type}/{id} {revision r, holds H_mid}
+  INV->>IG: tx: lock stock_hold_document; revision check; lock stocks FOR UPDATE by id (+ load sync_state); check on-hand; UPDATE buckets; replace holds; INSERT movements
+  alt refused (EXCEEDS_AVAILABLE / UNAVAILABLE / BUSY)
+    INV-->>MA: 409/422
+    MA->>PG: op REFUSED, header IDLE
+    MA-->>UI: <CODE>_PENDING_SHORT / REFERENCE_INVALID / BUSY (row errors, nothing changed)
+  else timeout / 5xx (unknown)
+    MA-->>UI: 503 INVENTORY_UNAVAILABLE "nothing was saved"
+    Note over MA,INV: re-drive (on access / start / 60 s sweep): PUT r+1 = H_old → op ABANDONED, IDLE
+  else 200
+    INV-->>MA: applied r
+    MA->>PG: tx1: engine body as today (numbering, lines, takeFromMemoStock, status APPROVED) + hold_revision=r + op DONE + IDLE
+    alt tx1 business failure (e.g. Memo Stock short)
+      MA->>INV: compensation PUT r+1 = H_old (release-only)
+      MA->>PG: op ABANDONED, IDLE
+      MA-->>UI: <CODE>_PENDING_SHORT (Memo Stock row), nothing changed
+    else committed
+      MA-->>UI: 200 approved / saved
+    end
+  end
+```
+
+### 11. Edit / Delete of an auto-approved document (OFF) — release after local
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant UI as Browser
+  participant MA as api-master
+  participant PG as PostgreSQL partner
+  participant INV as backend-api-inventory
+  UI->>MA: memoOut.update / delete {expectedVersion}
+  opt edit grows or adds own-stock lines (acquire ≠ ∅)
+    MA->>PG: tx0 SYNCING + op ACQUIRE
+    MA->>INV: PUT r = H_mid (old + growth) — may be refused → error, nothing changed
+  end
+  MA->>PG: tx1: usedBy check (Memo Out Return lines → MEMO_OUT_IN_USE), engine reverse + apply / soft delete, op → RELEASE (r' = next), still SYNCING
+  MA-->>UI: 200 saved / deleted
+  MA->>INV: PUT r' = H_new (shrink only; empty on delete)
+  alt 200
+    MA->>PG: op DONE, hold_revision=r', IDLE
+  else timeout / 5xx
+    Note over MA,INV: op PREPARED (RELEASE); re-drive same r' until DONE; header SYNCING → writes get <CODE>_BUSY; extra quantity stays held meanwhile
+  end
+```
+
+### 12. Memo Out Return of own stock
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant MA as api-master
+  participant PG as PostgreSQL partner
+  participant INV as backend-api-inventory
+  Note over MA: approve (ON) / save (OFF): MEMO_OUT_RETURN up = release kind (memo_out → on-hand)
+  MA->>PG: tx1: lockSourceHeaders (refuse SYNCING Memo Out → MEMO_OUT_RETURN_BUSY), lock memo_out_line by id, outstanding check, returned += q, releaseToMemoStock for Memo Stock lines, status; SYNCING + op RELEASE
+  MA->>INV: PUT r = H_new (MEMO_OUT_RETURN holds per stock)
+  INV-->>MA: 200 → op DONE, IDLE (drift → STOCK_HOLD_EXCEEDS_MEMO_OUT → STUCK, logged)
+  Note over MA,INV: edit / delete of an applied return = MEMO_OUT_RETURN down = acquire kind → PUT first; refused STOCK_HOLD_IN_USE (returned stock re-held) → MEMO_OUT_RETURN_IN_USE, nothing changed; then tx1 returned −= q
+```

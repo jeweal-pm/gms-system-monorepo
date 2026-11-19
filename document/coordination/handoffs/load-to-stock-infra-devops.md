@@ -46,3 +46,18 @@
 - Blocking item: owner approval of SA revision 1 for config work; Q-LS-25/28/31 answers do not change the infra shape.
 - Resume action and destination: infra research → bundle linked into the SA review → owner approval → BE-LS-001…006 → infra config (parent-serialized) → DO-LS-001 → frontend.
 - Corrective work: none.
+
+## Phase 2b delta (SA revision 2, Proposed)
+
+- Source: [ADR-0052 Amendment 2](../../adr/0052-load-to-stock-in-backend-api-inventory.md#amendment-2--d15-phases-2a--2b-sa-revision-2-proposed) D21/D22; TODO INF-LS-P2-01, DO-LS-P2-01. Approval: **none yet**. Research only until the owner approves SA revision 2; shared files stay parent-serialized.
+- This delta adds no container, image, network, volume, nginx block or package.
+
+| Topic | Requirement |
+|---|---|
+| Secret | New `master_inventory_service_token` (≥ 32 random bytes, file mode 0400), mounted in **api-master and backend-api-inventory** as `MASTER_INVENTORY_SERVICE_TOKEN_FILE`. It is distinct from `inventory_master_service_token` (opposite direction), and neither service accepts one token for the other direction |
+| Direction / network | New traffic api-master → `backend-api-inventory:3301` (`/internal/v1/master/*` only) on the **existing** `inventory-master` internal network. No egress, no new network |
+| api-master env | `INVENTORY_INTERNAL_URL=http://backend-api-inventory:3301` (optional: when unset, own stock is reported unavailable and own-stock saves are refused). **Do not** add `depends_on: backend-api-inventory`, because inventory already depends on api-master (cycle), and master must start without inventory |
+| Nginx | No change. Verify that `/internal` stays unrouted and that `/api/inventory/` cannot reach `/internal/v1/master/*` (path normalization test) |
+| Capacity | Unchanged limits (Compose 1.75 vCPU / 2880 MiB). Measure api-master RSS after enabling the client/sweep (estimate +10 MiB within 384 MiB) and inventory p95 for a 200-stock hold |
+| Checks to record | secret mode 0400 in both containers; master → inventory internal 200 with the token and 401 without; inventory → master token refused on inventory; nginx 404 for `/internal/...` and encoded variants; `docker compose config` render |
+| DevOps | Add the secret name to the variables/secrets ledger and `.env.example` placeholder guidance only. CI is unchanged (no new workspace or image). No publication, push or deployment |

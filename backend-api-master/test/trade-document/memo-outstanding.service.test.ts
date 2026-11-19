@@ -76,7 +76,7 @@ describe("Outstanding reports prune before grouping (INV-20261029-004)", () => {
   it("UT-MOS-03 customer and purchase lists prune with their own open predicates and count in the page statement", async () => {
     db.results = [[docRow(4)]];
     expect((await service.customerList(memoOutstandingCustomerListSchema.parse({ page: 1, pageSize: 10 }))).total).toBe(4);
-    expect(db.queries[0]).toMatch(/AND EXISTS \(SELECT 1 FROM "partner"\."memo_out_line" x WHERE x\.memo_out_id = o\.id AND x\.memo_stock_id IS NOT NULL AND \(x\.returned_pcs < x\.pcs OR x\.returned_weight_ct < x\.weight_ct\)\) GROUP BY o\.id\)/);
+    expect(db.queries[0]).toMatch(/AND EXISTS \(SELECT 1 FROM "partner"\."memo_out_line" x WHERE x\.memo_out_id = o\.id AND \(x\.memo_stock_id IS NOT NULL OR x\.own_stock_id IS NOT NULL\) AND \(x\.returned_pcs < x\.pcs OR x\.returned_weight_ct < x\.weight_ct\)\) GROUP BY o\.id\)/);
     db.results = [[docRow(5)]];
     expect((await service.purchaseList(purchaseOutstandingListSchema.parse({ page: 1, pageSize: 10 }))).total).toBe(5);
     expect(db.queries[1]).toMatch(/AND EXISTS \(SELECT 1 FROM "partner"\."memo_stock" o WHERE o\.memo_receive_id = r\.id AND \(\(o\.received_pcs - o\.returned_pcs - o\.purchased_pcs\) > 0 OR \(o\.received_weight_ct - o\.returned_weight_ct - o\.purchased_weight_ct\) > 0\)\) GROUP BY r\.id\)/);

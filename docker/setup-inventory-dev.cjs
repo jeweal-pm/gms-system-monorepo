@@ -2,7 +2,7 @@
 // One-time, idempotent local setup for backend-api-inventory (ADR-0052, infra bundle backend-api-inventory/1).
 // Dev only — never used in production. Run: pnpm docker:inventory:setup
 //
-// 1. Creates the two service tokens as files OUTSIDE the repository (if missing).
+// 1. Creates the three service tokens as files OUTSIDE the repository (if missing).
 // 2. Adds the missing INVENTORY_* entries to .env (existing values are never changed).
 // 3. Starts PostgreSQL (and auth if its views are missing) and provisions the inventory roles with the
 //    reviewed SQL scripts. Existing roles are kept; their password is re-synced only when this run created it.
@@ -148,6 +148,8 @@ function main() {
   const add = [];
   ensureToken(env, 'INVENTORY_MASTER_SERVICE_TOKEN_SOURCE', 'inventory_master_service_token', add);
   ensureToken(env, 'INVENTORY_AUTH_SERVICE_TOKEN_SOURCE', 'inventory_auth_service_token', add);
+  // Phase 2b (ADR-0052 D21): master -> inventory direction, distinct from the inventory -> master token.
+  ensureToken(env, 'MASTER_INVENTORY_SERVICE_TOKEN_SOURCE', 'master_inventory_service_token', add);
   const { created, passwords } = ensureUrls(env, add);
   appendEnv(add);
 

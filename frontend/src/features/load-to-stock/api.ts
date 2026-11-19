@@ -9,6 +9,7 @@ import { isCallerLicenseCode, readDomainError, retryTransient } from "@/lib/trpc
 import type { LoadFormValues, LoadInput } from "./form";
 import {
   deleteResultSchema,
+  holderSchema,
   listPageSchema,
   loadOutSchema,
   nextNumberSchema,
@@ -20,9 +21,17 @@ import {
   submitResultSchema,
   vendorsPageSchema,
   writeResultSchema,
+  type LoadHolder,
   type LoadOut,
   type LoadStatus,
 } from "./types";
+
+const HOLDER_TYPE_LABEL: Record<string, string> = { reserve: "Reserve", "memo-out": "Memo Out", "memo-out-return": "Memo Out Return" };
+
+/** Load detail `holders` (SA rev 2): "RS-0001, MO-0002" — the document no., or its type when it has none yet. */
+export function holdersText(holders: readonly LoadHolder[]): string {
+  return [...new Set(holders.map((holder) => holder.documentNo || HOLDER_TYPE_LABEL[holder.documentType] || holder.documentType))].join(", ");
+}
 
 export * from "./form";
 
@@ -265,8 +274,11 @@ export function mapLoadSaveError(error: unknown, values?: Pick<LoadFormValues, "
       return { fieldErrors: [], message: "Someone else changed this Load to Stock. Refresh to see the latest." };
     case "LOAD_TO_STOCK_NOT_FOUND":
       return { fieldErrors: [], message: "This Load to Stock no longer exists." };
-    case "LOAD_TO_STOCK_IN_USE":
-      return { fieldErrors: [], message: "Some stock from this load is already used; it can't be changed.", refetch: true };
+    case "LOAD_TO_STOCK_IN_USE": {
+      const holders = holderSchema.array().safeParse(details?.holders);
+      const by = holders.success ? holdersText(holders.data) : "";
+      return { fieldErrors: [], message: `Some stock from this load is already used${by ? ` by ${by}` : ""}; it can't be changed.`, refetch: true };
+    }
     case "LOAD_TO_STOCK_BUSY":
       return { fieldErrors: [], message: "Saving in progress — refreshing.", refetch: true };
     case "SYNC_PENDING": {

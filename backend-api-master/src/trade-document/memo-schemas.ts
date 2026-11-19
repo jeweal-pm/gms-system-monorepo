@@ -22,7 +22,7 @@ const versioned = { id: uuid, expectedVersion: z.number().int().min(1) };
  * checks pending and copies the item fields on save. Since memo-out rev 3 every line needs `memoStockId` (no manual
  * lines); manual lines stored before it stay readable and cut nothing.
  */
-const memoOutLineSchema = memoLineSchema.extend({ memoStockId: uuid.nullish() });
+const memoOutLineSchema = memoLineSchema.extend({ memoStockId: uuid.nullish(), ownStockId: uuid.nullish() });
 const memoOutFields = { ...memoFields, lines: z.array(memoOutLineSchema).min(1).max(LINES_MAX), customerId: uuid, shippingAddressId: uuid, invoiceAddressId: uuid };
 type MemoOutValues = Omit<Parameters<typeof tradeDocumentRules>[0], "lines"> & { lines: z.output<typeof memoOutLineSchema>[] };
 function memoOutRules(value: MemoOutValues, ctx: z.RefinementCtx) {
@@ -31,9 +31,13 @@ function memoOutRules(value: MemoOutValues, ctx: z.RefinementCtx) {
   const seen = new Set<string>();
   value.lines.forEach((line, index) => {
     // memo-out rev 3 (owner 2026-10-31, Q-MOR-13): every row comes from From Stock; rows can't be keyed in by hand.
-    if (!line.memoStockId) return issue(["lines", index, "memoStockId"], "required");
-    if (seen.has(line.memoStockId)) issue(["lines", index, "memoStockId"], "duplicate");
-    seen.add(line.memoStockId);
+    // ADR-0052 D20: exactly one of Memo Stock (`memoStockId`) or our stock (`ownStockId`).
+    if (line.memoStockId && line.ownStockId) return issue(["lines", index, "ownStockId"], "invalid");
+    const item = line.memoStockId ?? line.ownStockId;
+    if (!item) return issue(["lines", index, "memoStockId"], "required");
+    const key = `${line.memoStockId ? "m" : "o"}:${item}`;
+    if (seen.has(key)) issue(["lines", index, line.memoStockId ? "memoStockId" : "ownStockId"], "duplicate");
+    seen.add(key);
     if (line.pcs <= 0 && Number(line.weightCt) <= 0) issue(["lines", index, "pcs"], "required");
     if (Number(line.unitPrice) <= 0) issue(["lines", index, "unitPrice"], "required");
   });

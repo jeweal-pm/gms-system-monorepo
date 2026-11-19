@@ -7,7 +7,7 @@ import { Button, Field, IconButton, NumberInput, ReadonlyBox, SelectMenu, TextIn
 import { toFixed } from "@/features/quotation/lib/decimal";
 import { CER_TYPES } from "@/features/quotation/lib/options";
 import { loadPhotoUrl, PhotoUploadError, uploadLoadPhoto } from "../api";
-import { ITEM_NOTE_MAX, PARCEL_MAX, PHOTO_MAX, rowCost, unitLabel, UNIT_COST_PLACES, type LoadFormValues, type LoadRowValues } from "../form";
+import { ITEM_NOTE_MAX, LOT_MAX, PARCEL_MAX, PHOTO_MAX, rowCost, unitLabel, UNIT_COST_PLACES, type LoadFormValues, type LoadRowValues } from "../form";
 import type { LoadOptions, PurchaseLineRef, StoneAttrs } from "../types";
 import { rowLocationOptions } from "./load-table";
 
@@ -77,9 +77,11 @@ export function LoadRowPanel({ row, index, total, values, options, currency, rea
       </header>
       <fieldset disabled={readOnly} className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
         <div className="grid grid-cols-2 gap-x-3 gap-y-5">
+          {/* FE-LS-018 (source 07): Info group — Stock ID (Auto until issued), Lot (optional, ≤ 40, pre-filled from the PU line), Location. */}
+          <h3 className="col-span-2 -mb-2 text-sm font-medium text-[#1C252E]">Info</h3>
           <Field label="Stock ID"><ReadonlyBox compact value={row.stockId || "Auto"} /></Field>
-          <Field label="Lot"><TextInput compact maxLength={40} value={row.attrs.lot} onChange={(event) => setAttr("lot", event.target.value)} /></Field>
-          <Field label="Location" required error={errors.location} className="col-span-2">
+          <Field label="Lot" error={errors.lot}><TextInput compact aria-label="Lot" maxLength={LOT_MAX} value={row.attrs.lot} onChange={(event) => setAttr("lot", event.target.value)} /></Field>
+          <Field label="Location" required error={errors.location}>
             <SelectMenu compact value={row.location} placeholder="Select location" options={rowLocationOptions(options?.locations ?? [], row.location)} onChange={(location) => onChange({ location })} />
           </Field>
           <Field label="Parcel" error={errors.parcel} className="col-span-2">

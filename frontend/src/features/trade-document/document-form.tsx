@@ -25,6 +25,7 @@ import { useDocumentFlow } from "./approval-flow";
 import { clearNotice, DocumentDeletedBanner, handOverNotice, peekNotice, type DeletedInfo, type RestoreOutcome } from "./document-api";
 import type { DocumentPhotos } from "./document-photos";
 import { savedMessage, type DocFlow, type DocumentApprovalType } from "./flow-status";
+import { withSyncingHint } from "./stock-row-errors";
 
 /** Everything the form needs from a document's API, read through the document's own hooks. */
 export type DocumentApi<Input, Options extends LineOptions = LineOptions> = {
@@ -190,7 +191,7 @@ const NO_PHOTOS = { upload: null, url: (id: string) => id };
  * document type supplies its schema, header fields, API hooks and wording. A saved document is remounted with
  * the new server version after every write (its page keys on id + version).
  */
-export function DocumentForm<V extends FieldValues & Saved, Input, Options extends LineOptions = LineOptions>({ config, initial, deleted: initialDeleted = null, flow = null, canAdd, canEdit, canDelete }: {
+export function DocumentForm<V extends FieldValues & Saved, Input, Options extends LineOptions = LineOptions>({ config, initial, deleted: initialDeleted = null, flow = null, syncing = false, canAdd, canEdit, canDelete }: {
   config: DocumentFormConfig<V, Input, Options>;
   initial?: V;
   /** A soft-deleted document (ADR-0045 D10): read-only with the banner, Restore with DELETE. */
@@ -200,6 +201,8 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   canDelete: boolean;
   /** `Flow` of the saved document (`<doc>.get`); null for a new one. */
   flow?: DocFlow | null;
+  /** load-to-stock Q-LS-P2-05: `syncState` SYNCING (inventory hold still being applied) → grey "Updating our stock…" hint. */
+  syncing?: boolean;
 }) {
   const replaceTab = useTabReplace();
   const [saved, setSaved] = useState<V | undefined>(initial);
@@ -451,7 +454,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
                 isPreview={!saved?.docNo}
                 status={status}
                 statusLabels={approvalFlow.statusLabels}
-                statusNote={approvalFlow.statusNote}
+                statusNote={syncing && saved?.id && !isDeleted ? withSyncingHint(approvalFlow.statusNote) : approvalFlow.statusNote}
                 hideEditDelete={approvalFlow.hideEditDelete}
                 extraActions={approvalFlow.sendButton}
                 mode={isDeleted ? "view" : mode}

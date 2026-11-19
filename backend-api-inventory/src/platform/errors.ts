@@ -39,6 +39,15 @@ export const MESSAGES: Record<string, string> = {
   DB_UNAVAILABLE: "The service is temporarily unavailable",
   SERVICE_UNAVAILABLE: "The service is temporarily unavailable",
   INTERNAL_ERROR: "The request could not be completed",
+  // Internal API for api-master (ADR-0052 D18/D21, error-handling "Inventory internal codes").
+  SERVICE_UNAUTHENTICATED: "The service credential is missing or invalid",
+  INVENTORY_BUSY: "Too many internal requests; retry shortly",
+  STOCK_HOLD_STALE: "The hold revision is older than the applied one",
+  STOCK_HOLD_EXCEEDS_AVAILABLE: "Some stocks do not have enough available quantity",
+  STOCK_HOLD_EXCEEDS_MEMO_OUT: "Some stocks do not have enough quantity out on memo",
+  STOCK_HOLD_IN_USE: "Some held quantity is already used",
+  STOCK_HOLD_BUSY: "Some stocks belong to a load that is being saved",
+  STOCK_HOLD_UNAVAILABLE: "Some stocks are no longer in stock",
 };
 
 export class AppError extends Error {

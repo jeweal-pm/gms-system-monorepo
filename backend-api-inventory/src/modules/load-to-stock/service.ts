@@ -11,6 +11,7 @@ import type { NotificationHub } from "../../platform/notification/hub";
 import { recordNotification, type NotificationSignal } from "../../platform/notification/store";
 import { SyncDriver, SyncHold, LEASE_MS, type DriveOutcome, type OpKind, type OpRow } from "../../platform/sync/saga";
 import { applyStockEdit, createStocks, lockLoadStocks, reverseStocks, type StockHeader, type StockSource } from "../stock/stock";
+import { loadHolders } from "../stock/holds";
 import { allocationLines, prepareDocument, type NormalizedDocument, type StoredRowRef } from "./prepare";
 import { checkPhotos, explainMiss, formatDocNo, headerFields, insertParts, nextRunningNo, replaceParts } from "./repository";
 import type { LoadInput } from "./schemas";
@@ -34,7 +35,7 @@ export type WriteResult = { id: string; docNo?: string; version: number; status:
 type DocPayload = NormalizedDocument & { stockIds: Record<string, string | null> };
 type Header = {
   id: string; doc_no: string; status: string; version: number; vendor_id: string; vendor_name_snapshot: string; currency_code: string; created_by: string;
-  applied_revision: number; auto_approved: boolean; deleted_at: Date | null; sync_state: string; mode: string; total_cost_base: string; provisional: boolean;
+  applied_revision: number; auto_approved: boolean; deleted_at: Date | null; sync_state: string; mode: string; total_cost_base: string; provisional: boolean; doc_date: string;
 };
 type RowWithSources = StockSource & { id: string; position: number; sources: { purchaseLineId: string; pcs: number; weightCt: string }[]; stockIdOrNull: string | null };
 
@@ -132,13 +133,13 @@ export class LoadToStockService {
   private async header(tx: Tx | Db, id: string): Promise<Header | null> {
     const rows = await tx.$queryRaw<Header[]>`
       SELECT "id", "doc_no", "status", "version", "vendor_id", "vendor_name_snapshot", "currency_code", "created_by", "applied_revision", "auto_approved", "deleted_at",
-        "sync_state", "mode", "total_cost_base"::text AS "total_cost_base", "provisional"
+        "sync_state", "mode", "total_cost_base"::text AS "total_cost_base", "provisional", to_char("doc_date", 'YYYY-MM-DD') AS "doc_date"
       FROM "inventory"."load_to_stock" WHERE "id" = ${id}::uuid`;
     return rows[0] ?? null;
   }
 
   private stockHeader(header: Header, revision: number, actorId: string): StockHeader {
-    return { loadId: header.id, currency: header.currency_code, vendorId: header.vendor_id, vendorName: header.vendor_name_snapshot, revision, actorId };
+    return { loadId: header.id, currency: header.currency_code, vendorId: header.vendor_id, vendorName: header.vendor_name_snapshot, revision, actorId, refDocDate: header.doc_date, refDocNo: header.doc_no };
   }
 
   /** Assigns the new Stock IDs (in row order) to rows without one; returns the stock sources of those rows. */
@@ -179,7 +180,7 @@ export class LoadToStockService {
         WHERE "id" = ${op.load_id}::uuid`;
       const rows = await this.rowsForApply(tx, op.load_id);
       await this.assignStockIds(tx, rows, stockIds);
-      await applyStockEdit(tx, stock, rows, stocks);
+      await applyStockEdit(tx, { ...stock, refDocDate: doc.docDate }, rows, stocks);
       return { id: header.id, version: header.version, status: "APPROVED", stockIds: rows.map((row) => row.stockIdOrNull) };
     }
     // CREATE / APPLY_DRAFT / APPROVE: every row gets a new Stock ID and a stock.
@@ -207,7 +208,7 @@ export class LoadToStockService {
     const locked = await lockLoadStocks(tx, op.load_id);
     if (locked.inUse.length > 0) {
       this.deps.logger.error({ event: "load_to_stock.apply_in_use", opId: op.id, loadId: op.load_id, revision: op.revision, stockIdCount: locked.inUse.length });
-      throw new SyncHold(new AppError(409, "LOAD_TO_STOCK_IN_USE", { stockIds: locked.inUse.slice(0, 20) }), "in_use");
+      throw new SyncHold(new AppError(409, "LOAD_TO_STOCK_IN_USE", { stockIds: locked.inUse.slice(0, 20), holders: await loadHolders(tx, op.load_id) }), "in_use");
     }
     return locked;
   }
@@ -294,7 +295,7 @@ export class LoadToStockService {
       const header = (await this.header(tx, id))!;
       if (header.status === "APPROVED") {
         const { inUse } = await lockLoadStocks(tx, id);
-        if (inUse.length > 0) throw new AppError(409, "LOAD_TO_STOCK_IN_USE", { stockIds: inUse.slice(0, 20) });
+        if (inUse.length > 0) throw new AppError(409, "LOAD_TO_STOCK_IN_USE", { stockIds: inUse.slice(0, 20), holders: await loadHolders(tx, id) });
         const newRows = doc.rows.filter((row) => !stockIds[row.id]).length;
         await tx.$executeRaw`UPDATE "inventory"."load_to_stock" SET "sync_state" = 'SYNCING' WHERE "id" = ${id}::uuid`;
         op = await this.insertOp(tx, id, header.applied_revision + 1, "UPDATE", { vendorId: header.vendor_id, lines: allocationLines(doc.rows), newStockIdCount: newRows }, principal, { ...doc, stockIds });
@@ -411,7 +412,7 @@ export class LoadToStockService {
         return;
       }
       const { inUse } = await lockLoadStocks(tx, id);
-      if (inUse.length > 0) throw new AppError(409, "LOAD_TO_STOCK_IN_USE", { stockIds: inUse.slice(0, 20) });
+      if (inUse.length > 0) throw new AppError(409, "LOAD_TO_STOCK_IN_USE", { stockIds: inUse.slice(0, 20), holders: await loadHolders(tx, id) });
       await tx.$executeRaw`UPDATE "inventory"."load_to_stock" SET "sync_state" = 'SYNCING' WHERE "id" = ${id}::uuid`;
       op = await this.insertOp(tx, id, header.applied_revision + 1, "DELETE", { vendorId: header.vendor_id, lines: [], newStockIdCount: 0 }, principal);
     }, WRITE_TX);

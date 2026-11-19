@@ -24,7 +24,7 @@ import { calculateTotals } from "../lib/calculate";
 import { memoStockToStockLine, pickedStockIds } from "@/features/trade-document/customer-stock";
 import { invalidSaveMessage, lineErrorMessages } from "@/features/trade-document/document-form";
 import { MemoStockModal } from "@/features/trade-document/memo-stock-modal";
-import type { MemoStockItem } from "@/features/trade-document/memo-stock-api";
+import type { FromStockItem } from "@/features/trade-document/from-stock-api";
 import { emptyLine, emptyQuotation, newKey } from "../lib/defaults";
 import { isFilledLine, quotationSchema, type QuotationFormValues } from "../schema";
 import { QuotationHeader } from "./header/QuotationHeader";
@@ -258,7 +258,7 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, flow = 
     if (action === "duplicate") {
       const source = getValues(`lines.${index}`);
       // ห้าม stock ซ้ำ → สำเนาเป็น manual line ไม่มี stockId
-      lineArray.insert(index + 1, { ...source, key: newKey(), source: "MANUAL", stockId: "", memoStockId: undefined, stockPendingPcs: undefined, stockPendingWeightCt: undefined, photos: [] });
+      lineArray.insert(index + 1, { ...source, key: newKey(), source: "MANUAL", stockId: "", memoStockId: undefined, ownStockId: undefined, stockPendingPcs: undefined, stockPendingWeightCt: undefined, photos: [] });
     }
   };
 
@@ -270,8 +270,11 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, flow = 
     setEditorOpen(false);
   };
 
-  /** quotation rev 2 (ADR-0038): picked Memo Stock items fill the empty rows first, then are appended; nothing is held. */
-  const fillFromStock = (items: MemoStockItem[]) => {
+  /**
+   * quotation rev 2 (ADR-0038) / Revision 3 (phase 2a): picked Memo Stock and our-stock items fill the empty rows first,
+   * then are appended; nothing is held.
+   */
+  const fillFromStock = (items: FromStockItem[]) => {
     const next = [...getValues("lines")];
     let cursor = 0;
     for (const item of items) {
@@ -328,8 +331,8 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, flow = 
               <div className="mb-4 flex items-center gap-3">
                 <h2 className="text-lg font-medium text-[#1C252E]">Item</h2>
                 <span className="text-xs text-[#6B7480]">{lines.length} rows</span>
-                {/* quotation rev 2 (ADR-0038): Memo Stock now, our own stock later; it only copies the item's details. */}
-                <span title="Pick stones from stock (Memo Stock)">
+                {/* quotation rev 2 (ADR-0038) / Revision 3: Memo Stock and our stock in one list; it only copies the item's details. */}
+                <span title="Pick stones from stock (Memo Stock and our stock)">
                   <Button variant="dark" size="sm" disabled={readOnly} onClick={() => setFromStockOpen(true)}>
                     From Stock
                   </Button>
@@ -415,6 +418,7 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, flow = 
       {fromStockOpen && (
         <MemoStockModal
           title="Add From Stock"
+          fromStock
           showPrice={false}
           emptyText="No stock with anything pending."
           pickedIds={pickedStockIds(lines)}

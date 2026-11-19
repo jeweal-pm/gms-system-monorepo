@@ -61,7 +61,7 @@ describe("UT-QT-11 contract mapping", () => {
 
   it("a saved stock line comes back as a STOCK row with its item and pending; typed lines stay MANUAL", () => {
     const line = (patch: Partial<QuotationDetail["lines"][number]>): QuotationDetail["lines"][number] => ({
-      id: "l1", source: "MANUAL", memoStockId: null, stockId: null, stockPendingPcs: null, stockPendingWeightCt: null, stoneCodeId: null, stoneCode: "", stone: "Ruby",
+      id: "l1", source: "MANUAL", memoStockId: null, ownStockId: null, stockId: null, stockPendingPcs: null, stockPendingWeightCt: null, stoneCodeId: null, stoneCode: "", stone: "Ruby",
       shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "", location: "", cerType: "", cerNo: "", pcs: 1, weightCt: "1.000", priceUnit: "PER_CT",
       unitPrice: "100.00", discount: { type: "NONE", value: "0" }, discountAmount: "0.00", amount: "100.00", itemNote: "", photoIds: [], ...patch,
     });

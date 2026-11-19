@@ -29,7 +29,8 @@ const uuid = z.uuid();
 export const stoneAttrsSchema = z.object({
   stoneCodeId: uuid.nullable(),
   stoneCode: text(60), stone: text(60), shape: text(60), size: text(60), color: text(60), clarity: text(60), cutting: text(60), quality: text(60),
-  lot: text(40), cerType: text(20), cerNo: text(60),
+  // ADR-0052 D23 (owner Q-LS-P2-02, Q-LS-P2-07): Lot is free text, trimmed, ≤ 40 and optional (as Memo Receive / Memo Stock).
+  lot: text(40).default(""), cerType: text(20), cerNo: text(60),
 }).strict();
 export type StoneAttrsInput = z.output<typeof stoneAttrsSchema>;
 

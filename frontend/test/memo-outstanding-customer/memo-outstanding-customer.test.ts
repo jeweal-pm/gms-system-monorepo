@@ -30,7 +30,7 @@ const customerRow: CustomerListRow = {
   memo: qty(4, "2.000"), return: qty(1, "0.500"), sold: qty(0, "0.000"), outstanding: qty(3, "1.500"),
 };
 const customerItem: CustomerItem = {
-  id: "44444444-4444-4444-8444-444444444444", memoOutId: DOC, position: 1, stockId: "260003", lot: "L-7", location: "Memo",
+  id: "44444444-4444-4444-8444-444444444444", memoOutId: DOC, position: 1, source: "MEMO_STOCK", stockId: "260003", lot: "L-7", location: "Memo",
   stone: "Ruby", shape: "Oval", size: "", color: "Red", clarity: "", cutting: "", quality: "", cerType: "GIA", cerNo: "C-7", itemNote: "lent",
   priceUnit: "CTS", netUnitPrice: "2000.0000", currency: "THB", openValue: "3000.00",
   memo: qty(4, "2.000"), return: qty(1, "0.500"), sold: qty(0, "0.000"), outstanding: qty(3, "1.500"),

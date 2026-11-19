@@ -45,7 +45,7 @@ export function MemoOutstandingModal({ customerId, currency, excludeReturnId, pi
   const outstanding = useMemoOutstanding({ customerId, currency, q, from, to, excludeReturnId });
   const items = (outstanding.data?.pages ?? []).flatMap((page) => page.items).filter((item) => !pickedIds.has(item.memoOutLineId));
   const allChecked = items.length > 0 && items.every((item) => checked.has(item.memoOutLineId));
-  const columns = 11;
+  const columns = 12;
   const toggle = (id: string) =>
     setChecked((prev) => {
       const next = new Set(prev);
@@ -110,6 +110,8 @@ export function MemoOutstandingModal({ customerId, currency, excludeReturnId, pi
                     <th rowSpan={2} className="w-8 font-normal text-[#6B7480]">#</th>
                     <Th title="Memo Out No." sub="Doc Date" />
                     <Th title="Stock ID" sub="Lot" />
+                    {/* Revision 5 (Q-LS-P2-04): `Memo` or our stock's Location name tells the source. */}
+                    <Th title="Location" />
                     <Th title="Stone" sub="Shape · Size" />
                     <Th title="Color · Clarity" sub="Cutting · Quality" />
                     <Th title="Cer Type" sub="Cer No." />
@@ -164,6 +166,7 @@ export function MemoOutstandingModal({ customerId, currency, excludeReturnId, pi
                           </div>
                         )}
                       </td>
+                      <td className="px-3 py-4">{item.location}</td>
                       <td className="px-3 py-4">
                         <div className="font-medium">{item.stone}</div>
                         <div className="mt-1 text-xs text-[#6B7480]">{[item.shape, item.size].filter(Boolean).join(" · ")}</div>

@@ -82,3 +82,10 @@ Owner 2026-10-31 (verbatim): "memoout คือการนำของของ
 | Status and buttons | Status chip Pending Approval / Approved (Memo Receive colors). **Approve** button with confirm ("Approve this Memo Out Return? Its n items come back to stock. It can no longer be edited."). Approved = read-only |
 | Errors | Over outstanding → "More than outstanding" on the cell. `MEMO_OUT_RETURN_OUTSTANDING_SHORT` at Approve → "Some items were already returned by another document. Edit the Return quantity and approve again." |
 | Permission | `memo-out-return` VIEW / ADD / EDIT / DELETE / APPROVE |
+
+## Revision 5 — own stock returned from Memo Out (load-to-stock phase 2) — pending-review
+
+- Owner 2026-11-18 "2a + 2b เลย" / "ตามFrom Stock เดิมให้ user ดูที่ location เองว่าเป็น memo หรือ ของจากคลังเรา". ADR-0052 D15 phase 2b. TODO: [load-to-stock Phase 2](../../../task/todo/load-to-stock.md#phase-2--own-stock-in-from-stock).
+- The Memo Outstanding dialog does not list stock directly; it lists outstanding Memo Out lines, which now include our-stock lines. To tell them apart the same way, the dialog gains a **Location** column after Stock ID · Lot (`Memo` or the stock's Location name) (Q-LS-P2-04). Item table rows show the same Location, read-only.
+- Approve returns our-stock rows to on hand in inventory; Memo rows as today. `INVENTORY_UNAVAILABLE` → "Our stock can't be checked right now; try again" (nothing changes); "Updating our stock…" hint as [reserve Revision 2](../reserve/ui-spec.md#revision-2--own-stock-in-from-stock-load-to-stock-phase-2--pending-review). `MEMO_OUT_RETURN_OUTSTANDING_SHORT` text unchanged.
+- Memo Return (vendor side) and Purchase STOCK rows do not list our stock (owner Q-LS-35).

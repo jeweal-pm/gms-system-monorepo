@@ -227,3 +227,16 @@ describe("UT-LS-07 mode dialog rules and payload mapping", () => {
   });
 });
 
+
+describe("UT-LS-018 Lot (FE-LS-018, ADR-0052 D23)", () => {
+  it("is pre-filled from the PU line, optional, kept on the input and refused above 40 characters", () => {
+    const values = valid(applyPick(base(), [line({ lot: "L-2608-003" })], "NONE"));
+    expect(values.rows[0]!.attrs.lot).toBe("L-2608-003");
+    const withLot = (lot: string) => ({ ...values, rows: values.rows.map((row, index) => (index === 0 ? { ...row, attrs: { ...row.attrs, lot } } : row)) });
+    expect(validateLoad(withLot(""))).toEqual([]);
+    expect(validateLoad(withLot("L".repeat(40)))).toEqual([]);
+    expect(validateLoad(withLot("L".repeat(41))).map((issue) => `${issue.path.join(".")}:${issue.message}`)).toEqual(["rows.0.lot:Up to 40 characters"]);
+    expect(toLoadInput(withLot("  L-2608-003 ")).rows[0]!.attrs.lot).toBe("L-2608-003");
+    expect(fromLoad(loadOut({ rows: [{ ...loadOut().rows[0]!, attrs: { ...loadOut().rows[0]!.attrs, lot: "L-9" } }] })).rows[0]!.attrs.lot).toBe("L-9");
+  });
+});

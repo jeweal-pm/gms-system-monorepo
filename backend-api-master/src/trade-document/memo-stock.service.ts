@@ -222,7 +222,7 @@ export function encodeStockCursor(docDate: string, stockId: string): string {
   return Buffer.from(`${docDate}|${stockId}`, "utf8").toString("base64url");
 }
 
-function decodeStockCursor(value: string): { docDate: string; stockId: string } {
+export function decodeStockCursor(value: string): { docDate: string; stockId: string } {
   const invalid = () => validationException([{ path: "cursor", code: "invalid" }]);
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(value)) throw invalid();
   const match = /^(\d{4}-\d{2}-\d{2})\|(\d{6,10})$/.exec(Buffer.from(value, "base64url").toString("utf8"));

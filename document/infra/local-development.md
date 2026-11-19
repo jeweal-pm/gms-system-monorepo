@@ -40,7 +40,7 @@ currently belongs to another local project. The dev auth service receives a matc
 
 ### Inventory service (Load to Stock, ADR-0052) — one-time setup per machine
 
-`backend-api-inventory` needs two service tokens, five `.env` entries and three dev database roles that are
+`backend-api-inventory` needs three service tokens, six `.env` entries and three dev database roles that are
 not in git. `pnpm docker:gms:preview` and `pnpm docker:gms:preview:install` now run the setup automatically first,
 so after pulling this change the usual commands are enough:
 
