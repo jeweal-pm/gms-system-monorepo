@@ -31,7 +31,7 @@ type LineInput = {
   itemNote?: string;               // ≤ 500
   photoIds: string[];              // ≤ 5 distinct
 };
-// Header money fields (discount, tax, labor, charges) and their bounds mirror master `quotation.schemas.ts` /
+// Header money fields (discount, tax, labor, serviceCharges) and their bounds mirror master `quotation.schemas.ts` /
 // the Reserve input exactly, so the shared QuotationInfoForm / SummaryValue post the same shape.
 type SaleInput = {
   docDate: string; dueDate: string;                 // dueDate ≥ docDate
@@ -41,9 +41,9 @@ type SaleInput = {
   ref?: string;                                     // ≤ 100
   documentNote?: string;                            // ≤ 250
   discount: { type: DiscountType; value: Dec };
-  tax: { enabled: boolean; rate: Dec; included: boolean };
+  tax: { enabled: boolean; rate: Dec; includeInPrice: boolean };   // Reserve field name (corrected 2026-11-19, BE-SL-005; was `included`)
   labor: { work: string; basis: "PCS" | "WEIGHT"; qty: Dec; rate: Dec } | null;
-  charges: { chargeType: string; amount: Dec }[];   // ≤ 20, chargeType from options, unique
+  serviceCharges: { type: "SHIPPING" | "HANDLING" | "INSURANCE" | "CERTIFICATE"; amount: Dec }[];   // ≤ 4, unique; Reserve field names (corrected 2026-11-19; was `charges[{chargeType}]`)
   lines: LineInput[];                               // 1..200
 };
 type LineOut = Required<Omit<LineInput, "reserveLineId" | "memoStockId">> & StoneAttrs & {
@@ -63,7 +63,7 @@ type SaleOut = {
   shippingAddressId: string | null; shippingAddressText: string;
   invoiceAddressId: string | null; invoiceAddressText: string;
   currency: string; exchangeRate: Dec | null; ref: string; documentNote: string;
-  discount: SaleInput["discount"]; tax: SaleInput["tax"]; labor: SaleInput["labor"]; charges: SaleInput["charges"];
+  discount: SaleInput["discount"]; tax: SaleInput["tax"]; labor: SaleInput["labor"]; serviceCharges: SaleInput["serviceCharges"];
   lines: LineOut[];
   totals: { lineCount: number; pcs: number; weightCt: Dec; subtotal: Dec; discountAmount: Dec; priceBeforeTax: Dec;
     taxAmount: Dec; chargesAmount: Dec; laborAmount: Dec; grandTotal: Dec };

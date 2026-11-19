@@ -108,13 +108,22 @@ type PreparedStock = {
   pendingPcs: number; pendingWeightCt: string; status: "OK" | "UNAVAILABLE";
 };
 
+type PartyAddress = { id: string; type: string; name: string; taxId: string | null; address: string; countryCode: string; state: string; city: string; postcode: string };
+
 export async function prepareSale(input: SalePrepareInput) {
   const reserveLineIds = [...new Set(input.reserveLineIds)];
   const memoStockIds = [...new Set(input.memoStockIds)];
   const saleId = input.saleId ?? null;
   const [customer, currencyRow, reserveRows, stockRows] = await Promise.all([
+    // One statement: the customer and only the two addresses named (a Prisma `include` would add a second query).
     input.party
-      ? prisma.customer.findUnique({ where: { id: input.party.customerId }, select: { id: true, code: true, name: true, active: true, addresses: true } })
+      ? prisma.$queryRaw<{ code: string; name: string; active: boolean; addresses: PartyAddress[] }[]>(Prisma.sql`
+          SELECT c."code", c."name", c."active",
+            COALESCE((SELECT json_agg(json_build_object('id', a."id", 'type', a."type", 'name', a."name", 'taxId', a."tax_id", 'address', a."address",
+                'countryCode', a."country_code", 'state', a."state", 'city', a."city", 'postcode', a."postcode"))
+              FROM "partner"."customer_address" a
+              WHERE a."customer_id" = c."id" AND a."id" IN (${input.party.shippingAddressId}::uuid, ${input.party.invoiceAddressId}::uuid)), '[]'::json) AS "addresses"
+          FROM "partner"."customer" c WHERE c."id" = ${input.party.customerId}::uuid`).then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
     prisma.$queryRaw<{ active: boolean | null; company: string | null }[]>(Prisma.sql`
       SELECT (SELECT c."active" FROM "partner"."currency" c WHERE c."code" = ${input.currency}) AS "active",

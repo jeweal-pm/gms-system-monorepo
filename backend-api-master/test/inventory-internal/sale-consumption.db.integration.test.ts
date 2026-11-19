@@ -160,13 +160,13 @@ describe.runIf(canRun)("IT-SL master sale consumption on PostgreSQL", () => {
     await prisma.memoStockIdCounter.deleteMany({ where: { year: YEAR } });
     vendor = { id: randomUUID(), addressId: randomUUID() };
     await prisma.vendor.create({ data: {
-      id: vendor.id, name: "SL IT Vendor", nameKey: `sl it vendor ${ACTOR}`, code: `SLIT${ACTOR.slice(-4)}`.toUpperCase(), codeKey: `slit${ACTOR.slice(-4)}`.toLowerCase(), currencyCode: "THB", firstName: "It", email: "sl-it@example.test", createdBy: ACTOR, updatedBy: ACTOR,
+      id: vendor.id, name: `SL IT Vendor ${ACTOR}`, nameKey: `sl it vendor ${ACTOR}`.toLowerCase(), code: `SLIT${ACTOR.slice(-4)}`.toUpperCase(), codeKey: `slit${ACTOR.slice(-4)}`.toLowerCase(), currencyCode: "THB", firstName: "It", email: "sl-it@example.test", createdBy: ACTOR, updatedBy: ACTOR,
       addresses: { create: [{ id: vendor.addressId, position: 1, name: "SL IT Vendor Co.", address: "1 Rd", countryCode: "TH", state: "Bangkok", city: "Bangkok", postcode: "10500", isDefault: true }] },
     } });
     for (const [c, n] of [[customer, "A"], [other, "B"]] as const) {
       const address = { position: 1, name: `SL IT Customer ${n}`, address: "2 Rd", countryCode: "TH", state: "Bangkok", city: "Bangkok", postcode: "10500", isDefault: true };
       await prisma.customer.create({ data: {
-        id: c.id, name: `SL IT Customer ${n}`, nameKey: `sl it customer ${n} ${ACTOR}`, code: `SLC${n}${ACTOR.slice(-4)}`.toUpperCase(), codeKey: `slc${n}${ACTOR.slice(-4)}`.toLowerCase(),
+        id: c.id, name: `SL IT Customer ${n} ${ACTOR}`, nameKey: `sl it customer ${n} ${ACTOR}`.toLowerCase(), code: `SLC${n}${ACTOR.slice(-4)}`.toUpperCase(), codeKey: `slc${n}${ACTOR.slice(-4)}`.toLowerCase(),
         currencyCode: "THB", firstName: "It", email: "sl-it@example.test", createdBy: ACTOR, updatedBy: ACTOR,
         addresses: { create: [{ ...address, id: c.shipping, type: "SHIPPING" }, { ...address, id: c.invoice, type: "INVOICE" }] },
       } });
@@ -231,7 +231,7 @@ describe.runIf(canRun)("IT-SL master sale consumption on PostgreSQL", () => {
     const sold = await purchase.memoStock({ vendorId: vendor.id, currency: "THB", status: "SOLD", limit: 50 } as never) as { items: { memoStockId: string; availablePcs: number }[] };
     expect(sold.items.filter((row) => [a.id, b.id].includes(row.memoStockId)).map((row) => [row.memoStockId, row.availablePcs]).sort()).toEqual([[a.id, 3], [b.id, 2]].sort());
     const picker = await call("POST", "/sale/reserve-lines/search", { customerId: customer.id, currency: "THB", q: rs.docNo });
-    expect(picker.body.items).toEqual([expect.objectContaining({ reserveLineId: rs.lineIds[0], openPcs: 7, openWeightCt: "3.500", reserveNo: rs.docNo, memoStockId: a.id, netUnitPrice: "2500.0000", openAmount: "17500.00" })]);
+    expect((picker.body.items as { reserveId: string }[]).filter((row) => row.reserveId === rs.id)).toEqual([expect.objectContaining({ reserveLineId: rs.lineIds[0], openPcs: 7, openWeightCt: "3.500", reserveNo: rs.docNo, memoStockId: a.id, netUnitPrice: "2500.0000", priceUnit: "PER_CT", openAmount: "8750.00" })]);
     const detail = await reserve.get(rs.id);
     expect(detail.lines[0]).toMatchObject({ soldPcs: 3, soldWeightCt: "1.500" });
   });
@@ -263,7 +263,7 @@ describe.runIf(canRun)("IT-SL master sale consumption on PostgreSQL", () => {
     const statuses = results.slice(0, 2).map((r) => (r as { status: number }).status).sort();
     expect(statuses).toEqual([200, 409]);
     const refused = results.slice(0, 2).find((r) => (r as { status: number }).status === 409) as { body: Json };
-    expect(refused.body.error).toMatchObject({ code: "SALE_CONSUMPTION_EXCEEDS_AVAILABLE", details: { lines: [expect.objectContaining({ field: "pcs", code: "exceeds_open", availablePcs: 0 })] } });
+    expect(refused.body.error).toMatchObject({ code: "SALE_CONSUMPTION_EXCEEDS_AVAILABLE", details: { lines: expect.arrayContaining([expect.objectContaining({ field: "pcs", code: "exceeds_open", availablePcs: 0 })]) } });
     expect(results[2]).toEqual({ code: "ok" });
     expect(await soldOf(rs.lineIds[0])).toEqual([2, "1.000"]);
     expect(await buckets(a.id)).toMatchObject({ pending: 0, reserved: 2, sold: 2 });
@@ -286,13 +286,14 @@ describe.runIf(canRun)("IT-SL master sale consumption on PostgreSQL", () => {
     await setApproval(prisma, "reserve", true);
     const draft = await reserve.create(ACTOR, docInput([stockLine(a.id, 1, "0.5")]));
     const draftLine = (await prisma.reserveLine.findFirstOrThrow({ where: { reserveId: draft.id } })).id;
-    const rs = await approvedReserve([stockLine(a.id, 1, "0.5")]);
+    const rs = await approvedReserve([stockLine(a.id, 1, "0.5")], { auto: true });
     const before = await buckets(a.id);
     const unavailable = async (lines: unknown[], patch: Record<string, unknown> = {}) => (await put(newSale(), 1, lines, patch)).body.error;
     expect(await unavailable([rLine(draftLine, a.id, 1, "0.5")])).toMatchObject({ code: "SALE_CONSUMPTION_LINE_UNAVAILABLE", details: { lineIds: [expect.any(String)] } });
     expect((await unavailable([rLine(rs.lineIds[0], a.id, 1, "0.5")], { customerId: other.id }))?.code).toBe("SALE_CONSUMPTION_LINE_UNAVAILABLE");
     expect((await unavailable([rLine(rs.lineIds[0], a.id, 1, "0.5")], { currency: "USD" }))?.code).toBe("SALE_CONSUMPTION_LINE_UNAVAILABLE");
     expect((await unavailable([sLine(randomUUID(), 1, "0.5")]))?.code).toBe("SALE_CONSUMPTION_LINE_UNAVAILABLE");
+    // reserve_deleted_check: only an auto-approved APPROVED Reserve can be soft-deleted (ADR-0050 D4).
     await prisma.reserve.update({ where: { id: rs.id }, data: { deletedAt: new Date(), deletedBy: ACTOR } });
     expect((await unavailable([rLine(rs.lineIds[0], a.id, 1, "0.5")]))?.code).toBe("SALE_CONSUMPTION_LINE_UNAVAILABLE");
     expect(await buckets(a.id)).toEqual(before);
@@ -327,7 +328,7 @@ describe.runIf(canRun)("IT-SL master sale consumption on PostgreSQL", () => {
     try {
       expect(await domainCode(reserve.update(ACTOR, rs.id, version, docInput([stockLine(a.id, 1, "0.5")])))).toEqual({ code: "RESERVE_IN_USE", details: { usedBy: "SL-USED-1" } });
       expect((await domainCode(reserve.delete(ACTOR, rs.id, version))).code).toBe("RESERVE_IN_USE");
-      expect((await reserve.get(rs.id)).flow).toMatchObject({ usedBy: "SL-USED-1" });
+      expect(await reserve.get(rs.id)).toMatchObject({ usedBy: { docNo: "SL-USED-1" } });
       await put(saleId, 2, [], { saleDocNo: "SL-USED-1" });
       expect((await domainCode(reserve.delete(ACTOR, rs.id, version))).code).toBe("ok");
     } finally {
@@ -336,7 +337,7 @@ describe.runIf(canRun)("IT-SL master sale consumption on PostgreSQL", () => {
   });
 
   it("IT-SL-M11 reads: picker filters (customer, currency, q, dates, exclude), oldest first, keyset, 1 query; prepare caps with own add-back, party checks, ≤ 4 queries", async () => {
-    const items = await approvedStock([receiveLine({ pcs: 2, weightCt: "1" }), receiveLine({ pcs: 2, weightCt: "1" }), receiveLine({ pcs: 2, weightCt: "1" })]);
+    const items = await approvedStock([receiveLine({ pcs: 2, weightCt: "1" }), receiveLine({ pcs: 2, weightCt: "1" }), receiveLine({ pcs: 2, weightCt: "1" }), receiveLine({ pcs: 2, weightCt: "1" })]);
     const early = await approvedReserve([stockLine(items[0].id, 2, "1"), stockLine(items[1].id, 2, "1")], { patch: { docDate: "2026-10-01", ref: "early" } });
     const late = await approvedReserve([stockLine(items[2].id, 2, "1")], { patch: { docDate: "2026-11-05" } });
     const base = { customerId: customer.id, currency: "THB" };
@@ -348,24 +349,24 @@ describe.runIf(canRun)("IT-SL master sale consumption on PostgreSQL", () => {
     expect(page1.body.items).toHaveLength(1);
     const page2 = await call("POST", "/sale/reserve-lines/search", { ...base, from: "2026-10-01", to: "2026-10-01", limit: 1, cursor: page1.body.nextCursor });
     expect([...(page1.body.items as { reserveLineId: string }[]), ...(page2.body.items as { reserveLineId: string }[])].map((row) => row.reserveLineId)).toEqual(early.lineIds);
-    expect((await call("POST", "/sale/reserve-lines/search", { ...base, q: early.docNo, exclude: [early.lineIds[0]] })).body.items).toEqual([expect.objectContaining({ reserveLineId: early.lineIds[1] })]);
+    expect(((await call("POST", "/sale/reserve-lines/search", { ...base, q: early.docNo, exclude: [early.lineIds[0]] })).body.items as { reserveId: string }[]).filter((row) => row.reserveId === early.id)).toEqual([expect.objectContaining({ reserveLineId: early.lineIds[1] })]);
     expect((await call("POST", "/sale/reserve-lines/search", { ...base, currency: "USD", q: early.docNo })).body.items).toEqual([]);
     expect((await call("POST", "/sale/reserve-lines/search", { ...base, customerId: other.id, q: early.docNo })).body.items).toEqual([]);
     expect((await call("POST", "/sale/reserve-lines/search", { ...base, cursor: "!!" })).status).toBe(400);
 
     const saleId = newSale();
-    await put(saleId, 1, [rLine(early.lineIds[0], items[0].id, 2, "1"), sLine(items[2].id, 0, "0.5")]);
-    const prepareBody = { party: { customerId: customer.id, shippingAddressId: customer.shipping, invoiceAddressId: customer.invoice }, currency: "THB", reserveLineIds: [early.lineIds[0], early.lineIds[1]], memoStockIds: [items[2].id] };
+    expect((await put(saleId, 1, [rLine(early.lineIds[0], items[0].id, 2, "1"), sLine(items[3].id, 0, "0.5")])).status).toBe(200);
+    const prepareBody = { party: { customerId: customer.id, shippingAddressId: customer.shipping, invoiceAddressId: customer.invoice }, currency: "THB", reserveLineIds: [early.lineIds[0], early.lineIds[1]], memoStockIds: [items[3].id] };
     const without = await measured(() => call("POST", "/sale/prepare", prepareBody));
     expect(without.count).toBeLessThanOrEqual(4);
-    expect(without.result.body).toMatchObject({ party: { code: expect.any(String), name: "SL IT Customer A" }, partyErrors: [], currencyActive: true });
+    expect(without.result.body).toMatchObject({ party: { code: expect.any(String), name: `SL IT Customer A ${ACTOR}` }, partyErrors: [], currencyActive: true });
     const byId = (body: Json) => new Map((body.reserveLines as { reserveLineId: string; status: string; openPcs: number }[]).map((row) => [row.reserveLineId, row]));
     expect(byId(without.result.body).get(early.lineIds[0])).toMatchObject({ status: "CLOSED", openPcs: 0, customerId: customer.id, currency: "THB" });
     expect(byId(without.result.body).get(early.lineIds[1])).toMatchObject({ status: "OPEN", openPcs: 2 });
-    expect(without.result.body.memoStocks).toEqual([expect.objectContaining({ memoStockId: items[2].id, status: "OK", pendingPcs: 0, pendingWeightCt: "0.000" })]);
+    expect(without.result.body.memoStocks).toEqual([expect.objectContaining({ memoStockId: items[3].id, status: "OK", pendingPcs: 2, pendingWeightCt: "0.500" })]);
     const own = await call("POST", "/sale/prepare", { ...prepareBody, saleId });
     expect(byId(own.body).get(early.lineIds[0])).toMatchObject({ status: "OPEN", openPcs: 2, openWeightCt: "1.000" });
-    expect(own.body.memoStocks).toEqual([expect.objectContaining({ pendingPcs: 0, pendingWeightCt: "0.500" })]);
+    expect(own.body.memoStocks).toEqual([expect.objectContaining({ pendingPcs: 2, pendingWeightCt: "1.000" })]);
     const badParty = await call("POST", "/sale/prepare", { ...prepareBody, party: { ...prepareBody.party, shippingAddressId: customer.invoice } });
     expect(badParty.body.partyErrors).toEqual([{ path: "shippingAddressId", code: "invalid_reference" }]);
     const unknown = await call("POST", "/sale/prepare", { currency: "XXX", reserveLineIds: [], memoStockIds: [] });

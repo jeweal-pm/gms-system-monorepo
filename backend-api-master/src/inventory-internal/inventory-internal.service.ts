@@ -9,7 +9,9 @@ import { activeLocationNames } from "../location-master/location-master.service"
 import { stoneLineOptions } from "../quotation/quotation.service";
 import { createPhotoStore, sizeGuard, PHOTO_MAX_BYTES } from "../quotation/quotation-photo.storage";
 import { LINE_PHOTO_DOCUMENTS } from "../trade-document/line-photos";
-import { customerDocumentOptions } from "../trade-document/customer-stock-document";
+// Through memo-out.service (as memo-out-return): importing customer-stock-document first closes the
+// customer-stock-document → memo-stock → memo-receive → memo-out-return → memo-out cycle before the class exists.
+import { customerDocumentOptions } from "../trade-document/memo-out.service";
 import { allocationException, applyAllocation, unpackResult, type AllocationResult } from "./allocation";
 import type {
   AllocationPutInput, LineBatchInput, LoadableSearchInput, MasterDataResolveInput, NumberingResolveInput, SaleConsumptionPutInput, SalePrepareInput, SaleReferenceQuery,

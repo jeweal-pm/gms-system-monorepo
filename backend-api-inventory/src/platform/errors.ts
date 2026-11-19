@@ -39,6 +39,17 @@ export const MESSAGES: Record<string, string> = {
   DB_UNAVAILABLE: "The service is temporarily unavailable",
   SERVICE_UNAVAILABLE: "The service is temporarily unavailable",
   INTERNAL_ERROR: "The request could not be completed",
+  // sale SA rev 1 error-handling.md (ADR-0054)
+  SALE_NOT_FOUND: "Sale not found",
+  SALE_CHANGED: "The sale was changed by someone else",
+  SALE_DELETED: "The sale was deleted",
+  SALE_STATUS_INVALID: "The sale can't be changed in its current status",
+  SALE_BUSY: "Saving in progress",
+  SALE_IN_USE: "Items of this sale are already purchased from the vendor; it can't be changed",
+  SALE_REVISE_LIMIT: "The sale was already sent back for revision once",
+  SALE_SOURCE_SHORT: "Some items no longer have enough available quantity",
+  SALE_REFERENCE_INVALID: "Some items are no longer available",
+  SALE_PHOTO_INVALID: "A photo is missing or is not a ready Sale photo",
 };
 
 export class AppError extends Error {

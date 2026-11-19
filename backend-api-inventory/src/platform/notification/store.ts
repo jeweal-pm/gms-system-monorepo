@@ -9,7 +9,7 @@ import { Prisma, type Db, type Tx } from "../db";
  */
 export const NOTIFICATION_TYPES = ["approval.pending", "document.approved", "document.rejected", "document.revision_requested"] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
-export const NOTIFICATION_DOCUMENT_TYPES = ["load-to-stock"] as const;
+export const NOTIFICATION_DOCUMENT_TYPES = ["load-to-stock", "sale"] as const;
 export type NotificationDocumentType = (typeof NOTIFICATION_DOCUMENT_TYPES)[number];
 export type NotificationSummary = { partyName?: string; amount?: string; currency?: string; reason?: string };
 export type NotificationSignal = { eventId: string; type: NotificationType; documentType: NotificationDocumentType; recipients: readonly string[] };
@@ -47,18 +47,21 @@ export function cleanSummary(summary: NotificationSummary): NotificationSummary 
 
 export type RecordInput = {
   type: NotificationType; documentId: string; docNo: string; actorId: string; recipients: readonly string[]; summary: NotificationSummary;
+  /** Default `load-to-stock`; Sale passes `sale` (ADR-0054 D8). */
+  documentType?: NotificationDocumentType;
 };
 
 /** Inside the document's own transaction: one event + one set-based recipient insert. */
 export async function recordNotification(tx: Tx, input: RecordInput): Promise<NotificationSignal> {
   const id = uuidV7();
   const createdAt = new Date();
+  const documentType = input.documentType ?? "load-to-stock";
   const recipients = [...new Set(input.recipients)].filter((userId) => userId !== input.actorId);
   await tx.notification_event.create({
-    data: { id, type: input.type, document_type: "load-to-stock", document_id: input.documentId, doc_no: input.docNo, actor_user_id: input.actorId, summary: cleanSummary(input.summary), created_at: createdAt },
+    data: { id, type: input.type, document_type: documentType, document_id: input.documentId, doc_no: input.docNo, actor_user_id: input.actorId, summary: cleanSummary(input.summary), created_at: createdAt },
   });
   if (recipients.length > 0) await tx.notification_recipient.createMany({ data: recipients.map((userId) => ({ event_id: id, user_id: userId, created_at: createdAt })) });
-  return { eventId: id, type: input.type, documentType: "load-to-stock", recipients };
+  return { eventId: id, type: input.type, documentType, recipients };
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -130,8 +133,12 @@ export async function purgeExpired(db: Db, now = new Date()) {
   const deleted = await db.$executeRaw`
     DELETE FROM "inventory"."notification_event"
     WHERE "id" IN (SELECT "id" FROM "inventory"."notification_event" WHERE "created_at" < ${before} LIMIT ${PURGE_BATCH})`;
-  const ops = await db.$executeRaw`
+  const loadOps = await db.$executeRaw`
     DELETE FROM "inventory"."master_sync_op"
     WHERE "id" IN (SELECT "id" FROM "inventory"."master_sync_op" WHERE "state" = 'DONE' AND "updated_at" < ${opsBefore} LIMIT ${PURGE_BATCH})`;
-  return { deleted, ops };
+  // sale ADR-0054 D6: the Sale saga table follows the same retention (sale_sync_op_done_idx).
+  const saleOps = await db.$executeRaw`
+    DELETE FROM "inventory"."sale_sync_op"
+    WHERE "id" IN (SELECT "id" FROM "inventory"."sale_sync_op" WHERE "state" = 'DONE' AND "updated_at" < ${opsBefore} LIMIT ${PURGE_BATCH})`;
+  return { deleted, ops: loadOps + saleOps };
 }

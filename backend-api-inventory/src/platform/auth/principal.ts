@@ -108,7 +108,7 @@ export function csrfAllowed(headers: { origin?: string; secFetchSite?: string },
   return site === "same-origin";
 }
 
-export type Menu = "load-to-stock" | "approval-setup" | "merge-split" | "stock-transfer-location";
+export type Menu = "load-to-stock" | "approval-setup" | "merge-split" | "stock-transfer-location" | "sale";
 export type Action = "VIEW" | "ADD" | "EDIT" | "DELETE" | "APPROVE";
 
 export function hasGrant(principal: Pick<Principal, "isSuperAdmin" | "grants">, menu: Menu, action: Action): boolean {

@@ -9,6 +9,7 @@ import { AuthzDatabase } from "./platform/auth/authz-db";
 import { JwksCache } from "./platform/auth/jwks";
 import { createLicenseClient } from "./platform/auth/license-client";
 import { purgeExpired } from "./platform/notification/store";
+import { sweepAll } from "./platform/sync/saga";
 
 /**
  * backend-api-inventory process (ADR-0052 D1/D14): Hono on @hono/node-server, port 3301. Migrations are NOT run here
@@ -36,7 +37,7 @@ async function main() {
   }
 
   const trusted = new Set([new URL(config.frontendUrl).origin, ...config.trustedOrigins]);
-  const { app, service } = createApp({
+  const { app, service, saleService } = createApp({
     db, master, logger, storageRoot: config.storageRoot, trustedOrigins: trusted,
     approvers: (leaf) => authz.approvers(leaf),
     auth: {
@@ -54,7 +55,8 @@ async function main() {
   const sweep = async () => {
     if (sweeping) return;
     sweeping = true;
-    try { await service.sync.sweep(); } catch (error) {
+    // ADR-0054 D6: Load to Stock and Sale share one ≤ 20-op budget per sweep (oldest due first).
+    try { await sweepAll([service.sync, saleService.sync]); } catch (error) {
       logger.warn({ event: "inventory.sweep_failed", errorName: error instanceof Error ? error.name : "unknown" });
     } finally { sweeping = false; }
   };

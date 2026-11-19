@@ -13,6 +13,11 @@ import { approvalTypeSchema, listSettings, settingUpdateSchema, updateSetting } 
 import { NotificationHub } from "./platform/notification/hub";
 import { listForTypes, listForUser, markAllRead, markRead, NOTIFICATION_PAGE_MAX, unreadCount } from "./platform/notification/store";
 import { approvalPending, approvalSummary, getDetail, listDocuments, nextNumber } from "./modules/load-to-stock/read";
+import { approvalPending as salePending, approvalSummary as saleSummary } from "./modules/sale/read";
+import { SaleService } from "./modules/sale/service";
+import { SalePhotoService } from "./modules/sale/photos";
+import { registerSaleRoutes } from "./modules/sale/routes";
+import { pendingQuerySchema as salePendingQuerySchema } from "./modules/sale/schemas";
 import { LoadToStockService } from "./modules/load-to-stock/service";
 import { PhotoService, PHOTO_MAX_BYTES } from "./modules/load-to-stock/photos";
 import {
@@ -59,6 +64,9 @@ export function createApp(deps: AppDeps) {
   const hub = deps.hub ?? new NotificationHub();
   const service = new LoadToStockService({ db: deps.db, master: deps.master, logger: deps.logger, hub, approvers: deps.approvers });
   const photos = new PhotoService(deps.db, deps.master, deps.storageRoot);
+  // sale ADR-0054 (BE-SL-005/007): own module and saga store; photo transfers share the process limiters.
+  const saleService = new SaleService({ db: deps.db, master: deps.master, logger: deps.logger, hub, approvers: deps.approvers });
+  const salePhotos = new SalePhotoService(deps.db, deps.storageRoot, photos.writes, photos.reads);
   const app = new Hono<AppEnv>();
   app.use("*", requestContext(deps.logger));
   app.onError((error, c) => errorResponse(c, error, deps.logger));
@@ -81,7 +89,8 @@ export function createApp(deps: AppDeps) {
   const jsonCap = bodyLimit({ maxSize: JSON_BODY_MAX, onError: limitTooLarge });
   const photoCap = bodyLimit({ maxSize: PHOTO_BODY_MAX, onError: limitTooLarge });
   api.use("/load-to-stock/photos", photoCap);
-  api.use("*", async (c, next) => (c.req.path.endsWith("/load-to-stock/photos") ? next() : jsonCap(c, next)));
+  api.use("/sale/photos", photoCap);
+  api.use("*", async (c, next) => (c.req.path.endsWith("/load-to-stock/photos") || c.req.path.endsWith("/sale/photos") ? next() : jsonCap(c, next)));
   api.use("*", session);
 
   // ---------- reference ----------
@@ -211,8 +220,16 @@ export function createApp(deps: AppDeps) {
     const input = await jsonBody(c, settingUpdateSchema);
     return c.json(await updateSetting(deps.db, c.get("principal"), parsedType.data, input));
   });
-  api.get("/approval/summary", async (c) => c.json(await approvalSummary(deps.db, c.get("principal"))));
+  api.get("/approval/summary", async (c) => {
+    const [load, sale] = await Promise.all([approvalSummary(deps.db, c.get("principal")), saleSummary(deps.db, c.get("principal"))]);
+    return c.json({ ...load, items: [...load.items, ...sale] });
+  });
   api.get("/approval/pending", async (c) => {
+    if (c.req.query("type") === "sale") {
+      const query = parse(salePendingQuerySchema, queryObject(c));
+      if (!canApprove(c.get("principal"), "sale")) throw new AppError(403, "PERMISSION_DENIED");
+      return c.json(await salePending(deps.db, query));
+    }
     const query = parse(pendingQuerySchema, queryObject(c));
     approver(c);
     return c.json(await approvalPending(deps.db, query));
@@ -224,7 +241,10 @@ export function createApp(deps: AppDeps) {
   api.get("/notifications", async (c) => {
     const query = parse(notificationList, queryObject(c));
     const principal = c.get("principal");
-    if (query.scope === "all") return c.json(await listForTypes(deps.db, hasGrant(principal, "load-to-stock", "VIEW") ? ["load-to-stock"] : [], query.cursor, query.limit));
+    if (query.scope === "all") {
+      const types = (["load-to-stock", "sale"] as const).filter((type) => hasGrant(principal, type, "VIEW"));
+      return c.json(await listForTypes(deps.db, types, query.cursor, query.limit));
+    }
     return c.json(await listForUser(deps.db, principal.userId, query.cursor, query.limit));
   });
   api.post("/notifications/mark-read", async (c) => {
@@ -264,6 +284,8 @@ export function createApp(deps: AppDeps) {
     });
   });
 
+  registerSaleRoutes(api, { db: deps.db, master: deps.master, service: saleService, photos: salePhotos });
+
   app.route("/api/inventory/v1", api);
-  return { app, service, hub, photos };
+  return { app, service, hub, photos, saleService, salePhotos };
 }
