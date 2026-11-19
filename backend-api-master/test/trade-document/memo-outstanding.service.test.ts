@@ -6,13 +6,13 @@ import {
   memoOutstandingListSchema,
   purchaseOutstandingListSchema,
 } from "../../src/trade-document/memo-outstanding.schemas";
-import { MemoOutstandingService, REPORT_STATEMENT_TIMEOUT_MS } from "../../src/trade-document/memo-outstanding.service";
+import { MemoOutstandingService, REPORT_STATEMENT_TIMEOUT_MS, REPORT_WORK_MEM_MB } from "../../src/trade-document/memo-outstanding.service";
 
 /**
  * UT-MOS-01…04 (INV-20261029-004) with Prisma mocked: the three outstanding reports prune settled documents with an
  * `EXISTS` open predicate before `GROUP BY` (no `HAVING bool_or`), read the list total from `count(*) OVER ()` in the
- * page statement, and run inside one READ_TX with `SET LOCAL statement_timeout`. Results and contracts are covered
- * unchanged by IT-MOV / IT-MOC / IT-POS against PostgreSQL.
+ * page statement, and run inside one READ_TX with bounded local statement timeout and work_mem. Results and contracts
+ * are covered unchanged by IT-MOV / IT-MOC / IT-POS against PostgreSQL.
  */
 
 const db = vi.hoisted(() => ({ settings: [] as string[], queries: [] as string[], results: [] as unknown[][], transactions: 0 }));
@@ -48,12 +48,15 @@ describe("Outstanding reports prune before grouping (INV-20261029-004)", () => {
     db.transactions = 0;
   });
 
-  it("UT-MOS-01 vendor list: one READ_TX with the statement timeout, EXISTS before GROUP BY, total from count(*) OVER ()", async () => {
+  it("UT-MOS-01 vendor list: one READ_TX with bounded local report settings, EXISTS before GROUP BY, total from count(*) OVER ()", async () => {
     db.results = [[docRow(37)]];
     const page = await service.vendorList(memoOutstandingListSchema.parse({ page: 1, pageSize: 10 }));
     expect(page).toMatchObject({ total: 37, page: 1, pageSize: 10, items: [{ docNo: "MR-1", openValue: "10.00" }] });
     expect(db.transactions).toBe(1);
-    expect(db.settings).toEqual([`SET LOCAL statement_timeout = ${REPORT_STATEMENT_TIMEOUT_MS}`]);
+    expect(db.settings).toEqual([
+      `SET LOCAL statement_timeout = ${REPORT_STATEMENT_TIMEOUT_MS}`,
+      `SET LOCAL work_mem = '${REPORT_WORK_MEM_MB}MB'`,
+    ]);
     expect(db.queries).toHaveLength(1);
     const [sql] = db.queries;
     expect(sql).toMatch(/AND EXISTS \(SELECT 1 FROM "partner"\."memo_stock" o WHERE o\.memo_receive_id = r\.id AND \(o\.pending_pcs > 0 OR o\.pending_weight_ct > 0 OR o\.reserved_pcs > 0 OR o\.reserved_weight_ct > 0\)\) GROUP BY r\.id\)/);
@@ -84,7 +87,7 @@ describe("Outstanding reports prune before grouping (INV-20261029-004)", () => {
       expect(sql).not.toMatch(/HAVING|bool_or/);
       expect(sql).toContain("count(*) OVER ()::bigint AS total");
     }
-    expect(db.settings).toHaveLength(2);
+    expect(db.settings).toHaveLength(4);
   });
 
   it("UT-MOS-04 the three summaries prune the same way, one statement each under the timeout", async () => {
@@ -94,7 +97,7 @@ describe("Outstanding reports prune before grouping (INV-20261029-004)", () => {
     await service.customerSummary(memoOutstandingCustomerFiltersSchema.parse({}));
     await service.purchaseSummary(memoOutstandingFiltersSchema.parse({}));
     expect(db.transactions).toBe(3);
-    expect(db.settings).toHaveLength(3);
+    expect(db.settings).toHaveLength(6);
     expect(db.queries).toHaveLength(3);
     expect(db.queries[0]).toContain(`FROM "partner"."memo_stock" o WHERE o.memo_receive_id = r.id AND (o.pending_pcs > 0`);
     expect(db.queries[1]).toContain(`FROM "partner"."memo_out_line" x WHERE x.memo_out_id = o.id`);

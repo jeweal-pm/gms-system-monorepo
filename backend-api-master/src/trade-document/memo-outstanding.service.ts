@@ -58,9 +58,12 @@ const HAS_OPEN_ITEM = Prisma.sql`EXISTS (SELECT 1 FROM "partner"."memo_stock" o 
  * `statement_timeout`, so a slow report fails fast (DEPENDENCY_UNAVAILABLE) instead of holding a pool connection.
  */
 export const REPORT_STATEMENT_TIMEOUT_MS = 2_000;
+/** Keep report sorts/aggregates in memory without changing PostgreSQL's database-wide work_mem default. */
+export const REPORT_WORK_MEM_MB = 16;
 function reportRead<T>(run: (tx: Tx) => Promise<T>): Promise<T> {
   return prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${REPORT_STATEMENT_TIMEOUT_MS}`);
+    await tx.$executeRawUnsafe(`SET LOCAL work_mem = '${REPORT_WORK_MEM_MB}MB'`);
     return run(tx);
   }, READ_TX);
 }
