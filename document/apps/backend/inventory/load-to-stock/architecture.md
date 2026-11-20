@@ -36,7 +36,8 @@ flowchart LR
 | `approval` (platform) | this revision | `approval_setting`, approve-center queries per registered type | each document module registers its approve/revise/reject handler |
 | `notification` (platform) | this revision | `notification_event`, `notification_recipient` | auth `permission_holders` |
 | `merge-split`, `stock-transfer`, `stock-adjustment`, `barcode` | later | own document tables; write `stock`/`stock_movement` only through the `stock` service interface of `load-to-stock`'s stock component, which sets `first_used_at` | — |
-| `sale`, `account-outstanding` | later | own tables | Sale consumes stock via the stock interface; master data via master internal API |
+| `sale` | SA rev 1 pending-review ([inventory/sale](../sale/architecture.md), ADR-0054) | `sale*`, `sale_sync_op` | Reserve lines + Memo Stock via master `PUT /internal/v1/inventory/sale-consumptions/{id}` (saga); own stock via the stock interface in phase 2 |
+| `account-outstanding` | later | own tables | reads `sale` through its module interface; master data via master internal API |
 | `reports` (Stock Movement, Closing Stock, Sale Report) | later | none (read-only, bounded, keyset ≤ 200, report role) | reads inventory tables only; master names via snapshots |
 
 The `stock` component (tables `stock`, `stock_photo`, `stock_movement`, `stock_hold`) is a separate folder `src/modules/stock/` from day one so later modules depend on its interface, not on Load to Stock. It owns the buckets (on_hand, reserved, memo_out, sold, consumed) and the in-use rule `on_hand_pcs <> pcs OR on_hand_weight_ct <> weight_ct` (ADR-0052 D9/D15).

@@ -183,7 +183,8 @@ export const photoIdsSchema = z.object({ ids: z.array(z.string()).max(5) });
 
 // ---- approval platform (FE-LS-009/011/014) ----
 
-export const INVENTORY_APPROVAL_TYPES = ["load-to-stock", "merge-split", "stock-transfer-location"] as const;
+// sale FE-SL-009 (ADR-0054): Sale's switch, counts and pending list are served by backend-api-inventory too.
+export const INVENTORY_APPROVAL_TYPES = ["load-to-stock", "merge-split", "stock-transfer-location", "sale"] as const;
 export type InventoryApprovalType = (typeof INVENTORY_APPROVAL_TYPES)[number];
 
 export const approvalSettingsSchema = z.object({
@@ -211,7 +212,11 @@ export const pendingItemSchema = z.object({
   submittedByName: z.string().nullable(),
   totalPcs: z.number().int(),
   totalWeightCt: dec,
-  valueBase: dec,
+  /** Load to Stock: value in the company currency. */
+  valueBase: dec.optional(),
+  /** Sale (FE-SL-009): grand total in the document currency. */
+  value: dec.optional(),
+  currency: z.string().optional(),
   revisionCount: z.number().int(),
   /** Not in SA rev 1 (version is read with `get` before an approve); taken when the server adds it. */
   version: z.number().int().optional(),

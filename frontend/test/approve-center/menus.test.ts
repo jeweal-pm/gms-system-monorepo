@@ -3,7 +3,7 @@ import { APPROVE_MENUS, APPROVE_PERMISSIONS, approveBreadcrumbs, approveMenuFor,
 
 /** UT-AP-01 (FE-AP-002) registry and UT-AP-10 (FE-AP-001) routes / breadcrumbs. */
 describe("UT-AP-01 menu registry", () => {
-  it("lists 11 items in the sidebar order (owner Q-AP-03, 2026-11-07)", () => {
+  it("lists 12 items in the sidebar order (owner Q-AP-03, 2026-11-07; Sale FE-SL-009)", () => {
     expect(APPROVE_MENUS.map((menu) => menu.label)).toEqual([
       "Quotation",
       "Reserve",
@@ -16,6 +16,7 @@ describe("UT-AP-01 menu registry", () => {
       "Load to Stock",
       "Merge/Split Stock",
       "Transfer Location",
+      "Sale",
     ]);
   });
 
@@ -33,21 +34,23 @@ describe("UT-AP-01 menu registry", () => {
       ["purchase-order", "purchaseOrder"],
       ["purchase", "purchase"],
       ["load-to-stock", "loadToStock"],
+      ["sale", "sale"],
     ]);
   });
 
   it("uses the kebab-case approval setting keys as types (G13)", () => {
     expect(APPROVE_MENUS.map((menu) => menu.type)).toEqual([
-      "quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase", "load-to-stock", "merge-split", "stock-transfer-location",
+      "quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase", "load-to-stock", "merge-split", "stock-transfer-location", "sale",
     ]);
   });
 
   it("uses the catalog leaves and parties of the documents", () => {
     expect(APPROVE_MENUS.map((menu) => menu.leaf)).toEqual([
-      "quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase", "load-to-stock", "merge-split", "stock-transfer-location",
+      "quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase", "load-to-stock", "merge-split", "stock-transfer-location", "sale",
     ]);
     expect(APPROVE_PERMISSIONS).toContain("stock-transfer-location:APPROVE");
     expect(APPROVE_MENUS.filter((menu) => menu.party === "vendor").map((menu) => menu.slug)).toEqual(["memo-receive", "memo-return", "purchase-order", "purchase", "load-to-stock"]);
+    expect(approveMenuFor("sale")).toMatchObject({ party: "customer", leaf: "sale", type: "sale", proc: "sale" });
     expect(searchPlaceholder(approveMenuFor("reserve")!)).toBe("Search no., customer, stone, Stock ID");
     expect(searchPlaceholder(approveMenuFor("purchase")!)).toBe("Search no., vendor, stone, Stock ID");
     expect(searchPlaceholder(approveMenuFor("merge-split")!)).toBe("Search no., stone, Stock ID");
@@ -63,6 +66,7 @@ describe("UT-AP-01 menu registry", () => {
     expect(base("purchase")).toBe("/purchase-order/purchase");
     expect(base("memo-out-return")).toBe("/memo/memo-out-return");
     expect(base("quotation")).toBe("/pre-sale/quotation");
+    expect(base("sale")).toBe("/sale/sale");
   });
 });
 
@@ -73,7 +77,7 @@ describe("UT-AP-10 routes and breadcrumbs", () => {
   });
 
   it("an unknown slug ends with Menu not found", () => {
-    expect(approveMenuFor("sale")).toBeUndefined();
-    expect(approveBreadcrumbs("sale").at(-1)).toEqual({ label: "Menu not found" });
+    expect(approveMenuFor("no-such-menu")).toBeUndefined();
+    expect(approveBreadcrumbs("no-such-menu").at(-1)).toEqual({ label: "Menu not found" });
   });
 });

@@ -448,6 +448,22 @@ describe("staged master domain tRPC boundary", () => {
     expect(currency.options).toHaveBeenCalledTimes(2);
   });
 
+  it("IT-SL-M12 (unit part) sale ADR-0054 D10: currency.options and memoStock.list accept sale:VIEW only; other sale actions or menus do not open them", async () => {
+    await router.createCaller(context(["sale:VIEW"])).currency.options();
+    await router.createCaller(context(["sale:VIEW"])).memoStock.list({ q: "ruby", limit: 10 });
+    expect(currency.options).toHaveBeenCalledTimes(1);
+    expect(memoStock.list).toHaveBeenCalledTimes(1);
+    for (const grants of [["sale:ADD", "sale:EDIT", "sale:APPROVE"], ["vendor:VIEW"]]) {
+      await expect(router.createCaller(context(grants)).currency.options()).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(router.createCaller(context(grants)).memoStock.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    }
+    await expect(router.createCaller(context(["sale:VIEW"], { license: "DENIED" })).memoStock.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    // sale:VIEW grants nothing else in master (no Reserve / Memo Out reads).
+    await expect(router.createCaller(context(["sale:VIEW"])).reserve.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(currency.options).toHaveBeenCalledTimes(1);
+    expect(memoStock.list).toHaveBeenCalledTimes(1);
+  });
+
   it("GP-MT-QT quotation: each procedure needs its own action; mutations need CSRF; 422 keeps its domain code", async () => {
     const id = "11111111-1111-4111-8111-111111111111";
     const versioned = { id, expectedVersion: 1 };

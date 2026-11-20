@@ -6,8 +6,9 @@ import { DateInput } from "@/components/ui/date-input";
 import { Button, cx, IconButton } from "@/features/quotation/components/ui";
 
 /**
- * Purchase picker shell (purchase UI rev 2, R2-MS / R2-PO, FE-PU-008): the "Add Memo Stock" and "Add Purchase Order"
- * dialogs share it. It holds the toolbar (segmented tabs with counts, search with a 250 ms debounce, Start → Due), the
+ * Stock picker shell (purchase UI rev 2, R2-MS / R2-PO, FE-PU-008; moved from `purchase/components/purchase-picker.tsx`
+ * by sale FE-SL-001 so other documents reuse it without importing a Purchase file). Purchase's "Add Memo Stock" and
+ * "Add Purchase Order" dialogs share it, and Sale's "Add From Reserve" builds on it (FE-SL-004). It holds the toolbar (segmented tabs with counts, search with a 250 ms debounce, Start → Due), the
  * one-row header, collapsible groups with a running #, select all over the expanded groups, checked rows kept across
  * filters, Load more, per-tab loading / error / empty texts, the footer with "N selected" and OK, Escape, backdrop,
  * focus trap and focus return. The thin pickers give it the data hook, groups, columns and cells.
@@ -31,7 +32,7 @@ export type PickerData<R> = {
 };
 
 /** The thin picker's fixed settings and row rendering. */
-export type PurchasePickerProps<R, S extends string> = {
+export type StockPickerProps<R, S extends string> = {
   title: string;
   /** The tabs with the server's counts for the current search and dates; none → no tab bar (Add Purchase Order, rev 3). */
   tabs: PickerTab<S>[];
@@ -150,7 +151,7 @@ export type PickerViewHandlers<S extends string> = {
 };
 
 /** The dialog as a function of its state (static-render tests use it directly). */
-export function PurchasePickerView<R, S extends string>({ props, state, on }: { props: PurchasePickerProps<R, S>; state: PickerViewState<R, S>; on: PickerViewHandlers<S> }) {
+export function StockPickerView<R, S extends string>({ props, state, on }: { props: StockPickerProps<R, S>; state: PickerViewState<R, S>; on: PickerViewHandlers<S> }) {
   const titleId = useId();
   const groupId = useId();
   const dialog = useRef<HTMLDivElement>(null);
@@ -375,7 +376,7 @@ export function usePickerFilters<S extends string>(defaultTab: S) {
 export type PickerFilters<S extends string> = ReturnType<typeof usePickerFilters<S>>;
 
 /** The stateful dialog: checked rows (kept across filters), collapsed groups, Escape and focus return. */
-export function PurchasePicker<R, S extends string>({ filters, data, ...props }: PurchasePickerProps<R, S> & { filters: PickerFilters<S>; data: PickerData<R> }) {
+export function StockPicker<R, S extends string>({ filters, data, ...props }: StockPickerProps<R, S> & { filters: PickerFilters<S>; data: PickerData<R> }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [checked, setChecked] = useState<Map<string, R>>(new Map());
   // Focus returns to the button that opened the dialog (R2-MS "Close"); read on the first render, before autoFocus.
@@ -401,7 +402,7 @@ export function PurchasePicker<R, S extends string>({ filters, data, ...props }:
     tab: filters.tab, search: filters.search, from: filters.from, to: filters.to, collapsed, checked, data, filtered: Boolean(filter.q || filter.from || filter.to),
   };
   return (
-    <PurchasePickerView
+    <StockPickerView
       props={{ ...props, onCancel: close }}
       state={state}
       on={{

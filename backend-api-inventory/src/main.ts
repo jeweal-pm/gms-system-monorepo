@@ -9,6 +9,7 @@ import { AuthzDatabase } from "./platform/auth/authz-db";
 import { JwksCache } from "./platform/auth/jwks";
 import { createLicenseClient } from "./platform/auth/license-client";
 import { purgeExpired } from "./platform/notification/store";
+import { sweepAll } from "./platform/sync/saga";
 import { readTokenDigest } from "./internal/master-routes";
 
 /**
@@ -37,7 +38,7 @@ async function main() {
   }
 
   const trusted = new Set([new URL(config.frontendUrl).origin, ...config.trustedOrigins]);
-  const { app, service } = createApp({
+  const { app, service, saleService } = createApp({
     db, master, logger, storageRoot: config.storageRoot, trustedOrigins: trusted,
     internal: { tokenDigest: readTokenDigest(config.masterInventoryTokenFile), otherTokenDigest: readTokenDigest(config.masterTokenFile) },
     approvers: (leaf) => authz.approvers(leaf),
@@ -56,7 +57,8 @@ async function main() {
   const sweep = async () => {
     if (sweeping) return;
     sweeping = true;
-    try { await service.sync.sweep(); } catch (error) {
+    // ADR-0054 D6: Load to Stock and Sale share one ≤ 20-op budget per sweep (oldest due first).
+    try { await sweepAll([service.sync, saleService.sync]); } catch (error) {
       logger.warn({ event: "inventory.sweep_failed", errorName: error instanceof Error ? error.name : "unknown" });
     } finally { sweeping = false; }
   };

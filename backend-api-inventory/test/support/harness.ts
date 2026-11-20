@@ -100,7 +100,7 @@ export async function startHarness() {
   const sessions = new Map<string, AuthorizationRow>();
   const license = { state: "ELIGIBLE" as LicenseState, authzDown: false };
   const approverIds: string[] = [];
-  const { app, service, hub, photos } = createApp({
+  const { app, service, hub, photos, saleService, salePhotos } = createApp({
     db, master: masterApi, logger, storageRoot: join(dir, "inventory"), trustedOrigins: new Set([ORIGIN]),
     approvers: async () => approverIds,
     auth: {
@@ -142,7 +142,7 @@ export async function startHarness() {
   }
 
   return {
-    dir, token, master, db, ownerDb, app, service, photos, hub, masterApi, sessions, license, approverIds, user, measured,
+    dir, token, master, db, ownerDb, app, service, photos, saleService, salePhotos, hub, masterApi, sessions, license, approverIds, user, measured,
     async close() {
       await master.close();
       await db.$disconnect();

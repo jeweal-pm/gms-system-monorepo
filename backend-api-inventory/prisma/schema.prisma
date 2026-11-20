@@ -392,10 +392,184 @@ model stored_file {
   ready_at                DateTime?                 @db.Timestamptz(6)
   load_to_stock_row_photo load_to_stock_row_photo[]
   stock_photo             stock_photo[]
+  sale_line_photo         sale_line_photo[]
 
   @@unique([bucket, object_key])
   @@unique([origin_service, origin_file_id], map: "stored_file_origin_key", where: raw("(origin_file_id IS NOT NULL)"))
   @@index([source_type, source_id], map: "stored_file_source_idx")
   @@index([created_by, created_at(sort: Desc)], map: "stored_file_user_idx")
+  @@schema("inventory")
+}
+
+// sale SA rev 1 / ADR-0054 (BE-SL-003): migration 20261119090000_sale; CHECK constraints live in the migration SQL.
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model sale {
+  id                        String         @id @db.Uuid
+  numbering_id              String?        @db.Uuid
+  running_no                Int            @unique(map: "sale_plain_running_no_key", where: raw("(numbering_id IS NULL)"))
+  doc_no                    String         @unique @db.VarChar(40)
+  status                    String         @db.VarChar(20)
+  provisional               Boolean        @default(false)
+  sync_state                String         @default("IDLE") @db.VarChar(10)
+  applied_revision          Int            @default(0)
+  doc_date                  DateTime       @db.Date
+  due_date                  DateTime       @db.Date
+  customer_id               String         @db.Uuid
+  customer_code_snapshot    String         @default("") @db.VarChar(120)
+  customer_name_snapshot    String         @default("") @db.VarChar(200)
+  shipping_address_id       String?        @db.Uuid
+  shipping_address_snapshot String         @default("") @db.VarChar(1000)
+  invoice_address_id        String?        @db.Uuid
+  invoice_address_snapshot  String         @default("") @db.VarChar(1000)
+  currency_code             String         @db.Char(3)
+  exchange_rate             Decimal?       @db.Decimal(18, 6)
+  ref                       String         @default("") @db.VarChar(100)
+  document_note             String         @default("") @db.VarChar(250)
+  discount_type             String         @default("NONE") @db.VarChar(10)
+  discount_value            Decimal        @default(0) @db.Decimal(18, 4)
+  tax_enabled               Boolean        @default(false)
+  tax_rate                  Decimal        @default(0) @db.Decimal(9, 4)
+  tax_included              Boolean        @default(false)
+  labor_work                String?        @db.VarChar(120)
+  labor_basis               String?        @db.VarChar(10)
+  labor_qty                 Decimal?       @db.Decimal(18, 3)
+  labor_rate                Decimal?       @db.Decimal(18, 2)
+  subtotal                  Decimal        @db.Decimal(18, 2)
+  discount_amount           Decimal        @db.Decimal(18, 2)
+  price_before_tax          Decimal        @db.Decimal(18, 2)
+  tax_amount                Decimal        @db.Decimal(18, 2)
+  charges_amount            Decimal        @db.Decimal(18, 2)
+  labor_amount              Decimal        @db.Decimal(18, 2)
+  grand_total               Decimal        @db.Decimal(18, 2)
+  line_count                Int            @db.SmallInt
+  total_pcs                 Int
+  total_weight_ct           Decimal        @db.Decimal(15, 3)
+  auto_approved             Boolean        @default(false)
+  revision_count            Int            @default(0) @db.SmallInt
+  submitted_at              DateTime?      @db.Timestamptz(3)
+  submitted_by              String?        @db.VarChar(64)
+  submitted_by_name         String?        @db.VarChar(200)
+  review_action             String?        @db.VarChar(10)
+  review_note               String?        @db.VarChar(500)
+  reviewed_at               DateTime?      @db.Timestamptz(3)
+  reviewed_by               String?        @db.VarChar(64)
+  reviewed_by_name          String?        @db.VarChar(200)
+  approved_at               DateTime?      @db.Timestamptz(3)
+  approved_by               String?        @db.VarChar(64)
+  deleted_at                DateTime?      @db.Timestamptz(3)
+  deleted_by                String?        @db.VarChar(64)
+  version                   Int            @default(1)
+  created_at                DateTime       @default(now()) @db.Timestamptz(3)
+  created_by                String         @db.VarChar(64)
+  updated_at                DateTime       @default(now()) @db.Timestamptz(3)
+  updated_by                String         @db.VarChar(64)
+  sale_charge               sale_charge[]
+  sale_line                 sale_line[]
+  sale_sync_op              sale_sync_op[]
+
+  @@unique([numbering_id, running_no], map: "sale_numbering_running_no_key")
+  @@index([customer_id, doc_date(sort: Desc)], map: "sale_customer_idx")
+  @@index([doc_date(sort: Desc), created_at(sort: Desc), id(sort: Desc)], map: "sale_deleted_list_idx", where: raw("(deleted_at IS NOT NULL)"))
+  @@index([doc_date(sort: Desc), created_at(sort: Desc), id(sort: Desc)], map: "sale_list_idx", where: raw("((deleted_at IS NULL) AND (NOT provisional))"))
+  @@index([submitted_at, id], map: "sale_pending_idx", where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"))
+  @@index([id], map: "sale_revision_idx", where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"))
+  @@index([sync_state], map: "sale_syncing_idx", where: raw("((sync_state)::text = 'SYNCING'::text)"))
+  @@schema("inventory")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model sale_charge {
+  sale_id     String  @db.Uuid
+  charge_type String  @db.VarChar(20)
+  amount      Decimal @db.Decimal(18, 2)
+  sale        sale    @relation(fields: [sale_id], references: [id], onDelete: Cascade, map: "sale_charge_sale_fkey")
+
+  @@id([sale_id, charge_type])
+  @@schema("inventory")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model sale_line {
+  id                     String            @id @db.Uuid
+  sale_id                String            @db.Uuid
+  position               Int               @db.SmallInt
+  source                 String            @db.VarChar(10)
+  reserve_line_id        String?           @db.Uuid
+  reserve_id             String?           @db.Uuid
+  reserve_doc_no         String?           @db.VarChar(40)
+  memo_stock_id          String            @db.Uuid
+  stock_id               String            @default("") @db.VarChar(10)
+  memo_receive_id        String?           @db.Uuid
+  memo_receive_doc_no    String?           @db.VarChar(40)
+  stone_code             String            @default("") @db.VarChar(60)
+  stone                  String            @default("") @db.VarChar(60)
+  shape                  String            @default("") @db.VarChar(60)
+  size                   String            @default("") @db.VarChar(60)
+  color                  String            @default("") @db.VarChar(60)
+  clarity                String            @default("") @db.VarChar(60)
+  cutting                String            @default("") @db.VarChar(60)
+  quality                String            @default("") @db.VarChar(60)
+  lot                    String            @default("") @db.VarChar(40)
+  location               String            @default("") @db.VarChar(40)
+  cer_type               String            @default("") @db.VarChar(20)
+  cer_no                 String            @default("") @db.VarChar(60)
+  price_unit             String            @db.VarChar(10)
+  pcs                    Int
+  weight_ct              Decimal           @db.Decimal(12, 3)
+  cap_pcs                Int
+  cap_weight_ct          Decimal           @db.Decimal(12, 3)
+  reserve_net_unit_price Decimal?          @db.Decimal(18, 4)
+  unit_price             Decimal           @db.Decimal(18, 2)
+  discount_type          String            @default("NONE") @db.VarChar(10)
+  discount_value         Decimal           @default(0) @db.Decimal(18, 4)
+  discount_amount        Decimal           @default(0) @db.Decimal(18, 2)
+  amount                 Decimal           @db.Decimal(18, 2)
+  item_note              String            @default("") @db.VarChar(500)
+  sale                   sale              @relation(fields: [sale_id], references: [id], onDelete: Cascade, map: "sale_line_sale_fkey")
+  sale_line_photo        sale_line_photo[]
+
+  @@unique([sale_id, position], map: "sale_line_position_key")
+  @@unique([sale_id, reserve_line_id], map: "sale_line_reserve_line_key", where: raw("(reserve_line_id IS NOT NULL)"))
+  @@unique([sale_id, memo_stock_id], map: "sale_line_stock_key", where: raw("((source)::text = 'STOCK'::text)"))
+  @@index([memo_stock_id], map: "sale_line_memo_stock_idx")
+  @@index([reserve_line_id], map: "sale_line_reserve_line_idx")
+  @@schema("inventory")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model sale_line_photo {
+  line_id     String      @db.Uuid
+  position    Int         @db.SmallInt
+  file_id     String      @db.Uuid
+  stored_file stored_file @relation(fields: [file_id], references: [id], map: "sale_line_photo_file_fkey")
+  sale_line   sale_line   @relation(fields: [line_id], references: [id], onDelete: Cascade, map: "sale_line_photo_line_fkey")
+
+  @@id([line_id, position])
+  @@index([file_id], map: "sale_line_photo_file_idx")
+  @@schema("inventory")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model sale_sync_op {
+  id              String   @id @db.Uuid
+  sale_id         String   @db.Uuid
+  revision        Int
+  kind            String   @db.VarChar(16)
+  state           String   @db.VarChar(10)
+  request_hash    String   @db.Char(64)
+  payload         Json
+  result          Json?
+  attempts        Int      @default(0) @db.SmallInt
+  next_attempt_at DateTime @db.Timestamptz(3)
+  last_error      String?  @db.VarChar(64)
+  created_by      String   @db.VarChar(64)
+  created_at      DateTime @default(now()) @db.Timestamptz(3)
+  updated_at      DateTime @default(now()) @db.Timestamptz(3)
+  sale            sale     @relation(fields: [sale_id], references: [id], onDelete: Cascade, map: "sale_sync_op_sale_fkey")
+
+  @@unique([sale_id, revision], map: "sale_sync_op_sale_revision_key")
+  @@index([updated_at], map: "sale_sync_op_done_idx", where: raw("((state)::text = 'DONE'::text)"))
+  @@index([next_attempt_at], map: "sale_sync_op_due_idx", where: raw("((state)::text = ANY ((ARRAY['PREPARED'::character varying, 'CONFIRMED'::character varying])::text[]))"))
   @@schema("inventory")
 }

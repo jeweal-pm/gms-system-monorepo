@@ -438,8 +438,8 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
     currency: t.router({
       list: permitted("currency", "VIEW").input(listInput).query(({ input }) => domainCall(() => currency.list({ q: input.q, cursor: input.cursor, limit: input.limit }))),
       get: permitted("currency", "VIEW").input(idInput).query(({ input }) => domainCall(() => currency.get(input.id))),
-      // Read by the document pages for currency choices and rates (currency SA-CUR-07, memo out ADR-0033, memo receive ADR-0034, memo return, purchase SA-PU-15).
-      options: permittedAny(["currency", "quotation", "memo-out", "memo-out-return", "memo-receive", "memo-return", "reserve", "purchase-order", "purchase"], "VIEW").query(() => domainCall(() => currency.options())),
+      // Read by the document pages for currency choices and rates (currency SA-CUR-07, memo out ADR-0033, memo receive ADR-0034, memo return, purchase SA-PU-15, sale ADR-0054 D10 Selling Rate).
+      options: permittedAny(["currency", "quotation", "memo-out", "memo-out-return", "memo-receive", "memo-return", "reserve", "purchase-order", "purchase", "sale"], "VIEW").query(() => domainCall(() => currency.options())),
       create: permitted("currency", "ADD", true).input(createCurrencyBodySchema).mutation(({ ctx, input }) => domainCall(() => currency.create(ctx.userId, input))),
       update: permitted("currency", "EDIT", true).input(updateCurrencyBodySchema.extend({ id: z.uuid() })).mutation(({ ctx, input }) => {
         const { id, ...body } = input;
@@ -550,9 +550,10 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       // The creator may approve (like quotation Q-QT-02); the server checks APPROVE on every call.
       ...approvalProcedures("memo-receive", memoReceive, memoVersionedIdSchema),
     }),
-    // Memo Stock list (SA-MR-11): Memo Return "Add Memo Stock" (its vendor) and Memo Out "From Stock" (every vendor, SA-MO-15).
+    // Memo Stock list (SA-MR-11): Memo Return "Add Memo Stock" (its vendor) and Memo Out "From Stock" (every vendor, SA-MO-15);
+    // Sale "From Stock" phase 1 (sale ADR-0054 D10, SA-SL-05).
     memoStock: t.router({
-      list: permittedAny(["memo-return", "memo-receive", "memo-out", "reserve", "quotation"], "VIEW").input(memoStockListSchema).query(({ input }) => domainCall(() => memoStock.list(input))),
+      list: permittedAny(["memo-return", "memo-receive", "memo-out", "reserve", "quotation", "sale"], "VIEW").input(memoStockListSchema).query(({ input }) => domainCall(() => memoStock.list(input))),
     }),
     // load-to-stock SA rev 2 (ADR-0052 D16, SA-LS-P2-01): the customer-side From Stock picker as one list of both stocks.
     fromStock: t.router({

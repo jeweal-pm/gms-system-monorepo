@@ -52,10 +52,10 @@ const domainError = (domainCode: string, details?: Record<string, number>) =>
   TRPCClientError.from({ error: { message: domainCode, code: -32000, data: { code: "CONFLICT", httpStatus: 409, domainCode, details } } } as never);
 
 describe("UT-AS-01 rows", () => {
-  it("11 rows in sidebar order with the Memo rows (owner answer 2); Merge/Split and Transfer Location are not available (Load to Stock has its page, FE-LS-014)", () => {
+  it("12 rows in sidebar order with the Memo rows (owner answer 2); Merge/Split and Transfer Location are not available (Load to Stock FE-LS-014 and Sale FE-SL-009 have pages)", () => {
     expect(SETUP_ROWS.map((entry) => entry.label)).toEqual([
       "Quotation", "Reserve", "Memo Receive", "Memo Return", "Memo Out", "Memo Out Return",
-      "Purchase Order (PO)", "Purchase", "Load to Stock", "Merge/Split Stock", "Transfer Location",
+      "Purchase Order (PO)", "Purchase", "Load to Stock", "Merge/Split Stock", "Transfer Location", "Sale",
     ]);
     expect(SETUP_ROWS.filter(isNotAvailable).map((entry) => entry.slug)).toEqual(["merge-split", "transfer-location"]);
   });
@@ -138,9 +138,10 @@ describe("UT-AS-07 turning off (owner answer 3, ADR-0050 D5)", () => {
 });
 
 describe("UT-AS-09 row render", () => {
-  it("an On row shows the chain, the waiting link to Approve and an enabled switch", () => {
+  it("an On row shows the waiting link to Approve and an enabled switch (the status chain moved above the table, owner 2026-11-20)", () => {
     const markup = row("reserve", { setting: settingItem("reserve", { waiting: 2 }) });
-    expect(markup).toContain(">Pending approval<");
+    // The per-row "When a document is saved" column is commented out; one StatusChainView sits above the table.
+    expect(markup).not.toContain(">Pending approval<");
     expect(markup).toContain('href="/approve/reserve"');
     expect(markup).toContain("2 documents");
     expect(markup).toContain('aria-checked="true"');

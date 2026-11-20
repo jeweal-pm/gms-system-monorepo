@@ -24,6 +24,42 @@ export type AllocationLine = { purchaseLineId: string; pcs: number; weightCt: st
 export type AllocationRequest = { vendorId: string; lines: AllocationLine[]; newStockIdCount: number };
 export type AllocationResponse = { revision: number; stockIds: string[]; lines: { purchaseLineId: string; remainingPcs: number; remainingWeightCt: string }[]; replayed: boolean };
 export type Numbering = { id: string; prefix: string; separator: string; startNo: number };
+export type NumberingKey = "load-to-stock" | "sale";
+
+// ---------- sale (ADR-0054, api-contract "Master internal API") ----------
+export type SaleStoneAttrs = {
+  stoneCode: string; stone: string; shape: string; size: string; color: string; clarity: string; cutting: string; quality: string;
+  lot: string; location: string; cerType: string; cerNo: string;
+};
+export type ReserveLineRef = SaleStoneAttrs & {
+  reserveLineId: string; reserveId: string; reserveNo: string; reserveDate: string; dueDate: string;
+  memoStockId: string; stockId: string; priceUnit: PriceUnit;
+  netUnitPrice: string; openPcs: number; openWeightCt: string; openAmount: string;
+};
+export type SaleReference = {
+  customers: { id: string; code: string; name: string; active: boolean; currency: string | null; addresses: { id: string; type: string; label: string; isDefault: boolean }[] }[];
+  currencies: string[]; companyCurrency: string | null; chargeTypes: string[]; numbering: { configured: boolean }; stone: unknown;
+};
+export type SaleReserveLineSearch = { customerId: string; currency: string; q?: string; from?: string; to?: string; exclude: string[]; cursor?: string | null; limit: number };
+export type SalePrepareRequest = {
+  party?: { customerId: string; shippingAddressId: string; invoiceAddressId: string; keepCustomerId?: string };
+  currency: string; reserveLineIds: string[]; memoStockIds: string[]; saleId?: string;
+};
+export type PreparedReserveLine = ReserveLineRef & { status: "OPEN" | "CLOSED" | "UNAVAILABLE"; customerId: string; currency: string };
+export type PreparedStock = {
+  memoStockId: string; stockId: string; priceUnit: PriceUnit; attrs: SaleStoneAttrs; memoReceive: { id: string; docNo: string };
+  pendingPcs: number; pendingWeightCt: string; status: "OK" | "UNAVAILABLE";
+};
+export type SalePrepared = {
+  party: { code: string; name: string; shippingText: string; invoiceText: string } | null;
+  partyErrors: { path: string; code: string }[];
+  currencyActive: boolean; companyCurrency: string | null;
+  reserveLines: PreparedReserveLine[]; memoStocks: PreparedStock[];
+};
+export type SaleConsumptionLine = { lineId: string; source: "RESERVE" | "STOCK"; reserveLineId?: string; memoStockId: string; pcs: number; weightCt: string };
+export type SaleConsumptionRequest = { saleDocNo: string; customerId: string; currency: string; lines: SaleConsumptionLine[] };
+export type SaleCapLine = { lineId: string; capPcs: number; capWeightCt: string };
+export type SaleConsumptionResponse = { revision: number; replayed: boolean; lines: SaleCapLine[] };
 
 /** Reads wrap failures as 503 MASTER_UNAVAILABLE; the allocation PUT/GET keep the raw outcome for the saga. */
 export class MasterApi {
@@ -71,8 +107,36 @@ export class MasterApi {
       "POST", "/master-data/resolve", { stoneCodeIds, locationNames }, options));
   }
 
-  numbering(docDate: string, markUsed: boolean, options?: CallOptions) {
-    return this.read(() => this.transport.json<{ numbering: Numbering | null }>("POST", "/document-numbering/resolve", { transactionKey: "load-to-stock", docDate, markUsed }, options));
+  /** Document Setup row in effect (ADR-0052 D10); `transactionKey` from the master allow-list (sale ADR-0054 D10). */
+  numbering(docDate: string, markUsed: boolean, options?: CallOptions, transactionKey: NumberingKey = "load-to-stock") {
+    return this.read(() => this.transport.json<{ numbering: Numbering | null }>("POST", "/document-numbering/resolve", { transactionKey, docDate, markUsed }, options));
+  }
+
+  // ---------- sale SA rev 1 api-contract "Master internal API" (BE-SL-002/005) ----------
+
+  /** Options of the Sale page (`quotation.options` shape for key `sale`). */
+  saleReference(includeCustomerId: string | undefined, options?: CallOptions) {
+    const suffix = includeCustomerId ? `?includeCustomerId=${encodeURIComponent(includeCustomerId)}` : "";
+    return this.read(() => this.transport.json<SaleReference>("GET", `/sale/reference${suffix}`, undefined, options));
+  }
+
+  /** From Reserve picker page (one master query). */
+  saleReserveLines(input: SaleReserveLineSearch, options?: CallOptions) {
+    return this.read(() => this.transport.json<{ items: ReserveLineRef[]; nextCursor: string | null }>("POST", "/sale/reserve-lines/search", input, options));
+  }
+
+  /** Save / Submit / detail validation reads (≤ 4 master queries, no lock). */
+  salePrepare(input: SalePrepareRequest, options?: CallOptions) {
+    return this.read(() => this.transport.json<SalePrepared>("POST", "/sale/prepare", input, options));
+  }
+
+  /** Raw outcome (MasterRefusal / MasterUnavailable propagate) — the saga decides. */
+  putSaleConsumption(saleId: string, revision: number, request: SaleConsumptionRequest, options?: CallOptions) {
+    return this.transport.json<SaleConsumptionResponse>("PUT", `/sale-consumptions/${saleId}`, { revision, ...request }, { ...options, retry: false });
+  }
+
+  getSaleConsumption(saleId: string, options?: CallOptions) {
+    return this.transport.json<{ revision: number; lines: SaleCapLine[] }>("GET", `/sale-consumptions/${saleId}`, undefined, options);
   }
 
   /** Raw outcome (MasterRefusal / MasterUnavailable propagate) — the saga decides. */

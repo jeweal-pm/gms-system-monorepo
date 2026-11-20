@@ -8,6 +8,7 @@ import {
   PurchaseOrderIcon,
   QuotationIcon,
   ReserveIcon,
+  SaleIcon,
   SplitVerticalIcon,
   StockTransferIcon,
   type NavIcon,
@@ -31,10 +32,11 @@ export type ApproveMenuSlug =
   | "purchase"
   | "load-to-stock"
   | "merge-split"
-  | "transfer-location";
+  | "transfer-location"
+  | "sale";
 
 /** The `masterTrpc` router key of a document that can be approved today. */
-export type ApprovalProc = "quotation" | "reserve" | "memoReceive" | "memoReturn" | "memoOut" | "memoOutReturn" | "purchaseOrder" | "purchase" | "loadToStock";
+export type ApprovalProc = "quotation" | "reserve" | "memoReceive" | "memoReturn" | "memoOut" | "memoOutReturn" | "purchaseOrder" | "purchase" | "loadToStock" | "sale";
 
 /** approval-setup api-contract `ApprovalType`: the kebab-case setting keys (G13), in sidebar order. */
 export type ApprovalSettingType =
@@ -195,6 +197,20 @@ export const APPROVE_MENUS: readonly ApproveMenu[] = [
   },
   { slug: "merge-split", label: "Merge/Split Stock", icon: SplitVerticalIcon, leaf: "merge-split", type: "merge-split", party: "none", availability: "not-available" },
   { slug: "transfer-location", label: "Transfer Location", icon: StockTransferIcon, leaf: "stock-transfer-location", type: "stock-transfer-location", party: "none", availability: "not-available" },
+  // sale FE-SL-009 (ADR-0054): served by backend-api-inventory (`approve-center/inventory.ts`).
+  {
+    slug: "sale",
+    label: "Sale",
+    icon: SaleIcon,
+    leaf: "sale",
+    type: "sale",
+    party: "customer",
+    availability: "available",
+    proc: "sale",
+    documentBase: "/sale/sale",
+    dueLabel: null,
+    consequence: (count) => `Its ${items(count, "item is", "items are")} recorded as sold to the customer, and it can no longer be edited.`,
+  },
 ];
 
 export const APPROVE_HREF = "/approve";

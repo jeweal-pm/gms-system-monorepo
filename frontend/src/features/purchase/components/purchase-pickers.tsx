@@ -13,7 +13,7 @@ import { stockRefLabel } from "@/features/trade-document/stock-ref";
 import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
 import type { PurchaseMemoStockRow, PurchaseOrderLineRow } from "../form";
-import { PurchasePicker, usePickerFilters, type PickerColumn, type PickerData, type PickerFilter, type PickerGroup, type PickerTab, type PurchasePickerProps } from "./purchase-picker";
+import { StockPicker, usePickerFilters, type PickerColumn, type PickerData, type PickerFilter, type PickerGroup, type PickerTab, type StockPickerProps } from "@/features/trade-document/stock-picker";
 
 /**
  * The two Purchase pickers on the shared shell (FE-PU-004 / FE-PU-009): "Add Memo Stock" (`purchase.memoStock`, R2-MS)
@@ -221,7 +221,7 @@ export function MemoStockCells({ row, currency }: { row: PurchaseMemoStockRow; c
 type PickerScope<R> = { currency: string; excluded: ReadonlySet<string>; onCancel: () => void; onConfirm: (rows: R[]) => void };
 
 /** The Add Memo Stock settings on the shell (R2-MS). */
-export function memoStockPickerProps({ currency, counts, excluded, onCancel, onConfirm }: PickerScope<PurchaseMemoStockRow> & { counts: MemoCounts | undefined }): PurchasePickerProps<PurchaseMemoStockRow, MemoTab> {
+export function memoStockPickerProps({ currency, counts, excluded, onCancel, onConfirm }: PickerScope<PurchaseMemoStockRow> & { counts: MemoCounts | undefined }): StockPickerProps<PurchaseMemoStockRow, MemoTab> {
   return {
     title: "Add Memo Stock",
     tabs: memoStockTabs(counts),
@@ -245,7 +245,7 @@ export function memoStockPickerProps({ currency, counts, excluded, onCancel, onC
 export function MemoStockPicker({ vendorId, ...scope }: PickerScope<PurchaseMemoStockRow> & { vendorId: string }) {
   const filters = usePickerFilters<MemoTab>("ALL");
   const { data, counts } = usePurchaseMemoStock(vendorId, scope.currency, filters.filter);
-  return <PurchasePicker {...memoStockPickerProps({ ...scope, counts })} filters={filters} data={data} />;
+  return <StockPicker {...memoStockPickerProps({ ...scope, counts })} filters={filters} data={data} />;
 }
 
 // ---- Add Purchase Order (R2-PO, rev 3) ----
@@ -297,7 +297,7 @@ export function PurchaseOrderLineCells({ row, currency }: { row: PurchaseOrderLi
 }
 
 /** The Add Purchase Order settings on the shell (rev 3: flat, no tabs; the query keeps status ALL). */
-export function purchaseOrderPickerProps({ currency, excluded, onCancel, onConfirm }: PickerScope<PurchaseOrderLineRow>): PurchasePickerProps<PurchaseOrderLineRow, PurchaseOrderTab> {
+export function purchaseOrderPickerProps({ currency, excluded, onCancel, onConfirm }: PickerScope<PurchaseOrderLineRow>): StockPickerProps<PurchaseOrderLineRow, PurchaseOrderTab> {
   return {
     title: "Add Purchase Order",
     tabs: [],
@@ -321,5 +321,5 @@ export function purchaseOrderPickerProps({ currency, excluded, onCancel, onConfi
 export function PurchaseOrderPicker({ vendorId, ...scope }: PickerScope<PurchaseOrderLineRow> & { vendorId: string }) {
   const filters = usePickerFilters<PurchaseOrderTab>("ALL");
   const { data } = usePurchaseOrderLines(vendorId, scope.currency, filters.filter);
-  return <PurchasePicker {...purchaseOrderPickerProps(scope)} filters={filters} data={data} />;
+  return <StockPicker {...purchaseOrderPickerProps(scope)} filters={filters} data={data} />;
 }

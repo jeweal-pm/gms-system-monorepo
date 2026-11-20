@@ -1163,60 +1163,61 @@ model MemoReceiveCharge {
 /// in the master service until the inventory service exists; Memo Return (later revision) is the only writer of
 /// pending_*. net_unit_price = line_amount / received basis (weight for PER_CT, pcs for PER_PCS).
 model MemoStock {
-  id                 String           @id @db.Uuid
-  stockId            String           @unique(map: "memo_stock_stock_id_key") @map("stock_id") @db.VarChar(10)
-  memoReceiveId      String           @map("memo_receive_id") @db.Uuid
-  memoReceiveLineId  String           @unique(map: "memo_stock_memo_receive_line_id_key") @map("memo_receive_line_id") @db.Uuid
-  receivedDocNo      String           @map("received_doc_no") @db.VarChar(40)
-  receivedDocDate    DateTime         @map("received_doc_date") @db.Date
-  dueDate            DateTime         @map("due_date") @db.Date
-  vendorId           String           @map("vendor_id") @db.Uuid
-  vendorCodeSnapshot String           @map("vendor_code_snapshot") @db.VarChar(120)
-  vendorNameSnapshot String           @map("vendor_name_snapshot") @db.VarChar(200)
-  location           String           @default("Memo") @db.VarChar(40)
-  stone              String           @default("") @db.VarChar(60)
-  shape              String           @default("") @db.VarChar(60)
-  size               String           @default("") @db.VarChar(60)
-  color              String           @default("") @db.VarChar(60)
-  clarity            String           @default("") @db.VarChar(60)
-  cutting            String           @default("") @db.VarChar(60)
-  quality            String           @default("") @db.VarChar(60)
-  lot                String           @default("") @db.VarChar(40)
-  cerType            String           @default("") @map("cer_type") @db.VarChar(20)
-  cerNo              String           @default("") @map("cer_no") @db.VarChar(60)
-  itemNote           String           @default("") @map("item_note") @db.VarChar(500)
-  receivedPcs        Int              @map("received_pcs")
-  receivedWeightCt   Decimal          @map("received_weight_ct") @db.Decimal(12, 3)
-  pendingPcs         Int              @map("pending_pcs")
-  pendingWeightCt    Decimal          @map("pending_weight_ct") @db.Decimal(12, 3)
+  id                   String                @id @db.Uuid
+  stockId              String                @unique(map: "memo_stock_stock_id_key") @map("stock_id") @db.VarChar(10)
+  memoReceiveId        String                @map("memo_receive_id") @db.Uuid
+  memoReceiveLineId    String                @unique(map: "memo_stock_memo_receive_line_id_key") @map("memo_receive_line_id") @db.Uuid
+  receivedDocNo        String                @map("received_doc_no") @db.VarChar(40)
+  receivedDocDate      DateTime              @map("received_doc_date") @db.Date
+  dueDate              DateTime              @map("due_date") @db.Date
+  vendorId             String                @map("vendor_id") @db.Uuid
+  vendorCodeSnapshot   String                @map("vendor_code_snapshot") @db.VarChar(120)
+  vendorNameSnapshot   String                @map("vendor_name_snapshot") @db.VarChar(200)
+  location             String                @default("Memo") @db.VarChar(40)
+  stone                String                @default("") @db.VarChar(60)
+  shape                String                @default("") @db.VarChar(60)
+  size                 String                @default("") @db.VarChar(60)
+  color                String                @default("") @db.VarChar(60)
+  clarity              String                @default("") @db.VarChar(60)
+  cutting              String                @default("") @db.VarChar(60)
+  quality              String                @default("") @db.VarChar(60)
+  lot                  String                @default("") @db.VarChar(40)
+  cerType              String                @default("") @map("cer_type") @db.VarChar(20)
+  cerNo                String                @default("") @map("cer_no") @db.VarChar(60)
+  itemNote             String                @default("") @map("item_note") @db.VarChar(500)
+  receivedPcs          Int                   @map("received_pcs")
+  receivedWeightCt     Decimal               @map("received_weight_ct") @db.Decimal(12, 3)
+  pendingPcs           Int                   @map("pending_pcs")
+  pendingWeightCt      Decimal               @map("pending_weight_ct") @db.Decimal(12, 3)
   /// Buckets (memo-outstanding-vendor SA-MOV-02): pending = received - returned - sold - reserved (CHECK memo_stock_balance).
-  returnedPcs        Int              @default(0) @map("returned_pcs")
-  returnedWeightCt   Decimal          @default(0) @map("returned_weight_ct") @db.Decimal(12, 3)
-  soldPcs            Int              @default(0) @map("sold_pcs")
-  soldWeightCt       Decimal          @default(0) @map("sold_weight_ct") @db.Decimal(12, 3)
-  reservedPcs        Int              @default(0) @map("reserved_pcs")
-  reservedWeightCt   Decimal          @default(0) @map("reserved_weight_ct") @db.Decimal(12, 3)
+  returnedPcs          Int                   @default(0) @map("returned_pcs")
+  returnedWeightCt     Decimal               @default(0) @map("returned_weight_ct") @db.Decimal(12, 3)
+  soldPcs              Int                   @default(0) @map("sold_pcs")
+  soldWeightCt         Decimal               @default(0) @map("sold_weight_ct") @db.Decimal(12, 3)
+  reservedPcs          Int                   @default(0) @map("reserved_pcs")
+  reservedWeightCt     Decimal               @default(0) @map("reserved_weight_ct") @db.Decimal(12, 3)
   /// purchase SA-PU-05 (D1): how much of `sold` the vendor has been paid for by approved purchases; 0 <= purchased <= sold
   /// (CHECK memo_stock_purchased_check). "Sold to customers, must be purchased" = sold - purchased.
-  purchasedPcs       Int              @default(0) @map("purchased_pcs")
-  purchasedWeightCt  Decimal          @default(0) @map("purchased_weight_ct") @db.Decimal(12, 3)
-  priceUnit          String           @map("price_unit") @db.VarChar(10)
-  unitPrice          Decimal          @map("unit_price") @db.Decimal(18, 2)
-  lineAmount         Decimal          @map("line_amount") @db.Decimal(18, 2)
-  netUnitPrice       Decimal          @map("net_unit_price") @db.Decimal(18, 4)
-  currencyCode       String           @map("currency_code") @db.Char(3)
-  version            Int              @default(1)
-  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamp(3)
-  createdBy          String           @map("created_by") @db.VarChar(64)
-  updatedAt          DateTime         @default(now()) @map("updated_at") @db.Timestamp(3)
-  memoReceive        MemoReceive      @relation(fields: [memoReceiveId], references: [id], onDelete: Restrict)
-  memoReceiveLine    MemoReceiveLine  @relation(fields: [memoReceiveLineId], references: [id], onDelete: Restrict)
-  vendor             Vendor           @relation(fields: [vendorId], references: [id], onDelete: Restrict)
-  returnLines        MemoReturnLine[]
-  memoOutLines       MemoOutLine[]
-  reserveLines       ReserveLine[]
-  quotationLines     QuotationLine[]
-  purchaseLines      PurchaseLine[]
+  purchasedPcs         Int                   @default(0) @map("purchased_pcs")
+  purchasedWeightCt    Decimal               @default(0) @map("purchased_weight_ct") @db.Decimal(12, 3)
+  priceUnit            String                @map("price_unit") @db.VarChar(10)
+  unitPrice            Decimal               @map("unit_price") @db.Decimal(18, 2)
+  lineAmount           Decimal               @map("line_amount") @db.Decimal(18, 2)
+  netUnitPrice         Decimal               @map("net_unit_price") @db.Decimal(18, 4)
+  currencyCode         String                @map("currency_code") @db.Char(3)
+  version              Int                   @default(1)
+  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamp(3)
+  createdBy            String                @map("created_by") @db.VarChar(64)
+  updatedAt            DateTime              @default(now()) @map("updated_at") @db.Timestamp(3)
+  memoReceive          MemoReceive           @relation(fields: [memoReceiveId], references: [id], onDelete: Restrict)
+  memoReceiveLine      MemoReceiveLine       @relation(fields: [memoReceiveLineId], references: [id], onDelete: Restrict)
+  vendor               Vendor                @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  returnLines          MemoReturnLine[]
+  memoOutLines         MemoOutLine[]
+  reserveLines         ReserveLine[]
+  quotationLines       QuotationLine[]
+  purchaseLines        PurchaseLine[]
+  saleConsumptionLines SaleConsumptionLine[]
 
   /// Add Memo Stock dialog: a vendor's items with something still pending, newest receive first (SA-MR-11).
   @@index([vendorId, receivedDocDate(sort: Desc), stockId(sort: Desc)], where: raw("((pending_pcs > 0) OR (pending_weight_ct > (0)::numeric))"), map: "memo_stock_pending_idx")
@@ -1474,6 +1475,8 @@ model Reserve {
   @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "reserve_pending_idx")
   /// ADR-0050: sent-back documents (turn-OFF guard, Setup counts).
   @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "reserve_revision_idx")
+  /// sale ADR-0054 D4: From Reserve picker (approved, live Reserves of a customer in a currency, oldest first).
+  @@index([customerId, currencyCode, docDate, id], where: raw("(((status)::text = 'APPROVED'::text) AND (deleted_at IS NULL))"), map: "reserve_open_customer_idx")
   @@index([id], where: raw("((sync_state)::text = 'SYNCING'::text)"), map: "reserve_syncing_idx")
   @@map("reserve")
   @@schema("partner")
@@ -1514,17 +1517,23 @@ model ReserveLine {
   /// The item's pending when the line was saved: the row's maximum (pcs / weightCt ≤ it).
   stockPendingPcs      Int?       @map("stock_pending_pcs")
   stockPendingWeightCt Decimal?   @map("stock_pending_weight_ct") @db.Decimal(12, 3)
+  /// sale ADR-0054 D4: quantity sold by applied Sales (Σ sale_consumption_line); open = qty − sold (CHECK reserve_line_sold_check).
+  soldPcs              Int        @default(0) @map("sold_pcs")
+  soldWeightCt         Decimal    @default(0) @map("sold_weight_ct") @db.Decimal(12, 3)
   document             Reserve    @relation(fields: [reserveId], references: [id], onDelete: Cascade)
   stoneCode            StoneCode? @relation(fields: [stoneCodeId], references: [id], onDelete: SetNull)
   memoStock            MemoStock? @relation(fields: [memoStockId], references: [id], onDelete: Restrict)
 
   /// Line photos in order (ADR-0048, owner 2026-11-11).
-  photos ReserveLinePhoto[]
+  photos               ReserveLinePhoto[]
+  saleConsumptionLines SaleConsumptionLine[]
 
   @@unique([reserveId, position], map: "reserve_line_position_key")
   @@unique([reserveId, memoStockId], map: "reserve_line_memo_stock_key")
   @@index([stoneCodeId], map: "reserve_line_stone_code_idx")
   @@index([memoStockId], map: "reserve_line_memo_stock_idx")
+  /// sale ADR-0054 D4: open stock lines (the From Reserve picker joins them to reserve_open_customer_idx).
+  @@index([reserveId, position], where: raw("((memo_stock_id IS NOT NULL) AND ((sold_pcs < pcs) OR ((sold_weight_ct)::numeric < weight_ct)))"), map: "reserve_line_open_idx")
   @@unique([reserveId, ownStockId], map: "reserve_line_own_stock_key")
   @@index([ownStockId], map: "reserve_line_own_stock_idx")
   @@map("reserve_line")
@@ -1906,7 +1915,7 @@ model PurchaseLine {
   purchaseOrderLine   PurchaseOrderLine? @relation(fields: [purchaseOrderLineId], references: [id], onDelete: Restrict)
 
   /// Line photos in order (ADR-0048, owner 2026-11-11).
-  photos PurchaseLinePhoto[]
+  photos          PurchaseLinePhoto[]
   loadAllocations LoadAllocationLine[]
 
   @@unique([purchaseId, position], map: "purchase_line_position_key")
@@ -2009,6 +2018,47 @@ model LoadStockId {
 
   @@index([loadDocumentId], map: "load_stock_id_load_idx")
   @@map("load_stock_id")
+  @@schema("partner")
+}
+
+/// sale SA rev 1 / ADR-0054 D6: one per inventory Sale (no FK: sale_id is the inventory document id). The applied
+/// revision, request hash and compact result make `PUT /internal/v1/inventory/sale-consumptions/{saleId}` idempotent.
+model SaleConsumption {
+  saleId       String                @id @map("sale_id") @db.Uuid
+  saleDocNo    String                @map("sale_doc_no") @db.VarChar(40)
+  customerId   String                @map("customer_id") @db.Uuid
+  currencyCode String                @map("currency_code") @db.Char(3)
+  revision     Int                   @default(0)
+  requestHash  String                @default("") @map("request_hash") @db.Char(64)
+  result       Json                  @default("{}")
+  appliedAt    DateTime              @default(now()) @map("applied_at") @db.Timestamp(3)
+  appliedBy    String?               @map("applied_by") @db.VarChar(64)
+  updatedAt    DateTime              @default(now()) @map("updated_at") @db.Timestamp(3)
+  lines        SaleConsumptionLine[]
+
+  @@map("sale_consumption")
+  @@schema("partner")
+}
+
+/// The Sale's applied quantity per Sale line: RESERVE lines consume a Reserve line's open quantity (Memo Stock
+/// reserved → sold), STOCK lines a Memo Stock item's pending (pending → sold).
+model SaleConsumptionLine {
+  saleId        String          @map("sale_id") @db.Uuid
+  lineId        String          @map("line_id") @db.Uuid
+  source        String          @db.VarChar(10)
+  reserveLineId String?         @map("reserve_line_id") @db.Uuid
+  memoStockId   String          @map("memo_stock_id") @db.Uuid
+  pcs           Int
+  weightCt      Decimal         @map("weight_ct") @db.Decimal(12, 3)
+  consumption   SaleConsumption @relation(fields: [saleId], references: [saleId], onDelete: Cascade, map: "sale_consumption_line_sale_fkey")
+  reserveLine   ReserveLine?    @relation(fields: [reserveLineId], references: [id], onDelete: Restrict, map: "sale_consumption_line_reserve_line_fkey")
+  memoStock     MemoStock       @relation(fields: [memoStockId], references: [id], onDelete: Restrict, map: "sale_consumption_line_memo_stock_fkey")
+
+  @@id([saleId, lineId])
+  @@unique([saleId, reserveLineId], where: raw("(reserve_line_id IS NOT NULL)"), map: "sale_consumption_line_reserve_line_key")
+  @@index([reserveLineId], map: "sale_consumption_line_reserve_line_idx")
+  @@index([memoStockId], map: "sale_consumption_line_memo_stock_idx")
+  @@map("sale_consumption_line")
   @@schema("partner")
 }
 

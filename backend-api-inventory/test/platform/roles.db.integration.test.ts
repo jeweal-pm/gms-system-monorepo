@@ -43,7 +43,13 @@ describe.runIf(canRun)("IT-LS roles and live authorization on PostgreSQL", () =>
 
   it("app role: DML in inventory; stock_movement append-only; nothing in partner / auth; settings seeded ON", async () => {
     const seeded = await app.$queryRaw<{ type: string; require_approval: boolean }[]>`SELECT "type", "require_approval" FROM "inventory"."approval_setting" ORDER BY "type"`;
-    expect(seeded).toEqual([{ type: "load-to-stock", require_approval: true }, { type: "merge-split", require_approval: true }, { type: "stock-transfer-location", require_approval: true }]);
+    // sale ADR-0054 D7 (migration 20261119090000_sale): the fourth switch `sale`, default ON.
+    expect(seeded).toEqual([{ type: "load-to-stock", require_approval: true }, { type: "merge-split", require_approval: true }, { type: "sale", require_approval: true }, { type: "stock-transfer-location", require_approval: true }]);
+    // BE-SL-003: the app role has exactly DML on the Sale tables (no TRUNCATE / REFERENCES / TRIGGER).
+    const saleGrants = await owner.$queryRaw<{ table_name: string; privileges: string }[]>`
+      SELECT table_name, string_agg(privilege_type, ',' ORDER BY privilege_type) AS privileges FROM information_schema.role_table_grants
+      WHERE grantee = 'gms_inventory_app' AND table_name IN ('sale', 'sale_line', 'sale_charge', 'sale_line_photo', 'sale_sync_op') GROUP BY table_name ORDER BY table_name`;
+    expect(saleGrants).toEqual(["sale", "sale_charge", "sale_line", "sale_line_photo", "sale_sync_op"].map((table_name) => ({ table_name, privileges: "DELETE,INSERT,SELECT,UPDATE" })));
     const grants = await owner.$queryRaw<{ table_name: string; privilege_type: string }[]>`
       SELECT table_name, privilege_type FROM information_schema.role_table_grants WHERE grantee = 'gms_inventory_app' AND table_name = 'stock_movement' ORDER BY privilege_type`;
     expect(grants.map((row) => row.privilege_type)).toEqual(["INSERT", "SELECT"]);
