@@ -1,21 +1,27 @@
-# Memo Outstanding report timeout — local fix
+# Memo Outstanding report timeout — local remediation record
 
-- Investigation: [INV-20261029-004](../investigation/INV-20261029-004-memo-outstanding-report-aggregates-full-history.md), revision 3, corrective pass 2 of 3.
-- User authorization: 2026-11-20, “งั้นคุณแก้ที”.
-- Changed code: `backend-api-master/src/trade-document/memo-outstanding.service.ts` sets `work_mem = 16MB` with `SET LOCAL` inside the existing report transaction. The setting applies to the six summary/list paths for Vendor, Customer, and Purchase Outstanding. The global PostgreSQL setting, 2s statement timeout, 2.5s READ_TX, pool, schema and API contract are unchanged.
-- Test change: `backend-api-master/test/trade-document/memo-outstanding.service.test.ts` now asserts the bounded transaction-local setting.
+- Investigation: [INV-20261029-004](../investigation/INV-20261029-004-memo-outstanding-report-aggregates-full-history.md), revision 5, corrective pass 4 of 4 (one extension explicitly authorized by the owner).
+- User authorization: 2026-11-20, “งั้นคุณแก้ที”; continued by the owner's report that both pages still return 503, followed by “อนุญาติ รอบนี้ลองแก้ดู”.
+- Pass 2 code: `backend-api-master/src/trade-document/memo-outstanding.service.ts` sets `work_mem = 16MB` with `SET LOCAL` inside the report transaction.
+- Pass 3 code: report statement timeout is now 15s and the report-only transaction timeout is 16s; pool acquisition remains 2s. Other reads still use the existing `READ_TX`. PostgreSQL-wide settings, pool size, schema, API contract, and report query shapes are unchanged.
+- Pass 4 code: customer summary counts/sums only still-open stock lines; the two default due-date list paths page eligible document headers before aggregating their item lines; unfiltered vendor summary uses a report-local hash/seq-scan plan. Existing API shape and schema are unchanged. Aggregate-column sorts and filtered vendor summaries retain their previous query path.
+- Pass 4 also updates `backend-api-master/test/trade-document/memo-outstanding.service.test.ts` to cover page-first SQL, the open-line summary, and the scoped vendor planner setting.
 
 ## Evidence and verification
 
-- Current local data: about 100k `memo_receive` and 123,970 `memo_stock` rows.
-- Read-only PostgreSQL `EXPLAIN (ANALYZE, BUFFERS, SETTINGS, SUMMARY)` of the vendor summary query: 1,440 ms with the existing 4MB setting and 1,234 temp blocks written; 817 ms at 16MB with no temp I/O and a 25.6MB HashAggregate.
-- Focused unit test: 4/4 passed. Scoped ESLint passed.
-- Full backend suite: 60 files passed / 639 tests passed; 16 files / 106 tests skipped. One unrelated `IT-MAUTH-DB-U1` failed because the container injects `MASTER_AUTHZ_DATABASE_URL`, while that test expects it unset.
-- `IT-MOV`, `IT-MOC`, and `IT-POS` database integrations skipped because no disposable `PARTNER_TEST_DATABASE_URL` is configured. The application database was not used for integration tests.
-- A standalone `tsc --noEmit` attempt was interrupted near the 1GB container memory limit. The `api-master` Nest watch compile then completed with `Found 0 errors`.
-- Restarted only local `api-master`. Prisma generation succeeded; `migrate deploy` reported no pending migrations. Container is healthy and `/health/ready` returned 200.
-- Focused source review: parent applied the `sec-auditor` and `security-auditor` instructions sequentially because custom reviewer roles were unavailable. Both reviews were clear on the changed trust boundary. Source SHA-256: `ede0fdbd3a3b6626b364468c6af343d8bfba95dda6fb74f6ded8815c01e392fe`.
+- Pass 2 evidence on the earlier local dataset: about 100k `memo_receive` and 123,970 `memo_stock` rows. Read-only vendor summary `EXPLAIN ANALYZE` measured 1,440 ms with 4MB work_mem and 817 ms with 16MB.
+- New pass 3 evidence: the current local DB has 2,170,527 `memo_stock` rows and 3,501,138 `memo_out_line` rows. Both vendor and customer queries repeatedly hit the 2s timeout. Read-only aggregate plans using the same approved/open predicates took 6,897 ms for vendor and 2,545 ms for customer, even when measuring only quantity sums. The full queries also calculate report values.
+- The earlier pass 2 unit, backend suite, and review evidence are retained in the investigation record; they predate this pass and do not verify the new timeout.
+- Pass 3 runtime: restarted only local `api-master`. Prisma generation succeeded, `migrate deploy` found no pending migrations, Nest watch reports `Found 0 errors`, container health is `healthy`, and `/health/ready` returns HTTP 200.
+- Review on the current source (SHA-256 `21def82845e3345884f4c226065fb9f40cf6560a507ff270f52327bd57036580`): custom reviewer roles were unavailable, so the parent applied the `sec-auditor` and `security-auditor` instructions sequentially. Both found no new input, authorization, or data-isolation issue. Both noted an availability advisory: each report may now hold one of the shared five pool connections for up to 16s. The budget is finite and report-only, but simultaneous page opens can still contend for the pool. This is recorded as a limitation of the selected mitigation, not a confirmed vulnerability.
+- Pass 3 automated tests were not run. Authenticated vendor/customer report procedures were not exercised through the application; readiness only confirms the service starts.
+- Owner reported the pages still fail after this change. PostgreSQL logs confirm vendor summary/list statements continue to hit `statement_timeout` at 05:13:59–05:15:29 UTC, recurring about every 16–17 seconds. The running container source has the 15,000 ms statement limit and 16,000 ms transaction limit; `api-master` remains healthy. This excludes a stale container or the previous 2-second budget as the remaining cause.
+- HTML review: S4 in `/home/joke/dev/f1-system/document/reviews/performance/backend-join-analysis-2026-11-19.html` recommends measurement before pre-aggregation/index changes. The lowest-risk useful option was query-only: no migration or index build.
+- Pass 4 read-only plan results on the current local dataset: full customer summary 347 ms; customer default list quantity-sum shape 275 ms (the final per-page open-value expression was not included in that plan); vendor default list with full report sums 850 ms; broad unfiltered vendor summary 8,994 ms. The vendor summary remains the expensive endpoint but is below its 15 s statement limit on this plan; selecting only the current list page avoids running a second full-history aggregate in parallel.
+- Pass 4 checks: focused unit suite 4/4 passed; scoped ESLint passed for the service and test; `git diff --check` passed. After restarting only local `api-master`, Nest reported `Found 0 errors`, container health is `healthy`, and `/health/ready` returns 200. No migration was needed or applied.
+- Focused reviews on final source SHA-256 `8fb4817df582a8748608b912d821ebe16d18c8159a8e539cb89500ebc16b8846`: custom reviewer roles were unavailable; the parent applied the `sec-auditor` and `security-auditor` instructions sequentially. No new input/auth/data-isolation issue was found. Advisory: the broad vendor summary still scans a 1.5 GB relation and can contend for a report-pool connection under concurrent use; the database-backed authenticated page flow was not directly exercised.
+- Integration suites using a disposable `PARTNER_TEST_DATABASE_URL` and authenticated page procedures were not run. The application database was used only for read-only `EXPLAIN ANALYZE` measurements.
 
 ## Status
 
-The code fix is running locally. Investigation remains `needs-validation` only for the skipped disposable-database integration cases; no further correction pass is authorized without new failure evidence.
+Pass 4's query-only changes are running locally, and the measured default entry query plans are below 15 seconds. Investigation remains `needs-validation` until the owner confirms the authenticated pages load. Aggregate-column sort paths and filtered broad vendor summaries remain potential slow cases. The single authorized extension is used; no additional corrective pass is implied. Nothing was committed or pushed.

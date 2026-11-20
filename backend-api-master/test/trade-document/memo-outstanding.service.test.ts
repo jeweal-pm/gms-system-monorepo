@@ -10,8 +10,9 @@ import { MemoOutstandingService, REPORT_STATEMENT_TIMEOUT_MS, REPORT_WORK_MEM_MB
 
 /**
  * UT-MOS-01…04 (INV-20261029-004) with Prisma mocked: the three outstanding reports prune settled documents with an
- * `EXISTS` open predicate before `GROUP BY` (no `HAVING bool_or`), read the list total from `count(*) OVER ()` in the
- * page statement, and run inside one READ_TX with bounded local statement timeout and work_mem. Results and contracts
+ * `EXISTS` open predicate before grouping (no `HAVING bool_or`), read the list total from `count(*) OVER ()` in the
+ * page statement, and run inside a bounded report transaction. The default due-date page selects headers before line
+ * aggregation. Results and contracts
  * are covered unchanged by IT-MOV / IT-MOC / IT-POS against PostgreSQL.
  */
 
@@ -48,7 +49,7 @@ describe("Outstanding reports prune before grouping (INV-20261029-004)", () => {
     db.transactions = 0;
   });
 
-  it("UT-MOS-01 vendor list: one READ_TX with bounded local report settings, EXISTS before GROUP BY, total from count(*) OVER ()", async () => {
+  it("UT-MOS-01 vendor default list: page open headers before aggregating lines and keep the total", async () => {
     db.results = [[docRow(37)]];
     const page = await service.vendorList(memoOutstandingListSchema.parse({ page: 1, pageSize: 10 }));
     expect(page).toMatchObject({ total: 37, page: 1, pageSize: 10, items: [{ docNo: "MR-1", openValue: "10.00" }] });
@@ -59,7 +60,10 @@ describe("Outstanding reports prune before grouping (INV-20261029-004)", () => {
     ]);
     expect(db.queries).toHaveLength(1);
     const [sql] = db.queries;
-    expect(sql).toMatch(/AND EXISTS \(SELECT 1 FROM "partner"\."memo_stock" o WHERE o\.memo_receive_id = r\.id AND \(o\.pending_pcs > 0 OR o\.pending_weight_ct > 0 OR o\.reserved_pcs > 0 OR o\.reserved_weight_ct > 0\)\) GROUP BY r\.id\)/);
+    expect(sql).toContain("WITH open_docs AS MATERIALIZED");
+    expect(sql).toMatch(/FROM "partner"\."memo_receive" r WHERE r\.status = \? AND r\.deleted_at IS NULL AND EXISTS \(SELECT 1 FROM "partner"\."memo_stock" o WHERE o\.memo_receive_id = r\.id/);
+    expect(sql).toContain("page AS MATERIALIZED");
+    expect(sql).toMatch(/FROM page p JOIN "partner"\."memo_stock" s ON s\.memo_receive_id = p\.id GROUP BY s\.memo_receive_id/);
     expect(sql).not.toMatch(/HAVING|bool_or/);
     expect(sql).toContain("count(*) OVER ()::bigint AS total");
   });
@@ -79,7 +83,9 @@ describe("Outstanding reports prune before grouping (INV-20261029-004)", () => {
   it("UT-MOS-03 customer and purchase lists prune with their own open predicates and count in the page statement", async () => {
     db.results = [[docRow(4)]];
     expect((await service.customerList(memoOutstandingCustomerListSchema.parse({ page: 1, pageSize: 10 }))).total).toBe(4);
-    expect(db.queries[0]).toMatch(/AND EXISTS \(SELECT 1 FROM "partner"\."memo_out_line" x WHERE x\.memo_out_id = o\.id AND \(x\.memo_stock_id IS NOT NULL OR x\.own_stock_id IS NOT NULL\) AND \(x\.returned_pcs < x\.pcs OR x\.returned_weight_ct < x\.weight_ct\)\) GROUP BY o\.id\)/);
+    expect(db.queries[0]).toContain("WITH open_docs AS MATERIALIZED");
+    expect(db.queries[0]).toMatch(/FROM "partner"\."memo_out" o WHERE o\.status = \? AND o\.deleted_at IS NULL AND EXISTS \(SELECT 1 FROM "partner"\."memo_out_line" x WHERE x\.memo_out_id = o\.id/);
+    expect(db.queries[0]).toMatch(/FROM page p JOIN "partner"\."memo_out_line" l ON l\.memo_out_id = p\.id AND \(l\.memo_stock_id IS NOT NULL OR l\.own_stock_id IS NOT NULL\) GROUP BY l\.memo_out_id/);
     db.results = [[docRow(5)]];
     expect((await service.purchaseList(purchaseOutstandingListSchema.parse({ page: 1, pageSize: 10 }))).total).toBe(5);
     expect(db.queries[1]).toMatch(/AND EXISTS \(SELECT 1 FROM "partner"\."memo_stock" o WHERE o\.memo_receive_id = r\.id AND \(\(o\.received_pcs - o\.returned_pcs - o\.purchased_pcs\) > 0 OR \(o\.received_weight_ct - o\.returned_weight_ct - o\.purchased_weight_ct\) > 0\)\) GROUP BY r\.id\)/);
@@ -97,10 +103,12 @@ describe("Outstanding reports prune before grouping (INV-20261029-004)", () => {
     await service.customerSummary(memoOutstandingCustomerFiltersSchema.parse({}));
     await service.purchaseSummary(memoOutstandingFiltersSchema.parse({}));
     expect(db.transactions).toBe(3);
-    expect(db.settings).toHaveLength(6);
+    expect(db.settings).toHaveLength(7);
     expect(db.queries).toHaveLength(3);
     expect(db.queries[0]).toContain(`FROM "partner"."memo_stock" o WHERE o.memo_receive_id = r.id AND (o.pending_pcs > 0`);
-    expect(db.queries[1]).toContain(`FROM "partner"."memo_out_line" x WHERE x.memo_out_id = o.id`);
+    expect(db.settings[2]).toBe("SET LOCAL enable_nestloop = off");
+    expect(db.queries[1]).toContain("count(DISTINCT o.id)::bigint AS documents");
+    expect(db.queries[1]).toContain("(l.returned_pcs < l.pcs OR l.returned_weight_ct < l.weight_ct)");
     expect(db.queries[2]).toContain(`(o.received_pcs - o.returned_pcs - o.purchased_pcs) > 0`);
     for (const sql of db.queries) expect(sql).not.toMatch(/HAVING|bool_or/);
   });
