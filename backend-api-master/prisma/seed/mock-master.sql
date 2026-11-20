@@ -3,7 +3,7 @@
 --
 --   master data  : :n_master rows each — customer (+invoice/shipping address), vendor (+address), currency, location,
 --                  stone group / size / color / cutting / clarity / quality / name / shape, stone code
---   lines        : 1-3 per document by default; `lines_spec` ("type=min-max,…") sets them per type (≤ 200)
+--   lines        : 20-50 per document by default (random); `lines_spec` ("type=min-max,…") sets them per type (≤ 200)
 --   documents    : :n_doc documents each — Quotation, Reserve, Memo Receive, Memo Return, Memo Out, Memo Out Return,
 --                  Purchase Order, Purchase (Memo Outstanding / Purchase Outstanding are views over these)
 --
@@ -27,7 +27,7 @@
   \set n_doc 100000
 \endif
 -- Lines per document: "type=min-max,…" (types: quotation reserve memo-receive memo-return memo-out memo-out-return
--- purchase-order purchase load-to-stock); a missing type keeps the default 1-3.
+-- purchase-order purchase load-to-stock); a missing type keeps the default 20-50.
 \if :{?lines_spec}
 \else
   \set lines_spec ''
@@ -63,7 +63,7 @@ CREATE FUNCTION pg_temp.st(i bigint, salt int, cancel bool) RETURNS text LANGUAG
   FROM (SELECT pg_temp.rnd(i, salt) * 100 AS r) x $$;
 CREATE TEMP TABLE seed_lines (dtype text PRIMARY KEY, lo int NOT NULL, hi int NOT NULL, CHECK (lo BETWEEN 1 AND 200 AND hi BETWEEN lo AND 200));
 INSERT INTO seed_lines
-SELECT t, 1, 3 FROM unnest(ARRAY['quotation','reserve','memo-receive','memo-return','memo-out','memo-out-return','purchase-order','purchase','load-to-stock']) t;
+SELECT t, 20, 50 FROM unnest(ARRAY['quotation','reserve','memo-receive','memo-return','memo-out','memo-out-return','purchase-order','purchase','load-to-stock']) t;
 UPDATE seed_lines l SET lo = x.lo, hi = x.hi
 FROM (SELECT split_part(e, '=', 1) AS t, split_part(split_part(e, '=', 2), '-', 1)::int AS lo,
              coalesce(nullif(split_part(split_part(e, '=', 2), '-', 2), ''), split_part(split_part(e, '=', 2), '-', 1))::int AS hi
@@ -109,9 +109,9 @@ ORDER BY ord, g LIMIT :n_master;
 
 -- Customer
 CREATE TEMP TABLE seed_customer AS
-SELECT row_number() OVER (ORDER BY i)::int AS idx, uuidv7() AS id, 'MC' || lpad(i::text, 5, '0') AS code
+SELECT row_number() OVER (ORDER BY i)::int AS idx, uuidv7() AS id, 'MC' || lpad(i::text, greatest(5, length(i::text)), '0') AS code
 FROM generate_series(1, :n_master * 2) i
-WHERE NOT EXISTS (SELECT 1 FROM partner.customer c WHERE c.code_key = lower('MC' || lpad(i::text, 5, '0')))
+WHERE NOT EXISTS (SELECT 1 FROM partner.customer c WHERE c.code_key = lower('MC' || lpad(i::text, greatest(5, length(i::text)), '0')))
 ORDER BY i LIMIT :n_master;
 ALTER TABLE seed_customer ADD COLUMN name text, ADD COLUMN currency text, ADD COLUMN first_name text, ADD COLUMN last_name text,
   ADD COLUMN inv_addr_id uuid, ADD COLUMN inv_snap text, ADD COLUMN ship_addr_id uuid, ADD COLUMN ship_snap text,
@@ -146,9 +146,9 @@ ANALYZE partner.customer; ANALYZE partner.customer_address; ANALYZE seed_custome
 
 -- Vendor
 CREATE TEMP TABLE seed_vendor AS
-SELECT row_number() OVER (ORDER BY i)::int AS idx, uuidv7() AS id, 'MV' || lpad(i::text, 5, '0') AS code
+SELECT row_number() OVER (ORDER BY i)::int AS idx, uuidv7() AS id, 'MV' || lpad(i::text, greatest(5, length(i::text)), '0') AS code
 FROM generate_series(1, :n_master * 2) i
-WHERE NOT EXISTS (SELECT 1 FROM partner.vendor v WHERE v.code_key = lower('MV' || lpad(i::text, 5, '0')))
+WHERE NOT EXISTS (SELECT 1 FROM partner.vendor v WHERE v.code_key = lower('MV' || lpad(i::text, greatest(5, length(i::text)), '0')))
 ORDER BY i LIMIT :n_master;
 ALTER TABLE seed_vendor ADD COLUMN name text, ADD COLUMN currency text, ADD COLUMN addr_id uuid, ADD COLUMN addr_snap text,
   ADD COLUMN street text, ADD COLUMN country text, ADD COLUMN city text, ADD COLUMN postcode text;
@@ -179,10 +179,10 @@ ANALYZE partner.vendor; ANALYZE partner.vendor_address; ANALYZE seed_vendor;
 -- Location
 CREATE TEMP TABLE seed_location AS
 SELECT row_number() OVER (ORDER BY i)::int AS idx, uuidv7() AS id,
-       (ARRAY['Vault','Safe','Showroom','Workshop','Office','Branch','Display','Cabinet'])[1 + (i - 1) % 8] || ' ' || chr(65 + ((i - 1) / 8) % 26) || '-' || lpad(i::text, 5, '0') AS name
+       (ARRAY['Vault','Safe','Showroom','Workshop','Office','Branch','Display','Cabinet'])[1 + (i - 1) % 8] || ' ' || chr(65 + ((i - 1) / 8) % 26) || '-' || lpad(i::text, greatest(5, length(i::text)), '0') AS name
 FROM generate_series(1, :n_master * 2) i
 WHERE NOT EXISTS (SELECT 1 FROM partner.location l
-                  WHERE lower(l.name) = lower((ARRAY['Vault','Safe','Showroom','Workshop','Office','Branch','Display','Cabinet'])[1 + (i - 1) % 8] || ' ' || chr(65 + ((i - 1) / 8) % 26) || '-' || lpad(i::text, 5, '0')))
+                  WHERE lower(l.name) = lower((ARRAY['Vault','Safe','Showroom','Workshop','Office','Branch','Display','Cabinet'])[1 + (i - 1) % 8] || ' ' || chr(65 + ((i - 1) / 8) % 26) || '-' || lpad(i::text, greatest(5, length(i::text)), '0')))
 ORDER BY i LIMIT :n_master;
 INSERT INTO partner.location (id, name, active, created_by, updated_by)
 SELECT id, name, true, 'seed-mock', 'seed-mock' FROM seed_location;
@@ -190,7 +190,7 @@ SELECT id, name, true, 'seed-mock', 'seed-mock' FROM seed_location;
 -- Stone lookups (codes UPPERCASE ^[A-Z0-9./-]{1,20}$), skipping codes that already exist.
 CREATE TEMP TABLE seed_lookup (kind text, idx int, id uuid, code text, name text, PRIMARY KEY (kind, idx));
 INSERT INTO seed_lookup
-SELECT k.kind, row_number() OVER (PARTITION BY k.kind ORDER BY i)::int, uuidv7(), k.prefix || lpad(i::text, 5, '0'),
+SELECT k.kind, row_number() OVER (PARTITION BY k.kind ORDER BY i)::int, uuidv7(), k.prefix || lpad(i::text, greatest(5, length(i::text)), '0'),
        k.names[1 + (i - 1) % cardinality(k.names)] || ' ' || i
 FROM (VALUES
   ('group',   'MSG', ARRAY['Diamond','Corundum','Beryl','Garnet','Quartz','Tourmaline','Spinel','Topaz','Chrysoberyl','Feldspar']),
@@ -208,7 +208,7 @@ WHERE NOT EXISTS (
     UNION ALL SELECT 'cutting', code FROM stone.stone_cutting UNION ALL SELECT 'clarity', code FROM stone.stone_clarity
     UNION ALL SELECT 'quality', code FROM stone.stone_quality UNION ALL SELECT 'name', code FROM stone.stone_name
     UNION ALL SELECT 'shape', code FROM stone.stone_shape) e
-  WHERE e.kind = k.kind AND e.code = k.prefix || lpad(i::text, 5, '0'));
+  WHERE e.kind = k.kind AND e.code = k.prefix || lpad(i::text, greatest(5, length(i::text)), '0'));
 DELETE FROM seed_lookup WHERE idx > :n_master;
 -- Sizes have a unique name only.
 INSERT INTO seed_lookup
@@ -241,7 +241,7 @@ WHERE sh.kind = 'shape';
 -- Stone code: every part set, MANUAL mode, default part order.
 CREATE TEMP TABLE seed_sc AS
 WITH cnt AS (SELECT kind, count(*)::int AS n FROM seed_lookup GROUP BY kind)
-SELECT i AS idx, uuidv7() AS id, 'MSC' || lpad(i::text, 6, '0') AS code,
+SELECT i AS idx, uuidv7() AS id, 'MSC' || lpad(i::text, greatest(6, length(i::text)), '0') AS code,
        nm.id AS name_id, sz.id AS size_id, sh.id AS shape_id, co.id AS color_id, cu.id AS cutting_id, cl.id AS clarity_id, qu.id AS quality_id,
        regexp_replace(nm.name, ' [0-9]+$', '') AS stone, regexp_replace(sh.name, ' [0-9]+$', '') AS shape, sz.name AS size,
        regexp_replace(co.name, ' [0-9]+$', '') AS color, regexp_replace(cl.name, ' [0-9]+$', '') AS clarity,
@@ -254,7 +254,7 @@ JOIN seed_lookup co ON co.kind = 'color'   AND co.idx = 1 + (i * 13)     % (SELE
 JOIN seed_lookup cu ON cu.kind = 'cutting' AND cu.idx = 1 + (i * 17)     % (SELECT n FROM cnt WHERE kind = 'cutting')
 JOIN seed_lookup cl ON cl.kind = 'clarity' AND cl.idx = 1 + (i * 19)     % (SELECT n FROM cnt WHERE kind = 'clarity')
 JOIN seed_lookup qu ON qu.kind = 'quality' AND qu.idx = 1 + (i * 23)     % (SELECT n FROM cnt WHERE kind = 'quality')
-WHERE NOT EXISTS (SELECT 1 FROM stone.stone_code c WHERE c.code = 'MSC' || lpad(i::text, 6, '0'));
+WHERE NOT EXISTS (SELECT 1 FROM stone.stone_code c WHERE c.code = 'MSC' || lpad(i::text, greatest(6, length(i::text)), '0'));
 INSERT INTO stone.stone_code (id, code, mode, stone_name_id, size_id, shape_id, color_id, cutting_id, clarity_id, quality_id, part_order, active, created_by, updated_by)
 SELECT id, code, 'MANUAL'::stone.stone_code_mode, name_id, size_id, shape_id, color_id, cutting_id, clarity_id, quality_id,
        ARRAY['name','size','shape','color','cutting','clarity','quality'], true, 'seed-mock', 'seed-mock'
@@ -334,7 +334,7 @@ BEGIN
          pg_temp.rnd(i, p_salt + 3) < 0.5,
          CASE WHEN pg_temp.rnd(i, p_salt + 3) < 0.5 THEN 7 ELSE 0 END,
          CASE WHEN pg_temp.rnd(i, p_salt + 4) < 0.3 THEN 500 ELSE 0 END,
-         CASE WHEN pg_temp.rnd(i, p_salt + 5) < 0.5 THEN 'REF-' || lpad(i::text, 6, '0') ELSE '' END
+         CASE WHEN pg_temp.rnd(i, p_salt + 5) < 0.5 THEN 'REF-' || lpad(i::text, greatest(6, length(i::text)), '0') ELSE '' END
   FROM generate_series(1, p_n) i CROSS JOIN seed_cfg c;
   IF p_party = 'customer' THEN
     UPDATE seed_hdr h SET currency = s.currency FROM seed_customer s WHERE h.dtype = p_dtype AND s.idx = h.party;
@@ -483,7 +483,7 @@ SELECT pg_temp.price_lines();
 
 -- Stock IDs from the shared counter (year × 10,000 + n, ≥ 6 digits), in document / line order.
 UPDATE seed_cfg SET ctr0 = coalesce((SELECT last_no FROM partner.memo_stock_id_counter WHERE year = seed_cfg.y), 0);
-UPDATE seed_line l SET stock_id = lpad((c.y * 10000 + c.ctr0 + x.rn)::text, 6, '0')
+UPDATE seed_line l SET stock_id = lpad((c.y * 10000 + c.ctr0 + x.rn)::text, greatest(6, length((c.y * 10000 + c.ctr0 + x.rn)::text)), '0')
 FROM (SELECT l2.id, row_number() OVER (ORDER BY h.idx, l2.pos) AS rn FROM seed_line l2 JOIN seed_hdr h ON h.dtype = 'memo-receive' AND h.id = l2.doc_id) x, seed_cfg c
 WHERE l.id = x.id;
 INSERT INTO partner.memo_stock_id_counter (year, last_no)

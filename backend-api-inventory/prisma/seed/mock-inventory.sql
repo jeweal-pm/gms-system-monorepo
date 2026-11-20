@@ -4,7 +4,7 @@
 --
 --   :n_load Load to Stock documents (mode NONE: every row has exactly one source). A load takes one APPROVED mock
 --   Purchase and loads one quarter of each of its first N loadable lines (MANUAL / PURCHASE_ORDER source), where N comes
---   from `lines_spec` ("load-to-stock=min-max", default 1-3) capped by the lines the purchase has. ≤ 3 loads per purchase,
+--   from `lines_spec` ("load-to-stock=min-max", default 20-50) capped by the lines the purchase has. ≤ 3 loads per purchase,
 --   so the 4th quarter of every line stays loadable.
 --   APPROVED loads are applied exactly like the saga does (ADR-0052 D4/D5): a Stock ID per row, one `stock` per row (all on
 --   hand), LOAD_IN `stock_movement`, and on the master side `load_allocation` (+ lines), `load_stock_id`,
@@ -50,10 +50,10 @@ CREATE FUNCTION pg_temp.st(i bigint, salt int) RETURNS text LANGUAGE sql IMMUTAB
   SELECT CASE WHEN r < 70 THEN 'APPROVED' WHEN r < 82 THEN 'DRAFT' WHEN r < 90 THEN 'PENDING_APPROVAL'
               WHEN r < 94 THEN 'REJECTED' WHEN r < 98 THEN 'REVISION_REQUESTED' ELSE 'DELETED' END
   FROM (SELECT pg_temp.rnd(i, salt) * 100 AS r) x $$;
--- Rows per load from lines_spec ("load-to-stock=min-max"); default 1-3.
+-- Rows per load from lines_spec ("load-to-stock=min-max"); default 20-50.
 CREATE TEMP TABLE seed_lines AS
-SELECT coalesce(max(split_part(split_part(e, '=', 2), '-', 1)::int), 1) AS lo,
-       coalesce(max(coalesce(nullif(split_part(split_part(e, '=', 2), '-', 2), ''), split_part(split_part(e, '=', 2), '-', 1))::int), 3) AS hi
+SELECT coalesce(max(split_part(split_part(e, '=', 2), '-', 1)::int), 20) AS lo,
+       coalesce(max(coalesce(nullif(split_part(split_part(e, '=', 2), '-', 2), ''), split_part(split_part(e, '=', 2), '-', 1))::int), 50) AS hi
 FROM unnest(string_to_array(nullif(:'lines_spec', ''), ',')) e
 WHERE split_part(e, '=', 1) = 'load-to-stock';
 DO $$ BEGIN
@@ -128,7 +128,7 @@ ALTER TABLE seed_lrow ADD COLUMN row_unit_cost numeric(18,4), ADD COLUMN stock_i
 UPDATE seed_lrow x SET row_unit_cost = round(x.cost / nullif(CASE WHEN pl.price_unit = 'PER_CT' THEN x.w ELSE x.pcs::numeric END, 0), 4)
 FROM seed_pl pl WHERE pl.pp_no = x.pp_no AND pl.r = x.pos;
 -- Stock IDs (shared counter with Memo Receive) for rows of APPROVED loads only, in running-number / row order.
-UPDATE seed_lrow x SET stock_id = lpad((c.y * 10000 + c.ctr0 + o.rn)::text, 6, '0')
+UPDATE seed_lrow x SET stock_id = lpad((c.y * 10000 + c.ctr0 + o.rn)::text, greatest(6, length((c.y * 10000 + c.ctr0 + o.rn)::text)), '0')
 FROM (SELECT x2.row_id, row_number() OVER (ORDER BY s.running_no, x2.pos)::int rn
       FROM seed_lrow x2 JOIN seed_load s ON s.idx = x2.idx WHERE x2.st = 'APPROVED') o, seed_cfg c
 WHERE o.row_id = x.row_id;
@@ -141,7 +141,7 @@ INSERT INTO inventory.load_to_stock (id, numbering_id, running_no, doc_no, statu
   auto_approved, revision_count, submitted_at, submitted_by, submitted_by_name, review_action, review_note, reviewed_at, reviewed_by, reviewed_by_name,
   approved_at, approved_by, deleted_at, deleted_by, version, created_at, created_by, updated_at, updated_by)
 SELECT s.id, c.numbering_id, s.running_no, s.doc_no, s.status, false, 'IDLE', CASE WHEN s.st = 'APPROVED' THEN 1 ELSE 0 END, s.doc_date, pl.vendor_id,
-       pl.vendor_code_snapshot, pl.vendor_name_snapshot, c.cc, CASE WHEN pg_temp.rnd(s.idx, 902) < 0.5 THEN 'LS-REF-' || lpad(s.idx::text, 6, '0') ELSE '' END,
+       pl.vendor_code_snapshot, pl.vendor_name_snapshot, c.cc, CASE WHEN pg_temp.rnd(s.idx, 902) < 0.5 THEN 'LS-REF-' || lpad(s.idx::text, greatest(6, length(s.idx::text)), '0') ELSE '' END,
        '', 'NONE', t.n, t.p, t.w, t.cost, false,
        CASE WHEN s.st = 'REVISION_REQUESTED' THEN 1 ELSE 0 END,
        CASE WHEN s.st IN ('DRAFT', 'DELETED') THEN NULL ELSE s.created_at + interval '1 hour' END,
