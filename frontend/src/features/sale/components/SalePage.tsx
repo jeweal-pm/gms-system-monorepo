@@ -2,19 +2,23 @@
 
 import { useEffect, useMemo, useRef, type ComponentProps, type ReactNode } from "react";
 import { useFormContext } from "react-hook-form";
-import type { QuotationOptions } from "@/features/quotation/api";
 import { QuotationInfoForm } from "@/features/quotation/components/info/QuotationInfoForm";
 import { ItemTable } from "@/features/quotation/components/items/ItemTable";
 import { useConfirm, type ConfirmRequest } from "@/features/quotation/components/use-confirm";
 import { QUOTATION_KIND, type DocumentKind } from "@/features/quotation/document-kind";
 import { QuotationOptionsContext } from "@/features/quotation/options-context";
-import { documentAccess, useDocumentAccess, type DeletedInfo, type RestoreOutcome } from "@/features/trade-document/document-api";
+import { useApprovalSetting } from "@/features/trade-document/approval-flow";
+import { daybookLoadError, DocumentDaybook, documentAccess, useDocumentAccess, type DaybookState, type DeletedInfo, type RestoreOutcome } from "@/features/trade-document/document-api";
 import { DocumentForm, type DocumentApi, type DocumentFormConfig, type PickerRender, type SaveOutcome } from "@/features/trade-document/document-form";
 import type { DocumentPhotos } from "@/features/trade-document/document-photos";
 import type { DocFlow, DocumentApprovalType } from "@/features/trade-document/flow-status";
 import {
   clearReserveRows,
   emptySale,
+  memoStockToSaleLine,
+  pickedReserveLineIds,
+  pickedStockIds,
+  reserveLineToSaleLine,
   reserveRowCount,
   SALE_HREF,
   SALE_NOTE_MAX,
@@ -28,12 +32,25 @@ import {
   type SaleFormValues,
   type SaleInput,
 } from "../form";
-import { SaleUiForm } from "./sale-ui-form";
+import { MemoStockModal } from "@/features/trade-document/memo-stock-modal";
+import {
+  fromSale,
+  mapSaleSaveError,
+  SALE_PHOTOS,
+  saleDeleted,
+  saleFlow,
+  saleLoadError,
+  saleRestoreError,
+  useSaleApi,
+  useSaleDaybook,
+  useSaleDetail,
+  type SaleOptions,
+} from "../api";
+import { ReserveLinePicker } from "./sale-pickers";
 
 export { SALE_HREF };
 
-/** The sale options have the quotation options shape (api-contract `GET /sale/options`), so the shared header reads them. */
-export type SaleOptions = QuotationOptions;
+export type { SaleOptions };
 
 /** UX only (the server checks every call): the existing catalog leaf `sale` (F-04). */
 export function canViewSale(mine: Parameters<typeof documentAccess>[0]): boolean {
@@ -46,11 +63,6 @@ export const SALE_NOTE_HINT = "Printed on the sale for the customer";
 export const SALE_NOTE_PLACEHOLDER = "e.g. Paid in full by transfer.";
 export const SALE_DENIED = "You don't have permission to view sales.";
 export const SALE_NOT_FOUND = "Sale not found.";
-/**
- * A saved sale's route while the Sale API is not connected (owner 2026-11-18: UI only, no API yet). The new-sale route
- * shows the full document UI instead (`SaleUiForm`); no mock store or fake Save is used (Q-PU-01 rule).
- */
-export const SALE_UNAVAILABLE = "Sale isn't available yet.";
 
 /**
  * T-06 / T-09: the Reserve / Quotation table and row panel with stock quantities (Pcs / Weight up to the row's cap, Pcs
@@ -63,8 +75,8 @@ export const SALE_KIND: DocumentKind = {
   emptyRowText: SALE_EMPTY_ROW_TEXT,
   stockNote: (line) => saleStockNote(line),
   documentNote: { max: SALE_NOTE_MAX, hint: SALE_NOTE_HINT },
-  // Sale line photos come with FE-SL-007 (`binding.photos` replaces this); never the Quotation photo route.
-  uploadPhoto: () => Promise.reject(new Error("Sale photos are not connected yet")),
+  // FE-SL-007: the page's `photos` (SALE_PHOTOS) replace this; a sale never uploads to the Quotation photo route.
+  uploadPhoto: () => Promise.reject(new Error("Sale photos need the sale photo route")),
 };
 
 const added = (source: string) => (count: number) => `Added ${count} item${count === 1 ? "" : "s"} from ${source}`;
@@ -77,17 +89,15 @@ export type SaleDetailState = {
 };
 
 /**
- * Everything the page needs from work that waits for the backend (ADR-0054, SA rev 1). FE-SL-006 supplies the REST
- * adapter (options, number preview, writes, errors, detail, daybook), FE-SL-004 the From Reserve picker, FE-SL-005 the
- * From Stock picker (the dialogs in `sale-pickers.tsx` take its query `data`), FE-SL-007 the photos and FE-SL-009 the
- * `sale` approval type. Until then `SALE_BINDING` is null and `/sale/sale` shows the document UI with no API
- * (`SaleUiForm`, owner 2026-11-18 "ทำแค่ ui พอ ยังไม่ต้องต่อ api").
+ * Everything the page reads from the inventory Sale API (ADR-0054, SA rev 1): the REST adapter (options, number
+ * preview, writes, errors, detail, daybook; FE-SL-006), From Reserve (FE-SL-004), From Stock (FE-SL-005), photos
+ * (FE-SL-007) and the `sale` approval type (FE-SL-009). The pages take it as a prop so tests can pass typed fixtures.
  */
 export type SaleBinding = {
   useApi: (customerId: string | undefined, docDate: string, isNew: boolean) => DocumentApi<SaleInput, SaleOptions>;
   useDetail: (id: string | null) => SaleDetailState;
   loadError: (error: unknown) => string;
-  mapSaveError: (error: unknown) => SaveOutcome;
+  mapSaveError: (error: unknown, values?: SaleFormValues) => SaveOutcome;
   mapRestoreError: (error: unknown) => RestoreOutcome;
   approvalType: DocumentApprovalType;
   photos?: DocumentPhotos;
@@ -98,8 +108,75 @@ export type SaleBinding = {
   fromStock: PickerRender<SaleFormValues>;
 };
 
-/** Not wired yet: FE-SL-006 replaces this with the inventory REST adapter once BE-SL-008 hands the contract back. */
-export const SALE_BINDING: SaleBinding | null = null as SaleBinding | null;
+/** R-01 Daybook rows (ADR-0050 D6): customer name and the Revise / Reject note. */
+export function saleDaybookState(list: ReturnType<typeof useSaleDaybook>): DaybookState {
+  return {
+    isPending: list.isPending,
+    isError: list.isError,
+    errorMessage: list.error ? daybookLoadError(list.error, "sales") : undefined,
+    items: (list.data?.pages ?? []).flatMap((page) =>
+      page.items.map((item) => ({
+        id: item.id,
+        docNo: item.docNo,
+        docDate: item.docDate,
+        status: item.status,
+        name: item.customerName,
+        note: item.status === "REVISION_REQUESTED" || item.status === "REJECTED" ? (item.reviewNote ?? undefined) : undefined,
+      })),
+    ),
+    hasMore: list.hasNextPage,
+    loadingMore: list.isFetchingNextPage,
+    onLoadMore: () => void list.fetchNextPage(),
+  };
+}
+
+function SaleDaybook() {
+  const list = useSaleDaybook();
+  const { requireApproval } = useApprovalSetting("sale");
+  return <DocumentDaybook requireApproval={requireApproval} plural="sales" href={saleHref} state={saleDaybookState(list)} />;
+}
+
+/** `GET /sale/{id}` → the edit page's state (form values, version, deleted banner, `Flow`). */
+export function useSaleDetailState(id: string | null): SaleDetailState {
+  const detail = useSaleDetail(id);
+  return {
+    isPending: detail.isPending,
+    error: detail.error,
+    loaded: detail.data ? { initial: fromSale(detail.data), version: detail.data.version, deleted: saleDeleted(detail.data), flow: saleFlow(detail.data) } : null,
+  };
+}
+
+/** The live binding: inventory REST (`/api/inventory/v1/sale*`) and master Memo Stock for From Stock. */
+export const SALE_BINDING: SaleBinding = {
+  useApi: useSaleApi,
+  useDetail: useSaleDetailState,
+  loadError: (error) => saleLoadError(error),
+  mapSaveError: mapSaleSaveError,
+  mapRestoreError: saleRestoreError,
+  approvalType: "sale",
+  photos: SALE_PHOTOS,
+  daybook: <SaleDaybook />,
+  fromReserve: ({ values, onClose, onAdd }) => (
+    <ReserveLinePicker
+      customerId={values.customerId}
+      currency={values.currency}
+      excluded={pickedReserveLineIds(values.lines)}
+      onCancel={onClose}
+      onConfirm={(rows) => onAdd(rows.map(reserveLineToSaleLine))}
+    />
+  ),
+  // P-02 phase 1 (Q-SL-01): the Reserve / Memo Out "Add From Stock" dialog over Memo Stock of every vendor, no prices.
+  fromStock: ({ values, onClose, onAdd }) => (
+    <MemoStockModal
+      title="Add From Stock"
+      showPrice={false}
+      emptyText="No stock with anything pending."
+      pickedIds={pickedStockIds(values.lines)}
+      onCancel={onClose}
+      onConfirm={(items) => onAdd(items.map(memoStockToSaleLine))}
+    />
+  ),
+};
 
 type HeaderField = "customerId" | "shippingAddressId" | "invoiceAddressId" | "currency" | "exchangeRate";
 const HEADER_FIELDS: readonly HeaderField[] = ["customerId", "shippingAddressId", "invoiceAddressId", "currency", "exchangeRate"];
@@ -238,30 +315,17 @@ export function saleConfig(binding: SaleBinding): DocumentFormConfig<SaleFormVal
   };
 }
 
-/** The page config once the binding exists (FE-SL-006); null until then. */
-export const SALE_CONFIG = SALE_BINDING ? saleConfig(SALE_BINDING) : null;
+/** The page config on the live binding. */
+export const SALE_CONFIG = saleConfig(SALE_BINDING);
 
 const message = "p-10 text-gms-body text-gms-text-secondary";
 
 /** `/sale/sale` — a new sale. */
-export function SalePage({ binding = SALE_BINDING }: { binding?: SaleBinding | null }) {
+export function SalePage({ binding = SALE_BINDING }: { binding?: SaleBinding }) {
   const access = useDocumentAccess("sale");
-  const config = useMemo(() => (binding ? saleConfig(binding) : null), [binding]);
+  const config = useMemo(() => saleConfig(binding), [binding]);
   if (!access) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{SALE_DENIED}</p>;
-  if (!config) {
-    return (
-      <SaleUiForm
-        canAdd={access.add}
-        kind={SALE_KIND}
-        itemTable={SaleItemTable}
-        emptyRowText={SALE_EMPTY_ROW_TEXT}
-        notePlaceholder={SALE_NOTE_PLACEHOLDER}
-        noteHint={SALE_NOTE_HINT}
-        noteMax={SALE_NOTE_MAX}
-      />
-    );
-  }
   return <DocumentForm config={config} canAdd={access.add} canEdit={access.edit} canDelete={access.delete} />;
 }
 
@@ -275,10 +339,9 @@ function BoundEditSalePage({ id, binding, access }: { id: string; binding: SaleB
 }
 
 /** `/sale/sale/[id]` — a saved sale; it remounts on every new server version. */
-export function EditSalePage({ id, binding = SALE_BINDING }: { id: string; binding?: SaleBinding | null }) {
+export function EditSalePage({ id, binding = SALE_BINDING }: { id: string; binding?: SaleBinding }) {
   const access = useDocumentAccess("sale");
   if (!access) return <p className={message}>Loading…</p>;
   if (!access.view) return <p className={message}>{SALE_DENIED}</p>;
-  if (!binding) return <p className={message}>{SALE_UNAVAILABLE}</p>;
   return <BoundEditSalePage id={id} binding={binding} access={access} />;
 }

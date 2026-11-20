@@ -18,7 +18,7 @@ import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
 import { APPROVE_MENUS, type ApprovalProc, type ApproveMenu, type AvailableMenu } from "./menus";
 import type { PreviewDetail } from "./preview";
-import { loadToStockDocumentClient, toPendingItem } from "./inventory";
+import { loadToStockDocumentClient, saleDocumentClient, toPendingItem } from "./inventory";
 import { approvalTotal, pendingInput, summaryCount, visibleMenus, type ApprovalSummary, type CountState, type Mine, type PendingInput, type ReviewAction, type SortState } from "./model";
 
 /**
@@ -52,6 +52,8 @@ export function documentClients(client: MasterClient): Record<ApprovalProc, Docu
     purchase: client.purchase,
     // FE-LS-011: Load to Stock is served by backend-api-inventory (REST), adapted to the same surface.
     loadToStock: loadToStockDocumentClient(),
+    // sale FE-SL-009: also served by backend-api-inventory.
+    sale: saleDocumentClient(),
   };
 }
 
@@ -134,7 +136,7 @@ export function usePendingList(menu: AvailableMenu, q: string | undefined, sort:
   const inventoryList = useInventoryPendingList(inventoryPendingInput(input, menu.type), enabled && inventory);
   if (!inventory) return master;
   const data = inventoryList.data
-    ? { ...inventoryList.data, pages: inventoryList.data.pages.map((page) => ({ nextCursor: page.nextCursor, items: page.items.map((item) => toPendingItem(item, baseCurrency ?? "")) })) }
+    ? { ...inventoryList.data, pages: inventoryList.data.pages.map((page) => ({ nextCursor: page.nextCursor, items: page.items.map((item) => toPendingItem(item, baseCurrency ?? "", menu.type)) })) }
     : undefined;
   return { ...inventoryList, data } as unknown as typeof master;
 }
@@ -148,6 +150,8 @@ export const inventoryPendingInput = (input: PendingInput, type: string): Invent
 export function invalidateAfterReview(queryClient: QueryClient, proc: ApprovalProc, action: ReviewAction) {
   // FE-LS-011: an inventory review refreshes every inventory read (its list, document, picker, summary, settings).
   if (proc === "loadToStock") return Promise.all([queryClient.invalidateQueries({ queryKey: INVENTORY_QUERY_KEY }), queryClient.invalidateQueries({ queryKey: [["purchase"]] })]);
+  // sale FE-SL-009: an approved sale moves Reserve lines and Memo Stock (master).
+  if (proc === "sale") return Promise.all([INVENTORY_QUERY_KEY, [["memoStock"]], [["reserve"]]].map((queryKey) => queryClient.invalidateQueries({ queryKey })));
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: [["approval"]] }),
     queryClient.invalidateQueries({ queryKey: [[proc]] }),
@@ -185,6 +189,7 @@ export function useReviewCalls(menu: AvailableMenu) {
 /** The tRPC react-query key of `<proc>.get` (shares the cache with the document page). */
 export function detailQueryKey(proc: ApprovalProc, id: string) {
   if (proc === "loadToStock") return [...INVENTORY_QUERY_KEY, "load-to-stock", "preview", id] as const;
+  if (proc === "sale") return [...INVENTORY_QUERY_KEY, "sale", "preview", id] as const;
   return [[proc, "get"], { input: { id }, type: "query" }] as const;
 }
 

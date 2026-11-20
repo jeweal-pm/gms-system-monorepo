@@ -224,7 +224,7 @@ describe("IT-AP-03 pending table from approval.pending", () => {
     expect(on).toContain("QT2611001");
     expect(on).toContain("Valid until 05/11/26");
     expect(render(queryClient, createElement(ApproveMenuPage, { slug: "transfer-location" }))).toContain("Transfer Location approvals will appear here once its page is built.");
-    expect(render(queryClient, createElement(ApproveMenuPage, { slug: "sale" }))).toMatch(/<h1[^>]*>Menu not found<\/h1>/);
+    expect(render(queryClient, createElement(ApproveMenuPage, { slug: "no-such-menu" }))).toMatch(/<h1[^>]*>Menu not found<\/h1>/);
     expect(calls).toEqual([]);
   });
 

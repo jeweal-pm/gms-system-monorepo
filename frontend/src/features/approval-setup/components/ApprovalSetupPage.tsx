@@ -126,6 +126,7 @@ function ApprovalSetupWorkspace({ canEdit }: { canEdit: boolean }) {
   return (
     <PartnerPageFrame>
       <h1 className="text-gms-title font-medium text-gms-text-heading">Approval</h1>
+      <StatusChainView on={true} />
       <section aria-label="Approval settings" className="mt-8 rounded-gms-lg bg-gms-surface p-6">
         {list.isError && !items ? (
           <div role="alert" className="flex flex-col items-start gap-3 py-8 text-gms-body text-gms-text">
@@ -139,7 +140,7 @@ function ApprovalSetupWorkspace({ canEdit }: { canEdit: boolean }) {
               <thead>
                 <tr className="h-14 border-b border-gms-border bg-gms-page text-gms-body font-semibold text-gms-text">
                   <th scope="col" className="w-[24%] min-w-[240px] pl-8 pr-4">Menu</th>
-                  <th scope="col" className="min-w-[520px] px-4">When a document is saved</th>
+                  {/* <th scope="col" className="min-w-[520px] px-4">When a document is saved</th> */}
                   <th scope="col" className="w-[200px] px-4">Waiting for approval</th>
                   <th scope="col" className="w-[180px] px-4" title={canEdit ? undefined : VIEW_ONLY_HINT}>
                     Require approval
@@ -211,7 +212,7 @@ export function SettingRow({ menu, setting, canEdit, canOpenApprove, saving, onT
           {menu.label}
         </span>
       </th>
-      <td className="px-4 py-3">
+      {/* <td className="px-4 py-3">
         {locked === "loading" ? (
           <span aria-label="Loading" className="block h-4 w-64 animate-pulse rounded-gms-sm bg-gms-surface-sunken" />
         ) : (
@@ -220,7 +221,7 @@ export function SettingRow({ menu, setting, canEdit, canOpenApprove, saving, onT
             <p className="mt-1.5 text-gms-label text-gms-text-muted">{helperText(menu, on)}</p>
           </>
         )}
-      </td>
+      </td> */}
       <td className="px-4">
         {locked === "loading" ? (
           <span aria-label="Loading" className="block h-4 w-24 animate-pulse rounded-gms-sm bg-gms-surface-sunken" />

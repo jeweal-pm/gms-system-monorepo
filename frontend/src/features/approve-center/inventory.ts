@@ -1,4 +1,5 @@
 import { loadToStockApi, type LoadOut } from "@/features/load-to-stock/api";
+import { saleApi, type SaleOut } from "@/features/sale/api";
 import type { InventoryPendingItem } from "@/features/inventory/approval";
 import type { PendingApprovalItem } from "./model";
 import type { PreviewDetail } from "./preview";
@@ -44,9 +45,9 @@ export function loadToStockPreview(detail: LoadOut): PreviewDetail {
  * An inventory pending row in master's row shape. SA rev 1 lists no `version` on pending rows: 0 means "read it with
  * `get` before the call" (`withVersion`), so an approve still sends the current `expectedVersion`.
  */
-export function toPendingItem(item: InventoryPendingItem, currency: string): PendingApprovalItem {
+export function toPendingItem(item: InventoryPendingItem, currency: string, type: string = "load-to-stock"): PendingApprovalItem {
   return {
-    type: "load-to-stock",
+    type,
     id: item.id,
     docNo: item.docNo,
     docDate: item.docDate,
@@ -55,8 +56,9 @@ export function toPendingItem(item: InventoryPendingItem, currency: string): Pen
     status: "PENDING_APPROVAL",
     party: { id: "", code: "", name: item.partyName },
     ref: "",
-    currency,
-    grandTotal: item.valueBase,
+    // Sale (FE-SL-009) lists its grand total in the document currency; Load to Stock in the company currency.
+    currency: item.currency ?? currency,
+    grandTotal: item.value ?? item.valueBase ?? "0",
     lineCount: 0,
     totalPcs: item.totalPcs,
     totalWeightCt: item.totalWeightCt,
@@ -78,6 +80,42 @@ export function loadToStockDocumentClient(calls: Calls = loadToStockApi) {
   const withVersion = async (id: string, expectedVersion: number) => (expectedVersion > 0 ? expectedVersion : (await calls.get(id)).version);
   return {
     get: { query: async ({ id }: { id: string }) => loadToStockPreview(await calls.get(id)) },
+    approve: { mutate: async ({ id, expectedVersion }: { id: string; expectedVersion: number }) => calls.approve(id, await withVersion(id, expectedVersion)) },
+    reject: { mutate: async ({ id, expectedVersion, reason }: { id: string; expectedVersion: number; reason: string }) => calls.reject(id, await withVersion(id, expectedVersion), reason) },
+    requestRevision: {
+      mutate: async ({ id, expectedVersion, note }: { id: string; expectedVersion: number; note: string }) => calls.requestRevision(id, await withVersion(id, expectedVersion), note),
+    },
+  };
+}
+
+/** sale FE-SL-009: `SaleOut` → the preview modal's fields (customer, lines in position order, grand total). */
+export function salePreview(detail: SaleOut): PreviewDetail {
+  return {
+    id: detail.id,
+    docNo: detail.docNo,
+    status: detail.status,
+    version: detail.version,
+    docDate: detail.docDate,
+    currency: detail.currency,
+    exchangeRate: detail.exchangeRate,
+    documentNote: detail.documentNote,
+    customer: { name: detail.customer.name },
+    lines: [...detail.lines]
+      .sort((a, b) => a.position - b.position)
+      .map((line) => ({ stoneCode: line.stoneCode, stockId: line.stockId, stone: line.stone, shape: line.shape, size: line.size, pcs: line.pcs, weightCt: line.weightCt, amount: line.amount, location: line.location })),
+    totals: { grandTotal: detail.totals.grandTotal },
+    deletedAt: detail.deleted?.at ?? null,
+    revisionCount: detail.approval.revisionCount,
+  };
+}
+
+type SaleCalls = Pick<typeof saleApi, "get" | "approve" | "reject" | "requestRevision">;
+
+/** The Approve menu's per-document client for Sale (backend-api-inventory, same surface as master's). */
+export function saleDocumentClient(calls: SaleCalls = saleApi) {
+  const withVersion = async (id: string, expectedVersion: number) => (expectedVersion > 0 ? expectedVersion : (await calls.get(id)).version);
+  return {
+    get: { query: async ({ id }: { id: string }) => salePreview(await calls.get(id)) },
     approve: { mutate: async ({ id, expectedVersion }: { id: string; expectedVersion: number }) => calls.approve(id, await withVersion(id, expectedVersion)) },
     reject: { mutate: async ({ id, expectedVersion, reason }: { id: string; expectedVersion: number; reason: string }) => calls.reject(id, await withVersion(id, expectedVersion), reason) },
     requestRevision: {

@@ -70,7 +70,8 @@ export type DocumentFormConfig<V extends FieldValues & Saved, Input, Options ext
   useApi: (partyId: string | undefined, docDate: string, isNew: boolean) => DocumentApi<Input, Options>;
   partyId: (values: V | undefined) => string | undefined;
   header: (args: { readOnly: boolean; options: Options | undefined }) => ReactNode;
-  mapSaveError: (error: unknown) => SaveOutcome;
+  /** `values`: the form at the time of the call (sale: a server row index → the form row, FE-SL-006). */
+  mapSaveError: (error: unknown, values?: V) => SaveOutcome;
   /** `<doc>.restore` errors (transaction-soft-delete). */
   mapRestoreError: (error: unknown) => RestoreOutcome;
   pickLabel: string;
@@ -267,7 +268,7 @@ export function DocumentForm<V extends FieldValues & Saved, Input, Options exten
   }, [toast]);
 
   function showError(error: unknown) {
-    const outcome = config.mapSaveError(error);
+    const outcome = config.mapSaveError(error, getValues());
     for (const field of outcome.fieldErrors) setError(field.name as Path<V>, { type: "server", message: field.message });
     setToast(outcome.message);
     // FE-SD-003: deleted in another tab; reload it (the page remounts read-only with the banner) and keep the message.

@@ -141,3 +141,18 @@ Existing endpoints extended for `sale`:
 ## Compatibility
 
 All changes are additive. Existing master procedures keep their shapes (one extra optional output field on `reserve.get`). Load to Stock contracts are unchanged; the internal numbering literal is widened. Frontend `DocumentApprovalType` gains `sale` (served by inventory).
+
+## Implementation notes (backend BE-SL-002…007, 2026-11-19/20; verified shapes for FE-SL-004…009)
+
+Within the approved design; recorded so the frontend adapter matches the running code.
+
+- **Field names corrected** (owner/parent instruction 2026-11-19): `SaleInput.tax = { enabled, rate, includeInPrice }` and `SaleInput.serviceCharges = [{ type, amount }]` exactly as the Reserve input; `SaleOut` returns the same keys (`tax`, `serviceCharges`). `LineInput.unitPrice` ≤ 2 dp, `weightCt` ≤ 3 dp, `pcs` ≤ 999 999.
+- `LineOut` as listed plus `id` (send it back on `PUT` to keep the line), `reservePrice` (= Reserve net unit price, RESERVE only, else null), `sourceDoc` (`RESERVE` → Reserve id/no.; `STOCK` → `MEMO_RECEIVE` id/no.), `discount {type, value}`, `discountAmount`, `amount`. `capPcs/capWeightCt` are live (open / pending + this Sale's own applied quantity) while the document is editable, else the snapshot of the last Save; a reference that became unavailable reads cap 0.
+- `flow.usedBy` is always `null` in this revision: "used" is decided by master at apply (`409 SALE_IN_USE`).
+- `POST /sale/{id}/delete` → `{ id, version }`; `restore` → `{ id, version, status: "DRAFT" }`; `submit` → `{ id, version, status, submittedAt }`; create → `201 { id, docNo, version, status }` (`DRAFT` with approval ON, `APPROVED` with OFF).
+- `GET /sale/options?customerId=` returns master `sale/reference` unchanged (`customers[{id, code, name, active, currency, addresses[{id, type, label, isDefault}]}]`, `currencies`, `companyCurrency`, `chargeTypes`, `numbering.configured`, `stone`).
+- `GET /approval/summary` items now `[{type: "load-to-stock", …}, {type: "sale", count}]`; `GET /approval/pending?type=sale` items `{id, docNo, docDate, partyName, submittedAt, submittedByName, totalPcs, totalWeightCt, value, currency, revisionCount}` (sort `submittedAt|docNo|party|qty|value`, `dir`, `q`, `cursor`, `limit ≤ 50`).
+- Notifications: `documentType: "sale"`, types `approval.pending` (approvers of `sale` APPROVE + VIEW, not the actor), `document.approved|document.revision_requested|document.rejected` (creator); summary `{partyName, amount, currency, reason?}`; `GET /notifications?scope=all` includes Sale events for `sale:VIEW`.
+- `503 SYNC_PENDING` carries `details.id` (also on a create whose outcome is unknown, so the page can open the Sale once it is applied). `GET /sale/{id}` re-drives an in-flight op on access.
+- Saga revisions: a refused op keeps its revision; the next op of that Sale takes the next free revision (master accepts any revision above its applied one).
+- Photos: object keys `sale/<uuid>.<ext>` in bucket `files` (the shared `@gms/storage` key builder; scope `files/sale/`), not `files/sale/{yyyy}/{mm}/…`.

@@ -1,3 +1,4 @@
+import type { SaleOut } from "@/features/sale/types";
 import type { SaleReserveLineRef } from "@/features/sale/form";
 import type { MemoStockItem } from "@/features/trade-document/memo-stock-api";
 
@@ -24,3 +25,23 @@ export const stockItem = (patch: Partial<MemoStockItem> = {}): MemoStockItem => 
   ref: { type: "MEMO_RECEIVE" as const, id: ID, docNo: "MR-26100012", docDate: "2026-10-29" },
   ...patch,
 } as MemoStockItem);
+
+/** `GET /sale/{id}` (verified contract): one From Reserve line and one From Stock line, Draft. */
+export const saleOut = (patch: Partial<SaleOut> = {}): SaleOut => ({
+  id: ID, docNo: "SL-1001", status: "DRAFT", version: 3, docDate: "2026-11-20", dueDate: "2026-11-30",
+  customerId: ID, customer: { code: "C008", name: "Al Noor" }, shippingAddressId: ID, invoiceAddressId: CUSTOMER_B,
+  currency: "USD", exchangeRate: "35.5", ref: "PO-9", documentNote: "Paid",
+  discount: { type: "NONE", value: "0" }, tax: { enabled: true, rate: "7.0000", includeInPrice: false }, labor: null, serviceCharges: [{ type: "SHIPPING", amount: "10.00" }],
+  lines: [
+    { id: "line-2", position: 2, source: "STOCK", reserveLineId: null, memoStockId: STOCK, stockId: "260009", sourceDoc: { type: "MEMO_RECEIVE", id: ID, docNo: "MR-26100012" },
+      stoneCode: "", stone: "Sapphire", shape: "Round", size: "5 mm", color: "Blue", clarity: "VS", cutting: "Good", quality: "AA", lot: "L-9", location: "Memo", cerType: "", cerNo: "",
+      priceUnit: "PER_PCS", pcs: 1, weightCt: "0.700", capPcs: 3, capWeightCt: "2.100", reservePrice: null, unitPrice: "950.00", discount: { type: "AMOUNT", value: "5" }, discountAmount: "5.00", amount: "945.00", itemNote: "", photoIds: ["p1"] },
+    { id: "line-1", position: 1, source: "RESERVE", reserveLineId: RESERVE_LINE, memoStockId: STOCK, stockId: "260014", sourceDoc: { type: "RESERVE", id: ID, docNo: "RS-1001" },
+      stoneCode: "", stone: "South Sea Pearl", shape: "Round", size: "11.0 mm", color: "Golden", clarity: "", cutting: "", quality: "AAA", lot: "KPW", location: "Memo", cerType: "", cerNo: "",
+      priceUnit: "PER_PCS", pcs: 2, weightCt: "16.800", capPcs: 40, capWeightCt: "336.000", reservePrice: "100.0000", unitPrice: "100.00", discount: { type: "NONE", value: "0" }, discountAmount: "0.00", amount: "200.00", itemNote: "gift", photoIds: [] },
+  ],
+  approval: { requireApproval: true, autoApproved: false, revisionCount: 0, review: null },
+  flow: { canEdit: true, canDelete: true, canSubmit: true, canRestore: false, usedBy: null },
+  syncing: false, deleted: null, totals: { grandTotal: "1225.15" },
+  ...patch,
+});

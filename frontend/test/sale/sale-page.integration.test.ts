@@ -16,26 +16,26 @@ import {
   SALE_EMPTY_ROW_TEXT,
   SALE_KIND,
   SALE_NOT_FOUND,
-  SALE_UNAVAILABLE,
   saleConfig,
   SaleItemTable,
   SalePage,
   type SaleBinding,
   type SaleOptions,
 } from "@/features/sale/components/SalePage";
-import { NOT_CONNECTED } from "@/features/sale/components/sale-pickers";
-import { SALE_NOT_CONNECTED_NOTE, SALE_NUMBER_PREVIEW } from "@/features/sale/components/sale-ui-form";
+import { ReserveLinePicker } from "@/features/sale/components/sale-pickers";
+import { SALE_PHOTOS, saleKeys } from "@/features/sale/api";
+import { inventoryApprovalKeys } from "@/features/inventory/approval";
+import { todayIso } from "@/features/quotation/lib/format";
+import { MemoStockModal } from "@/features/trade-document/memo-stock-modal";
 import { emptySale, memoStockToSaleLine, reserveLineToSaleLine, type SaleFormValues } from "@/features/sale/form";
 import type { ConfirmRequest } from "@/features/quotation/components/use-confirm";
 import { authTrpc, createAuthTrpcClient } from "@/lib/auth-trpc";
 import { createMasterTrpcClient, masterTrpc } from "@/lib/master-trpc";
-import { CUSTOMER_B, ID, reserveLine, stockItem } from "./fixtures";
+import { CUSTOMER_B, ID, reserveLine, saleOut, stockItem } from "./fixtures";
 
 /**
- * IT-SL-02 / UT-SL-05 / IT-SL-05 (sale FE-SL-002/003, UI rev 1): the route pages and the Sale page config through the
- * app's provider stack. The Sale API is not wired yet (FE-SL-006 waits for the backend), so the page shows "Sale isn't
- * available yet." to VIEW holders; the shell's composition is checked with a typed test binding (tests only, no mock
- * store in the app, Q-PU-01 rule).
+ * IT-SL-02 / UT-SL-05 / IT-SL-05 (sale FE-SL-002…009): the route pages on the live binding (inventory REST adapter,
+ * caches seeded under the hooks' real query keys, no request sent) and the page config with a typed test binding.
  */
 
 vi.mock("next/navigation", () => ({
@@ -122,9 +122,7 @@ describe("FE-SL-002 / FE-SL-008 access and routes (TC-SL-01/02, UT-SL-08)", () =
     expect(navigationLabelFor("/sale/sale")).toBe("Sale");
   });
 
-  it("no binding yet: loading, no-VIEW text, and a saved-sale route says it isn't available", () => {
-    expect(SALE_BINDING).toBeNull();
-    expect(SALE_CONFIG).toBeNull();
+  it("live binding: loading, no-VIEW text on both routes", () => {
     expect(render(seeded(null), createElement(SaleRoutePage))).toContain("Loading…");
     const denied = render(seeded(["reserve:VIEW"]), createElement(SaleRoutePage));
     expect(denied).toContain(SALE_DENIED);
@@ -132,47 +130,64 @@ describe("FE-SL-002 / FE-SL-008 access and routes (TC-SL-01/02, UT-SL-08)", () =
     // `use(params)` reads an already-fulfilled thenable synchronously in a static render.
     const params = Object.assign(Promise.resolve({ id: ID }), { status: "fulfilled", value: { id: ID } });
     expect(render(seeded(["reserve:VIEW"]), createElement(SaleDetailRoutePage, { params }))).toContain(SALE_DENIED);
-    expect(render(seeded(["sale:VIEW"]), createElement(SaleDetailRoutePage, { params }))).toContain(SALE_UNAVAILABLE);
   });
 });
 
-describe("IT-SL-02b UI only, no API (owner 2026-11-18 \"ทำแค่ ui พอ ยังไม่ต้องต่อ api\")", () => {
-  it("the new-sale route renders the whole document UI: SL preview, header, From Reserve then From Stock, table, note, summary", () => {
-    const html = render(seeded(["sale:VIEW", "sale:ADD"]), createElement(SaleRoutePage));
-    expect(html).not.toContain(SALE_UNAVAILABLE);
+/** The live route's reads seeded under their real keys (queries are disabled, so nothing is fetched). */
+function live(permissions: string[]) {
+  const queryClient = seeded(permissions);
+  queryClient.setQueryData(saleKeys.options(undefined), OPTIONS);
+  queryClient.setQueryData(saleKeys.options(ID), OPTIONS);
+  queryClient.setQueryData(saleKeys.nextNumber(todayIso()), { docNo: "SL-1002" });
+  queryClient.setQueryData(inventoryApprovalKeys.settings(), { items: [{ type: "sale", requireApproval: true, version: 1 }] });
+  return queryClient;
+}
+
+describe("IT-SL-02 live Sale page (FE-SL-006, owner 2026-11-20 \"ทำหน้า sale ให้เสร็จ\")", () => {
+  it("new sale: number preview from the API, header, From Reserve then From Stock, Save enabled with ADD, no not-connected text", () => {
+    const html = render(live(["sale:VIEW", "sale:ADD"]), createElement(SaleRoutePage));
     expect(html).toContain("Sale No.:");
-    expect(html).toContain(SALE_NUMBER_PREVIEW);
+    expect(html).toContain("SL-1002");
     expect(html).toContain("Number preview");
-    expect(html).toContain(SALE_NOT_CONNECTED_NOTE);
-    for (const label of ["Doc Date", "Customer", "Shipping Address", "Invoice Address", "Due Date", "Currency", "Exchange Rate", "Ref."]) expect(html).toContain(`>${label}`);
+    expect(html).not.toContain("Not connected");
+    for (const label of ["Doc Date", "Customer", "Shipping Address", "Invoice Address", "Due Date", "Currency", "Ref."]) expect(html).toContain(`>${label}`);
     const fromReserve = html.indexOf(button(html, "From Reserve"));
     const fromStock = html.indexOf(button(html, "From Stock"));
     expect(fromReserve).toBeGreaterThan(-1);
     expect(fromStock).toBeGreaterThan(fromReserve);
-    expect(html).toContain('title="Choose a customer first"');
     expect(html).not.toMatch(/>s*Add rows*</);
     expect(html).toContain(SALE_EMPTY_ROW_TEXT);
-    expect(html).toContain("5 rows");
-    expect(html).toContain("/ 250");
-    expect(html).toContain("Summary Value");
-    expect(html).toContain("Printed on the sale for the customer");
+    expect(button(html, "Save")).not.toContain('disabled=""');
+    expect(render(live(["sale:VIEW"]), createElement(SaleRoutePage))).not.toContain("Create New");
   });
 
-  it("Save and Send to approve are disabled with 'Not connected yet'; Create New follows ADD", () => {
-    const html = render(seeded(["sale:VIEW", "sale:ADD"]), createElement(SaleRoutePage));
-    expect(button(html, "Save")).toContain('disabled=""');
-    expect(button(html, "Send to approve")).toContain('disabled=""');
-    expect(html).toContain(`<span title="${NOT_CONNECTED}"><button`);
-    expect(html).toContain("Create New");
-    expect(render(seeded(["sale:VIEW"]), createElement(SaleRoutePage))).not.toContain("Create New");
+  it("saved sale: the API document in position order with its source captions, status and Edit", () => {
+    const queryClient = live(["sale:VIEW", "sale:EDIT"]);
+    queryClient.setQueryData(saleKeys.get(ID), saleOut());
+    const params = Object.assign(Promise.resolve({ id: ID }), { status: "fulfilled", value: { id: ID } });
+    const html = render(queryClient, createElement(SaleDetailRoutePage, { params }));
+    expect(html).toContain("SL-1001");
+    expect(html).toContain("Draft");
+    expect(html.indexOf("260014 · from RS-1001")).toBeGreaterThan(-1);
+    expect(html.indexOf("260009 · from MR-26100012")).toBeGreaterThan(html.indexOf("260014 · from RS-1001"));
+    expect(button(html, "Edit")).not.toContain('disabled=""');
   });
 
-  it("makes no API request: only the seeded permission / currency / approval-setting queries exist after rendering", () => {
-    const queryClient = seeded(["sale:VIEW", "sale:ADD"]);
-    const before = queryClient.getQueryCache().findAll().map((query) => JSON.stringify(query.queryKey)).sort();
-    render(queryClient, createElement(SaleRoutePage));
-    const after = queryClient.getQueryCache().findAll().map((query) => JSON.stringify(query.queryKey)).sort();
-    expect(after).toEqual(before);
+  it("the live binding: approval type sale, sale photo route, From Reserve on the reserve-lines picker, From Stock on MemoStockModal", () => {
+    expect(SALE_BINDING.approvalType).toBe("sale");
+    expect(SALE_BINDING.photos).toBe(SALE_PHOTOS);
+    expect(SALE_CONFIG.photos?.route).toBe("/api/inventory/v1/sale/photos");
+    const values: SaleFormValues = { ...emptySale(), customerId: ID, currency: "USD", lines: [reserveLineToSaleLine(reserveLine()), memoStockToSaleLine(stockItem())] };
+    const reserve = SALE_BINDING.fromReserve({ values, onClose: () => undefined, onAdd: () => undefined }) as ReactElement<{ customerId: string; currency: string; excluded: Set<string> }>;
+    expect(reserve.type).toBe(ReserveLinePicker);
+    expect(reserve.props.customerId).toBe(ID);
+    expect(reserve.props.currency).toBe("USD");
+    expect([...reserve.props.excluded]).toEqual([reserveLine().reserveLineId]);
+    const stock = SALE_BINDING.fromStock({ values, onClose: () => undefined, onAdd: () => undefined }) as ReactElement<{ title: string; showPrice: boolean; pickedIds: Set<string>; vendorId?: string }>;
+    expect(stock.type).toBe(MemoStockModal);
+    expect(stock.props).toMatchObject({ title: "Add From Stock", showPrice: false });
+    expect(stock.props.vendorId).toBeUndefined();
+    expect([...stock.props.pickedIds]).toEqual([stockItem().id]);
   });
 });
 
@@ -235,8 +250,8 @@ describe("UT-SL-05 SALE config (FE-SL-003)", () => {
   it("pick-only stock-quantity kind (no Add row; empty row opens From Reserve), 250 note, schema and mapping from form.ts", async () => {
     expect(SALE_KIND).toMatchObject({ stockQuantity: true, pickOnly: true, emptyRowText: SALE_EMPTY_ROW_TEXT, documentNote: { max: 250 } });
     expect(config.kind).toBe(SALE_KIND);
-    // No Quotation photo route on a sale; FE-SL-007 brings its own.
-    await expect(SALE_KIND.uploadPhoto(new File([""], "a.png"))).rejects.toThrow("not connected");
+    // Never the Quotation photo route; the page uploads through SALE_PHOTOS (FE-SL-007).
+    await expect(SALE_KIND.uploadPhoto(new File([""], "a.png"))).rejects.toThrow("need the sale photo route");
     expect(config.emptyRowText).toBe(SALE_EMPTY_ROW_TEXT);
     expect(config.itemTable).toBe(SaleItemTable);
     expect(SALE_KIND.stockNote!(reserveLineToSaleLine(reserveLine()))).toBe("Reserved 2 pcs / 1.36 ct · RS-26110001");
