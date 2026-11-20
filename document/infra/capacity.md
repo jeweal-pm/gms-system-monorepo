@@ -6,7 +6,7 @@ the same change.
 
 | Container | CPU | Memory | Node heap cap |
 |---|---|---|---|
-| postgres | 0.60 | 1024 MiB | — |
+| postgres | 0.60 | 1024 MiB | —; `/dev/shm` allocation ceiling 256 MiB |
 | backend-api-auth | 0.30 | 512 MiB | 320 MiB |
 | api-master | 0.25 | 384 MiB | 256 MiB |
 | frontend | 0.30 | 640 MiB | 384 MiB |
@@ -31,6 +31,12 @@ inventory migration job.
 Dev watch mode (`docker-compose.dev.yml`): auth and frontend 1 vCPU / 1536 MiB with heap caps cleared;
 api-master 1 GiB with `--max-old-space-size=768`; backend-api-inventory 0.5 vCPU / 768 MiB with
 `--max-old-space-size=512` (its migrate job 0.5 vCPU / 512 MiB); Postgres and Nginx retain their profile limits.
+
+PostgreSQL `shm_size: 256mb` sets the container's `/dev/shm` capacity for dynamic shared-memory
+operations (including parallel queries). This is an allocation ceiling inside the existing 1024 MiB
+Postgres container limit, not another 256 MiB added to the host budget. It matches
+[GMS platform spec §3.2](../gms-platform-spec.md#32-memory-budget-compose-mem_limit). Actual query
+memory use and 4 GB host capacity still require measurements.
 
 ## Measurements
 
