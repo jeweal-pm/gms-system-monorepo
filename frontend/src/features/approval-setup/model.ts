@@ -78,8 +78,13 @@ export function statusChain(on: boolean): Chain {
  * Helper line under the chain. On: the design's sentence (Q-AS-02, owner 2026-11-09: a pending document can't be
  * edited). Off: Quotation keeps the design's sentence; approved documents of the other types are read-only (Q-AS-03).
  */
+export const SAVE_FLOW_ON_TEXT = "Waits in the Approve menu and can't be edited until the approver decides.";
+/** The ⓘ "When a document is saved" popover (owner 2026-11-20): one Off line for every menu. */
+export const SAVE_FLOW_OFF_TEXT = "Approved automatically on Save and takes effect at once. Quotation can still be edited later; other documents can't.";
+export const SAVE_FLOW_BLOCKED_TEXT = "A menu can't be turned Off while its documents are waiting for approval or sent back.";
+
 export function helperText(menu: ApproveMenu, on: boolean): string {
-  if (on) return "Waits in the Approve menu and can't be edited until the approver decides.";
+  if (on) return SAVE_FLOW_ON_TEXT;
   if (menu.slug === "quotation") return "Approved automatically on Save. Can still be edited later.";
   return "Approved automatically on Save and takes effect at once. Can't be edited afterwards.";
 }

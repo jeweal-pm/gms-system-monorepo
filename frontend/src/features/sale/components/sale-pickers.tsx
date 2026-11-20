@@ -1,6 +1,6 @@
 "use client";
 
-import { Badge } from "@/features/quotation/components/ui";
+import { PickerChip, PickerLot, pickerCell, pickerSub } from "@/features/trade-document/picker-ui";
 import { formatDate } from "@/features/quotation/lib/format";
 import { StockPicker, usePickerFilters, type PickerColumn, type PickerGroup, type StockPickerProps } from "@/features/trade-document/stock-picker";
 import { reserveLinePickerData, saleLoadError, useReserveLines } from "../api";
@@ -16,20 +16,20 @@ import type { SaleReserveLineRef } from "../form";
 type Tab = "ALL";
 
 const flat = <R,>(rows: R[]): PickerGroup<R>[] => [{ id: "ALL", label: "", tone: "neutral", count: rows.length, rows }];
-const sub = "text-xs text-[#6B7480]";
+const sub = pickerSub;
 
 /** P-01 columns (ui-spec): Reserve No. · Stone Code / Stock ID · lot … Open Pcs / Weight · Sale Price · Amount. */
 export const RESERVE_LINE_COLUMNS: PickerColumn[] = [
-  { title: "Reserve No.", sub: "Reserve date · Due date", className: "w-[170px]" },
+  { title: "Reserve No.", sub: "Reserve date · Due date", plainSub: true, className: "w-[170px]" },
   { title: "Stone Code", sub: "Stock ID · Lot", className: "w-[200px]" },
-  { title: "Location" },
-  { title: "Stone", sub: "Shape · Size" },
-  { title: "Color" },
-  { title: "Clarity", sub: "Cutting · Quality" },
-  { title: "Cer Type", sub: "Cer No." },
-  { title: "Open Pcs", right: true, divider: true },
-  { title: "Open Weight", sub: "ct", right: true },
-  { title: "Sale Price", right: true, divider: true },
+  { title: "Location", upper: true },
+  { title: "Stone", sub: "Shape · Size", upper: true },
+  { title: "Color", upper: true },
+  { title: "Clarity", sub: "Cutting · Quality", upper: true },
+  { title: "Cer Type", sub: "Cer No.", upper: true },
+  { title: "Open Pcs", right: true, upper: true },
+  { title: "Open Weight", sub: "ct", plainSub: true, right: true, upper: true },
+  { title: "Sale Price", right: true, upper: true },
   { title: "Amount", right: true },
 ];
 
@@ -39,35 +39,35 @@ const joined = (...parts: string[]) => parts.filter(Boolean).join(" · ") || "�
 export function ReserveLineCells({ row }: { row: SaleReserveLineRef }) {
   return (
     <>
-      <td className="px-3 py-4">
+      <td className={pickerCell}>
         <div className="font-medium">{row.reserveNo}</div>
         <div className={sub}>{`${formatDate(row.reserveDate)} · ${formatDate(row.dueDate)}`}</div>
       </td>
-      <td className="px-3 py-4">
+      <td className={pickerCell}>
         <div className="font-medium">{dash(row.stoneCode)}</div>
         <div className={`${sub} flex flex-wrap items-center gap-2`}>
           <span>{row.stockId}</span>
-          {row.lot && <Badge variant="lot">{row.lot}</Badge>}
+          {row.lot && <PickerLot>{row.lot}</PickerLot>}
         </div>
       </td>
-      <td className="px-3 py-4">{dash(row.location)}</td>
-      <td className="px-3 py-4">
+      <td className={pickerCell}>{dash(row.location)}</td>
+      <td className={pickerCell}>
         <div>{dash(row.stone)}</div>
         <div className={sub}>{joined(row.shape, row.size)}</div>
       </td>
-      <td className="px-3 py-4">{dash(row.color)}</td>
-      <td className="px-3 py-4">
+      <td className={pickerCell}>{dash(row.color)}</td>
+      <td className={pickerCell}>
         <div>{dash(row.clarity)}</div>
         <div className={sub}>{joined(row.cutting, row.quality)}</div>
       </td>
-      <td className="px-3 py-4">
-        <div>{dash(row.cerType)}</div>
+      <td className={pickerCell}>
+        {row.cerType ? <PickerChip>{row.cerType}</PickerChip> : <div>—</div>}
         <div className={sub}>{dash(row.cerNo)}</div>
       </td>
-      <td className="border-l border-[#EDEDED] px-3 py-4 text-right">{row.openPcs}</td>
-      <td className="px-3 py-4 text-right">{row.openWeightCt}</td>
-      <td className="border-l border-[#EDEDED] px-3 py-4 text-right">{`${row.netUnitPrice} / ${row.priceUnit === "PER_PCS" ? "pcs" : "ct"}`}</td>
-      <td className="px-3 py-4 text-right">{row.openAmount}</td>
+      <td className={`${pickerCell} text-right`}>{row.openPcs}</td>
+      <td className={`${pickerCell} text-right`}>{row.openWeightCt}</td>
+      <td className={`${pickerCell} text-right`}>{`${row.netUnitPrice} / ${row.priceUnit === "PER_PCS" ? "pcs" : "ct"}`}</td>
+      <td className={`${pickerCell} text-right`}>{row.openAmount}</td>
     </>
   );
 }

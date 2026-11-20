@@ -141,6 +141,17 @@ describe("IT-LS-01 Add From Purchase picker (FE-LS-004)", () => {
     expect(button(html, "Load more")).not.toBe("");
   });
 
+  it("design 148: shared picker look; Stone Code over 'New on load · lot chip' without the Auto badge; PU No. first", () => {
+    const queryClient = seeded(ALL);
+    queryClient.setQueryData(loadKeys.search(input), { pages: [{ items: [LINE1], nextCursor: null, total: 1 }], pageParams: [null] });
+    const html = render(queryClient, createElement(PurchaseLinePicker, { vendorId: VENDOR.id, companyCurrency: "THB", excludeLineIds: [L2], onCancel: vi.fn(), onConfirm: vi.fn() }));
+    expect(html).toContain('<thead class="sticky top-0 z-10 bg-gms-table-head text-left">');
+    expect(html).toContain("<span>New on load</span>");
+    expect(html).not.toContain(">Auto</span>");
+    expect(html.indexOf("PU No.")).toBeLessThan(html.indexOf("Stone Code"));
+    expect(html).toContain('<tr class="cursor-pointer border-b border-gms-border bg-white hover:bg-gms-row-hover">');
+  });
+
   it("empty: 'No purchase lines left to load'", () => {
     const queryClient = seeded(ALL);
     queryClient.setQueryData(loadKeys.search({ ...input, excludeLineIds: [] }), { pages: [{ items: [], nextCursor: null, total: 0 }], pageParams: [null] });

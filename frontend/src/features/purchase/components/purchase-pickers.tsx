@@ -1,15 +1,15 @@
 "use client";
 
 import { skipToken } from "@tanstack/react-query";
-import { MessageSquare } from "lucide-react";
 import type { ReactNode } from "react";
 import { useNumberFormat, type NumberFormat } from "@/features/decimal-setup/number-format-provider";
-import { Badge, cx } from "@/features/quotation/components/ui";
+import { cx } from "@/features/quotation/components/ui";
 import { dec } from "@/features/quotation/lib/decimal";
 import { formatDate, formatMoneyText, formatUnitPrice, formatWeight } from "@/features/quotation/lib/format";
 import { documentLoadError } from "@/features/trade-document/document-api";
 import { memoStockLoadError } from "@/features/trade-document/memo-stock-api";
 import { stockRefLabel } from "@/features/trade-document/stock-ref";
+import { PickerChip, PickerLot, PickerNote, pickerCell, pickerSub } from "@/features/trade-document/picker-ui";
 import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
 import type { PurchaseMemoStockRow, PurchaseOrderLineRow } from "../form";
@@ -71,7 +71,9 @@ export function usePurchaseOrderLines(vendorId: string, currency: string, filter
 
 // ---- shared cells ----
 
-const sub = "mt-1 text-xs text-[#656B71]";
+const sub = pickerSub;
+const cell = pickerCell;
+const num = cx(pickerCell, "text-right");
 const shortDate = (iso: string) => {
   const [y, m, d] = iso.slice(0, 10).split("-");
   return y && m && d ? `${d}/${m}/${y.slice(2)}` : iso;
@@ -81,17 +83,17 @@ const unitText = (currency: string, perCt: boolean) => `${currency} per ${perCt 
 function StoneCells({ row }: { row: Pick<PurchaseMemoStockRow, "location" | "stone" | "shape" | "size" | "color" | "clarity" | "cutting" | "quality" | "cerType" | "cerNo"> }) {
   return (
     <>
-      <td className="px-3 py-4">{row.location || "—"}</td>
-      <td className="px-3 py-4">
+      <td className={cell}>{row.location || "—"}</td>
+      <td className={cell}>
         <div className="font-medium">{row.stone}</div>
         <div className={sub}>{[row.shape, row.size].filter(Boolean).join(" · ")}</div>
       </td>
-      <td className="px-3 py-4">
+      <td className={cell}>
         <div>{[row.color, row.clarity].filter(Boolean).join(" · ")}</div>
         <div className={sub}>{[row.cutting, row.quality].filter(Boolean).join(" · ")}</div>
       </td>
-      <td className="px-3 py-4">
-        {row.cerType && <Badge>{row.cerType}</Badge>}
+      <td className={cell}>
+        {row.cerType && <PickerChip>{row.cerType}</PickerChip>}
         <div className={sub}>{row.cerNo}</div>
       </td>
     </>
@@ -101,25 +103,20 @@ function StoneCells({ row }: { row: Pick<PurchaseMemoStockRow, "location" | "sto
 function QuantityPriceCells({ pcs, weightCt, price, perCt, amount, currency, nf }: { pcs: number; weightCt: string; price: string; perCt: boolean; amount: string; currency: string; nf: NumberFormat }) {
   return (
     <>
-      <td className="px-3 py-4 text-right">
+      <td className={num}>
         <div>{pcs}</div>
         <div className={sub}>{formatWeight(dec(weightCt), nf.weightPlaces)} cts</div>
       </td>
-      <td className="border-l border-[#EDEDED] px-3 py-4 text-right">
+      <td className={num}>
         <div>{formatUnitPrice(price, nf.pricePlaces)}</div>
         <div className={sub}>{unitText(currency, perCt)}</div>
       </td>
-      <td className="px-3 py-4 text-right">{formatMoneyText(amount, nf.pricePlaces)}</td>
+      <td className={num}>{formatMoneyText(amount, nf.pricePlaces)}</td>
     </>
   );
 }
 
-const Note = ({ text }: { text: string }) =>
-  text ? (
-    <div className={cx(sub, "flex items-center gap-1.5")}>
-      <MessageSquare className="size-3" aria-hidden /> {text}
-    </div>
-  ) : null;
+const Note = PickerNote;
 
 /** Status badge (DV-09): the design's fills with darker text for WCAG AA; the status is always given as text. */
 export function StatusBadge({ tone, children }: { tone: "sold" | "inStock" | "open" | "partly"; children: ReactNode }) {
@@ -132,22 +129,30 @@ export function StatusBadge({ tone, children }: { tone: "sold" | "inStock" | "op
   return <span className={cx("inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium", tones[tone])}>{children}</span>;
 }
 
-const columns = (lead: PickerColumn[], status: PickerColumn | null): PickerColumn[] => [
+/** Designs 144 / 146: attribute columns in capitals, identity columns and Amount as written. */
+const columns = (lead: PickerColumn[], status: PickerColumn | null, price: string): PickerColumn[] => [
   ...lead,
-  { title: "Location" },
-  { title: "Stone", sub: "Shape · Size" },
-  { title: "Color · Clarity", sub: "Cutting · Quality" },
-  { title: "Cer Type", sub: "Cer No." },
+  { title: "Location", upper: true },
+  { title: "Stone", sub: "Shape · Size", upper: true },
+  { title: "Color · Clarity", sub: "Cutting · Quality", upper: true },
+  { title: "Cer Type", sub: "Cer No.", upper: true },
   ...(status ? [status] : []),
-  { title: "Pcs", sub: "Weight", right: true },
-  { title: "Price", sub: "Unit", right: true, divider: true },
+  { title: "Pcs", sub: "Weight", right: true, upper: true },
+  { title: price, sub: "Unit", right: true, upper: true },
   { title: "Amount", right: true },
 ];
 
 // ---- Add Memo Stock (R2-MS) ----
 
-/** Rev 3 (owner 2026-11-04): the first column leads with the Memo ID; the Stock ID and lot sit under it. */
-export const MEMO_STOCK_COLUMNS = columns([{ title: "Memo ID", sub: "Stock ID · Lot", className: "w-[240px]" }], { title: "Status", sub: "Sale Invoice · Customer" });
+/**
+ * Design 144 (owner 2026-11-20, replaces the rev 3 Memo ID first): the Stock ID leads, with its lot and the Memo
+ * Receive no. under it; Memo Price per unit.
+ */
+export const MEMO_STOCK_COLUMNS = columns(
+  [{ title: "Stock ID", sub: "Lot · Memo No.", upper: true, plainSub: true, className: "w-[240px]" }],
+  { title: "Status", sub: "Sale Invoice · Customer", upper: true },
+  "Memo Price",
+);
 export const SOLD_GROUP_LABEL = "Sold to customers · must be purchased";
 export const IN_STOCK_GROUP_LABEL = "Still in stock on memo · buy now or return later";
 type MemoCounts = { all: number; sold: number; inStock: number };
@@ -188,13 +193,13 @@ export function MemoStockCells({ row, currency }: { row: PurchaseMemoStockRow; c
   const sale = row.sale as SaleInfo;
   return (
     <>
-      <td className="px-3 py-4">
-        <div className="font-medium">{stockRefLabel(row) || "—"}</div>
-        <div className={sub}>{[row.stockId, row.lot].filter(Boolean).join(" · ")}</div>
+      <td className={cell}>
+        <div className="font-medium">{row.stockId || "—"}</div>
+        <div className={sub}>{[row.lot, stockRefLabel(row)].filter(Boolean).join(" · ")}</div>
         <Note text={row.itemNote} />
       </td>
       <StoneCells row={row} />
-      <td className="px-3 py-4">
+      <td className={cell}>
         {row.status === "SOLD" ? (
           <>
             <StatusBadge tone="sold">Sold</StatusBadge>
@@ -256,10 +261,11 @@ export function MemoStockPicker({ vendorId, ...scope }: PickerScope<PurchaseMemo
  */
 export const PURCHASE_ORDER_COLUMNS = columns(
   [
-    { title: "PO No.", sub: "Doc Date", className: "w-[150px]" },
+    { title: "PO No.", sub: "Doc Date", plainSub: true, className: "w-[150px]" },
     { title: "Stone Code", sub: "Stock ID · Lot", className: "w-[220px]" },
   ],
   null,
+  "Price",
 );
 
 /** One flat list in the server's order (newest PO first, lines by position). */
@@ -278,15 +284,15 @@ export function PurchaseOrderLineCells({ row, currency }: { row: PurchaseOrderLi
   const nf = useNumberFormat();
   return (
     <>
-      <td className="px-3 py-4">
+      <td className={cell}>
         <div className="font-medium">{row.purchaseOrder.docNo}</div>
         <div className={sub}>{formatDate(row.purchaseOrder.docDate)}</div>
       </td>
-      <td className="px-3 py-4">
+      <td className={cell}>
         <div className="font-medium">{row.stoneCode || "—"}</div>
         <div className={cx(sub, "flex flex-wrap items-center gap-2")}>
           <span>—</span>
-          {row.lot && <Badge variant="lot">{row.lot}</Badge>}
+          {row.lot && <PickerLot>{row.lot}</PickerLot>}
         </div>
         <Note text={row.itemNote} />
       </td>

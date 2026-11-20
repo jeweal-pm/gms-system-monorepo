@@ -65,7 +65,7 @@ function view<R, S extends string>(props: PurchasePickerProps<R, S>, viewState: 
   return renderToStaticMarkup(createElement(PurchasePickerView<R, S>, { props, state: viewState, on: handlers })).replaceAll("&#x27;", "'").replaceAll("&amp;", "&");
 }
 const button = (html: string, label: string) => new RegExp(`<button[^>]*>(?:(?!</button>).)*${label}(?:(?!</button>).)*</button>`).exec(html)?.[0] ?? "";
-const numbers = (html: string) => [...html.matchAll(/<td class="py-4 text-\[#4E626C\]">(\d+)<\/td>/g)].map((match) => Number(match[1]));
+const numbers = (html: string) => [...html.matchAll(/<td class="w-8 py-2 align-top text-gms-text-muted">(\d+)<\/td>/g)].map((match) => Number(match[1]));
 
 describe("UT-PU-07 picker shell helpers", () => {
   const groups = memoStockGroups([...sold, ...inStock], counts);
@@ -125,10 +125,16 @@ describe("UT-PU-07 picker shell view (R2-MS layout and states)", () => {
     expect(html).toContain('aria-label="Received from"');
     expect(html).toContain('aria-label="Received to"');
     expect(html.match(/<thead/g)).toHaveLength(1);
-    expect(html.match(/<tr class="h-\[52px\]">/g)).toHaveLength(1);
+    expect(html.match(/<tr class="h-14">/g)).toHaveLength(1);
+    // Design 136: grey #E9EDED header, attribute titles in capitals, sort glyphs, OK greyed until something is ticked.
+    expect(html).toContain('<thead class="sticky top-0 z-10 bg-gms-table-head text-left">');
+    expect(html).toContain('<span class="block text-sm uppercase">Location</span>');
+    expect(html).toContain('<span class="block text-sm">Amount</span>');
+    expect(html.match(/lucide-chevrons-up-down/g)).toHaveLength(MEMO_STOCK_COLUMNS.length);
+    expect(button(html, "OK")).toContain("disabled:bg-gms-surface-sunken");
     expect(html.match(/<th /g)).toHaveLength(MEMO_STOCK_COLUMNS.length + 2);
-    expect(MEMO_STOCK_COLUMNS.map((column) => column.title)).toEqual(["Memo ID", "Location", "Stone", "Color · Clarity", "Cer Type", "Status", "Pcs", "Price", "Amount"]);
-    expect(MEMO_STOCK_COLUMNS[0]!.sub).toBe("Stock ID · Lot");
+    expect(MEMO_STOCK_COLUMNS.map((column) => column.title)).toEqual(["Stock ID", "Location", "Stone", "Color · Clarity", "Cer Type", "Status", "Pcs", "Memo Price", "Amount"]);
+    expect(MEMO_STOCK_COLUMNS[0]!.sub).toBe("Lot · Memo No.");
     const soldHeader = button(html, SOLD_GROUP_LABEL);
     expect(soldHeader).toContain('aria-expanded="true"');
     const controls = /aria-controls="([^"]+)"/.exec(soldHeader)![1];
@@ -138,6 +144,9 @@ describe("UT-PU-07 picker shell view (R2-MS layout and states)", () => {
     expect(html.indexOf(SOLD_GROUP_LABEL)).toBeLessThan(html.indexOf(IN_STOCK_GROUP_LABEL));
     expect(numbers(html)).toEqual([1, 2, 3, 4, 5]);
     expect(html.match(/shadow-\[inset_3px_0_0_#DF1016\]/g)).toHaveLength(2);
+    // Group bands (design 144): red 18 % for Sold, neutral for In stock.
+    expect(html.match(/bg-gms-group-red-sub/g)).toHaveLength(1);
+    expect(html.match(/bg-gms-group-band/g)).toHaveLength(1);
     expect(html).toContain('aria-label="Select STK-000231 from MR-1001"');
     expect(button(html, "OK")).toContain('disabled=""');
     expect(html).toContain('aria-live="polite"');
@@ -196,12 +205,12 @@ describe("UT-PU-08 Memo Stock view model", () => {
     expect(html).toContain('aria-label="Sold, 0"');
   });
 
-  it("cells (rev 3): Memo ID on top with Stock ID · Lot and the note under it, Location, badges with AA text colours, Pcs over cts, price per unit, amount", () => {
+  it("cells (design 144): Stock ID on top with Lot · Memo No. and the note under it, Location, badges with AA text colours, Pcs over cts, price per unit, amount", () => {
     const html = view(memoProps(), state("ALL", data([...sold, ...inStock])));
-    expect(html.match(/<div class="font-medium">MR-1001<\/div>/g)).toHaveLength(5);
-    expect(html).toContain(">STK-000232 · L-2607-007</div>");
-    expect(html).not.toContain(">STK-000232</div>");
-    expect(html.indexOf(">MR-1001</div>")).toBeLessThan(html.indexOf("STK-000231 · L-2607-007"));
+    expect(html).toContain('<div class="font-medium">STK-000232</div>');
+    expect(html.match(/>L-2607-007 · MR-1001<\/div>/g)).toHaveLength(5);
+    expect(html).not.toContain('<div class="font-medium">MR-1001</div>');
+    expect(html.indexOf(">STK-000231</div>")).toBeLessThan(html.indexOf("L-2607-007 · MR-1001"));
     expect(html.match(/lucide-message-square/g)).toHaveLength(4);
     expect(html).toContain(">Memo</td>");
     expect(html).not.toMatch(/Pair|Parcel|Single/);
@@ -255,12 +264,12 @@ describe("UT-PU-09 Add Purchase Order view (rev 3: like the From Stock picker)",
 
   it("cells: bold PO No. over its Doc Date, Stone Code over — (no Stock ID, ADR-0051) + lot badge and the note, open quantity and the net price", () => {
     const html = view(props, state("ALL", data(rows)));
-    expect(html).toContain('<div class="font-medium">PO2611002</div><div class="mt-1 text-xs text-[#656B71]">02/11/2026</div>');
+    expect(html).toContain('<div class="font-medium">PO2611002</div><div class="mt-1 text-xs leading-4 text-gms-text-secondary">02/11/2026</div>');
     expect(html.match(/>PO2611001<\/div>/g)).toHaveLength(2);
     expect(html).toContain(">RU-OV-1</div>");
     expect(html.match(/<span>—<\/span>/g)).toHaveLength(3);
     expect(html).not.toContain("<span>Auto</span>");
-    expect(html).toContain('bg-[#FDF1DC] font-mono text-[#B4540A]">L-PO-1</span>');
+    expect(html).toContain('bg-gms-warning-subtle px-1.5 py-px font-mono text-xs leading-4 text-gms-warning-text">L-PO-1</span>');
     expect(html).toContain('<div class="font-medium">—</div>');
     expect(html).toContain(">Safe A</td>");
     expect(html).toContain(">6</div>");

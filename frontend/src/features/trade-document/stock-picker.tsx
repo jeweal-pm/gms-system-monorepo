@@ -1,9 +1,24 @@
 "use client";
 
-import { ArrowRight, ChevronDown, ChevronRight, ChevronsUpDown, Search, X } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { DateInput } from "@/components/ui/date-input";
-import { Button, cx, IconButton } from "@/features/quotation/components/ui";
+import { cx } from "@/features/quotation/components/ui";
+import {
+  PickerDialog,
+  PickerFooter,
+  PickerFrame,
+  PickerLoadMore,
+  PickerMessage,
+  PickerTh,
+  PickerToolbar,
+  pickerCheckbox,
+  pickerCheckCell,
+  pickerHead,
+  pickerIndexCell,
+  pickerMarkedCell,
+  pickerRowClass,
+  type PickerHeaderCell,
+} from "./picker-ui";
 
 /**
  * Stock picker shell (purchase UI rev 2, R2-MS / R2-PO, FE-PU-008; moved from `purchase/components/purchase-picker.tsx`
@@ -19,7 +34,8 @@ import { Button, cx, IconButton } from "@/features/quotation/components/ui";
 export type PickerFilter<S extends string> = { status: S; q: string; from: string; to: string };
 export type PickerTab<S extends string> = { id: S; label: string; count: number | undefined };
 export type PickerGroup<R> = { id: string; label: string; count: number; tone: "sold" | "neutral"; rows: R[] };
-export type PickerColumn = { title: string; sub?: string; right?: boolean; divider?: boolean; className?: string };
+/** One header cell (design 136: no vertical dividers; groups are shown by tint, not by lines). */
+export type PickerColumn = Omit<PickerHeaderCell, "rowSpan">;
 /** What a picker's data hook returns: the loaded rows (all pages) and the server's counts for the current filters. */
 export type PickerData<R> = {
   rows: R[];
@@ -164,9 +180,9 @@ export function StockPickerView<R, S extends string>({ props, state, on }: { pro
   const span = props.columns.length + 2;
   const message = (text: string, error = false) => (
     <tbody>
-      <tr>
-        <td colSpan={span} className={cx("py-16 text-center", error ? "text-[#E5484D]" : "text-[#6B7480]")}>{text}</td>
-      </tr>
+      <PickerMessage span={span} error={error}>
+        {text}
+      </PickerMessage>
     </tbody>
   );
 
@@ -188,174 +204,107 @@ export function StockPickerView<R, S extends string>({ props, state, on }: { pro
   };
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#1C252E]/40" onClick={props.onCancel}>
-      <div
-        ref={dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        onKeyDown={onDialogKey}
-        className="flex h-[min(1000px,calc(100vh_-_80px))] w-[min(1632px,calc(100vw_-_48px))] flex-col rounded-2xl bg-white shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <header className="flex h-[63px] shrink-0 items-center justify-between border-b border-[#E6E6E8] px-5">
-          <h2 id={titleId} className="text-lg font-medium text-[#1C252E]">
-            {props.title}
-          </h2>
-          <IconButton label="Close" onClick={props.onCancel}>
-            <X className="size-5" />
-          </IconButton>
-        </header>
-
-        <div className="flex min-h-0 flex-1 flex-col px-6 pt-6 pb-6 lg:px-14">
-          <div className="mb-5 flex flex-wrap items-center gap-5">
-            {tabs.length > 0 && (
-              <div role="tablist" aria-label={`${props.title} filter`} className="inline-flex h-10 items-center rounded-lg bg-[#F9F9F9] p-0.5 text-[13px]">
-                {tabs.map((tab, index) => {
-                  const selected = tab.id === state.tab;
-                  const count = tab.count === undefined ? "" : String(tab.count);
-                  return (
+    <PickerDialog titleId={titleId} title={props.title} onClose={props.onCancel} dialogRef={dialog} onKeyDown={onDialogKey}>
+      <PickerToolbar
+        lead={
+          tabs.length > 0 && (
+            <div role="tablist" aria-label={`${props.title} filter`} className="inline-flex h-9 items-center rounded-gms-md bg-gms-page p-0.5 text-[13px]">
+              {tabs.map((tab, index) => {
+                const selected = tab.id === state.tab;
+                const count = tab.count === undefined ? "" : String(tab.count);
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    aria-label={count ? `${tab.label}, ${count}` : tab.label}
+                    tabIndex={selected ? 0 : -1}
+                    onClick={() => on.onTab(tab.id)}
+                    onKeyDown={(event) => onTabKey(event, index)}
+                    className={cx("flex h-8 items-center gap-1.5 rounded-md px-3", selected ? "border border-gms-border bg-white text-[#1C252E]" : "text-gms-text-muted")}
+                  >
+                    {tab.label}
+                    {count && <span className="text-gms-text-muted">{count}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )
+        }
+        search={{ value: state.search, onChange: on.onSearch, placeholder: props.searchPlaceholder, label: props.searchLabel }}
+        dates={{ from: state.from, to: state.to, onFrom: on.onFrom, onTo: on.onTo, fromLabel: props.dateLabels.from, toLabel: props.dateLabels.to }}
+      />
+      <PickerFrame footer={<PickerFooter count={state.checked.size} onCancel={props.onCancel} onOk={on.onOk} />}>
+        <thead className={pickerHead}>
+          <tr className="h-14">
+            <th scope="col" className="w-14 px-4">
+              <input type="checkbox" aria-label="Select all" className={pickerCheckbox} checked={all.checked} disabled={all.disabled} onChange={on.onToggleAll} />
+            </th>
+            <th scope="col" className="w-8 text-sm font-medium">#</th>
+            {props.columns.map((column) => (
+              <PickerTh key={column.title} {...column} />
+            ))}
+          </tr>
+        </thead>
+        {state.data.isPending && message("Loading…")}
+        {state.data.isError && message(props.loadError(state.data.error), true)}
+        {!state.data.isPending && !state.data.isError && groups.length === 0 && message(props.emptyText(state.tab, state.filtered))}
+        {groups.map((group, groupIndex) => {
+          const open = !state.collapsed.has(group.id);
+          const rowsId = `${groupId}-${group.id}`;
+          return [
+            props.flat ? null : (
+              <tbody key={`${group.id}-head`}>
+                <tr className={cx("h-10 border-b border-gms-border", group.tone === "sold" ? "bg-gms-group-red-sub" : "bg-gms-group-band")}>
+                  <td colSpan={span} className="p-0">
                     <button
-                      key={tab.id}
                       type="button"
-                      role="tab"
-                      aria-selected={selected}
-                      aria-label={count ? `${tab.label}, ${count}` : tab.label}
-                      tabIndex={selected ? 0 : -1}
-                      onClick={() => on.onTab(tab.id)}
-                      onKeyDown={(event) => onTabKey(event, index)}
-                      className={cx("flex h-9 items-center gap-1.5 rounded-md px-3", selected ? "border border-[#EDEDED] bg-white text-[#1C252E]" : "text-[#637381]")}
+                      aria-expanded={open}
+                      aria-controls={rowsId}
+                      onClick={() => on.onToggleGroup(group.id)}
+                      className="flex h-10 w-full items-center gap-2 px-4 text-left text-sm font-medium text-[#1C252E]"
                     >
-                      {tab.label}
-                      {count && <span className="text-[#637381]">{count}</span>}
+                      {open ? <ChevronDown className="size-4" aria-hidden /> : <ChevronRight className="size-4" aria-hidden />}
+                      <span>{group.label}</span>
+                      <span>{group.count}</span>
                     </button>
+                  </td>
+                </tr>
+              </tbody>
+            ),
+            <tbody key={`${group.id}-rows`} id={rowsId} hidden={!open}>
+              {open &&
+                group.rows.map((row, index) => {
+                  const key = props.rowKey(row);
+                  const ticked = state.checked.has(key);
+                  return (
+                    <tr key={key} onClick={() => on.onToggleRow(key)} className={pickerRowClass(ticked)}>
+                      <td className={cx(pickerCheckCell, props.rowMarked?.(row) && pickerMarkedCell)}>
+                        <input
+                          type="checkbox"
+                          aria-label={props.rowLabel(row)}
+                          className={pickerCheckbox}
+                          checked={ticked}
+                          onChange={() => on.onToggleRow(key)}
+                          onClick={(event) => event.stopPropagation()}
+                        />
+                      </td>
+                      <td className={pickerIndexCell}>{starts[groupIndex]! + index}</td>
+                      {props.cells(row)}
+                    </tr>
                   );
                 })}
-              </div>
-            )}
-            <label className="ml-auto flex h-9 w-full max-w-[352px] items-center gap-2 rounded-lg border border-[#EDEDED] bg-white px-3 text-sm">
-              <Search className="size-4 shrink-0 text-[#1C252E]" />
-              <input
-                autoFocus
-                value={state.search}
-                onChange={(event) => on.onSearch(event.target.value)}
-                placeholder={props.searchPlaceholder}
-                aria-label={props.searchLabel}
-                className="w-full bg-transparent outline-none placeholder:text-[#95A0A9]"
-              />
-            </label>
-            <div className="flex h-9 items-center gap-2 rounded-lg border border-[#EDEDED] px-3 text-sm text-[#1C252E]">
-              <DateInput aria-label={props.dateLabels.from} placeholder="Start" value={state.from} onChange={on.onFrom} className="w-[110px] bg-transparent outline-none" />
-              <ArrowRight className="size-4 text-[#637381]" />
-              <DateInput aria-label={props.dateLabels.to} placeholder="Due" value={state.to} onChange={on.onTo} className="w-[110px] bg-transparent outline-none" />
-            </div>
-          </div>
-
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[#EDEDED]">
-            <div className="min-h-0 flex-1 overflow-auto">
-              <table className="w-full min-w-[1200px] border-collapse text-sm text-[#1C252E]">
-                <thead className="sticky top-0 z-10 bg-[#F9F9F9] text-left">
-                  <tr className="h-[52px]">
-                    <th className="w-14 px-4">
-                      <input type="checkbox" aria-label="Select all" className="size-5 accent-[#0E5E63]" checked={all.checked} disabled={all.disabled} onChange={on.onToggleAll} />
-                    </th>
-                    <th className="w-8 text-[13px] font-medium text-[#5F6873]">#</th>
-                    {props.columns.map((column) => (
-                      <Th key={column.title} column={column} />
-                    ))}
-                  </tr>
-                </thead>
-                {state.data.isPending && message("Loading…")}
-                {state.data.isError && message(props.loadError(state.data.error), true)}
-                {!state.data.isPending && !state.data.isError && groups.length === 0 && message(props.emptyText(state.tab, state.filtered))}
-                {groups.map((group, groupIndex) => {
-                  const open = !state.collapsed.has(group.id);
-                  const rowsId = `${groupId}-${group.id}`;
-                  return [
-                    props.flat ? null : (
-                      <tbody key={`${group.id}-head`}>
-                        <tr className={cx("h-10 border-b border-[#EDEDED]", group.tone === "sold" ? "bg-[#FAE6E4]" : "bg-[#F9F9F9]")}>
-                          <td colSpan={span} className="p-0">
-                            <button
-                              type="button"
-                              aria-expanded={open}
-                              aria-controls={rowsId}
-                              onClick={() => on.onToggleGroup(group.id)}
-                              className="flex h-10 w-full items-center gap-2 px-3 text-left text-[15px] font-medium text-[#1C252E]"
-                            >
-                              {open ? <ChevronDown className="size-4" aria-hidden /> : <ChevronRight className="size-4" aria-hidden />}
-                              <span>{group.label}</span>
-                              <span className="font-normal text-[#637381]">{group.count}</span>
-                            </button>
-                          </td>
-                        </tr>
-                      </tbody>
-                    ),
-                    <tbody key={`${group.id}-rows`} id={rowsId} hidden={!open}>
-                      {open &&
-                        group.rows.map((row, index) => {
-                          const key = props.rowKey(row);
-                          return (
-                            <tr key={key} onClick={() => on.onToggleRow(key)} className="cursor-pointer border-b border-[#EDEDED] align-top hover:bg-[#FAFBFB]">
-                              <td className={cx("px-4 py-4", props.rowMarked?.(row) && "shadow-[inset_3px_0_0_#DF1016]")}>
-                                <input
-                                  type="checkbox"
-                                  aria-label={props.rowLabel(row)}
-                                  className="size-5 accent-[#0E5E63]"
-                                  checked={state.checked.has(key)}
-                                  onChange={() => on.onToggleRow(key)}
-                                  onClick={(event) => event.stopPropagation()}
-                                />
-                              </td>
-                              <td className="py-4 text-[#4E626C]">{starts[groupIndex]! + index}</td>
-                              {props.cells(row)}
-                            </tr>
-                          );
-                        })}
-                    </tbody>,
-                  ];
-                })}
-                {state.data.hasNextPage && (
-                  <tbody>
-                    <tr>
-                      <td colSpan={span} className="py-4 text-center">
-                        <Button size="sm" disabled={state.data.isFetchingNextPage} onClick={() => state.data.fetchNextPage()}>
-                          {state.data.isFetchingNextPage ? "Loading…" : "Load more"}
-                        </Button>
-                      </td>
-                    </tr>
-                  </tbody>
-                )}
-              </table>
-            </div>
-            <footer className="flex h-[58px] shrink-0 items-center justify-end gap-2 border-t border-[#DFE4E4] px-5">
-              <span aria-live="polite" className="mr-auto text-sm font-medium text-[#1C252E]">
-                {state.checked.size > 0 ? `${state.checked.size} selected` : ""}
-              </span>
-              <Button onClick={props.onCancel}>Cancel</Button>
-              <Button variant="primary" className="min-w-24" disabled={state.checked.size === 0} onClick={on.onOk}>
-                OK
-              </Button>
-            </footer>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Th({ column }: { column: PickerColumn }) {
-  return (
-    <th className={cx("px-3 font-medium", column.right && "text-right", column.divider && "border-l border-[#EDEDED]", column.className)}>
-      <span className={cx("inline-flex items-center gap-1.5", column.right && "flex-row-reverse")}>
-        <span className="leading-tight">
-          <span className="block text-[13px] uppercase">{column.title}</span>
-          {column.sub && <span className="block text-[11px] font-normal text-[#656B71]">{column.sub}</span>}
-        </span>
-        {/* DV-12: the design's sort glyphs are shown; the columns don't sort (Q-PU-12). */}
-        <ChevronsUpDown className="size-3 text-[#8A939D]" aria-hidden />
-      </span>
-    </th>
+            </tbody>,
+          ];
+        })}
+        {state.data.hasNextPage && (
+          <tbody>
+            <PickerLoadMore span={span} loading={state.data.isFetchingNextPage} onMore={() => state.data.fetchNextPage()} />
+          </tbody>
+        )}
+      </PickerFrame>
+    </PickerDialog>
   );
 }
 

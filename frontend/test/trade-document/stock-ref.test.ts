@@ -31,13 +31,13 @@ describe("UT-SR-01 stockRef / stockRefLabel", () => {
 
 describe("UT-SR-02 RefCell", () => {
   it("bold transaction no. with the Doc Date under it", () => {
-    expect(cell({ memoReceive })).toContain('<div class="font-medium">MR-1002</div><div class="mt-1 text-xs text-[#6B7480]">29/10/2026</div>');
+    expect(cell({ memoReceive })).toContain('<div class="font-medium">MR-1002</div><div class="mt-1 text-xs leading-4 text-gms-text-secondary">29/10/2026</div>');
     expect(cell({ memoReceive })).not.toContain("Load");
   });
 
   it("a Load no. renders the same way with a small Load hint; no source shows a dash", () => {
-    expect(cell({ ref: { type: "LOAD", docNo: "LD-0001", docDate: "2026-11-04" } })).toContain('LD-0001<span class="ml-1.5 text-[11px] font-normal text-[#6B7480]">Load</span>');
-    expect(cell({})).toContain("<td class=\"px-3 py-4\">—</td>");
+    expect(cell({ ref: { type: "LOAD", docNo: "LD-0001", docDate: "2026-11-04" } })).toContain('LD-0001<span class="ml-1.5 text-[11px] font-normal text-gms-text-secondary">Load</span>');
+    expect(cell({})).toContain("<td class=\"px-3 py-2 align-top\">—</td>");
   });
 });
 
@@ -46,9 +46,9 @@ describe("UT-SR-03 From Stock column order", () => {
     const { readFileSync } = await import("node:fs");
     const source = readFileSync("src/features/trade-document/memo-stock-modal.tsx", "utf8");
     const at = (text: string) => source.indexOf(text);
-    expect(at('<Th title="Location" />')).toBeGreaterThan(-1);
-    expect(at('<Th title="Ref." sub="Doc Date" />')).toBeGreaterThan(at('<Th title="Location" />'));
-    expect(at('<Th title="Ref." sub="Doc Date" />')).toBeLessThan(at('<Th title="Stone" sub="Shape · Size" />'));
+    expect(at('title="Location" upper />')).toBeGreaterThan(-1);
+    expect(at('title="Ref." sub="Doc Date" plainSub />')).toBeGreaterThan(at('title="Location" upper />'));
+    expect(at('title="Ref." sub="Doc Date" plainSub />')).toBeLessThan(at('title="Stone" sub="Shape · Size" upper />'));
     expect(at("<RefCell item={item} />")).toBeGreaterThan(at("{item.location}</td>"));
     expect(source).not.toContain("from {item.memoReceive.docNo}");
   });
@@ -58,9 +58,9 @@ describe("UT-SR-04 From Stock first column", () => {
   it("is Stone Code (bold) over Stock ID · Lot (owner 2026-11-05)", async () => {
     const { readFileSync } = await import("node:fs");
     const source = readFileSync("src/features/trade-document/memo-stock-modal.tsx", "utf8");
-    expect(source).toContain('<Th title="Stone Code" sub="Stock ID · Lot" />');
-    expect(source).not.toContain('<Th title="Stock ID" sub="Lot" />');
+    expect(source).toContain('title="Stone Code" sub="Stock ID · Lot" />');
+    expect(source).not.toContain('title="Stock ID" sub="Lot"');
     expect(source).toContain('<div className="font-medium">{item.stoneCode || "—"}</div>');
-    expect(source).toContain('{item.lot && <Badge variant="lot">{item.lot}</Badge>}');
+    expect(source).toContain("{item.lot && <PickerLot>{item.lot}</PickerLot>}");
   });
 });

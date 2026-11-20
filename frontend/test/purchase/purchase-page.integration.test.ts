@@ -398,8 +398,8 @@ describe("IT-PU-03 Add Memo Stock wired (FE-PU-004)", () => {
     expect(html).toContain('aria-label="Sold, 0"');
     expect(html).toContain("Still in stock on memo · buy now or return later");
     expect(html).not.toContain("Sold to customers");
-    expect(html).toContain(">260003 · L-2607-007</div>");
-    expect(html).not.toContain(">260002 · L-2607-007</div>");
+    expect(html).toContain('<div class="font-medium">260003</div>');
+    expect(html).not.toContain('<div class="font-medium">260002</div>');
     expect(html).toContain("Load more");
     expect(calls).toEqual([]);
   });
@@ -462,7 +462,11 @@ describe("TC-PU-07 regression: the shared Memo Stock picker keeps its layout (Me
     const html = render(queryClient, createElement(MemoStockModal, { title: "Add Memo Stock", vendorId: ID, currency: "THB", showPrice: true, emptyText: "none", pickedIds: new Set<string>(), onCancel: () => undefined, onConfirm: () => undefined }));
     expect(html).toContain(">Pending</th>");
     expect(html).toContain(">Ref.</span>");
-    expect(html).toContain('<div class="font-medium">MR-1001</div><div class="mt-1 text-xs text-[#6B7480]">29/10/2026</div>');
+    expect(html).toContain('<div class="font-medium">MR-1001</div><div class="mt-1 text-xs leading-4 text-gms-text-secondary">29/10/2026</div>');
+    // Design 139: the PENDING group is orange (header 30 %, sub-header 18 %, cells 8 %).
+    expect(html).toContain('bg-gms-group-orange-head">Pending</th>');
+    expect(html.match(/bg-gms-group-orange-sub/g)).toHaveLength(2);
+    expect(html.match(/bg-gms-group-orange-cell/g)).toHaveLength(2);
     expect(html).not.toContain("<span>from MR-1001");
     expect(html).toContain('aria-label="Select 260003 from MR-1001"');
     expect(html).toContain('placeholder="Search Stock ID, Lot, Stone, Cer No."');

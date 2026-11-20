@@ -232,9 +232,9 @@ describe("IT-LS-P2-FE-01 shared From Stock picker (FE-LS-P2-03)", () => {
 
   it("one list: Memo rows show Memo, our rows their Location and the Load ref; no cost, no tabs", () => {
     const html = render(seed([{ items: [ownItem, memoItem], nextCursor: null, ownStock: "OK" }]), picker());
-    expect(html).toContain('<td class="px-3 py-4">BKK-01</td>');
-    expect(html).toContain('<td class="px-3 py-4">Memo</td>');
-    expect(html).toContain('LS-0001<span class="ml-1.5 text-[11px] font-normal text-[#6B7480]">Load</span>');
+    expect(html).toContain('<td class="px-3 py-2 align-top">BKK-01</td>');
+    expect(html).toContain('<td class="px-3 py-2 align-top">Memo</td>');
+    expect(html).toContain('LS-0001<span class="ml-1.5 text-[11px] font-normal text-gms-text-secondary">Load</span>');
     expect(html).toContain('aria-label="Select 260010 from LS-0001"');
     expect(html).not.toContain("999.00");
     expect(html).not.toContain("Our stock is unavailable");
@@ -330,8 +330,14 @@ describe("IT-LS-P2-FE-04 Memo Out Return: Location column in Memo Outstanding (F
     });
     const html = render(queryClient, createElement(MemoOutstandingModal, { customerId: ID, currency: "THB", pickedIds: new Set<string>(), onCancel: () => undefined, onConfirm: () => undefined }));
     expect(html).toMatch(/Stock ID<\/span>[^]*Lot<\/span>[^]*Location<\/span>/);
-    expect(html).toContain('<td class="px-3 py-4">Memo</td>');
-    expect(html).toContain('<td class="px-3 py-4">BKK-01</td>');
+    expect(html).toContain('<td class="px-3 py-2 align-top">Memo</td>');
+    expect(html).toContain('<td class="px-3 py-2 align-top">BKK-01</td>');
+    // Design 141: the OUTSTANDING group is green (header 30 %, sub-header 18 %, cells 8 %); the lot is a chip under the Stock ID.
+    expect(html).toContain('bg-gms-group-green-head">Outstanding</th>');
+    expect(html.match(/bg-gms-group-green-sub/g)).toHaveLength(2);
+    expect(html.match(/bg-gms-group-green-cell/g)).toHaveLength(4);
+    expect(html).toContain('<div class="font-medium">260003</div><div class="mt-1"><span class="inline-flex items-center rounded-gms-sm bg-gms-warning-subtle');
+    expect(html).toMatch(/Memo Out No\.<\/span><span class="mt-0\.5 block text-xs font-normal text-gms-text-muted">Doc Date<\/span>/);
   });
 });
 
