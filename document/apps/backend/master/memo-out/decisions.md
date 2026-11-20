@@ -49,3 +49,7 @@
 | SA-MO-17 | **Not in this revision:** Memo Out Return putting Reserve back (Q-MO-12, a later revision with Q-MOR-10), Sale, our own stock (inventory), line photos on Memo Out, and Approve from a separate Approve page. |
 
 Capacity: approval locks ≤ 200 `memo_stock` rows and runs 1 status update, 1 lock query and 1 batch update in one transaction. The From Stock list is 1 query, ≤ 51 rows, on a partial index. Expected data is thousands of items a year, so the pool and container limits of ADR-0027 are unchanged.
+
+## Load to Stock phase 2 note (SA revision 2, Proposed, 2026-11-18)
+
+Phase 2b: lines must name exactly one of `memoStockId` / `ownStockId` (`memo_out_line.own_stock_id`); own stock moves on-hand → memo_out in inventory (Memo Stock keeps pending → reserved, SA-MO-14) via the master saga; `MEMO_OUT_BUSY`; used rule unchanged (`memoOutUsedBy`). Picker `fromStock.list`. Contract, schema and tests live in the [inventory/load-to-stock bundle](../../inventory/load-to-stock/api-contract.md#phase-2-sa-revision-2-proposed) and [ADR-0052 Amendment 2](../../../adr/0052-load-to-stock-in-backend-api-inventory.md#amendment-2--d15-phases-2a--2b-sa-revision-2-proposed); TODO BE-LS-P2-*. No change here until the owner approves SA revision 2.

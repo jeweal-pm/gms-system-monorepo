@@ -16,6 +16,10 @@ import type { MemoOutInput, MemoReceiveListInput, MemoReceiveStatus } from "./me
 import { releaseToMemoStock, takeFromMemoStock } from "./memo-stock.service";
 import { completeFromMemoStock } from "./stock-lines";
 import { withLinePhotos, type LinePhotoDocument } from "./line-photos";
+import { uuidV7 } from "@gms/storage";
+import { peekApprovalSetting } from "../approval-setting/approval-setting.service";
+import { completeOwnStockLines, storedOwnLines, STORED_OWN_LINE_SELECT } from "./own-stock-lines";
+import { DOC_SPECS, holdSaga, lineIndexOf, registerHoldErrors, sumLines } from "./inventory-hold-saga";
 
 /**
  * A customer document whose lines may come From Stock (memo-out SA rev 2 SA-MO-11…15; reserve SA rev 1 SA-RS-04…08):
@@ -106,13 +110,17 @@ const stockLines: LineHook<CustomerStockInput> = {
     (input.lines as PreparedLine[]).map((line) =>
       line.memoStockId
         ? { source: "STOCK", memoStockId: line.memoStockId, stockId: line.stockId, stockPendingPcs: line.stockPendingPcs, stockPendingWeightCt: line.stockPendingWeightCt }
-        : {},
+        : line.ownStockId
+          // ADR-0052 D20: our stock, completed before the transaction (own-stock-lines.ts); held through the saga.
+          ? { source: "OWN_STOCK", ownStockId: line.ownStockId, stockId: line.stockId, stockPendingPcs: line.stockPendingPcs, stockPendingWeightCt: line.stockPendingWeightCt }
+          : {},
     ),
   output: (line, base) => ({
     ...base,
-    source: line.source as "MANUAL" | "STOCK",
+    source: line.source as "MANUAL" | "STOCK" | "OWN_STOCK",
     stockId: (line.stockId as string | null) ?? null,
     memoStockId: (line.memoStockId as string | null) ?? null,
+    ownStockId: (line.ownStockId as string | null) ?? null,
     stockPendingPcs: (line.stockPendingPcs as number | null) ?? null,
     stockPendingWeightCt: line.stockPendingWeightCt === null || line.stockPendingWeightCt === undefined ? null : (line.stockPendingWeightCt as Prisma.Decimal).toFixed(3),
     // sale ADR-0054 D4 / SQ-SL-04: Reserve lines carry the quantity applied Sales consumed (display only; Memo Out has none).
@@ -120,6 +128,8 @@ const stockLines: LineHook<CustomerStockInput> = {
   }),
   result: () => ({}),
 };
+
+const hasOwn = (input: CustomerStockInput) => (input.lines ?? []).some((line) => line.ownStockId);
 
 /** The table-specific parts of a customer stock document. */
 export type CustomerStockConfig = {
@@ -136,6 +146,8 @@ export type CustomerStockConfig = {
   parentKey: string;
   /** Line photos (ADR-0048, owner 2026-11-11). */
   photos: LinePhotoDocument;
+  /** ADR-0052 D18: inventory hold document type. */
+  holdType: "reserve" | "memo-out";
 };
 
 /** The approval documents a customer stock document can be (registry key = permission menu). */
@@ -153,6 +165,7 @@ export class CustomerStockDocument {
   constructor(private readonly config: CustomerStockConfig & { approvalType: CustomerStockType; usedBy?: DocumentEffects["usedBy"] }) {
     this.errors = documentErrors(config.code, config.entity, config.table);
     this.pendingShort = (fields) => partnerException(`${config.code}_PENDING_SHORT`, HttpStatus.CONFLICT, fields);
+    registerHoldErrors(config.holdType, this.errors);
     this.engine = new TradeDocumentEngine<CustomerStockInput, CustomerOut, CustomerStockStatus>({
       document: config.document,
       transactionKey: config.transactionKey,
@@ -167,6 +180,8 @@ export class CustomerStockDocument {
       effects: this.effects(),
       prepare: completeStockLines(this.errors),
       lineHook: withLinePhotos(config.photos, stockLines),
+      afterWrite: (tx, id, action) => holdSaga.inTx(config.holdType, tx, id, action),
+      syncState: true,
       detailExtra: (row) => ({
         approvedAt: row.approvedAt ? (row.approvedAt as Date).toISOString() : null,
         approvedBy: (row.approvedBy as string | null) ?? null,
@@ -210,25 +225,78 @@ export class CustomerStockDocument {
   nextNumber(docDate: string) {
     return this.engine.nextNumber(docDate);
   }
-  create(actorId: string, input: CustomerStockInput, viewer: FlowPrincipal | null = null) {
-    return this.engine.create(actorId, input, viewer);
+  /**
+   * ADR-0052 D17-D19: own-stock lines are completed before the transaction (batch read unless kept) and every write that
+   * can change the applied hold set runs through the hold saga (acquire -> local -> release).
+   */
+  async create(actorId: string, input: CustomerStockInput, viewer: FlowPrincipal | null = null) {
+    const prepared = await this.completeOwn(input, null, new Map(), actorId);
+    const id = uuidV7();
+    return holdSaga.withHolds(hasOwn(input), {
+      type: this.config.holdType, id, isCreate: true, actorId,
+      next: async () => ((await peekApprovalSetting(prisma, this.config.approvalType)) ? new Map() : this.inputHolds(prepared)),
+      lineIndex: lineIndexOf(prepared.lines.map((line) => (line as PreparedLine).ownStockId)),
+      call: () => this.engine.create(actorId, prepared, viewer, { id }),
+    });
   }
-  update(actorId: string, id: string, expectedVersion: number, input: CustomerStockInput, viewer: FlowPrincipal | null = null) {
-    return this.engine.update(actorId, id, expectedVersion, input, viewer);
+  async update(actorId: string, id: string, expectedVersion: number, input: CustomerStockInput, viewer: FlowPrincipal | null = null) {
+    return holdSaga.withHolds(hasOwn(input), () => this.updateSpec(actorId, id, expectedVersion, input, viewer), () => this.engine.update(actorId, id, expectedVersion, input, viewer));
+  }
+  private async updateSpec(actorId: string, id: string, expectedVersion: number, input: CustomerStockInput, viewer: FlowPrincipal | null) {
+    const spec = DOC_SPECS[this.config.holdType];
+    const delegates = prisma as unknown as Record<string, { findMany(args: unknown): Promise<Record<string, unknown>[]>; findUnique(args: unknown): Promise<{ status: string; autoApproved: boolean } | null> }>;
+    const [stored, old, header] = await Promise.all([
+      delegates[this.config.lineModel].findMany({ where: { [this.config.parentKey]: id }, select: STORED_OWN_LINE_SELECT }),
+      spec.lines(prisma, id, true),
+      delegates[this.config.model].findUnique({ where: { id }, select: { status: true, autoApproved: true } }),
+    ]);
+    const prepared = await this.completeOwn(input, stored, old, actorId);
+    return {
+      type: this.config.holdType, id, isCreate: false, actorId, expectedVersion, old,
+      next: async () => {
+        if (header?.status === "APPROVED" && header.autoApproved) return this.inputHolds(prepared);
+        if (header?.status === "DRAFT" && !(await peekApprovalSetting(prisma, this.config.approvalType))) return this.inputHolds(prepared);
+        return null;
+      },
+      lineIndex: lineIndexOf(prepared.lines.map((line) => (line as PreparedLine).ownStockId)),
+      call: () => this.engine.update(actorId, id, expectedVersion, prepared, viewer),
+    };
   }
   delete(actorId: string, id: string, expectedVersion: number) {
-    return this.engine.delete(actorId, id, expectedVersion);
+    return holdSaga.withHolds(false, { type: this.config.holdType, id, isCreate: false, actorId, expectedVersion, next: () => new Map(), call: () => this.engine.delete(actorId, id, expectedVersion) });
   }
   /** transaction-soft-delete D6 / approval-setup G3: back as DRAFT (ON) or re-approved automatically (OFF). */
   restore(actorId: string, id: string, expectedVersion: number) {
-    return this.engine.restore(actorId, id, expectedVersion);
+    const spec = DOC_SPECS[this.config.holdType];
+    return holdSaga.withHolds(false, {
+      type: this.config.holdType, id, isCreate: false, actorId, expectedVersion,
+      next: async () => ((await peekApprovalSetting(prisma, this.config.approvalType)) ? new Map() : spec.lines(prisma, id, false)),
+      call: () => this.engine.restore(actorId, id, expectedVersion),
+    });
   }
   submit(actor: DocumentActor, id: string, expectedVersion: number) {
     return this.engine.submit(actor, id, expectedVersion);
   }
-  /** PENDING_APPROVAL → APPROVED with the Reserve move above; `<CODE>_PENDING_SHORT` changes nothing. */
-  approve(actorId: string, id: string, expectedVersion: number) {
-    return this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED"; stockLineCount: number }>;
+  /** PENDING_APPROVAL -> APPROVED with the Reserve move above and the own-stock hold; `<CODE>_PENDING_SHORT` changes nothing. */
+  async approve(actorId: string, id: string, expectedVersion: number) {
+    const spec = DOC_SPECS[this.config.holdType];
+    const lineModel = (prisma as unknown as Record<string, { findMany(args: unknown): Promise<{ ownStockId: string | null }[]> }>)[this.config.lineModel];
+    return holdSaga.withHolds(false, {
+      type: this.config.holdType, id, isCreate: false, actorId, expectedVersion,
+      next: () => spec.lines(prisma, id, false),
+      lineIndex: async () => lineIndexOf((await lineModel.findMany({ where: { [this.config.parentKey]: id }, orderBy: { position: "asc" }, select: { ownStockId: true } })).map((line) => line.ownStockId)),
+      call: () => this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED"; stockLineCount: number }>,
+    });
+  }
+
+  private inputHolds(input: CustomerStockInput) {
+    return sumLines(input.lines.map((line) => ({ stock: (line as PreparedLine).ownStockId, pcs: line.pcs, weightCt: line.weightCt })));
+  }
+
+  private async completeOwn(input: CustomerStockInput, stored: Record<string, unknown>[] | null, held: Map<string, { pcs: number; weight: Prisma.Decimal }>, actorId: string): Promise<CustomerStockInput> {
+    if (!input.lines.some((line) => line.ownStockId)) return input;
+    const { lines } = await completeOwnStockLines(input.lines, { stored: storedOwnLines(stored ?? []), held, referenceInvalid: this.errors.referenceInvalid, actorId });
+    return { ...input, lines: lines as CustomerStockInput["lines"] };
   }
 
   /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction. */
@@ -273,8 +341,9 @@ export async function customerDocumentOptions(transactionKey: string, includeCus
 
 type EngineDetail = Awaited<ReturnType<TradeDocumentEngine<CustomerStockInput, CustomerOut, CustomerStockStatus>["get"]>>;
 type CustomerStockLineOut = Omit<EngineDetail["lines"][number], "source"> & {
-  source: "MANUAL" | "STOCK";
+  source: "MANUAL" | "STOCK" | "OWN_STOCK";
   memoStockId: string | null;
+  ownStockId: string | null;
   stockId: string | null;
   stockPendingPcs: number | null;
   stockPendingWeightCt: string | null;
@@ -283,4 +352,4 @@ type CustomerStockLineOut = Omit<EngineDetail["lines"][number], "source"> & {
   soldWeightCt?: string;
 };
 /** api-contract `MemoOut` rev 2 / `Reserve` rev 1 (the line hook and `detailExtra` shape the engine output at run time). */
-export type CustomerStockDetail = Omit<EngineDetail, "lines"> & {lines: CustomerStockLineOut[]; approvedAt: string | null; approvedBy: string | null };
+export type CustomerStockDetail = Omit<EngineDetail, "lines"> & { lines: CustomerStockLineOut[]; approvedAt: string | null; approvedBy: string | null; syncState: "IDLE" | "SYNCING" };

@@ -265,7 +265,7 @@ export function ItemEditorPanel({
   const locked = readOnly || fromStock;
   // memo-out rev 2: a From Stock row takes part or all of its item, up to the pending it was picked with.
   const stockQuantity = fromStock && Boolean(kind.stockQuantity);
-  const stockPending = line as typeof line & { stockPendingPcs?: string; stockPendingWeightCt?: string; stockMinPcs?: string; stockMinWeightCt?: string };
+  const stockPending = line as typeof line & { ownStockId?: string; stockPendingPcs?: string; stockPendingWeightCt?: string; stockMinPcs?: string; stockMinWeightCt?: string };
   // Purchase rev 3 (Q-PU-29): a row whose minimum equals its cap is bought whole, so its quantity is fixed; Price stays editable.
   const fixedQuantity = stockQuantity && Boolean(stockPending.stockMinPcs)
     && stockPending.stockMinPcs === stockPending.stockPendingPcs && stockPending.stockMinWeightCt === stockPending.stockPendingWeightCt;
@@ -462,7 +462,7 @@ export function ItemEditorPanel({
           </Field>
           {stockQuantity && (
             <p className="col-span-full -mt-2 text-xs text-[#6B7480]">
-              {kind.stockNote?.(line) ?? `Pending ${stockPending.stockPendingPcs || "0"} pcs / ${nf.weight(stockPending.stockPendingWeightCt || "0")} ct`}
+              {kind.stockNote?.(line) ?? `${stockPending.ownStockId ? "Available" : "Pending"} ${stockPending.stockPendingPcs || "0"} pcs / ${nf.weight(stockPending.stockPendingWeightCt || "0")} ct`}
             </p>
           )}
           <Field label="Price Unit">

@@ -20,3 +20,7 @@
 | SA-MOR-20 | **Not in this revision:** our own stock (inventory), the Memo Outstanding › Customer report page, reversing an approved return, line photos, Due Date rules beyond due ≥ doc date (Q-MOR-09/18). |
 
 Capacity: approval locks ≤ 200 Memo Out lines and ≤ 200 Memo Stock rows in one transaction, with 2 batch UPDATEs. The picker is 1 query, ≤ 51 rows, on the partial index and `memo_out_customer_idx`. The pool, container limits and the 4 GB host budget are unchanged.
+
+## Load to Stock phase 2 note (SA revision 2, Proposed, 2026-11-18)
+
+Phase 2b: returns of own-stock Memo Out lines move memo_out → on-hand in inventory (release kind, after the local commit); reversal (edit/delete) is acquire kind, done first, refused → `MEMO_OUT_RETURN_IN_USE`. Outstanding dialog lists own-stock lines with `source` + `location`; `lockSourceHeaders` refuses a SYNCING Memo Out (`MEMO_OUT_RETURN_BUSY`). Contract, schema and tests live in the [inventory/load-to-stock bundle](../../inventory/load-to-stock/api-contract.md#phase-2-sa-revision-2-proposed) and [ADR-0052 Amendment 2](../../../adr/0052-load-to-stock-in-backend-api-inventory.md#amendment-2--d15-phases-2a--2b-sa-revision-2-proposed); TODO BE-LS-P2-*. No change here until the owner approves SA revision 2.

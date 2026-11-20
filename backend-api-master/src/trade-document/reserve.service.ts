@@ -45,6 +45,7 @@ const reserve = new CustomerStockDocument({
   chargeModel: "reserveCharge",
   parentKey: "reserveId",
   approvalType: "reserve",
+  holdType: "reserve",
   photos: LINE_PHOTO_DOCUMENTS.reserve,
   usedBy: reserveUsedBy,
 });

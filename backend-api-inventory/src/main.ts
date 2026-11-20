@@ -10,6 +10,7 @@ import { JwksCache } from "./platform/auth/jwks";
 import { createLicenseClient } from "./platform/auth/license-client";
 import { purgeExpired } from "./platform/notification/store";
 import { sweepAll } from "./platform/sync/saga";
+import { readTokenDigest } from "./internal/master-routes";
 
 /**
  * backend-api-inventory process (ADR-0052 D1/D14): Hono on @hono/node-server, port 3301. Migrations are NOT run here
@@ -39,6 +40,7 @@ async function main() {
   const trusted = new Set([new URL(config.frontendUrl).origin, ...config.trustedOrigins]);
   const { app, service, saleService } = createApp({
     db, master, logger, storageRoot: config.storageRoot, trustedOrigins: trusted,
+    internal: { tokenDigest: readTokenDigest(config.masterInventoryTokenFile), otherTokenDigest: readTokenDigest(config.masterTokenFile) },
     approvers: (leaf) => authz.approvers(leaf),
     auth: {
       issuer: config.accessIssuer,

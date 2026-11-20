@@ -82,7 +82,7 @@ describe("mapping (UT-MO-03)", () => {
       currency: "THB", exchangeRate: null, ref: "", documentNote: "", lines: [], discount: { type: "NONE", value: "0" },
       tax: { enabled: true, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "0.00", discountAmount: "0.00", priceBeforeTax: "0.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "0.00" },
-      approvedAt: null, approvedBy: null, createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, ...FLOW_DETAIL,
+      approvedAt: null, approvedBy: null, createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, syncState: "IDLE" as const, ...FLOW_DETAIL,
     } satisfies MemoOutDetail;
     expect(fromMemoOut(detail)).toMatchObject({ docNo: "MO-2609001", version: 2, status: "PENDING_APPROVAL", customerId: ID, shippingAddressId: ID, invoiceAddressId: "" });
   });
@@ -129,12 +129,12 @@ describe("From Stock rows (UT-MO-201…205, memo-out rev 2)", () => {
       customerId: ID, customer: { code: "C001", name: "Siam Gems" }, shippingAddressId: ID, shippingAddressText: "S", invoiceAddressId: ID, invoiceAddressText: "I",
       currency: "THB", exchangeRate: null, ref: "", documentNote: "",
       lines: [
-        { ...base, source: "STOCK" as const, stone: "Sapphire", location: "Memo", pcs: 2, weightCt: "2.000", unitPrice: "2500.00", amount: "5000.00", memoStockId: STOCK, stockId: "260005", stockPendingPcs: 5, stockPendingWeightCt: "5.000" },
-        { ...base, stone: "Ruby", location: "Shelf 1", pcs: 1, weightCt: "1.120", unitPrice: "65000.00", amount: "72800.00", memoStockId: null, stockId: null, stockPendingPcs: null, stockPendingWeightCt: null },
+        { ...base, source: "STOCK" as const, stone: "Sapphire", location: "Memo", pcs: 2, weightCt: "2.000", unitPrice: "2500.00", amount: "5000.00", memoStockId: STOCK, ownStockId: null, stockId: "260005", stockPendingPcs: 5, stockPendingWeightCt: "5.000" },
+        { ...base, stone: "Ruby", location: "Shelf 1", pcs: 1, weightCt: "1.120", unitPrice: "65000.00", amount: "72800.00", memoStockId: null, ownStockId: null, stockId: null, stockPendingPcs: null, stockPendingWeightCt: null },
       ],
       discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "77800.00", discountAmount: "0.00", priceBeforeTax: "77800.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "77800.00" },
-      approvedAt: "2026-10-31T03:00:00.000Z", approvedBy: "u", createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, ...FLOW_DETAIL,
+      approvedAt: "2026-10-31T03:00:00.000Z", approvedBy: "u", createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, syncState: "IDLE" as const, ...FLOW_DETAIL,
     } satisfies MemoOutDetail;
     // ADR-0048 (owner 2026-11-11): saved photos load back in order, read from this document's own photo route.
     expect(fromMemoOut({ ...detail, lines: detail.lines.map((line) => ({ ...line, photoIds: ["p1", "p2"] })) } as typeof detail).lines[0]?.photos).toEqual([

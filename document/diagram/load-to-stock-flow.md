@@ -36,3 +36,7 @@ flowchart TD
   AP --> R[PU line leaves the picker when remaining pcs = 0]
   AP2 --> R
 ```
+
+## Phase 2 (SA revision 2, Proposed)
+
+Own stock in From Stock (one list, holds through inventory): main sequences in [sequence-diagram § Phase 2](../apps/backend/inventory/load-to-stock/sequence-diagram.md#phase-2-sa-revision-2-proposed) (8 picker merge, 9 Quotation copy, 10 acquire → local, 11 edit/delete release, 12 Memo Out Return). Not copied here.

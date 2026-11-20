@@ -84,9 +84,14 @@ services:
       MASTER_AUTHZ_DATABASE_URL: ${MASTER_AUTHZ_DATABASE_URL:?MASTER_AUTHZ_DATABASE_URL must be set for the dedicated auth-view reader}
       # ADR-0052 / BE-LS-004: accepted only on /internal/v1/inventory/* (InventoryServiceTokenGuard).
       INVENTORY_MASTER_SERVICE_TOKEN_FILE: /run/secrets/inventory_master_service_token
+      # ADR-0052 D21/D22 (phase 2b, INF-LS-P2-01): master -> inventory /internal/v1/master/* on inventory-master.
+      # No depends_on on inventory (inventory already depends on api-master); master starts without it.
+      INVENTORY_INTERNAL_URL: http://backend-api-inventory:3301
+      MASTER_INVENTORY_SERVICE_TOKEN_FILE: /run/secrets/master_inventory_service_token
     secrets:
       - master_auth_service_token
       - inventory_master_service_token
+      - master_inventory_service_token
     networks:
       - partner-db
       - auth-master
@@ -105,9 +110,12 @@ services:
       INVENTORY_AUTHZ_DATABASE_URL: ${INVENTORY_AUTHZ_DATABASE_URL:?INVENTORY_AUTHZ_DATABASE_URL must be set (gms_inventory_authz_reader) (run pnpm docker:inventory:setup)}
       INVENTORY_MASTER_SERVICE_TOKEN_FILE: /run/secrets/inventory_master_service_token
       INVENTORY_AUTH_SERVICE_TOKEN_FILE: /run/secrets/inventory_auth_service_token
+      # Phase 2b: accepted only on /internal/v1/master/* (master -> inventory direction).
+      MASTER_INVENTORY_SERVICE_TOKEN_FILE: /run/secrets/master_inventory_service_token
     secrets:
       - inventory_master_service_token
       - inventory_auth_service_token
+      - master_inventory_service_token
     depends_on:
       backend-api-auth:
         condition: service_started
@@ -126,6 +134,8 @@ secrets:
     file: ${INVENTORY_MASTER_SERVICE_TOKEN_SOURCE:?Set INVENTORY_MASTER_SERVICE_TOKEN_SOURCE to a host secret file outside the repository/build context (run pnpm docker:inventory:setup)}
   inventory_auth_service_token:
     file: ${INVENTORY_AUTH_SERVICE_TOKEN_SOURCE:?Set INVENTORY_AUTH_SERVICE_TOKEN_SOURCE to a host secret file outside the repository/build context (run pnpm docker:inventory:setup)}
+  master_inventory_service_token:
+    file: ${MASTER_INVENTORY_SERVICE_TOKEN_SOURCE:?Set MASTER_INVENTORY_SERVICE_TOKEN_SOURCE to a host secret file outside the repository/build context (run pnpm docker:inventory:setup)}
 
 networks:
   auth-master:

@@ -122,6 +122,10 @@ export const rowOutSchema = z.object({
 });
 export type RowOut = z.infer<typeof rowOutSchema>;
 
+/** SA rev 2 (ADR-0052 D18): who holds stock of this load (≤ 5), for the in-use message. */
+export const holderSchema = z.object({ documentType: z.string(), documentNo: z.string().nullable() });
+export type LoadHolder = z.infer<typeof holderSchema>;
+
 export const loadOutSchema = z.object({
   id: z.string(),
   docNo: z.string(),
@@ -138,6 +142,7 @@ export const loadOutSchema = z.object({
   totals: z.object({ rowCount: z.number().int(), pcs: z.number().int(), weightCt: dec, costAmountBase: dec }),
   approval: approvalSchema,
   inUse: z.boolean(),
+  holders: z.array(holderSchema).max(20).optional().transform((value) => value ?? []),
   syncing: z.boolean(),
   deleted: actorSchema.nullable(),
   created: actorSchema,

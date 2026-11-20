@@ -187,7 +187,16 @@ export type EngineConfig<Input extends TradeDocumentInput, Out extends Row = Row
   lineHook?: LineHook<Input>;
   /** Extra header fields of the detail output (memo receive approval). */
   detailExtra?: (row: Row) => Row;
+  /**
+   * ADR-0052 D19 (inventory hold saga): runs at the end of every write transaction of the document (after the effects and
+   * status change) with the action; the saga checks the document's hold state and records the release step there.
+   */
+  afterWrite?: (tx: Tx, id: string, action: EngineWriteAction) => Promise<void>;
+  /** The header has `sync_state` (Reserve / Memo Out / Memo Out Return): list rows and detail carry `syncState`. */
+  syncState?: boolean;
 };
+
+export type EngineWriteAction = "create" | "update" | "delete" | "restore" | "approve" | "submit" | "review";
 
 /** Called inside the save transaction after the document number is issued (lock order: number → hook → document). */
 export type LineHook<Input extends TradeDocumentInput> = {
@@ -313,6 +322,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
           select: {
             id: true, docNo: true, status: true, docDate: true, dueDate: true, [party.nameColumn]: true, currencyCode: true, grandTotal: true, createdAt: true, updatedAt: true, deletedAt: true,
             autoApproved: true, revisionCount: true, reviewAction: true, reviewNote: true, reviewedAt: true, reviewedByName: true,
+            ...(this.config.syncState ? { syncState: true } : {}),
           },
         }),
         this.doc(prisma).count({ where }),
@@ -335,6 +345,9 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
           autoApproved: row.autoApproved as boolean,
           revisionCount: revisionCountOf(row),
           review: reviewOfRow(row),
+          // A plain optional field (undefined is omitted from JSON): a conditional spread next to the computed
+          // party-name key made the inferred row type drop the `[listNameKey]` index (customerName / vendorName).
+          syncState: this.config.syncState ? (row.syncState as "IDLE" | "SYNCING") : undefined,
         })),
         nextCursor: rows.length > input.limit && last
           ? encodeCursor(fromDbDate(last.docDate as Date), (last.createdAt as Date).toISOString(), last.id as string)
@@ -357,7 +370,11 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
         peekApprovalSetting(prisma, this.config.approvalType),
         isAutoApproved(row) && !row.deletedAt ? this.effects.usedBy(prisma, id) : Promise.resolve(null),
       ]);
-      return { ...this.toDetail(row), ...documentFlow(row, this.config.approvalType, requireApproval, usedBy, viewer) };
+      return {
+        ...this.toDetail(row),
+        ...documentFlow(row, this.config.approvalType, requireApproval, usedBy, viewer),
+        ...(this.config.syncState ? { syncState: row.syncState as "IDLE" | "SYNCING" } : {}),
+      };
     } catch (error) {
       throw errors.map(error, "get");
     }
@@ -376,7 +393,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
    * Save (create): ON → DRAFT; OFF → APPROVED with `auto_approved` and the effects in the same transaction (an effect
    * failure refuses the whole Save with the Approve error, nothing written).
    */
-  async create(actorId: string, rawInput: Input, viewer: FlowPrincipal | null = null) {
+  async create(actorId: string, rawInput: Input, viewer: FlowPrincipal | null = null, options: { id?: string } = {}) {
     const { errors, event, lineHook } = this.config;
     try {
       const saved = await prisma.$transaction(async (tx) => {
@@ -389,7 +406,8 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
         if (docNo.length > DOC_NO_MAX) throw validationException([{ path: "docNo", code: "too_big" }]);
         const header = this.headerData(input);
         const assigned = lineHook ? await lineHook.assign(tx, input, null) : null;
-        const id = uuidV7();
+        // ADR-0052 D19: the hold saga pre-generates the id (its acquire PUT names the document before it exists).
+        const id = options.id ?? uuidV7();
         const now = new Date();
         // ADR-0050: a DRAFT is not submitted (submitted_* stay null until `submit`).
         await this.doc(tx).create({
@@ -400,6 +418,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
         });
         await this.writeChildren(tx, id, input, assigned);
         const applied = plan.effects === "none" ? null : await this.effects.apply(tx, { id, docNo }, actorId, now);
+        await this.config.afterWrite?.(tx, id, "create");
         return {
           created: { id, docNo, version: 1, ...(assigned && lineHook ? lineHook.result(assigned) : {}), ...saveFlow(this.config.approvalType, plan, 0, requireApproval, viewer) },
           applied,
@@ -446,6 +465,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
         await this.child(tx, chargeModel).deleteMany({ where: { [parentKey]: id } });
         await this.writeChildren(tx, id, input, assigned);
         const applied = plan.effects === "none" ? null : await this.effects.apply(tx, target, actorId, now);
+        await this.config.afterWrite?.(tx, id, "update");
         return {
           extra: assigned && lineHook ? lineHook.result(assigned) : {},
           flow: saveFlow(this.config.approvalType, plan, stored.revisionCount as number, requireApproval, viewer),
@@ -480,6 +500,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
         assertEditable(flowDoc(stored), auto ? await this.effects.usedBy(tx, id) : null, errors);
         if (auto) await this.effects.reverse(tx, { id, docNo: stored.docNo as string }, now);
         await this.doc(tx).update({ where: { id }, data: { deletedAt: now, deletedBy: actorId } });
+        await this.config.afterWrite?.(tx, id, "delete");
         return { docNo: stored.docNo as string, reversed: auto };
       }, WRITE_TX);
     } catch (error) {
@@ -511,6 +532,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
         const status = requireApproval ? "DRAFT" : "APPROVED";
         await this.doc(tx).update({ where: { id }, data: restoreData(requireApproval, actorId, now) });
         const applied = requireApproval ? null : await this.effects.apply(tx, { id, docNo: stored.docNo as string }, actorId, now);
+        await this.config.afterWrite?.(tx, id, "restore");
         return { docNo: stored.docNo as string, status, applied };
       }, WRITE_TX);
     } catch (error) {
@@ -544,6 +566,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
         if (locked.count === 0) explainMiss(errors, await this.missRow(id, tx), SUBMITTABLE);
         if (!requireApproval) throw errors.approvalOff();
         const storedDocNo = await this.validateStored(tx, id);
+        await this.config.afterWrite?.(tx, id, "submit");
         if (documentType) {
           signal = await recordNotification(tx, {
             type: "approval.pending",
@@ -606,6 +629,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
     if (updated.count === 0) explainMiss(this.config.errors, await this.missRow(id, tx), [PENDING]);
     const stored = (await this.doc(tx).findUnique({ where: { id }, select: { docNo: true } }))!;
     const applied = await this.effects.apply(tx, { id, docNo: stored.docNo as string }, actorId, now);
+    await this.config.afterWrite?.(tx, id, "approve");
     // ADR-0049: the creator hears about the approval once the transaction commits (approve emits; the go-live command
     // only records, its readers see the rows on their next fetch).
     const signals = await this.notifyApproved(tx, id, actorId);
@@ -631,6 +655,7 @@ export class TradeDocumentEngine<Input extends TradeDocumentInput, Out extends R
       signals = await prisma.$transaction(async (tx) => {
         const updated = await this.doc(tx).updateMany(reviewUpdate(actor, id, expectedVersion, action, note, new Date()));
         if (updated.count === 0) explainReviewMiss(errors, await this.missRow(id, tx), action);
+        await this.config.afterWrite?.(tx, id, "review");
         return this.notifyCreator(tx, id, actor.id, action === "REJECT" ? "document.rejected" : "document.revision_requested", note);
       }, WRITE_TX);
     } catch (error) {

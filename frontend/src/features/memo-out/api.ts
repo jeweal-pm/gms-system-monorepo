@@ -1,5 +1,6 @@
 "use client";
 
+import { syncRefetchInterval } from "@/features/trade-document/stock-row-errors";
 import { skipToken } from "@tanstack/react-query";
 import type { InferQueryLikeData } from "@trpc/react-query/shared";
 import {
@@ -49,7 +50,7 @@ export const memoOutLoadError = (error: unknown) => documentLoadError(error, "ME
 export const memoOutRestoreError = (error: unknown) => mapDocumentRestoreError(error, "MEMO_OUT", "memo out");
 
 export function useMemoOutDetail(id: string | null) {
-  return masterTrpc.memoOut.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient });
+  return masterTrpc.memoOut.get.useQuery(id === null ? skipToken : { id }, { staleTime: 30_000, retry: retryTransient, refetchInterval: syncRefetchInterval });
 }
 
 /** FE-SD-001: the daybook's active or deleted memo outs, newest first, 50 a page; a new view starts on page one. */
@@ -78,7 +79,7 @@ export function useMemoOutApi(customerId: string | undefined, docDate: string, i
     submit: (args) => submit.mutateAsync(args),
     restore: (args) => restore.mutateAsync(args),
     invalidate: () =>
-      Promise.all([utils.memoOut.list.invalidate(), utils.memoOut.get.invalidate(), utils.memoOut.nextNumber.invalidate(), utils.memoStock.list.invalidate()]),
+      Promise.all([utils.memoOut.list.invalidate(), utils.memoOut.get.invalidate(), utils.memoOut.nextNumber.invalidate(), utils.memoStock.list.invalidate(), utils.fromStock.list.invalidate()]),
     busy: create.isPending || update.isPending || remove.isPending || submit.isPending || restore.isPending,
   };
 }

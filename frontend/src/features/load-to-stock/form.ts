@@ -58,6 +58,8 @@ export const NOTE_MAX = 250;
 export const ITEM_NOTE_MAX = 500;
 export const PARCEL_MAX = 50;
 export const LOCATION_MAX = 40;
+/** FE-LS-018 (ADR-0052 D23, owner Q-LS-P2-02): Lot is optional, pre-filled from the PU line, up to 40 characters. */
+export const LOT_MAX = 40;
 export const PHOTO_MAX = 5;
 export const ROW_MAX = 200;
 export const SOURCE_MAX = 200;
@@ -351,6 +353,7 @@ export function validateLoad(values: LoadFormValues): Issue[] {
     const at = (field: string) => ["rows", index, field];
     if (!row.location.trim()) issues.push({ path: at("location"), message: MESSAGES.location });
     else if (row.location.trim().length > LOCATION_MAX) issues.push({ path: at("location"), message: `Up to ${LOCATION_MAX} characters` });
+    if (row.attrs.lot.trim().length > LOT_MAX) issues.push({ path: at("lot"), message: `Up to ${LOT_MAX} characters` });
     if (row.parcel.length > PARCEL_MAX) issues.push({ path: at("parcel"), message: `Up to ${PARCEL_MAX} characters` });
     if (!row.stockPrice.trim()) issues.push({ path: at("stockPrice"), message: MESSAGES.stockPrice });
     else if (!DECIMAL.test(row.stockPrice) || places(row.stockPrice) > MONEY_PLACES) issues.push({ path: at("stockPrice"), message: MESSAGES.money });

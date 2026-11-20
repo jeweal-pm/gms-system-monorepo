@@ -24,6 +24,7 @@ import { LOCATION_CURSOR_MAX } from "../location-master/location-master.service"
 import type { QuotationService } from "../quotation/quotation.service";
 import type { MemoOutService } from "../trade-document/memo-out.service";
 import type { ReserveService } from "../trade-document/reserve.service";
+import { FromStockService, fromStockListSchema } from "../trade-document/from-stock.service";
 import type { MemoOutReturnService } from "../trade-document/memo-out-return.service";
 import type { MemoReceiveService } from "../trade-document/memo-receive.service";
 import type { MemoReturnService } from "../trade-document/memo-return.service";
@@ -353,6 +354,8 @@ function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
 
 /** Direct service calls preserve IDs, transaction behavior and existing partner/stone schemas. */
 export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, decimalSetup, approvalSetting, currency, locationMaster, quotation, memoOut, memoOutReturn, memoReceive, memoStock, memoReturn, memoOutstanding, reserve, purchaseOrder, purchase, approval }: MasterServices) {
+  // ADR-0052 D16: one From Stock list (Memo Stock + our stock), merged here; it reuses the Memo Stock query.
+  const fromStock = new FromStockService(memoStock);
   return t.router({
     customer: t.router({
       list: permitted("customer", "VIEW").input(listInput).query(({ input }) => domainCall(() => customer.list(toListQuery(input)))),
@@ -551,6 +554,10 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
     // Sale "From Stock" phase 1 (sale ADR-0054 D10, SA-SL-05).
     memoStock: t.router({
       list: permittedAny(["memo-return", "memo-receive", "memo-out", "reserve", "quotation", "sale"], "VIEW").input(memoStockListSchema).query(({ input }) => domainCall(() => memoStock.list(input))),
+    }),
+    // load-to-stock SA rev 2 (ADR-0052 D16, SA-LS-P2-01): the customer-side From Stock picker as one list of both stocks.
+    fromStock: t.router({
+      list: permittedAny(["quotation", "reserve", "memo-out"], "VIEW").input(fromStockListSchema).query(({ input }) => domainCall(() => fromStock.list(input))),
     }),
     // memo-return SA rev 2 (owner 2026-10-29): Memo Stock items back to their vendor; approval reduces pending (Q-MR-15).
     memoReturn: t.router({

@@ -10,6 +10,8 @@ import type { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError } from "@/lib/trpc-error";
 import { mapDocumentSaveError } from "./document-api";
 import type { MemoStockItem } from "./memo-stock-api";
+import { isOwnStockItem, ownPickKey, type FromStockItem } from "./from-stock-api";
+import { INVENTORY_UNAVAILABLE_TEXT, isStockBusyCode, onlyLeftText, STOCK_BUSY_TEXT, stockRowMessage } from "./stock-row-errors";
 import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
 
 /**
@@ -33,6 +35,8 @@ const HEADER_FIELDS = ["docDate", "dueDate", "customerId", "shippingAddressId", 
  */
 const customerStockLineSchema = lineSchema.extend({
   memoStockId: z.string().default(""),
+  /** load-to-stock phase 2 (ADR-0052 D20): our stock's UUID instead of a Memo Stock item. */
+  ownStockId: z.string().default(""),
   stockPendingPcs: z.string().default(""),
   stockPendingWeightCt: z.string().default(""),
 });
@@ -58,14 +62,19 @@ export type CustomerStockFormValues = z.infer<typeof customerStockSchema>;
 /** A new document: today, five empty rows, the company currency once options load. */
 export function emptyCustomerStock(): CustomerStockFormValues {
   const q = emptyQuotation();
-  return { ...q, status: "DRAFT", lines: q.lines.map((line) => ({ ...line, memoStockId: "", stockPendingPcs: "", stockPendingWeightCt: "" })) };
+  return { ...q, status: "DRAFT", lines: q.lines.map((line) => ({ ...line, memoStockId: "", ownStockId: "", stockPendingPcs: "", stockPendingWeightCt: "" })) };
 }
 
 /**
  * A Memo Stock item → a From Stock row: its Stock ID, lot, location Memo, stone and certificate (read-only), the full
  * pending as the starting quantity (Q-MO-15), and an empty Sale Price (Q-MO-11). Memo Stock has no stone code.
  */
-export function memoStockToStockLine(item: MemoStockItem): CustomerStockLine {
+/**
+ * Phase 2 (quotation ui-spec Revision 3): an our-stock item becomes the same kind of row with its Location name, its
+ * available as the starting quantity and cap, and `ownStockId`; Sale Price still starts empty (Q-LS-P2-03).
+ */
+export function memoStockToStockLine(item: MemoStockItem | FromStockItem): CustomerStockLine {
+  const own = isOwnStockItem(item);
   return {
     key: newKey(),
     source: "STOCK",
@@ -92,7 +101,8 @@ export function memoStockToStockLine(item: MemoStockItem): CustomerStockLine {
     stonePartOrder: [],
     photos: [],
     itemNote: "",
-    memoStockId: item.id,
+    memoStockId: own ? "" : item.id,
+    ownStockId: own ? item.id : "",
     stockPendingPcs: String(item.pendingPcs),
     stockPendingWeightCt: item.pendingWeightCt,
   };
@@ -104,7 +114,11 @@ export function toCustomerStockInput(values: CustomerStockFormValues) {
   const filled = values.lines.filter(isFilledLine);
   return {
     ...shared,
-    lines: shared.lines.map((line, index) => ({ ...line, memoStockId: filled[index]?.memoStockId || null })),
+    // ADR-0052 D20: exactly one of `memoStockId` / `ownStockId` per From Stock row.
+    lines: shared.lines.map((line, index) => {
+      const memoStockId = filled[index]?.memoStockId || null;
+      return { ...line, memoStockId, ownStockId: memoStockId ? null : filled[index]?.ownStockId || null };
+    }),
     customerId: values.customerId,
     shippingAddressId: values.shippingAddressId,
     invoiceAddressId: values.invoiceAddressId,
@@ -120,9 +134,11 @@ export function fromCustomerStock(detail: CustomerStockDetail, photoUrl: (id: st
       const saved = detail.lines[index];
       return {
         ...line,
-        source: saved?.source ?? "MANUAL",
+        // An our-stock line is a From Stock row in the form (`ownStockId` tells the source); the API names it OWN_STOCK.
+        source: saved?.source === "OWN_STOCK" ? ("STOCK" as const) : (saved?.source ?? "MANUAL"),
         stockId: saved?.stockId ?? "",
         memoStockId: saved?.memoStockId ?? "",
+        ownStockId: saved?.ownStockId ?? "",
         stockPendingPcs: saved?.stockPendingPcs === null || saved?.stockPendingPcs === undefined ? "" : String(saved.stockPendingPcs),
         stockPendingWeightCt: saved?.stockPendingWeightCt ?? "",
       };
@@ -134,18 +150,30 @@ export function fromCustomerStock(detail: CustomerStockDetail, photoUrl: (id: st
   };
 }
 
-/** Memo Stock items already on the form (From Stock leaves them out). */
-export const pickedStockIds = (lines: QuotationLine[]) => new Set(lines.flatMap((line) => ((line as Partial<CustomerStockLine>).memoStockId ? [(line as CustomerStockLine).memoStockId] : [])));
+/** Stock items already on the form (From Stock leaves them out), keyed by source + id (`pickKey`). */
+export const pickedStockIds = (lines: QuotationLine[]) =>
+  new Set(lines.flatMap((line) => {
+    const stock = line as Partial<CustomerStockLine>;
+    if (stock.memoStockId) return [stock.memoStockId];
+    return stock.ownStockId ? [ownPickKey(stock.ownStockId)] : [];
+  }));
 
 /** Rows that came From Stock (the approval message counts them). */
-export const stockRowCount = (lines: readonly unknown[]) => lines.filter((line) => Boolean((line as Partial<CustomerStockLine>).memoStockId)).length;
+export const stockRowCount = (lines: readonly unknown[]) =>
+  lines.filter((line) => Boolean((line as Partial<CustomerStockLine>).memoStockId || (line as Partial<CustomerStockLine>).ownStockId)).length;
 
 /** `<CODE>_*` save errors; a short approval (another document took the stock first) has its own message. */
 export function customerStockSaveError(code: string, noun: string) {
   return (error: unknown) => {
-    if (readDomainError(error).domainCode === `${code}_PENDING_SHORT`) {
+    const { domainCode, fieldErrors } = readDomainError(error);
+    if (domainCode === `${code}_PENDING_SHORT`) {
       return { fieldErrors: [], message: "Some stock items no longer have enough pending. Edit the row and save again. Nothing was saved." };
     }
-    return mapDocumentSaveError(error, code, noun, HEADER_FIELDS);
+    // Phase 2 (reserve Revision 2, memo-out Revision 4): inventory down → nothing changes; a hold still syncing → retry.
+    if (domainCode === "INVENTORY_UNAVAILABLE") return { fieldErrors: [], message: INVENTORY_UNAVAILABLE_TEXT };
+    if (isStockBusyCode(domainCode, code)) return { fieldErrors: [], message: STOCK_BUSY_TEXT };
+    const outcome = mapDocumentSaveError(error, code, noun, HEADER_FIELDS);
+    const row = domainCode === "VALIDATION_ERROR" || domainCode === `${code}_REFERENCE_INVALID` ? stockRowMessage(fieldErrors, noun, onlyLeftText) : undefined;
+    return row ? { ...outcome, message: row } : outcome;
   };
 }

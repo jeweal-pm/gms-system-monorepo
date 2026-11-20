@@ -54,6 +54,8 @@ export const lineSchema = z.object({
    * (the row's maximum). Typed rows and empty rows have none.
    */
   memoStockId: z.string().optional(),
+  /** load-to-stock phase 2 (ADR-0052 D17/D20): our stock's UUID; its row keeps the available it was picked with as the cap. */
+  ownStockId: z.string().optional(),
   stockPendingPcs: z.string().optional(),
   stockPendingWeightCt: z.string().optional(),
 });
@@ -129,13 +131,15 @@ export function tradeDocumentRules(value: TradeDocumentValues, ctx: z.Refinement
  */
 export function stockLineRules(lines: readonly QuotationLine[], ctx: z.RefinementCtx) {
   lines.forEach((line, index) => {
-    if (!isFilledLine(line) || !line.memoStockId) return;
+    if (!isFilledLine(line) || !(line.memoStockId || line.ownStockId)) return;
+    // quotation ui-spec Revision 3: our-stock rows are capped at the available they were picked with.
+    const above = line.ownStockId ? "More than available" : "More than pending";
     const issue = (field: "pcs" | "weightCt" | "unitPrice", message: string) => ctx.addIssue({ code: "custom", path: ["lines", index, field], message });
     const pcs = Number(line.pcs || 0);
     const weight = Number(line.weightCt || 0);
     if (pcs <= 0 && weight <= 0) issue("pcs", "Enter the quantity");
-    if (pcs > Number(line.stockPendingPcs || 0)) issue("pcs", "More than pending");
-    if (weight > Number(line.stockPendingWeightCt || 0)) issue("weightCt", "More than pending");
+    if (pcs > Number(line.stockPendingPcs || 0)) issue("pcs", above);
+    if (weight > Number(line.stockPendingWeightCt || 0)) issue("weightCt", above);
     if (Number(line.unitPrice || 0) <= 0) issue("unitPrice", "Enter the sale price");
   });
 }

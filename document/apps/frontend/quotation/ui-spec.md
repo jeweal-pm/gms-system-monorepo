@@ -61,3 +61,35 @@ These are unchanged (Q-QTS-05):
 - Hiding stock-row prices without PRICE (Q-QT-07, Q-QTS-10).
 - Converting a quotation into a Reserve, Memo Out or Sale.
 - Copying Memo Receive photos.
+
+## Revision 3 — own stock in From Stock (load-to-stock phase 2) — pending-review
+
+- Source: owner 2026-11-18 (verbatim) "2a + 2b เลย", "งั้นทำ ก" (inventory stays the stock owner, Q-LS-36 A), and for the picker "ตามFrom Stock เดิมให้ user ดูที่ location เองว่าเป็น memo หรือ ของจากคลังเรา". Basis: [ADR-0052 D15](../../../adr/0052-load-to-stock-in-backend-api-inventory.md) phase 2a, with the picker changed from two tabs to **one list** by this owner answer (SA must revise D15: [handoff](../../../coordination/handoffs/load-to-stock-p2-sa.md)). No new design source: this revises the implemented picker (`frontend/src/features/trade-document/memo-stock-modal.tsx`); every value below comes from that code or the SA contract, none is estimated. TODO: [load-to-stock Phase 2](../../../task/todo/load-to-stock.md#phase-2--own-stock-in-from-stock).
+- This section is the **shared picker behaviour** for Quotation, Reserve and Memo Out; their ui-specs refer here.
+
+### Shared "Add From Stock" picker (one list)
+
+| Part | Behaviour |
+|---|---|
+| Layout | Unchanged: same dialog, title, columns; no tabs, no source filter. Memo Stock rows and our stock rows appear in **one list**. |
+| Telling sources apart | Only the **Location** column: Memo Stock rows show `Memo`; our stock rows show their stored Location name (e.g. `BKK-01`). Ref. shows the Load No. with the existing small `Load` tag and the Load Doc Date (already supported by `RefCell`). |
+| Columns for our stock | Stone Code (bold) · Stock ID; no Lot badge (Q-LS-P2-02); vendor code only if the stock keeps one. Location name. Ref. = Load No. `Load` · Doc Date. Stone · Shape · Size, Color · Clarity / Cutting · Quality, Cer Type · Cer No., Item Note as today. **Pcs / Weight = available** (on hand: not reserved, memo-out, sold or consumed). No price column: Stock Price (our cost) is never shown, as Memo Stock cost is not. |
+| Search / filters | Same box "Search Stock ID, Lot, Stone, Cer No." and Start → Due; for our stock Start → Due filters the Load Doc Date. Both sources get the same `q`, `from`, `to`. |
+| Order and paging | Merged in the browser by Ref. Doc Date desc, then Stock ID desc (Q-LS-P2-01). Each source pages 50 by its own keyset; the list shows merged rows only up to the oldest key both sources have reached, so loaded rows never reorder. **Load more** shows while either source has more and fetches the next page of the source(s) that ran out. |
+| Already on the document | Left out, matched by source + id (Memo Stock id vs stock UUID). |
+| Available 0 | Our stock rows with 0 available pcs are not listed. |
+| One source down | The other source's rows stay listed and pickable. A notice row above the rows: "Our stock is unavailable — Retry" (or "Memo Stock is unavailable — Retry"). Both down: the current error text. Empty list with a source down shows the notice, not the empty text. |
+| No permission | A 403 from inventory behaves like "source down" with "You can't view our stock" (no Retry). |
+| OK | Unchanged: ticks from both sources are added together; toast "Added N items from Stock". Each line keeps its source (`STOCK` / `OWN_STOCK`). |
+
+### Our-stock rows on the document (Quotation, Reserve, Memo Out)
+
+- As Memo Stock rows: Stock ID first, "From stock" lock tag, copied fields read-only, no Duplicate, Remove works. Pcs / Weight start at the full **available** and can be lowered, never raised above what was picked; the row panel shows "Available x pcs / y ct" (Memo rows keep "Pending x pcs / y ct").
+- Location shows the stock's Location name instead of `Memo`. Stone Code and Price Unit copied. Sale Price starts empty and is required, as today (Q-LS-P2-03).
+- Read-only after save / approval: the row shows the snapshot saved on the line (Stock ID, Location name, stone fields); view mode never refetches availability.
+
+### Quotation specifics (phase 2a)
+
+- Copy only, nothing held (ADR-0038). Save re-checks our-stock rows that are new or raised against inventory availability, as Memo rows.
+- Errors on Save: above available → cell "More than available (x pcs / y ct)", toast "Row N: More than available". Stock gone → "Row N: This stock item no longer exists. Remove the row." `INVENTORY_UNAVAILABLE` → toast "Our stock can't be checked right now; try again"; nothing saved, edits kept. Memo-only quotations save as today.
+- From Stock hint becomes "Pick stones from stock (Memo Stock and our stock)".

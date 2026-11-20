@@ -18,6 +18,8 @@ export type InventoryConfig = {
   storageRoot: string;
   masterTokenFile: string | undefined;
   authTokenFile: string | undefined;
+  /** ADR-0052 D21: api-master → inventory credential, accepted only on `/internal/v1/master/*`. */
+  masterInventoryTokenFile: string | undefined;
 };
 
 function required(env: NodeJS.ProcessEnv, key: string): string {
@@ -72,5 +74,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): InventoryConfi
     storageRoot: env.GMS_STORAGE_ROOT?.trim() || `${process.cwd()}/storage`,
     masterTokenFile: env.INVENTORY_MASTER_SERVICE_TOKEN_FILE,
     authTokenFile: env.INVENTORY_AUTH_SERVICE_TOKEN_FILE,
+    masterInventoryTokenFile: env.MASTER_INVENTORY_SERVICE_TOKEN_FILE,
   };
 }

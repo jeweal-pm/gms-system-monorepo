@@ -17,7 +17,7 @@ const L3 = "00000000-0000-4000-8000-0000000000a3";
 const H1 = "00000000-0000-4000-8000-0000000000b1";
 const H2 = "00000000-0000-4000-8000-0000000000b2";
 
-function fakeTx(owners: { id: string; parent: string }[], headers: { id: string; live: boolean }[]) {
+function fakeTx(owners: { id: string; parent: string }[], headers: { id: string; live: boolean; syncing?: boolean }[]) {
   const queries: Prisma.Sql[] = [];
   const tx = {
     $queryRaw: vi.fn(async (sql: Prisma.Sql) => {
@@ -35,10 +35,15 @@ describe("lockSourceHeaders (UT-AS-B15)", () => {
     expect(queries).toHaveLength(2);
     expect(queries[0].sql).toMatch(/SELECT id::text AS id, "memo_out_id"::text AS parent FROM "partner"\."memo_out_line" WHERE id = ANY/);
     expect(queries[0].values).toEqual([[L1, L2, L3]]);
-    expect(queries[1].sql).toMatch(/\(status = 'APPROVED' AND deleted_at IS NULL\) AS live FROM "partner"\."memo_out"\s+WHERE id = ANY\([^)]*\) ORDER BY id FOR SHARE/);
+    expect(queries[1].sql).toMatch(/\(status = 'APPROVED' AND deleted_at IS NULL\) AS live, \(sync_state = 'SYNCING'\) AS syncing FROM "partner"\."memo_out"\s+WHERE id = ANY\([^)]*\) ORDER BY id FOR SHARE/);
     expect(queries[1].values).toEqual([[H1, H2]]);
-    expect(Object.fromEntries(result)).toEqual({ [L1]: { id: H2, live: false }, [L2]: { id: H1, live: true }, [L3]: { id: H2, live: false } });
+    expect(Object.fromEntries(result)).toEqual({ [L1]: { id: H2, live: false, syncing: false }, [L2]: { id: H1, live: true, syncing: false }, [L3]: { id: H2, live: false, syncing: false } });
     for (const sql of queries) for (const value of [L1, L2, H1, H2]) expect(sql.sql).not.toContain(value);
+  });
+
+  it("ADR-0052 SA-LS-P2-06: a SYNCING Memo Out is reported (syncing: true) for the Memo Out Return BUSY guard", async () => {
+    const { tx } = fakeTx([{ id: L1, parent: H1 }], [{ id: H1, live: true, syncing: true }]);
+    expect(Object.fromEntries(await lockSourceHeaders(tx, "memoOut", [L1]))).toEqual({ [L1]: { id: H1, live: true, syncing: true } });
   });
 
   it("Purchase Order: uses the PO tables; no lines → no query; unknown lines → no header, no lock", async () => {
@@ -50,7 +55,8 @@ describe("lockSourceHeaders (UT-AS-B15)", () => {
     expect(missing.queries).toHaveLength(1);
     expect(missing.queries[0].sql).toContain(`"purchase_order_id"::text AS parent FROM "partner"."purchase_order_line"`);
     const po = fakeTx([{ id: L1, parent: H1 }], [{ id: H1, live: true }]);
-    expect(Object.fromEntries(await lockSourceHeaders(po.tx, "purchaseOrder", [L1]))).toEqual({ [L1]: { id: H1, live: true } });
+    expect(Object.fromEntries(await lockSourceHeaders(po.tx, "purchaseOrder", [L1]))).toEqual({ [L1]: { id: H1, live: true, syncing: false } });
+    expect(po.queries[1].sql).toContain("false AS syncing");
     expect(po.queries[1].sql).toMatch(/FROM "partner"\."purchase_order"\s+WHERE id = ANY\([^)]*\) ORDER BY id FOR SHARE/);
   });
 });

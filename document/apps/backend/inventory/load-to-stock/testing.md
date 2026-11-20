@@ -134,3 +134,91 @@ Commands (fresh disposable DB, provisioned roles): inventory `vitest run` **45 p
 Live browser test: after a photo upload + read, the inventory process exited with undici `ERR_INVALID_STATE: ReadableStream is already closed` (the `GET /load-to-stock/photos/{id}` body was a Node `Readable` handed to `Response` as an async iterable; a cancelled image read closed it twice), so every `/api/inventory/*` call answered 502 (Account list and number preview empty). Fix: `Readable.toWeb(file.stream)` in `src/app.ts`. IT-LS-B13 now also cancels a photo read after the first chunk and checks a full read returns the uploaded bytes. Inventory suite 45/45, tsc and ESLint clean; dev container restarted healthy.
 
 Follow-up (same day): the crash recurred after the photo fix, after a normal Approve/Revise flow with no photo cancel. The `undici` frames point at the service's own outbound `fetch` (auth license check, JWKS), not at the photo response. Cause: `AbortSignal.timeout(…)` kept running after a call completed, and 401/403/500 license bodies were never read; when the timer aborted a finished call, undici closed the already-closed body stream and the process exited. Fix: an `AbortController` timer cleared in `finally`, and unread bodies are cancelled (`discardBody`) in `license-client.ts` and `jwks.ts`. New UT: an unread 401/403/500 body is cancelled and the timer never aborts a finished call. Inventory suite 46/46, tsc and ESLint clean. The dev container (Node 24.11, older bundled undici) is more exposed than the production image (Node 24.22.3); if the crash recurs, capture the request log lines right before it.
+
+---
+
+## Phase 2 verification plan (SA revision 2, Proposed)
+
+ADR-0052 D16–D23. Integration tests use a disposable PostgreSQL with both schemas, with the inventory internal routes on a real DB. Every saga case asserts that no HTTP call runs inside an open transaction (client spy + transaction depth).
+
+| ID | Kind | Case | Expected |
+|---|---|---|---|
+| UT-LS-P2-01 | unit (master) | merge of two sorted pages (Stock IDs unique), one side empty, both > limit | first `limit` in (date DESC, stockId DESC); `nextCursor` = last key; no duplicates or skips across 3 pages |
+| UT-LS-P2-02 | unit (master) | acquire/release split for RESERVED, MEMO_OUT, MEMO_OUT_RETURN up/down; H_mid | matches the D19 rules |
+| UT-LS-P2-03 | unit (inventory) | hold delta checks incl. SYNCING load, REVERSED stock, MOR down with on-hand short | codes per error-handling |
+| IT-LS-P2-01 | integration | `fromStock.list`: 120 memo + 130 own rows with interleaved dates, paging to the end; location `Memo` / `BKK-01`; `q` on lot | stable, complete, ordered; `Memo` skips inventory (spy); lot match |
+| IT-LS-P2-02 | integration | inventory stopped / 3 s delay | `ownStock: "UNAVAILABLE"` within 2 s, memo rows returned |
+| IT-LS-P2-03 | integration | Quotation save with own stock: new line, raised qty, kept line while inventory down, unknown id | snapshot + lot copied; `exceeds_pending`; kept saves without a call; `REFERENCE_INVALID`; no hold rows |
+| IT-LS-P2-04 | integration | Reserve approve (ON) and Memo Out save (OFF) with mixed Memo + own lines | buckets moved, holds = lines, movements appended, `hold_revision` = 1, IDLE |
+| IT-LS-P2-05 | integration | two Memo Outs of the same own stock (5 pcs; 4 and 3) approved concurrently | one APPROVED, other `MEMO_OUT_PENDING_SHORT`, on-hand 1, CHECK holds |
+| IT-LS-P2-06 | integration | acquire OK, then Memo Stock short in tx1 | compensation releases; stock and doc unchanged; op ABANDONED |
+| IT-LS-P2-07 | integration | kill after tx0; after PUT before tx1; after tx1 before release; mid-compensation; then sweep | always consistent: holds = applied lines of the master doc; never double-held; IDLE |
+| IT-LS-P2-08 | integration | replay same revision/hash; lower revision; same revision other hash | replayed true; STALE; STALE |
+| IT-LS-P2-09 | integration | edit auto-approved Memo Out: stock A 3→5 pcs, remove B, add C | PUT H_mid (A 5, B, C), then H_new (A 5, C); B released after local commit |
+| IT-LS-P2-10 | integration | Memo Out Return of own stock, then delete it after the stock was reserved elsewhere | return moves memo_out → on-hand; delete → `MEMO_OUT_RETURN_IN_USE`, nothing changed |
+| IT-LS-P2-11 | integration | Load to Stock edit/delete while stock is held; after release | `LOAD_TO_STOCK_IN_USE {stockIds, holders}`; editable after release |
+| IT-LS-P2-12 | integration | hold on stock of a SYNCING load; Memo Out Return of a SYNCING Memo Out; write on a SYNCING doc | `RESERVE_BUSY` / `MEMO_OUT_RETURN_BUSY` / `<CODE>_BUSY` |
+| IT-LS-P2-13 | integration | internal auth: no token, inventory→master token, right token; path not routable through nginx | 401, 401, 200; nginx 404 |
+| IT-LS-P2-14 | integration | migrations: `stock.ref_doc_*` backfill on phase-1 data; `stock_hold` re-key asserts empty; master CHECK rejects both stock ids set | pass; existing loads keep their `lot` (D23) |
+| IT-LS-P2-15 | integration | Lot: load row lot trimmed, ≤ 40, empty allowed, > 40 refused; applied edit changes the stock's lot | stored and synced; picker shows it |
+
+### N+1 budgets (phase 2)
+
+| ID | Path | Budget (independent of rows) |
+|---|---|---|
+| NP-LS-P2-01 | `fromStock.list` page | master 1 query + 1 HTTP; inventory 1 query |
+| NP-LS-P2-02 | `stock/batch` (200 ids) | 1 query |
+| NP-LS-P2-03 | hold PUT (200 stocks) | ≤ 8 statements |
+| NP-LS-P2-04 | master own-stock save | ≤ 1 batch call + ≤ 2 PUTs; master statements as today + 2 (op insert/update) |
+| NP-LS-P2-05 | sweep tick | 1 select (≤ 20 due) + each op's own bounded calls |
+
+Measurements before claiming production fit: picker p95 with 5,000 available own stocks and 5,000 Memo Stock rows (target < 300 ms), a 200-stock hold PUT (target < 500 ms), and master RSS delta with the client and sweep running.
+
+
+## Results — phase 2 backend (BE-LS-P2-01…09, 2026-11-18)
+
+Branch `feat/18-11-26-load-phase2`, uncommitted. SA revision 2 approved by the owner 2026-11-18 ("อนุมัติ UI rev phase 2 + SA rev 2"). Disposable PostgreSQL 18.6 (`it-pg`, same build as phase 1: inventory migrated as `gms_inventory_migrator`, service as `gms_inventory_app`). Cross-service cases run in `backend-api-inventory/test/phase2/own-stock.db.integration.test.ts`: the real inventory internal routes are served on a port with their own `MASTER_INVENTORY_SERVICE_TOKEN`, and the real api-master services (fromStock, Quotation, Reserve, Memo Out, Memo Out Return, hold saga) call them through the real client (wrapped by a spy that can drop an answer before / after the PUT to simulate kills).
+
+| Command | Result |
+|---|---|
+| `backend-api-master`: `vitest run` (fresh DB) | 83 files passed, 1 skipped; **790 passed**, 17 skipped |
+| `backend-api-inventory`: `vitest run` | 7 files, **71 passed** |
+| `tsc --noEmit` master / inventory; ESLint `src` + `test` both | clean |
+| `prisma migrate deploy` of both new migrations on a fresh DB (inventory as migrator) | pass |
+
+### Case mapping
+
+| Case | Test |
+|---|---|
+| UT-LS-P2-01 merge, UT-LS-P2-02 split, client (BUSY retry, 5 s timeout, disabled / no token), own-line completion (kept rule), D20 line schemas | master `test/trade-document/own-stock-phase2.test.ts` (13) |
+| UT-LS-P2-03 delta checks, hash / normalise, token helpers, D23 lot schema | inventory `test/phase2/holds.test.ts` |
+| IT-LS-P2-01…15 | inventory `test/phase2/own-stock.db.integration.test.ts` (one `it` per case; IT-LS-P2-07 adds 07d "compensation lost") |
+| UT-AS-B15 (`lockSourceHeaders` reports `syncing`), UT-MOS-03 (open predicate incl. own stock), IT-LS-B18 (stock_hold re-key CHECKs) | updated existing tests |
+
+### N+1 evidence (statements counted by the query hook; BEGIN/COMMIT excluded)
+
+| ID | Path | Measured | Budget |
+|---|---|---|---|
+| NP-LS-P2-01 | `fromStock.list` page (limit 2, 4 pages over 7 rows) | inventory **1** query per page, **1** HTTP per page; master 1 Memo Stock query | 1 + 1 + 1 |
+| NP-LS-P2-02 | `stock/batch` 200 ids | **1** query | 1 |
+| NP-LS-P2-03 | hold PUT 200 stocks / release 200 | **7** / **6** statements | ≤ 8 |
+| NP-LS-P2-04 | Memo Out create (OFF) with own stock | 1 batch + 2 PUTs (acquire, then the PUT that fills the document number); Reserve approve (ON) = 1 PUT | ≤ 1 + 2 |
+| NP-LS-P2-05 | sweep tick | 1 claim UPDATE (≤ 20, `FOR UPDATE SKIP LOCKED`) + 1 bounded purge + each op's own PUT | bounded |
+
+Memo-Stock-only documents take a fast path (no pre-read, no HTTP): the engine transaction gains one header read `FOR UPDATE` and one grouped own-line sum; a document that holds or held our stock is rolled back by `SagaRequired` and re-run through the saga.
+
+### Measurements (D22)
+
+Local (Windows host, it-pg in Docker 1 vCPU / 512 MiB, master in-process): hold PUT of 200 stocks **213 ms** (target < 500 ms); picker p95 over 40 pages × 50 with **5,000** available own stocks **11 ms** (target < 300 ms). Not measured: 5,000 Memo Stock rows (each needs its own Memo Receive line; the Memo Stock side is the unchanged `memoStock.list` query on `memo_stock_pending_all_idx`), master RSS delta (needs the container; estimate stays +10 MiB: one agent of ≤ 4 sockets and a 60 s timer).
+
+### Backend implementation notes (deviations inside the approved flow)
+
+- **Document number on create (S-P2-04):** a create with approval OFF sends the acquire PUT without a number and then a second PUT with the same set and the number, so `holders` always show the number. `hold_revision` is then 2 (not 1) after a create; still ≤ 2 PUTs.
+- **Fast path + `SagaRequired`:** writes whose input names no own stock skip the saga; delete / restore / approve always start on the fast path and fall back to the saga only when the document holds (or held) our stock. Consequence: an approve whose Memo Stock is short fails with `<CODE>_PENDING_SHORT` before any inventory call.
+- **Refused acquire consumes its revision** (`hold_revision = r`) so the next op uses r+1 (inventory allows gaps).
+- **Safety check in tx1:** the applied set after the engine body must be covered by what was acquired (else `<CODE>_BUSY`, e.g. the approval setting flipped between plan and save).
+- **Internal validation errors** use the inventory envelope's `422 VALIDATION_ERROR` (contract table says 400); master treats any unexpected refusal as `503 INVENTORY_UNAVAILABLE` and logs it.
+- `FieldError` gains optional `params` (master envelope) for `exceeds_pending {availablePcs, availableWeightCt}`.
+- Parent-serialized files touched (one line each, report for serialization): `backend-api-master/src/app.module.ts` (provider `InventorySyncSweep`), `backend-api-master/package.json` (script `inventory-sync:redrive`). No package added.
+
+Security reviews (sec-auditor + security-auditor) are routed by the parent on this revision and are not recorded here yet.

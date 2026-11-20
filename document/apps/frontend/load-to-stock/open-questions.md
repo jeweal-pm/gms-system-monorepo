@@ -57,3 +57,10 @@ All other Q-LS rows: owner moved on to SA design 2026-11-16 ("ทำเอกส
 | ID | Owner (verbatim) | Decision |
 |---|---|---|
 | Q-LS-01 (revised) | "Account เอาแบบ ข สิ มีหน้าบางหน้าบังคับให้เลือก vendor ก่อนถึงจะเรียกของใน stock ได้ อันนี้เช่นกัน" | The user **chooses Account (vendor) first**; From Purchase then lists only that vendor's PU lines. Account locks while the Load table has rows. Replaces the "auto-fill from the first pick" default (matches the implemented frontend) |
+
+## Owner answers 2026-11-18 (phase 2)
+
+| ID | Owner (verbatim) | Decision |
+|---|---|---|
+| Q-LS-P2-02 | "load ต้องเพิ่ม มี lot" (+ [source/07-row-panel-lot.png](source/07-row-panel-lot.png): row panel Info = Stock ID, Lot, Location) | **Load to Stock rows get a Lot field** (row panel Info section, next to Stock ID), stored on our stock; our-stock rows in From Stock show the Lot badge like Memo Stock. Changes phase-1 load row / stock schema → SA rev 2 |
+| Q-LS-P2-05 | asked for an explanation | pending (explained in chat) |

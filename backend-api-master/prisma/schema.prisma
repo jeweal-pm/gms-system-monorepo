@@ -611,6 +611,8 @@ model QuotationLine {
   itemNote             String               @default("") @map("item_note") @db.VarChar(500)
   /// SA-QT-15 (ADR-0038): a From Stock line names its Memo Stock item; it only copies the item's details (nothing held).
   memoStockId          String?              @map("memo_stock_id") @db.Uuid
+  /// ADR-0052 D20: our stock (inventory stock.id, no FK across services); source OWN_STOCK.
+  ownStockId           String?              @map("own_stock_id") @db.Uuid
   stockId              String?              @map("stock_id") @db.VarChar(10)
   stockPendingPcs      Int?                 @map("stock_pending_pcs")
   stockPendingWeightCt Decimal?             @map("stock_pending_weight_ct") @db.Decimal(12, 3)
@@ -623,6 +625,8 @@ model QuotationLine {
   @@unique([quotationId, memoStockId], map: "quotation_line_memo_stock_key")
   @@index([stoneCodeId], map: "quotation_line_stone_code_idx")
   @@index([memoStockId], map: "quotation_line_memo_stock_idx")
+  @@unique([quotationId, ownStockId], map: "quotation_line_own_stock_key")
+  @@index([ownStockId], map: "quotation_line_own_stock_idx")
   @@map("quotation_line")
   @@schema("partner")
 }
@@ -762,6 +766,9 @@ model MemoOut {
   lines                   MemoOutLine[]
   charges                 MemoOutCharge[]
 
+  /// ADR-0052 D19: hold saga state (IDLE | SYNCING) and the last hold revision applied in inventory.
+  syncState               String             @default("IDLE") @map("sync_state") @db.VarChar(10)
+  holdRevision            Int                @default(0) @map("hold_revision")
   @@unique([numberingId, runningNo], map: "memo_out_numbering_running_no_key")
   @@unique([runningNo], where: { numberingId: null }, map: "memo_out_plain_running_no_key")
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "memo_out_list_idx")
@@ -775,6 +782,7 @@ model MemoOut {
   @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "memo_out_pending_idx")
   /// ADR-0050: sent-back documents (turn-OFF guard, Setup counts).
   @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "memo_out_revision_idx")
+  @@index([id], where: raw("((sync_state)::text = 'SYNCING'::text)"), map: "memo_out_syncing_idx")
   @@map("memo_out")
   @@schema("partner")
 }
@@ -808,6 +816,8 @@ model MemoOutLine {
   itemNote             String              @default("") @map("item_note") @db.VarChar(500)
   /// SA-MO-12: a stock line names its Memo Stock item (From Stock); NULL = manual line, cuts nothing.
   memoStockId          String?             @map("memo_stock_id") @db.Uuid
+  /// ADR-0052 D20: our stock (inventory stock.id, no FK across services); source OWN_STOCK.
+  ownStockId           String?              @map("own_stock_id") @db.Uuid
   stockId              String?             @map("stock_id") @db.VarChar(10)
   /// The item's pending when the line was saved: the row's maximum (pcs / weightCt ≤ it).
   stockPendingPcs      Int?                @map("stock_pending_pcs")
@@ -827,7 +837,9 @@ model MemoOutLine {
   @@unique([memoOutId, memoStockId], map: "memo_out_line_memo_stock_key")
   @@index([stoneCodeId], map: "memo_out_line_stone_code_idx")
   @@index([memoStockId], map: "memo_out_line_memo_stock_idx")
-  @@index([memoOutId], where: raw("((memo_stock_id IS NOT NULL) AND ((returned_pcs < pcs) OR (returned_weight_ct < weight_ct)))"), map: "memo_out_line_open_idx")
+  @@index([memoOutId], where: raw("(((memo_stock_id IS NOT NULL) OR (own_stock_id IS NOT NULL)) AND ((returned_pcs < pcs) OR (returned_weight_ct < weight_ct)))"), map: "memo_out_line_open_idx")
+  @@unique([memoOutId, ownStockId], map: "memo_out_line_own_stock_key")
+  @@index([ownStockId], map: "memo_out_line_own_stock_idx")
   @@map("memo_out_line")
   @@schema("partner")
 }
@@ -915,6 +927,9 @@ model MemoOutReturn {
   lines                   MemoOutReturnLine[]
   charges                 MemoOutReturnCharge[]
 
+  /// ADR-0052 D19: hold saga state (IDLE | SYNCING) and the last hold revision applied in inventory.
+  syncState               String             @default("IDLE") @map("sync_state") @db.VarChar(10)
+  holdRevision            Int                @default(0) @map("hold_revision")
   @@unique([numberingId, runningNo], map: "memo_out_return_numbering_running_no_key")
   @@unique([runningNo], where: { numberingId: null }, map: "memo_out_return_plain_running_no_key")
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "memo_out_return_list_idx")
@@ -928,6 +943,7 @@ model MemoOutReturn {
   @@index([submittedAt, id], where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"), map: "memo_out_return_pending_idx")
   /// ADR-0050: sent-back documents (turn-OFF guard, Setup counts).
   @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "memo_out_return_revision_idx")
+  @@index([id], where: raw("((sync_state)::text = 'SYNCING'::text)"), map: "memo_out_return_syncing_idx")
   @@map("memo_out_return")
   @@schema("partner")
 }
@@ -1443,6 +1459,9 @@ model Reserve {
   lines                   ReserveLine[]
   charges                 ReserveCharge[]
 
+  /// ADR-0052 D19: hold saga state (IDLE | SYNCING) and the last hold revision applied in inventory.
+  syncState               String             @default("IDLE") @map("sync_state") @db.VarChar(10)
+  holdRevision            Int                @default(0) @map("hold_revision")
   @@unique([numberingId, runningNo], map: "reserve_numbering_running_no_key")
   @@unique([runningNo], where: { numberingId: null }, map: "reserve_plain_running_no_key")
   @@index([docDate(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "reserve_list_idx")
@@ -1458,6 +1477,7 @@ model Reserve {
   @@index([id], where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"), map: "reserve_revision_idx")
   /// sale ADR-0054 D4: From Reserve picker (approved, live Reserves of a customer in a currency, oldest first).
   @@index([customerId, currencyCode, docDate, id], where: raw("(((status)::text = 'APPROVED'::text) AND (deleted_at IS NULL))"), map: "reserve_open_customer_idx")
+  @@index([id], where: raw("((sync_state)::text = 'SYNCING'::text)"), map: "reserve_syncing_idx")
   @@map("reserve")
   @@schema("partner")
 }
@@ -1491,6 +1511,8 @@ model ReserveLine {
   itemNote             String     @default("") @map("item_note") @db.VarChar(500)
   /// SA-RS-06: a stock line names its Memo Stock item (From Stock); NULL = manual line, holds nothing.
   memoStockId          String?    @map("memo_stock_id") @db.Uuid
+  /// ADR-0052 D20: our stock (inventory stock.id, no FK across services); source OWN_STOCK.
+  ownStockId           String?              @map("own_stock_id") @db.Uuid
   stockId              String?    @map("stock_id") @db.VarChar(10)
   /// The item's pending when the line was saved: the row's maximum (pcs / weightCt ≤ it).
   stockPendingPcs      Int?       @map("stock_pending_pcs")
@@ -1512,6 +1534,8 @@ model ReserveLine {
   @@index([memoStockId], map: "reserve_line_memo_stock_idx")
   /// sale ADR-0054 D4: open stock lines (the From Reserve picker joins them to reserve_open_customer_idx).
   @@index([reserveId, position], where: raw("((memo_stock_id IS NOT NULL) AND ((sold_pcs < pcs) OR ((sold_weight_ct)::numeric < weight_ct)))"), map: "reserve_line_open_idx")
+  @@unique([reserveId, ownStockId], map: "reserve_line_own_stock_key")
+  @@index([ownStockId], map: "reserve_line_own_stock_idx")
   @@map("reserve_line")
   @@schema("partner")
 }
@@ -2035,5 +2059,29 @@ model SaleConsumptionLine {
   @@index([reserveLineId], map: "sale_consumption_line_reserve_line_idx")
   @@index([memoStockId], map: "sale_consumption_line_memo_stock_idx")
   @@map("sale_consumption_line")
+  @@schema("partner")
+}
+
+/// ADR-0052 D19: master side of the inventory hold saga (acquire → local → release); one active op per document.
+model InventorySyncOp {
+  id            String   @id @db.Uuid
+  documentType  String   @map("document_type") @db.VarChar(20)
+  documentId    String   @map("document_id") @db.Uuid
+  stage         String   @db.VarChar(10)
+  state         String   @default("PREPARED") @db.VarChar(10)
+  revision      Int
+  requestHash   String   @map("request_hash") @db.Char(64)
+  payload       Json
+  attempts      Int      @default(0) @db.SmallInt
+  nextAttemptAt DateTime @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  lastError     String?  @map("last_error") @db.VarChar(64)
+  createdBy     String   @map("created_by") @db.VarChar(64)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([documentType, documentId, revision], map: "inventory_sync_op_revision_key")
+  @@index([nextAttemptAt], where: raw("((state)::text = 'PREPARED'::text)"), map: "inventory_sync_op_due_idx")
+  @@index([updatedAt], where: raw("((state)::text = ANY ((ARRAY['DONE'::character varying, 'REFUSED'::character varying, 'ABANDONED'::character varying])::text[]))"), map: "inventory_sync_op_finished_idx")
+  @@map("inventory_sync_op")
   @@schema("partner")
 }
