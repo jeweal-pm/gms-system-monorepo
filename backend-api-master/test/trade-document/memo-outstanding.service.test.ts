@@ -88,7 +88,10 @@ describe("Outstanding reports prune before grouping (INV-20261029-004)", () => {
     expect(db.queries[0]).toMatch(/FROM page p JOIN "partner"\."memo_out_line" l ON l\.memo_out_id = p\.id AND \(l\.memo_stock_id IS NOT NULL OR l\.own_stock_id IS NOT NULL\) GROUP BY l\.memo_out_id/);
     db.results = [[docRow(5)]];
     expect((await service.purchaseList(purchaseOutstandingListSchema.parse({ page: 1, pageSize: 10 }))).total).toBe(5);
-    expect(db.queries[1]).toMatch(/AND EXISTS \(SELECT 1 FROM "partner"\."memo_stock" o WHERE o\.memo_receive_id = r\.id AND \(\(o\.received_pcs - o\.returned_pcs - o\.purchased_pcs\) > 0 OR \(o\.received_weight_ct - o\.returned_weight_ct - o\.purchased_weight_ct\) > 0\)\) GROUP BY r\.id\)/);
+    // 2026-11-20 (Purchase Outstanding 503 on 2.2M Memo Stock rows): Due Date page first, items summed only for that page.
+    expect(db.queries[1]).toContain("WITH open_docs AS MATERIALIZED");
+    expect(db.queries[1]).toMatch(/FROM "partner"\."memo_receive" r WHERE r\.status = \? AND r\.deleted_at IS NULL AND EXISTS \(SELECT 1 FROM "partner"\."memo_stock" o WHERE o\.memo_receive_id = r\.id AND \(\(o\.received_pcs - o\.returned_pcs - o\.purchased_pcs\) > 0 OR \(o\.received_weight_ct - o\.returned_weight_ct - o\.purchased_weight_ct\) > 0\)\)/);
+    expect(db.queries[1]).toMatch(/FROM page p JOIN "partner"\."memo_stock" s ON s\.memo_receive_id = p\.id GROUP BY s\.memo_receive_id/);
     for (const sql of db.queries) {
       expect(sql).not.toMatch(/HAVING|bool_or/);
       expect(sql).toContain("count(*) OVER ()::bigint AS total");
@@ -103,13 +106,15 @@ describe("Outstanding reports prune before grouping (INV-20261029-004)", () => {
     await service.customerSummary(memoOutstandingCustomerFiltersSchema.parse({}));
     await service.purchaseSummary(memoOutstandingFiltersSchema.parse({}));
     expect(db.transactions).toBe(3);
-    expect(db.settings).toHaveLength(7);
+    expect(db.settings).toHaveLength(8); // vendor and purchase broad summaries add enable_nestloop = off
     expect(db.queries).toHaveLength(3);
     expect(db.queries[0]).toContain(`FROM "partner"."memo_stock" o WHERE o.memo_receive_id = r.id AND (o.pending_pcs > 0`);
     expect(db.settings[2]).toBe("SET LOCAL enable_nestloop = off");
     expect(db.queries[1]).toContain("count(DISTINCT o.id)::bigint AS documents");
     expect(db.queries[1]).toContain("(l.returned_pcs < l.pcs OR l.returned_weight_ct < l.weight_ct)");
     expect(db.queries[2]).toContain(`(o.received_pcs - o.returned_pcs - o.purchased_pcs) > 0`);
+    expect(db.queries[2]).toContain("docs AS MATERIALIZED");
+    expect(db.settings[7]).toBe("SET LOCAL enable_nestloop = off");
     for (const sql of db.queries) expect(sql).not.toMatch(/HAVING|bool_or/);
   });
 });
