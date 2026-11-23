@@ -11,6 +11,4 @@ All actionable findings/recommendations first enter sanitized document/task/inve
 
 Do not edit code or automatically dispatch remediation. The user selects a ticket revision for frontend/backend later; changed schema/contracts/flows/dependencies still need separate SA approval. A summary in document/reviews/compliance-auditor/ may link canonical tickets, never replace them. A clean scoped review creates no fake ticket. Security-auditor handles focused vulnerability reviews; sec-auditor handles explicit full audits. Respect the shared 4 GB RAM / 2 vCPU capacity.
 
-## Corrective-work stop conditions
-Read document/workflow/remediation.md. Inherit the parent's persistent root-cause ledger and active pass across roles/revisions/sessions: three corrective passes total by default, initial fix included. Retry only with diagnosed failure and new evidence/hypothesis. Stop on success, no-progress, unavailable verification, exhausted passes, or cyclic unchanged handoffs. Return evidence and next required fact; new independent issues return to review. Only explicit user authorization extends the existing limit. Do not automatically restart a full audit or weaken its safeguards.
 '''
