@@ -103,3 +103,13 @@ SA questions SQ-SC-01…14 with recommended defaults are in [decisions](../apps/
 **Covers:** this ADR; the SA revision 1 bundle `document/apps/backend/inventory/stock-card/**` (decisions, architecture, api-contract, authorization, database-diagram, sequence-diagram, error-handling, dependencies, testing); [main flow](../diagram/stock-card-flow.md); the BE-SC rows in [task/todo/stock-card.md](../task/todo/stock-card.md); the auth catalog change. No packages.
 
 **Order after approval:** BE-SC-001 → 002 → 003 and 004 → 005 → 006 → 007 (auth, parallel after 001) → 008 → 009, then frontend FE-SC-004…010.
+
+## Refinement note (2026-11-23, ADR-0057)
+
+[ADR-0057](0057-stock-value-report-in-inventory-service.md) (Proposed) builds the Stock Value report on this design and refines it without changing any Stock Card contract:
+
+- **D9 / SQ-SC-11:** `stock-value` is no longer only a placeholder leaf; it gates the new `/api/inventory/v1/stock-value` routes (`stock-value:VIEW`). The leaf, its actions and the grant copy stay as ADR-0056 created them.
+- **D8 / D12 (concurrency):** the report guard becomes **one shared instance** for Stock Card and Stock Value, so at most 2 report queries are in flight per process **across both reports**. Stock Card keeps its codes `STOCK_CARD_BUSY` / `STOCK_CARD_TIMEOUT`.
+- **D1 / D3 (reuse):** `modules/stock/card.ts` exports its cards, entries and balance SQL helpers (`groupedCardsSql`, `entriesSql`, search and sort fragments) for the Stock Value read functions; the exports change no Stock Card behaviour and its tests must pass unchanged. A Stock Card and a Stock Value row of one stone share the same `cardKey`.
+- **Schema:** an additive migration `20261123110000_stock_value` adds the generated `item_key` on `stock` and `sale_line` and `sale_line_item_key_idx`; `card_key` is untouched.
+- **Measurement note:** the `CURRENT` list target (100 ms) of PF-SC-02 was missed in the first measurement; ADR-0057 D12 states its own looser targets and tries the partial ACTIVE index first.

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { uuidV7 } from "@gms/storage";
 import { AppError, type FieldError } from "../../platform/errors";
-import { WRITE_TX, type Db, type Tx } from "../../platform/db";
+import { Decimal, WRITE_TX, type Db, type Tx } from "../../platform/db";
 import type { Logger } from "../../platform/logger";
 import type { MasterApi, SaleConsumptionRequest, SaleConsumptionResponse } from "../../platform/master-api";
 import { MasterRefusal } from "../../platform/master-client";
@@ -9,8 +9,9 @@ import type { Principal } from "../../platform/auth/principal";
 import { readSettingForShare } from "../../platform/approval/settings";
 import type { NotificationHub } from "../../platform/notification/hub";
 import { recordNotification, type NotificationSignal } from "../../platform/notification/store";
-import { SyncDriver, LEASE_MS, type BaseOp, type DriveOutcome, type MasterPort, type OpKind } from "../../platform/sync/saga";
+import { SyncDriver, SyncHold, LEASE_MS, type BaseOp, type DriveOutcome, type MasterPort, type OpKind } from "../../platform/sync/saga";
 import { consumptionLines, normalizeSale, prepareRequest, type NormalizedSale } from "./prepare";
+import { consumeOwn, releaseOwn, resolveOwnLots, writeSaleCardHeader, type OwnConsumeLine } from "./own-stock";
 import { readHeader, readLines, isEditable, type HeaderRow } from "./read";
 import { APPROVED_AUTO, checkPhotos, explainMiss, formatDocNo, headerFields, insertParts, nextRunningNo, replaceParts, writeSaleAllocations } from "./repository";
 import type { SaleInput } from "./schemas";
@@ -58,6 +59,9 @@ const syncPending = (id: string) => new AppError(503, "SYNC_PENDING", { id, retr
 const summaryOf = (header: Pick<HeaderRow, "customer_name_snapshot" | "grand_total" | "currency_code">, reason?: string) =>
   ({ partyName: header.customer_name_snapshot, amount: header.grand_total, currency: header.currency_code, ...(reason ? { reason } : {}) });
 
+/** The own-stock lot keys of a Sale input (ADR-0058: resolved locally, never sent to master). */
+const ownLotKeys = (lines: readonly { source: string; lotKey?: string | null }[]) => lines.flatMap((line) => (line.source === "OWN_STOCK" && line.lotKey ? [line.lotKey] : []));
+
 /** Refusal details → row field errors (`lines.N.*`, N = stored position − 1). */
 export function refusalError(refusal: MasterRefusal, indexOf: ReadonlyMap<string, number>): AppError {
   const details = refusal.details ?? {};
@@ -90,6 +94,7 @@ function storedInput(header: HeaderRow, lines: Awaited<ReturnType<typeof readLin
     lines: lines.map((line) => ({
       id: line.id, source: line.source, ...(line.reserve_line_id ? { reserveLineId: line.reserve_line_id } : {}),
       ...(line.source === "STOCK" ? (line.memo_stock_id ? { memoStockId: line.memo_stock_id } : line.lot_key ? { lotKey: line.lot_key } : {}) : {}),
+      ...(line.source === "OWN_STOCK" && line.lot_key ? { lotKey: line.lot_key } : {}),
       pcs: line.pcs, weightCt: line.weight_ct, unitPrice: line.unit_price, discount: { type: line.discount_type as "NONE", value: line.discount_value },
       itemNote: line.item_note, photoIds: line.photo_ids,
     })),
@@ -153,16 +158,67 @@ export class SaleService {
   // ---------- saga handlers ----------
 
   private async applyOp(tx: Tx, op: SaleOpRow, response?: SaleConsumptionResponse): Promise<SaleWriteResult> {
+    try {
+      const result = await this.applyStatus(tx, op);
+      // ADR-0055 D7: tx1 copies master's allocation of the applied revision (empty for a release).
+      await writeSaleAllocations(tx, op.sale_id, op.kind === "DELETE" ? [] : (response?.allocations ?? []));
+      return result;
+    } catch (error) {
+      // An own-stock refusal after master applied (mixed Sale only; Approve / Save pre-check it): park the op, never half-apply.
+      if (error instanceof AppError) throw new SyncHold(error, error.code);
+      throw error;
+    }
+  }
+
+  /**
+   * ADR-0058 D4: a Sale whose master part is empty (only own-stock lines, and master holds nothing of it) never calls master: the op
+   * is recorded as DONE and applied in the caller's transaction (tx0), under the stock locks. A refusal rolls the whole tx0 back.
+   */
+  private async completeLocally(tx: Tx, op: SaleOpRow): Promise<SaleWriteResult> {
+    await tx.$executeRaw`UPDATE "inventory"."sale_sync_op" SET "state" = 'DONE', "result" = '{"local":true}'::jsonb, "updated_at" = now() WHERE "id" = ${op.id}::uuid`;
     const result = await this.applyStatus(tx, op);
-    // ADR-0055 D7: tx1 copies master's allocation of the applied revision (empty for a release).
-    await writeSaleAllocations(tx, op.sale_id, op.kind === "DELETE" ? [] : (response?.allocations ?? []));
+    await writeSaleAllocations(tx, op.sale_id, []);
     return result;
+  }
+
+  /** Own-stock lines of the stored Sale (ADR-0058), in line order. */
+  private async storedOwnLines(tx: Tx, saleId: string): Promise<OwnConsumeLine[]> {
+    const rows = await tx.$queryRaw<{ id: string; position: number; lot_key: string; pcs: number; weight_ct: string }[]>`
+      SELECT "id", "position", "lot_key", "pcs", "weight_ct"::text AS "weight_ct" FROM "inventory"."sale_line"
+      WHERE "sale_id" = ${saleId}::uuid AND "source" = 'OWN_STOCK' ORDER BY "position"`;
+    return rows.map((row) => ({ lineId: row.id, index: row.position - 1, lotKey: row.lot_key, pcs: row.pcs, weightCt: row.weight_ct }));
+  }
+
+  /** Whether master holds anything of this Sale (a stored Reserve / Memo Stock line). One statement. */
+  private async hasMasterLines(tx: Tx, saleId: string): Promise<boolean> {
+    const [row] = await tx.$queryRaw<{ found: boolean }[]>`SELECT EXISTS (SELECT 1 FROM "inventory"."sale_line" WHERE "sale_id" = ${saleId}::uuid AND "source" <> 'OWN_STOCK') AS "found"`;
+    return row.found;
+  }
+
+  /** Re-checks the own-stock quantities of stored lines before master is called (Approve of a mixed Sale), one statement. */
+  private async assertOwnAvailable(tx: Tx, saleId: string): Promise<void> {
+    const own = await this.storedOwnLines(tx, saleId);
+    if (own.length === 0) return;
+    const lots = await resolveOwnLots(tx, own.map((line) => line.lotKey), saleId);
+    const fieldErrors: FieldError[] = own.flatMap((line) => {
+      const lot = lots.get(line.lotKey);
+      if (!lot) return [{ path: `lines.${line.index}.reference`, code: "unavailable" }];
+      const params = { availablePcs: lot.availablePcs, availableWeightCt: lot.availableWeightCt };
+      return [
+        ...(line.pcs > lot.availablePcs ? [{ path: `lines.${line.index}.pcs`, code: "exceeds_pending", params }] : []),
+        ...(new Decimal(line.weightCt).gt(lot.availableWeightCt) ? [{ path: `lines.${line.index}.weightCt`, code: "exceeds_pending", params }] : []),
+      ];
+    });
+    if (fieldErrors.some((entry) => entry.code === "unavailable")) throw new AppError(422, "SALE_REFERENCE_INVALID", { fieldErrors: fieldErrors.filter((entry) => entry.code === "unavailable").slice(0, 50) });
+    if (fieldErrors.length > 0) throw new AppError(409, "SALE_SOURCE_SHORT", { fieldErrors: fieldErrors.slice(0, 50) });
   }
 
   private async applyStatus(tx: Tx, op: SaleOpRow): Promise<SaleWriteResult> {
     const header = (await readHeader(tx, op.sale_id))!;
     const actor = op.payload.actor;
+    const own = { saleId: op.sale_id, revision: op.revision, actorId: actor.id };
     if (op.kind === "DELETE") {
+      await releaseOwn(tx, own);
       await tx.$executeRaw`
         UPDATE "inventory"."sale" SET "sync_state" = 'IDLE', "applied_revision" = ${op.revision}::int, "deleted_at" = now(), "deleted_by" = ${actor.id}, "updated_at" = now(), "updated_by" = ${actor.id}
         WHERE "id" = ${op.sale_id}::uuid`;
@@ -171,8 +227,13 @@ export class SaleService {
     }
     if (op.kind === "UPDATE") {
       const doc = op.payload.document!;
+      // ADR-0058 D3: release the stored own allocation exactly, replace the lines, take the new own set (the delete would cascade the old rows).
+      const released = await releaseOwn(tx, own);
       await replaceParts(tx, op.sale_id, doc);
       await tx.sale.update({ where: { id: op.sale_id }, data: { ...headerFields(doc), sync_state: "IDLE", applied_revision: op.revision, updated_at: new Date(), updated_by: actor.id } });
+      const ownLines = doc.lines.filter((line) => line.source === "OWN_STOCK").map((line) => ({ lineId: line.id, index: line.position - 1, lotKey: line.lotKey!, pcs: line.pcs, weightCt: line.weightCt }));
+      await consumeOwn(tx, own, ownLines);
+      if (released || ownLines.length > 0) await writeSaleCardHeader(tx, { saleId: op.sale_id, revision: op.revision, docNo: header.doc_no, docDate: doc.docDate, customerId: doc.customerId, customerName: doc.customerName });
       this.deps.logger.info({ event: "sale.reapplied", id: op.sale_id, revision: op.revision, lineCount: doc.lines.length });
       return { id: header.id, version: header.version, status: "APPROVED" };
     }
@@ -182,6 +243,9 @@ export class SaleService {
       UPDATE "inventory"."sale" SET "status" = 'APPROVED', "provisional" = false, "auto_approved" = ${auto}, "approved_at" = now(), "approved_by" = ${actor.id},
         "sync_state" = 'IDLE', "applied_revision" = ${op.revision}::int, "updated_at" = now(), "updated_by" = ${actor.id}
       WHERE "id" = ${op.sale_id}::uuid`;
+    const ownLines = await this.storedOwnLines(tx, op.sale_id);
+    await consumeOwn(tx, own, ownLines);
+    if (ownLines.length > 0) await writeSaleCardHeader(tx, { saleId: op.sale_id, revision: op.revision, docNo: header.doc_no, docDate: header.doc_date, customerId: header.customer_id, customerName: header.customer_name_snapshot });
     if (op.kind === "APPROVE") {
       const signal = await recordNotification(tx, { type: "document.approved", documentType: "sale", documentId: header.id, docNo: header.doc_no, actorId: actor.id, recipients: [header.created_by], summary: summaryOf(header) });
       this.pendingSignals.set(header.id, [signal]);
@@ -212,10 +276,12 @@ export class SaleService {
   async create(principal: Principal, input: SaleInput, requestId: string): Promise<SaleWriteResult> {
     const prepared = await this.deps.master.salePrepare(prepareRequest(input), { requestId });
     const lineIds = input.lines.map(() => uuidV7());
-    const doc = normalizeSale(input, prepared, { lineId: (index) => lineIds[index] });
+    const ownLots = await resolveOwnLots(this.deps.db, ownLotKeys(input.lines), null);
+    const doc = normalizeSale(input, prepared, { lineId: (index) => lineIds[index], ownLots });
     const numbering = (await this.deps.master.numbering(input.docDate, true, { requestId }, "sale")).numbering;
     const id = uuidV7();
     let op: SaleOpRow | null = null;
+    let local = false;
     let docNo = "";
     await this.deps.db.$transaction(async (tx) => {
       const requireApproval = await readSettingForShare(tx, "sale");
@@ -230,8 +296,17 @@ export class SaleService {
         },
       });
       await insertParts(tx, id, doc);
-      if (!requireApproval) op = await this.insertOp(tx, id, 0, "CREATE", { saleDocNo: docNo, customerId: doc.customerId, currency: doc.currency, lines: consumptionLines(doc.lines) }, principal);
+      if (!requireApproval) {
+        const consumption = { saleDocNo: docNo, customerId: doc.customerId, currency: doc.currency, lines: consumptionLines(doc.lines) };
+        op = await this.insertOp(tx, id, 0, "CREATE", consumption, principal);
+        // ADR-0058 D4: only own-stock lines -> no master call; the Sale applies here, under the stock locks.
+        if (consumption.lines.length === 0) { await this.completeLocally(tx, op); local = true; }
+      }
     }, WRITE_TX);
+    if (local) {
+      this.deps.logger.info({ event: "sale.created", requestId, actorId: principal.userId, id, docNo, version: 1, lineCount: doc.lines.length });
+      return { id, docNo, version: 1, status: "APPROVED" };
+    }
     if (!op) {
       this.deps.logger.info({ event: "sale.created", requestId, actorId: principal.userId, id, docNo, version: 1, lineCount: doc.lines.length });
       return { id, docNo, version: 1, status: "DRAFT" };
@@ -249,8 +324,10 @@ export class SaleService {
     const stored = new Set((await this.deps.db.sale_line.findMany({ where: { sale_id: id }, select: { id: true } })).map((line) => line.id));
     const prepared = await this.deps.master.salePrepare(prepareRequest(input, { saleId: id, keepCustomerId: current.customer_id }), { requestId });
     const fresh = input.lines.map((line) => (line.id && stored.has(line.id) ? line.id : uuidV7()));
-    const doc = normalizeSale(input, prepared, { lineId: (index) => fresh[index], storedCurrency: current.currency_code });
+    const ownLots = await resolveOwnLots(this.deps.db, ownLotKeys(input.lines), id);
+    const doc = normalizeSale(input, prepared, { lineId: (index) => fresh[index], storedCurrency: current.currency_code, ownLots });
     let op: SaleOpRow | null = null;
+    let local: SaleWriteResult | null = null;
     let status = current.status;
     await this.deps.db.$transaction(async (tx) => {
       const requireApproval = await readSettingForShare(tx, "sale");
@@ -263,8 +340,10 @@ export class SaleService {
       const header = (await readHeader(tx, id))!;
       const consumption = { saleDocNo: header.doc_no, customerId: doc.customerId, currency: doc.currency, lines: consumptionLines(doc.lines) };
       if (header.status === "APPROVED") {
+        const hadMaster = await this.hasMasterLines(tx, id);
         await tx.$executeRaw`UPDATE "inventory"."sale" SET "sync_state" = 'SYNCING' WHERE "id" = ${id}::uuid`;
         op = await this.insertOp(tx, id, header.applied_revision, "UPDATE", consumption, principal, doc);
+        if (consumption.lines.length === 0 && !hadMaster) local = await this.completeLocally(tx, op);
         return;
       }
       await replaceParts(tx, id, doc);
@@ -273,9 +352,14 @@ export class SaleService {
         // ADR-0050 saveStatus: a DRAFT saved while approval is OFF is applied now (e.g. after Restore, SQ-SL-03).
         await tx.$executeRaw`UPDATE "inventory"."sale" SET "sync_state" = 'SYNCING' WHERE "id" = ${id}::uuid`;
         op = await this.insertOp(tx, id, header.applied_revision, "APPLY_DRAFT", consumption, principal);
+        if (consumption.lines.length === 0) local = await this.completeLocally(tx, op);
       }
       status = header.status;
     }, WRITE_TX);
+    if (local) {
+      this.deps.logger.info({ event: "sale.updated", requestId, actorId: principal.userId, id, version: expectedVersion + 1, lineCount: doc.lines.length });
+      return { id, version: expectedVersion + 1, status: (local as SaleWriteResult).status };
+    }
     if (!op) {
       this.deps.logger.info({ event: "sale.updated", requestId, actorId: principal.userId, id, version: expectedVersion + 1, lineCount: doc.lines.length });
       return { id, version: expectedVersion + 1, status };
@@ -295,7 +379,8 @@ export class SaleService {
     ]);
     const input = storedInput(current, lines, charges);
     const prepared = await this.deps.master.salePrepare(prepareRequest(input, { saleId: id, keepCustomerId: current.customer_id }), { requestId });
-    normalizeSale(input, prepared, { lineId: (index) => lines[index].id, storedCurrency: current.currency_code });
+    const ownLots = await resolveOwnLots(this.deps.db, ownLotKeys(input.lines), id);
+    normalizeSale(input, prepared, { lineId: (index) => lines[index].id, storedCurrency: current.currency_code, ownLots });
     const approvers = await this.deps.approvers("sale").catch(() => [] as string[]);
     let signal: NotificationSignal | null = null;
     const submittedAt = new Date();
@@ -317,6 +402,7 @@ export class SaleService {
   /** POST /{id}/approve (APPROVE + VIEW): applies through the saga; a short source → SALE_SOURCE_SHORT, back to PENDING. */
   async approve(principal: Principal, id: string, expectedVersion: number, requestId: string): Promise<SaleWriteResult> {
     let op: SaleOpRow | null = null;
+    let local = false;
     await this.deps.db.$transaction(async (tx) => {
       const locked = await tx.$executeRaw`
         UPDATE "inventory"."sale" SET "sync_state" = 'SYNCING', "version" = "version" + 1, "updated_at" = now(), "updated_by" = ${principal.userId}
@@ -325,8 +411,12 @@ export class SaleService {
       const header = (await readHeader(tx, id))!;
       const lines = await readLines(tx, id);
       const consumption = { saleDocNo: header.doc_no, customerId: header.customer_id, currency: header.currency_code, lines: consumptionLines(lines.map((line) => ({ id: line.id, source: line.source, reserveLineId: line.reserve_line_id, memoStockId: line.memo_stock_id, lotKey: line.lot_key, pcs: line.pcs, weightCt: line.weight_ct }))) };
+      // A mixed Sale re-checks its own-stock quantities before master is called (nothing to undo there afterwards).
+      if (consumption.lines.length > 0) await this.assertOwnAvailable(tx, id);
       op = await this.insertOp(tx, id, header.applied_revision, "APPROVE", consumption, principal);
+      if (consumption.lines.length === 0) { await this.completeLocally(tx, op); local = true; }
     }, WRITE_TX);
+    if (local) return { id, version: expectedVersion + 1, status: "APPROVED" };
     await this.driveOrThrow(op!, requestId);
     return { id, version: expectedVersion + 1, status: "APPROVED" };
   }
@@ -363,6 +453,7 @@ export class SaleService {
   async remove(principal: Principal, id: string, expectedVersion: number, requestId: string): Promise<SaleWriteResult> {
     await this.redriveIfStale(id, requestId);
     let op: SaleOpRow | null = null;
+    let local = false;
     let status = "";
     await this.deps.db.$transaction(async (tx) => {
       const locked = await tx.$executeRaw`
@@ -376,10 +467,13 @@ export class SaleService {
         await tx.$executeRaw`UPDATE "inventory"."sale" SET "deleted_at" = now(), "deleted_by" = ${principal.userId} WHERE "id" = ${id}::uuid`;
         return;
       }
+      const hadMaster = await this.hasMasterLines(tx, id);
       await tx.$executeRaw`UPDATE "inventory"."sale" SET "sync_state" = 'SYNCING' WHERE "id" = ${id}::uuid`;
       op = await this.insertOp(tx, id, header.applied_revision, "DELETE", { saleDocNo: header.doc_no, customerId: header.customer_id, currency: header.currency_code, lines: [] }, principal);
+      // Only own-stock lines: release them here, no master call (ADR-0058 D4).
+      if (!hadMaster) { await this.completeLocally(tx, op); local = true; }
     }, WRITE_TX);
-    if (op) await this.driveOrThrow(op, requestId);
+    if (op && !local) await this.driveOrThrow(op, requestId);
     this.deps.logger.info({ event: "sale.deleted", requestId, actorId: principal.userId, id, version: expectedVersion + 1 });
     return { id, version: expectedVersion + 1, status };
   }

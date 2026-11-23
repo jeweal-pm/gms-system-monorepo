@@ -61,6 +61,8 @@ export type LotGroupRow = {
   priceUnit: "PER_CT" | "PER_PCS";
   unitPrice: string | null; netUnitPrice: string | null; amount: string | null;
   currency: string | null; vendor: { id: string; code: string; name: string } | null;
+  /** Own stock only (sale-own-stock ADR-0058 D7): the lot's Sale Price per price unit, to prefill the Sale unit price; absent for Memo Stock. */
+  salePrice?: string | null;
 };
 
 /** Memo Stock bucket a picker lists (fixed SQL, never input). */

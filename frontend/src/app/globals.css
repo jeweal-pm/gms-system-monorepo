@@ -124,6 +124,12 @@
   --color-gms-group-green-hover: #dbe7e7;
   --color-gms-group-orange-hover: #ebe6de;
   --color-gms-group-purple-hover: #ddd7e4;
+  /* stock-value FE-SV-001: the blue "Current value" group (designs V2 / V5) and the purple cell of a ticked list row (V4) */
+  --color-gms-group-blue-head: #c5d7f4;
+  --color-gms-group-blue-sub: #dce7f8;
+  --color-gms-group-blue-cell: #f0f4fc;
+  --color-gms-group-blue-hover: #e7eef6;
+  --color-gms-group-purple-active: #e6e7f0;
   --color-gms-table-total: #f9f9f9;
 
   --shadow-gms-overlay: 0 12px 32px rgb(0 0 0 / 0.08);

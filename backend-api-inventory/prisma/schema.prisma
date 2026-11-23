@@ -292,7 +292,9 @@ model stock {
   lot_key              String?            @db.VarChar(40)
   /// stock-card ADR-0056 D3: STORED GENERATED identity of a Stock Card (stone code or attributes, location, lot; trimmed, case-insensitive). Written by PostgreSQL only.
   card_key             String?            @db.VarChar(34)
-  version              Int                @default(1)
+  /// stock-value ADR-0057 D4: STORED GENERATED stone identity (the item part of card_key, no location or lot). Written by PostgreSQL only.
+  item_key             String?            @db.VarChar(34)
+  version             Int                @default(1)
   created_at           DateTime           @default(now()) @db.Timestamptz(3)
   updated_at           DateTime           @default(now()) @db.Timestamptz(3)
   load_to_stock_row    load_to_stock_row? @relation(fields: [load_row_id], references: [id], onDelete: Restrict, map: "stock_load_row_fkey")
@@ -540,6 +542,11 @@ model sale_line {
   discount_amount        Decimal           @default(0) @db.Decimal(18, 2)
   amount                 Decimal           @db.Decimal(18, 2)
   item_note              String            @default("") @db.VarChar(500)
+  /// stock-value ADR-0057 D4: STORED GENERATED stone identity, equal to stock.item_key for the same stone. Written by PostgreSQL only.
+  item_key               String?           @db.VarChar(34)
+  /// sale-own-stock ADR-0058: the newest Load of an OWN_STOCK lot line (source LOAD reference); NULL on the other sources.
+  load_id                String?           @db.Uuid
+  load_doc_no            String?           @db.VarChar(40)
   sale                   sale              @relation(fields: [sale_id], references: [id], onDelete: Cascade, map: "sale_line_sale_fkey")
   sale_line_photo        sale_line_photo[]
   sale_line_alloc        sale_line_alloc[]
@@ -549,6 +556,7 @@ model sale_line {
   @@unique([sale_id, memo_stock_id], map: "sale_line_stock_key", where: raw("((source)::text = 'STOCK'::text)"))
   @@index([memo_stock_id], map: "sale_line_memo_stock_idx")
   @@index([reserve_line_id], map: "sale_line_reserve_line_idx")
+  @@index([item_key], map: "sale_line_item_key_idx")
   @@schema("inventory")
 }
 
@@ -594,7 +602,9 @@ model sale_line_alloc {
   id            String    @id @db.Uuid
   sale_line_id  String    @db.Uuid
   seq           Int       @db.SmallInt
-  memo_stock_id String    @db.Uuid
+  /// Exactly one of memo_stock_id / own_stock_uuid (sale-own-stock ADR-0058 D10).
+  memo_stock_id String?   @db.Uuid
+  own_stock_uuid String?  @db.Uuid
   stock_id      String    @db.VarChar(10)
   pcs           Int
   weight_ct     Decimal   @db.Decimal(12, 3)
