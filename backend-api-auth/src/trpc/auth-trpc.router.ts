@@ -51,7 +51,7 @@ const shortcutGroups = [
   { title: "Inventory", items: [{ label: "Load to Stock", slug: "load-to-stock" }, { label: "Merge/Split", slug: "merge-split" }, { label: "Stock Transfer Location", slug: "stock-transfer-location" }, { label: "Stock Adjustment", slug: "stock-adjustment" }, { label: "Barcode", slug: "barcode" }] },
   { title: "Sale", items: [{ label: "Sale", slug: "sale" }] },
   { title: "Account", items: [{ label: "Payable", slug: "payable" }, { label: "Receivable", slug: "receivable" }, { label: "Outstanding Payable", slug: "outstanding-payable" }, { label: "Outstanding Receivable", slug: "outstanding-receivable" }] },
-  { title: "Report", items: [{ label: "Stock Movement (Primary Stock)", slug: "stock-movement-primary" }, { label: "Stock Movement (Consignment Stock)", slug: "stock-movement-consignment" }, { label: "Closing Stock (Primary Stock)", slug: "closing-stock-primary" }, { label: "Closing Stock (Consignment Stock)", slug: "closing-stock-consignment" }, { label: "Compare with costing", slug: "sale-report-costing" }, { label: "Shareholder Report", slug: "sale-report-shareholder" }, { label: "Commission Report", slug: "sale-report-commission" }] },
+  { title: "Report", items: [{ label: "Stock Card", slug: "stock-card" }, { label: "Stock Value", slug: "stock-value" }, { label: "Closing Stock (Primary Stock)", slug: "closing-stock-primary" }, { label: "Closing Stock (Consignment Stock)", slug: "closing-stock-consignment" }, { label: "Compare with costing", slug: "sale-report-costing" }, { label: "Shareholder Report", slug: "sale-report-shareholder" }, { label: "Commission Report", slug: "sale-report-commission" }] },
 ];
 
 /**

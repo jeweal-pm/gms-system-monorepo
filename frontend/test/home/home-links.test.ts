@@ -15,6 +15,9 @@ describe("navigationHref", () => {
     expect(navigationHref({ label: "Reserve", slug: "reserve" })).toBe("/pre-sale/reserve");
     // sale FE-SL-008 (owner 2026-11-18): Sale › Sale has its page (UI only, API pending).
     expect(navigationHref({ label: "Sale", slug: "sale" })).toBe("/sale/sale");
+    // stock-card FE-SC-010 (UT-SC-09): Report › Stock Movement › Stock Card has its page; Stock Value stays a placeholder.
+    expect(navigationHref({ label: "Stock Card", slug: "stock-card" })).toBe("/report/stock-movement/stock-card");
+    expect(navigationHref({ label: "Stock Value", slug: "stock-value" })).toBe("/modules/stock-value");
   });
 
   it("UT-HOME-02 an explicit href wins; menus without a page keep their placeholder", () => {

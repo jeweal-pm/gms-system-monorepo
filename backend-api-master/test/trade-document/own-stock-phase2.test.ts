@@ -113,7 +113,7 @@ describe("own-stock line completion (D17 kept rule)", () => {
   const S = "00000000-0000-4000-8000-0000000000aa";
   const row = { stockUuid: S, stockId: "810001", status: "ACTIVE" as const, stoneCodeId: null, location: "Safe A", priceUnit: "PER_CT" as const, stoneCode: "SC", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "L1", cerType: "", cerNo: "", pcs: 5, weightCt: "5.000", availablePcs: 3, availableWeightCt: "3.000", stockPrice: "1.00", salePrice: "2.00", currency: "THB", vendor: { id: "v", code: "V", name: "N" }, load: { id: "l", docNo: "LS", docDate: "2026-11-01" }, itemNote: "" };
   let batches = 0;
-  const fake: InventoryClient = { batch: async () => { batches += 1; return [row]; }, putHolds: async () => { throw new Error("no"); }, lotsAvailable: async () => [], stockLots: async () => [] };
+  const fake: InventoryClient = { batch: async () => { batches += 1; return [row]; }, putHolds: async () => { throw new Error("no"); }, patchMetadata: async () => undefined, lotsAvailable: async () => [], stockLots: async () => [] };
   beforeAll(() => setInventoryClient(fake));
   afterAll(() => setInventoryClient(null));
   const refInvalid = (fields: unknown) => Object.assign(new Error("ref"), { fields });

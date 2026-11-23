@@ -3,10 +3,33 @@ import { APPLICABLE_COUNT, CATALOG_LEAF_KEYS, catalogResponse, isGrantInCatalog,
 
 /** UT-CAT: catalog v2 shape after decimal-setup SA rev 1 / ADR-0040 (owner 2026-11-03). */
 describe("permission catalog", () => {
-  it("UT-CAT-01 has 43 leaves and 362 applicable cells", () => {
+  it("UT-CAT-01 has 43 leaves and 356 applicable cells", () => {
     expect(CATALOG_LEAF_KEYS).toHaveLength(43);
-    expect(APPLICABLE_COUNT).toBe(362);
-    expect(catalogResponse().applicableCount).toBe(362);
+    expect(APPLICABLE_COUNT).toBe(356);
+    expect(catalogResponse().applicableCount).toBe(356);
+  });
+
+  it("UT-SC-C1 (stock-card ADR-0056 D9) Stock Movement holds Stock Card (VIEW, PRINT, EXCEL) and Stock Value (all nine); the two old leaves are gone", () => {
+    const report = PERMISSION_CATALOG.find((node) => node.key === "report");
+    const movement = report?.children?.find((node) => node.key === "stock-movement");
+    expect(movement?.children).toEqual([
+      { key: "stock-card", label: "Stock Card", kind: "leaf", actions: ["VIEW", "PRINT", "EXCEL"] },
+      { key: "stock-value", label: "Stock Value", kind: "leaf", actions: [...PERMISSION_ACTIONS] },
+    ]);
+    expect(CATALOG_LEAF_KEYS).toEqual(expect.arrayContaining(["stock-card", "stock-value"]));
+    expect(CATALOG_LEAF_KEYS).not.toContain("stock-movement-primary");
+    expect(CATALOG_LEAF_KEYS).not.toContain("stock-movement-consignment");
+    for (const action of PERMISSION_ACTIONS) {
+      expect(isGrantInCatalog("stock-card", action)).toBe(action === "VIEW" || action === "PRINT" || action === "EXCEL");
+      expect(isGrantInCatalog("stock-value", action)).toBe(true);
+      expect(isGrantInCatalog("stock-movement-primary", action)).toBe(false);
+      expect(isGrantInCatalog("stock-movement-consignment", action)).toBe(false);
+    }
+    expect(parsePermissionKey("stock-card:DELETE")).toBeNull();
+    expect(parsePermissionKey("stock-card:EXCEL")).toEqual({ menuKey: "stock-card", action: "EXCEL" });
+    // the key pattern and the 64-leaf bound still hold
+    for (const key of CATALOG_LEAF_KEYS) expect(key).toMatch(/^[a-z0-9-]{1,64}$/);
+    expect(CATALOG_LEAF_KEYS.length).toBeLessThanOrEqual(64);
   });
 
   it("UT-CAT-02 lists Currency in Master Code with all nine actions", () => {

@@ -30,12 +30,24 @@ export function pickerRowClass(checked: boolean) {
 /** Sold rows: 3 px red left accent (DV-10). */
 export const pickerMarkedCell = "shadow-[inset_3px_0_0_#DF1016]";
 
-export type PickerGroupTone = "orange" | "green" | "red";
+export type PickerGroupTone = "orange" | "green" | "red" | "purple";
 /** Column-group tints (design 136 §2): group header 30 %, sub-header 18 %, cells 8 %. */
 export const pickerGroupTone: Record<PickerGroupTone, { head: string; sub: string; cell: string }> = {
   orange: { head: "bg-gms-group-orange-head", sub: "bg-gms-group-orange-sub", cell: "bg-gms-group-orange-cell" },
   green: { head: "bg-gms-group-green-head", sub: "bg-gms-group-green-sub", cell: "bg-gms-group-green-cell" },
   red: { head: "bg-gms-group-red-head", sub: "bg-gms-group-red-sub", cell: "bg-gms-group-red-cell" },
+  // stock-card FE-SC-001: the BALANCE group.
+  purple: { head: "bg-gms-group-purple-head", sub: "bg-gms-group-purple-sub", cell: "bg-gms-group-purple-cell" },
+};
+
+/**
+ * Darker cell tint while the row is hovered (stock-card design S4). Only for rows that carry the `group/row` class
+ * (add it next to `pickerRowClass`); the pickers that do not hover-tint their cells ignore it.
+ */
+export const pickerGroupHover: Partial<Record<PickerGroupTone, string>> = {
+  green: "group-hover/row:bg-gms-group-green-hover",
+  orange: "group-hover/row:bg-gms-group-orange-hover",
+  purple: "group-hover/row:bg-gms-group-purple-hover",
 };
 
 // ---- dialog ----

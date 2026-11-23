@@ -55,6 +55,13 @@ describe.runIf(canRun)("IT-LS roles and live authorization on PostgreSQL", () =>
     expect(grants.map((row) => row.privilege_type)).toEqual(["INSERT", "SELECT"]);
     await expect(app.$executeRawUnsafe(`UPDATE "inventory"."stock_movement" SET "pcs_delta" = 0 WHERE false`)).rejects.toThrow(/permission denied/);
     await expect(app.$executeRawUnsafe(`DELETE FROM "inventory"."stock_movement" WHERE false`)).rejects.toThrow(/permission denied/);
+    // IT-SC-R1 (stock-card ADR-0056): the app role reads the generated card key and the index serves it, writes the hold-document
+    // metadata, can't write the generated column, and the ledger stays append-only.
+    await expect(app.$queryRawUnsafe(`SELECT "card_key" FROM "inventory"."stock" LIMIT 1`)).resolves.toBeDefined();
+    await expect(app.$executeRawUnsafe(`UPDATE "inventory"."stock_hold_document" SET "doc_date" = "doc_date", "party_id" = "party_id", "party_name" = "party_name" WHERE false`)).resolves.toBe(0);
+    await expect(app.$executeRawUnsafe(`UPDATE "inventory"."stock" SET "card_key" = 'x' WHERE false`)).rejects.toThrow(/card_key|generated/i);
+    const cardIndex = await owner.$queryRaw<{ indexname: string }[]>`SELECT indexname FROM pg_indexes WHERE schemaname = 'inventory' AND indexname = 'stock_card_key_idx'`;
+    expect(cardIndex).toHaveLength(1);
     await expect(app.$queryRawUnsafe(`SELECT 1 FROM "partner"."purchase_line" LIMIT 1`)).rejects.toThrow(/permission denied/);
     await expect(app.$queryRawUnsafe(`SELECT 1 FROM auth."User" LIMIT 1`)).rejects.toThrow(/permission denied/);
     await expect(app.$executeRawUnsafe(`CREATE TABLE "inventory"."x" (id int)`)).rejects.toThrow(/permission denied/);

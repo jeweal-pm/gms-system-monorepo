@@ -204,6 +204,26 @@ async function replay(tx: Tx, request: HoldRequest): Promise<HoldResult> {
   };
 }
 
+/**
+ * Document date and account of a hold document (stock-card ADR-0056 D7). `undefined` leaves the stored value, `null` clears it.
+ * Not part of the request hash and never changes stock, so it is idempotent and also applies on a replay. Returns false
+ * when the document holds no own stock (no `stock_hold_document` row). One statement.
+ */
+export type HoldMetadata = { docDate?: string | null; party?: { id: string; name: string } | null };
+
+export async function setHoldMetadata(client: Client, documentType: HoldDocumentType, documentId: string, metadata: HoldMetadata): Promise<boolean> {
+  const hasDate = metadata.docDate !== undefined;
+  const hasParty = metadata.party !== undefined;
+  const rows = await client.$queryRaw<{ one: number }[]>`
+    UPDATE "inventory"."stock_hold_document" SET
+      "doc_date" = CASE WHEN ${hasDate}::boolean THEN ${metadata.docDate ?? null}::date ELSE "doc_date" END,
+      "party_id" = CASE WHEN ${hasParty}::boolean THEN ${metadata.party?.id ?? null}::uuid ELSE "party_id" END,
+      "party_name" = CASE WHEN ${hasParty}::boolean THEN ${metadata.party?.name ?? ""}::varchar ELSE "party_name" END
+    WHERE "document_type" = ${documentType} AND "document_id" = ${documentId}::uuid
+    RETURNING 1 AS "one"`;
+  return rows.length > 0;
+}
+
 export async function readHolds(client: Client, documentType: HoldDocumentType, documentId: string) {
   const [doc] = await client.$queryRaw<{ applied_revision: number; document_no: string | null }[]>`
     SELECT "applied_revision", "document_no" FROM "inventory"."stock_hold_document" WHERE "document_type" = ${documentType} AND "document_id" = ${documentId}::uuid`;
