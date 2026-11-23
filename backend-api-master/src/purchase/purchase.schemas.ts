@@ -26,6 +26,8 @@ const purchaseLineSchema = lineInputSchema.extend({
   id: uuid.optional(),
   source: z.enum(PURCHASE_LINE_SOURCES),
   memoStockId: uuid.nullish(),
+  /** lot-based-stock (ADR-0055 D4): a STOCK line names a Memo Stock lot (prefix M) instead of an item. */
+  lotKey: z.string().regex(/^ML[0-9a-f]{32}$|^MS[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/).nullish(),
   memoGroup: z.enum(LINE_MEMO_GROUPS).nullish(),
   purchaseOrderLineId: uuid.nullish(),
   // Q-PU-11: no photos in revision 1.
@@ -51,21 +53,25 @@ export function purchaseLineRules(value: Pick<PurchaseValues, "lines">, ctx: z.R
       if (wanted && !present) issue(index, field, "required");
       if (!wanted && present) issue(index, field, "not_allowed");
     };
-    needs("memoStockId", line.source === "STOCK");
+    if (line.lotKey && line.source !== "STOCK") issue(index, "reference", "not_allowed");
+    if (line.lotKey && line.memoStockId) issue(index, "reference", "invalid");
+    if (!line.lotKey) needs("memoStockId", line.source === "STOCK");
     needs("memoGroup", line.source === "STOCK");
     needs("purchaseOrderLineId", line.source === "PURCHASE_ORDER");
     if (line.pcs <= 0 && Number(line.weightCt) <= 0) issue(index, "pcs", "required");
     if (Number(line.unitPrice) <= 0) issue(index, "unitPrice", "required");
     // D8 / R2-D-07: a picked line takes no line discount.
     if (line.source !== "MANUAL" && line.discount.type !== "NONE") issue(index, "discount", "not_allowed");
-    if (line.source === "STOCK" && line.memoStockId && line.memoGroup) {
-      const key = `${line.memoStockId}:${line.memoGroup}`;
-      if (memoKeys.has(key)) issue(index, "memoStockId", "duplicate");
+    const memoRef = line.memoStockId ?? line.lotKey;
+    if (line.source === "STOCK" && memoRef && line.memoGroup) {
+      const field = line.memoStockId ? "memoStockId" : "reference";
+      const key = `${memoRef}:${line.memoGroup}`;
+      if (memoKeys.has(key)) issue(index, field, "duplicate");
       memoKeys.add(key);
       const form = line.memoGroup === "MERGED" ? "MERGED" : "SPLIT";
-      const seen = memoForms.get(line.memoStockId);
-      if (seen !== undefined && (seen === "MERGED" || form === "MERGED")) issue(index, "memoStockId", "duplicate");
-      else memoForms.set(line.memoStockId, form);
+      const seen = memoForms.get(memoRef);
+      if (seen !== undefined && (seen === "MERGED" || form === "MERGED")) issue(index, field, "duplicate");
+      else memoForms.set(memoRef, form);
     }
     if (line.source === "PURCHASE_ORDER" && line.purchaseOrderLineId) {
       if (poLines.has(line.purchaseOrderLineId)) issue(index, "purchaseOrderLineId", "duplicate");
@@ -125,9 +131,6 @@ const pickerFields = {
   direction: z.enum(["forward", "backward"]).optional(),
   limit: z.number().int().min(1).max(50).default(50),
 };
-/** SA-PU-12 `purchase.memoStock`: vendor + currency, status ALL / SOLD / IN_STOCK, Memo Receive Doc Date range (D13). */
-export const purchaseMemoStockSchema = z.object({ ...pickerFields, status: z.enum(["ALL", ...MEMO_GROUPS]).default("ALL") }).strict().superRefine(dateRange);
-export type PurchaseMemoStockInput = z.output<typeof purchaseMemoStockSchema>;
 /** SA-PU-13 `purchase.purchaseOrderLines`: vendor + currency, status ALL / OPEN / PARTLY_PURCHASED, PO Doc Date range. */
 export const purchaseOrderLinesSchema = z.object({ ...pickerFields, status: z.enum(["ALL", "OPEN", "PARTLY_PURCHASED"]).default("ALL") }).strict().superRefine(dateRange);
 export type PurchaseOrderLinesInput = z.output<typeof purchaseOrderLinesSchema>;

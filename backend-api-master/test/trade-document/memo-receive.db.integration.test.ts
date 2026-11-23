@@ -28,7 +28,7 @@ const YEARS = Array.from({ length: 10 }, (_, index) => 50 + index);
 
 type Prisma = typeof import("../../src/database/prisma-client").prisma;
 type Receive = InstanceType<typeof import("../../src/trade-document/memo-receive.service").MemoReceiveService>;
-type Stock = InstanceType<typeof import("../../src/trade-document/memo-stock.service").MemoStockService>;
+type Stock = InstanceType<typeof import("../../src/trade-document/lot-stock.service").LotStockService>;
 type Router = ReturnType<typeof import("../../src/master/router").createMasterRouter>;
 
 let prisma: Prisma;
@@ -94,19 +94,19 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     photos = await import("../../src/trade-document/memo-receive-photo.public.controller");
     ({ prisma } = await import("../../src/database/prisma-client"));
     const { MemoReceiveService } = await import("../../src/trade-document/memo-receive.service");
-    const { MemoStockService } = await import("../../src/trade-document/memo-stock.service");
+    const { LotStockService } = await import("../../src/trade-document/lot-stock.service");
     const { MemoOutService } = await import("../../src/trade-document/memo-out.service");
     const { DocumentSetupService } = await import("../../src/document-setup/document-setup.service");
     const { createMasterRouter } = await import("../../src/master/router");
     ({ calculateTotals } = await import("../../src/quotation/quotation.calculate"));
     receive = new MemoReceiveService();
-    stock = new MemoStockService();
+    stock = new LotStockService();
     memoOut = new MemoOutService();
     setupService = new DocumentSetupService();
     const unused = {} as never;
     router = createMasterRouter({
       customer: unused, vendor: unused, companyProfile: unused, stoneMaster: unused, documentSetup: unused, decimalSetup: unused, approvalSetting: unused, currency: unused, locationMaster: unused, quotation: unused,
-      memoOut: unused, memoOutReturn: unused, memoReceive: receive, memoStock: stock, memoReturn: unused, memoOutstanding: unused, reserve: unused, purchaseOrder: unused, purchase: unused, approval: unused,
+      memoOut: unused, memoOutReturn: unused, memoReceive: receive, lotStock: stock, memoReturn: unused, memoOutstanding: unused, reserve: unused, purchaseOrder: unused, purchase: unused, approval: unused,
     });
 
     // A concurrent DB integration file may create the same shared fixture first (P2002): keep its row.
@@ -330,41 +330,44 @@ describe.runIf(canRun)("IT-MR memo receive + memo stock on PostgreSQL", () => {
     await prisma.$executeRaw`UPDATE "partner"."memo_stock" SET returned_pcs = received_pcs - 1, returned_weight_ct = received_weight_ct - 0.5,
       pending_pcs = 1, pending_weight_ct = 0.5 WHERE stock_id = ${feb.stockIds[0]}`;
 
+    // memoStock.lots (ADR-0055; replaced memoStock.list): one row per lot, pending > 0 only, keyset pages without gaps.
+    const base = { vendorId: vendorB.id, currency: "THB", limit: 50 };
     const seen: string[] = [];
     let cursor: string | null = null;
     do {
-      const page: Awaited<ReturnType<Stock["list"]>> = await stock.list({ vendorId: vendorB.id, limit: 2, ...(cursor ? { cursor } : {}) });
+      const page: Awaited<ReturnType<Stock["memoStockLots"]>> = await stock.memoStockLots({ ...base, limit: 2, ...(cursor ? { cursor } : {}) });
       expect(page.items.length).toBeLessThanOrEqual(2);
-      seen.push(...page.items.map((item) => item.stockId));
+      seen.push(...page.items.map((item) => item.lot));
       cursor = page.nextCursor;
     } while (cursor);
-    expect(seen).toEqual([mar.stockIds[1], feb.stockIds[0], jan.stockIds[1], jan.stockIds[0]]);
+    // Newest receive first; the two JAN lots (same date) follow in lot-key order.
+    expect(seen.slice(0, 2)).toEqual(["MAR-2", "FEB-1"]);
+    expect(seen.slice(2).sort()).toEqual(["JAN-1", "JAN-2"]);
 
-    const all = (await stock.list({ vendorId: vendorB.id, limit: 50 })).items;
+    const all = (await stock.memoStockLots(base)).items;
     const byLot = new Map(all.map((item) => [item.lot, item]));
     expect(byLot.get("JAN-1")).toMatchObject({
-      location: "Memo", priceUnit: "CTS", receivedPcs: 2, receivedWeightCt: "1.500", pendingPcs: 2, pendingWeightCt: "1.500",
-      unitPrice: "1000.00", netUnitPrice: "1000.0000", amount: "1500.00", currency: "THB",
-      vendor: { id: vendorB.id, name: "MR IT Vendor B" }, memoReceive: { id: jan.id, docNo: jan.docNo, docDate: "2026-01-10", dueDate: "2026-12-31" },
+      source: "MEMO_STOCK", location: "Memo", priceUnit: "PER_CT", pendingPcs: 2, pendingWeightCt: "1.500", merged: false,
+      unitPrice: "1000.00", netUnitPrice: "1000.0000", amount: "1500.00", currency: "THB", vendor: { id: vendorB.id, name: "MR IT Vendor B" },
+      ref: { type: "MEMO_RECEIVE", id: jan.id, docNo: jan.docNo, docDate: "2026-01-10" },
     });
-    // From Stock Ref. (owner 2026-11-04): the source transaction = the Memo Receive, docDate in the memoReceive format.
-    expect(byLot.get("JAN-1")?.ref).toEqual({ type: "MEMO_RECEIVE", id: jan.id, docNo: jan.docNo, docDate: "2026-01-10" });
-    // Owner 2026-11-05: each item carries its Memo Receive line's Stone Code snapshot ("" for these MANUAL lines).
+    // Owner Q-LOT-10: a lot row never carries a Stock ID.
+    expect(all.some((item) => "stockId" in item || "stockIds" in item)).toBe(false);
+    // Each item carries its Memo Receive line's Stone Code snapshot ("" for these MANUAL lines).
     expect(all.every((item) => item.stoneCode === "")).toBe(true);
-    expect(all.map((item) => item.ref)).toEqual(all.map((row) => ({ type: "MEMO_RECEIVE", id: row.memoReceive.id, docNo: row.memoReceive.docNo, docDate: row.memoReceive.docDate })));
     expect(byLot.get("JAN-2")).toMatchObject({ unitPrice: "1000.00", netUnitPrice: "900.0000", amount: "1350.00" });
     // PCS: line amount 299.00 for 3 pcs; 1 pending → 99.67.
-    expect(byLot.get("FEB-1")).toMatchObject({ priceUnit: "PCS", netUnitPrice: "99.6667", pendingPcs: 1, amount: "99.67" });
+    expect(byLot.get("FEB-1")).toMatchObject({ priceUnit: "PER_PCS", netUnitPrice: "99.6667", pendingPcs: 1, amount: "99.67" });
     expect(byLot.has("MAR-1")).toBe(false);
     expect(byLot.has("PENDING-DOC")).toBe(false);
-    expect(all.every((item) => item.vendor.id === vendorB.id)).toBe(true);
+    expect(all.every((item) => item.vendor?.id === vendorB.id)).toBe(true);
 
-    expect((await stock.list({ vendorId: vendorB.id, q: "findme", limit: 50 })).items.map((item) => item.lot)).toEqual(["MAR-2"]);
-    expect((await stock.list({ vendorId: vendorB.id, q: jan.docNo, limit: 50 })).items.map((item) => item.lot).sort()).toEqual(["JAN-1", "JAN-2"]);
-    expect((await stock.list({ vendorId: vendorB.id, q: "%", limit: 50 })).items).toEqual([]);
-    expect((await stock.list({ vendorId: vendorB.id, from: "2026-02-01", to: "2026-02-28", limit: 50 })).items.map((item) => item.lot)).toEqual(["FEB-1"]);
-    expect((await stock.list({ vendorId: vendorA.id, q: "JAN", limit: 50 })).items).toEqual([]);
-    expect(await failure(stock.list({ vendorId: vendorB.id, cursor: "not-a-cursor", limit: 50 }))).toMatchObject({ status: 400, code: "VALIDATION_ERROR" });
+    expect((await stock.memoStockLots({ ...base, q: "findme" })).items.map((item) => item.lot)).toEqual(["MAR-2"]);
+    expect((await stock.memoStockLots({ ...base, q: jan.docNo })).items.map((item) => item.lot).sort()).toEqual(["JAN-1", "JAN-2"]);
+    expect((await stock.memoStockLots({ ...base, q: "%" })).items).toEqual([]);
+    expect((await stock.memoStockLots({ ...base, from: "2026-02-01", to: "2026-02-28" })).items.map((item) => item.lot)).toEqual(["FEB-1"]);
+    expect((await stock.memoStockLots({ ...base, vendorId: vendorA.id, q: "JAN" })).items).toEqual([]);
+    expect(await failure(stock.memoStockLots({ ...base, cursor: "not-a-cursor" }))).toMatchObject({ status: 400, code: "VALIDATION_ERROR" });
   });
 
   it("IT-MR-07 discount bounds through the router → VALIDATION_ERROR; totals never negative", async () => {

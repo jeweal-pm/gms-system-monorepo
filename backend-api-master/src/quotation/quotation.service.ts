@@ -22,8 +22,9 @@ import {
   quotationReferenceInvalid,
   quotationStatusInvalid,
 } from "./quotation.errors";
-import { completeFromMemoStock, type CopiedStockFields, type StockSnapshot } from "../trade-document/stock-lines";
+import { completeFromMemoStock, refuseNewItemReferences, type CopiedStockFields, type StockSnapshot } from "../trade-document/stock-lines";
 import { completeOwnStockLines, storedOwnLines, STORED_OWN_LINE_SELECT } from "../trade-document/own-stock-lines";
+import { completeOwnLotLines } from "../trade-document/own-lot-lines";
 import { lineTotals } from "../trade-document/document-totals";
 import { QUOTATION_PHOTO_SOURCE } from "./quotation-photo.storage";
 import { CHARGE_TYPES, type QuotationInput, type QuotationListInput, type QuotationStatus } from "./quotation.schemas";
@@ -55,10 +56,10 @@ const COUNTRY_NAME = new Map(COUNTRY_OPTIONS.map((item) => [item.code, item.name
 type StoredRefs = { customerId: string; shippingAddressId: string | null; invoiceAddressId: string | null; currencyCode: string; stoneCodeIds: Set<string> };
 type Snapshot = { customerCode: string; customerName: string; shippingText: string; invoiceText: string };
 /** A stock line after the save-time completion (SA-QT-17): the item's fields, Stock ID and pending snapshot. */
-type PreparedInput = Omit<QuotationInput, "lines"> & { lines: (QuotationInput["lines"][number] & Partial<Pick<CopiedStockFields, "stockId" | "stockPendingPcs" | "stockPendingWeightCt">>)[] };
-/** Stock line of either kind (Memo Stock or our stock). */
-const stockItemOf = (line: { memoStockId?: string | null; ownStockId?: string | null }) => line.memoStockId ?? line.ownStockId ?? null;
-type StoredStockLine = { memoStockId: string | null; pcs: number; weightCt: Prisma.Decimal; stockPendingPcs: number | null; stockPendingWeightCt: Prisma.Decimal | null };
+type PreparedInput = Omit<QuotationInput, "lines"> & { lines: (QuotationInput["lines"][number] & Partial<Pick<CopiedStockFields, "stockId" | "stockPendingPcs" | "stockPendingWeightCt" | "stockCount">>)[] };
+/** Stock line of either kind (Memo Stock or our stock; an item or, ADR-0055 D4, a lot). */
+const stockItemOf = (line: { memoStockId?: string | null; ownStockId?: string | null; lotKey?: string | null }) => line.memoStockId ?? line.ownStockId ?? line.lotKey ?? null;
+type StoredStockLine = { memoStockId: string | null; lotKey: string | null; stockCount: number | null; pcs: number; weightCt: Prisma.Decimal; stockPendingPcs: number | null; stockPendingWeightCt: Prisma.Decimal | null };
 
 /** Printed address text kept on the quotation (SA-QT-06 snapshot). */
 export function formatAddress(address: { name: string; taxId: string | null; address: string; city: string; state: string; postcode: string; countryCode: string }): string {
@@ -124,7 +125,11 @@ export function toQuotation(row: DetailRow) {
       source: line.source as "MANUAL" | "STOCK" | "OWN_STOCK",
       memoStockId: line.memoStockId,
       ownStockId: line.ownStockId,
-      stockId: line.stockId,
+      // Owner Q-LOT-10 (ADR-0055 D9): the Stock ID is not returned (null, then removed after FE-LOT-006).
+      stockId: null,
+      lotKey: line.lotKey,
+      // A quotation holds nothing (copy only): never allocated.
+      allocated: false,
       stockPendingPcs: line.stockPendingPcs,
       stockPendingWeightCt: line.stockPendingWeightCt === null ? null : line.stockPendingWeightCt.toFixed(3),
       stoneCodeId: line.stoneCodeId,
@@ -397,7 +402,7 @@ export class QuotationService {
         const requireApproval = await readApprovalSetting(tx, "quotation");
         const plan = saveStatus(requireApproval, null);
         const snapshot = await this.checkReferences(tx, input, null);
-        const prepared = await this.prepareStockLines(tx, input, []);
+        const prepared = await this.prepareStockLines(tx, input, [], null);
         const { numberingId, runningNo, docNo } = await this.issueNumber(tx, input.docDate, true);
         if (docNo.length > DOC_NO_MAX) throw validationException([{ path: "docNo", code: "too_big" }]);
         const id = uuidV7();
@@ -445,7 +450,7 @@ export class QuotationService {
         await this.lockHeader(tx, id, expectedVersion, actorId, now);
         const stored = (await tx.quotation.findUnique({
           where: { id },
-          select: { status: true, autoApproved: true, revisionCount: true, customerId: true, shippingAddressId: true, invoiceAddressId: true, currencyCode: true, lines: { select: { stoneCodeId: true, memoStockId: true, pcs: true, weightCt: true, stockPendingPcs: true, stockPendingWeightCt: true } } },
+          select: { status: true, autoApproved: true, revisionCount: true, customerId: true, shippingAddressId: true, invoiceAddressId: true, currencyCode: true, lines: { select: { stoneCodeId: true, memoStockId: true, lotKey: true, stockCount: true, pcs: true, weightCt: true, stockPendingPcs: true, stockPendingWeightCt: true } } },
         }))!;
         assertEditable({ ...stored, deletedAt: null }, null, quotationFlowErrors);
         const plan = saveStatus(requireApproval, stored);
@@ -456,7 +461,7 @@ export class QuotationService {
           currencyCode: stored.currencyCode,
           stoneCodeIds: new Set(stored.lines.flatMap((line) => (line.stoneCodeId ? [line.stoneCodeId] : []))),
         });
-        const prepared = await this.prepareStockLines(tx, input, stored.lines);
+        const prepared = await this.prepareStockLines(tx, input, stored.lines, id);
         await tx.quotation.update({
           where: { id },
           data: { ...this.headerData(prepared, snapshot), ...lineTotals(prepared.lines), ...(planData(plan, true, actorId, now) as Prisma.QuotationUncheckedUpdateInput) },
@@ -501,7 +506,7 @@ export class QuotationService {
           currencyCode: row.currencyCode,
           stoneCodeIds: new Set(row.lines.flatMap((line) => (line.stoneCodeId ? [line.stoneCodeId] : []))),
         });
-        this.headerData(await this.prepareStockLines(tx, stored, row.lines), { customerCode: "", customerName: "", shippingText: "", invoiceText: "" });
+        this.headerData(await this.prepareStockLines(tx, stored, row.lines, id), { customerCode: "", customerName: "", shippingText: "", invoiceText: "" });
         signal = await recordNotification(tx, {
           type: "approval.pending", documentType: "quotation", documentId: id, docNo: row.docNo, actorId: actor.id, recipients: approvers, summary: quotationSummary(row),
         });
@@ -734,19 +739,23 @@ export class QuotationService {
    */
   /** ADR-0052 D17: own-stock lines completed from inventory (batch read unless kept); 503 INVENTORY_UNAVAILABLE when needed and down. */
   private async completeOwn(input: QuotationInput, stored: Record<string, unknown>[], actorId: string): Promise<QuotationInput> {
-    if (!input.lines.some((line) => line.ownStockId)) return input;
+    if (!input.lines.some((line) => line.ownStockId || line.lotKey?.startsWith("O"))) return input;
     const { lines } = await completeOwnStockLines(input.lines, { stored: storedOwnLines(stored), referenceInvalid: quotationReferenceInvalid, actorId });
-    return { ...input, lines: lines as QuotationInput["lines"] };
+    // ADR-0055 D4: own-stock lots are copied with the lot's available (a quotation holds nothing; the plan is unused).
+    const lots = await completeOwnLotLines(lines, { actorId });
+    return { ...input, lines: lots.lines as QuotationInput["lines"] };
   }
 
-  private async prepareStockLines(tx: Tx, input: QuotationInput, storedLines: readonly StoredStockLine[]): Promise<PreparedInput> {
-    if (!input.lines.some((line) => line.memoStockId)) return input;
-    const stored = new Map(storedLines.flatMap((line) => (line.memoStockId ? [[line.memoStockId, line] as const] : [])));
+  private async prepareStockLines(tx: Tx, input: QuotationInput, storedLines: readonly StoredStockLine[], documentId: string | null): Promise<PreparedInput> {
+    await refuseNewItemReferences(tx, "quotation", documentId, input.lines);
+    if (!input.lines.some((line) => line.memoStockId || line.lotKey?.startsWith("M"))) return input;
+    const stored = new Map(storedLines.flatMap((line) => (line.memoStockId ? [[line.memoStockId, line] as const] : line.lotKey ? [[line.lotKey, line] as const] : [])));
     const kept = (line: QuotationInput["lines"][number]): StockSnapshot | null => {
-      const before = line.memoStockId ? stored.get(line.memoStockId) : undefined;
+      const ref = line.memoStockId ?? line.lotKey;
+      const before = ref ? stored.get(ref) : undefined;
       if (!before || before.stockPendingPcs === null || before.stockPendingWeightCt === null) return null;
       if (line.pcs > before.pcs || new Prisma.Decimal(line.weightCt).gt(before.weightCt)) return null;
-      return { stockPendingPcs: before.stockPendingPcs, stockPendingWeightCt: before.stockPendingWeightCt.toFixed(3) };
+      return { stockPendingPcs: before.stockPendingPcs, stockPendingWeightCt: before.stockPendingWeightCt.toFixed(3), stockCount: before.stockCount };
     };
     return { ...input, lines: await completeFromMemoStock(tx, input.lines, quotationReferenceInvalid, kept) };
   }
@@ -797,10 +806,12 @@ export class QuotationService {
       quotationId,
       position: index + 1,
       // SA-QT-15: a stock line stores its item, Stock ID and pending snapshot; a typed line keeps NULLs.
-      source: line.memoStockId ? "STOCK" : line.ownStockId ? "OWN_STOCK" : "MANUAL",
+      source: line.memoStockId ? "STOCK" : line.ownStockId ? "OWN_STOCK" : line.lotKey ? (line.lotKey.startsWith("M") ? "STOCK" : "OWN_STOCK") : "MANUAL",
       memoStockId: line.memoStockId ?? null,
       ownStockId: line.memoStockId ? null : (line.ownStockId ?? null),
-      stockId: stockItemOf(line) ? (line.stockId ?? null) : null,
+      lotKey: line.memoStockId || line.ownStockId ? null : (line.lotKey ?? null),
+      stockCount: line.memoStockId || line.ownStockId || !line.lotKey ? null : (line.stockCount ?? null),
+      stockId: stockItemOf(line) && !line.lotKey ? (line.stockId ?? null) : null,
       stockPendingPcs: stockItemOf(line) ? (line.stockPendingPcs ?? null) : null,
       stockPendingWeightCt: stockItemOf(line) ? (line.stockPendingWeightCt ?? null) : null,
       stoneCodeId: line.stoneCodeId,

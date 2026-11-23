@@ -1,6 +1,7 @@
 # ADR-0043: Merged Memo Stock line on a Purchase
 
 - Status: Accepted
+- Amended by [ADR-0055](0055-lot-based-stock-picking-and-allocation.md) (2026-11-20, lot-based stock): D1–D3 apply per lot; the rejected alternative "merge by matching details across Stock IDs" is reversed for lots without a certificate.
 - Date: 2026-11-05
 - Feature / source UI revision: `purchase` / UI revision 3
 - SA revision: 2

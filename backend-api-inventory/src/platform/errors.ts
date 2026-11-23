@@ -59,6 +59,8 @@ export const MESSAGES: Record<string, string> = {
   STOCK_HOLD_IN_USE: "Some held quantity is already used",
   STOCK_HOLD_BUSY: "Some stocks belong to a load that is being saved",
   STOCK_HOLD_UNAVAILABLE: "Some stocks are no longer in stock",
+  // lot-based-stock SA rev 1 error-handling.md (ADR-0055)
+  STOCK_LOT_TOO_LARGE: "A lot has too many stocks to pick in one document",
 };
 
 export class AppError extends Error {

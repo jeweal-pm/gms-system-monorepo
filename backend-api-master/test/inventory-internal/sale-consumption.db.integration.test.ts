@@ -37,7 +37,6 @@ let base = "";
 let receive: InstanceType<typeof import("../../src/trade-document/memo-receive.service").MemoReceiveService>;
 let reserve: InstanceType<typeof import("../../src/trade-document/reserve.service").ReserveService>;
 let memoOut: InstanceType<typeof import("../../src/trade-document/memo-out.service").MemoOutService>;
-let purchase: InstanceType<typeof import("../../src/purchase/purchase.service").PurchaseService>;
 let createMemoOutSchema: typeof import("../../src/trade-document/memo-schemas").createMemoOutSchema;
 const sales: string[] = [];
 const queries: string[] = [];
@@ -130,7 +129,6 @@ describe.runIf(canRun)("IT-SL master sale consumption on PostgreSQL", () => {
     const { MemoReceiveService } = await import("../../src/trade-document/memo-receive.service");
     const { ReserveService } = await import("../../src/trade-document/reserve.service");
     const { MemoOutService } = await import("../../src/trade-document/memo-out.service");
-    const { PurchaseService } = await import("../../src/purchase/purchase.service");
     ({ createMemoOutSchema } = await import("../../src/trade-document/memo-schemas"));
     const { InventoryInternalService } = await import("../../src/inventory-internal/inventory-internal.service");
     const { InventoryInternalController } = await import("../../src/inventory-internal/inventory-internal.controller");
@@ -144,7 +142,6 @@ describe.runIf(canRun)("IT-SL master sale consumption on PostgreSQL", () => {
     receive.clock = () => new Date(`20${YEAR}-06-01T03:00:00Z`);
     reserve = new ReserveService();
     memoOut = new MemoOutService();
-    purchase = new PurchaseService();
     const internal = new InventoryInternalService();
     class TestModule {}
     Module({
@@ -202,7 +199,8 @@ describe.runIf(canRun)("IT-SL master sale consumption on PostgreSQL", () => {
     expect(await state(`UPDATE "partner"."reserve_line" SET sold_weight_ct = 1.001 WHERE id = '${rs.lineIds[0]}'`)).toBe("23514");
     expect(await state(`UPDATE "partner"."reserve_line" SET memo_stock_id = NULL, sold_pcs = 1 WHERE id = '${rs.lineIds[0]}'`)).toBe("23514");
     const indexes = await prisma.$queryRawUnsafe<{ indexname: string }[]>(`SELECT indexname FROM pg_indexes WHERE schemaname = 'partner' AND indexname IN ('reserve_line_open_idx', 'reserve_open_customer_idx', 'sale_consumption_line_reserve_line_key', 'sale_consumption_line_memo_stock_idx') ORDER BY indexname`);
-    expect(indexes.map((row) => row.indexname)).toEqual(["reserve_line_open_idx", "reserve_open_customer_idx", "sale_consumption_line_memo_stock_idx", "sale_consumption_line_reserve_line_key"]);
+    // ADR-0055 D7: the (sale, reserve line) unique key is dropped (a lot Reserve line consumes several items).
+    expect(indexes.map((row) => row.indexname)).toEqual(["reserve_line_open_idx", "reserve_open_customer_idx", "sale_consumption_line_memo_stock_idx"]);
     const client = new Client({ connectionString: testUrl });
     await client.connect();
     try {
@@ -228,8 +226,12 @@ describe.runIf(canRun)("IT-SL master sale consumption on PostgreSQL", () => {
     expect(await buckets(a.id)).toMatchObject({ pending: 0, reserved: 7, sold: 3 });
     expect(await buckets(b.id)).toMatchObject({ pending: 4, reserved: 0, sold: 2 });
     expect((await prisma.reserve.findUniqueOrThrow({ where: { id: rs.id } })).status).toBe("APPROVED");
-    const sold = await purchase.memoStock({ vendorId: vendor.id, currency: "THB", status: "SOLD", limit: 50 } as never) as { items: { memoStockId: string; availablePcs: number }[] };
-    expect(sold.items.filter((row) => [a.id, b.id].includes(row.memoStockId)).map((row) => [row.memoStockId, row.availablePcs]).sort()).toEqual([[a.id, 3], [b.id, 2]].sort());
+    // Purchase's Sold lots (ADR-0055 D3): one row per lot with the sold-open quantity.
+    const { LotStockService } = await import("../../src/trade-document/lot-stock.service");
+    const sold = await new LotStockService().purchaseMemoStockLots({ vendorId: vendor.id, currency: "THB", group: "SOLD", limit: 50 } as never) as unknown as { items: { lotKey: string; pendingPcs: number }[] };
+    const [itemA, itemB] = await prisma.memoStock.findMany({ where: { id: { in: [a.id, b.id] } }, orderBy: { stockId: "asc" } });
+    expect(sold.items.filter((row) => [itemA.lotKey, itemB.lotKey].includes(row.lotKey)).map((row) => [row.lotKey, row.pendingPcs]).sort())
+      .toEqual([[itemA.lotKey, itemA.id === a.id ? 3 : 2], [itemB.lotKey, itemB.id === a.id ? 3 : 2]].sort());
     const picker = await call("POST", "/sale/reserve-lines/search", { customerId: customer.id, currency: "THB", q: rs.docNo });
     expect((picker.body.items as { reserveId: string }[]).filter((row) => row.reserveId === rs.id)).toEqual([expect.objectContaining({ reserveLineId: rs.lineIds[0], openPcs: 7, openWeightCt: "3.500", reserveNo: rs.docNo, memoStockId: a.id, netUnitPrice: "2500.0000", priceUnit: "PER_CT", openAmount: "8750.00" })]);
     const detail = await reserve.get(rs.id);

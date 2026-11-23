@@ -10,7 +10,6 @@ import type { MemoOutService } from "../../src/trade-document/memo-out.service";
 import type { MemoOutReturnService } from "../../src/trade-document/memo-out-return.service";
 import type { MemoReceiveService } from "../../src/trade-document/memo-receive.service";
 import type { MemoReturnService } from "../../src/trade-document/memo-return.service";
-import type { MemoStockService } from "../../src/trade-document/memo-stock.service";
 import type { MemoOutstandingService } from "../../src/trade-document/memo-outstanding.service";
 import type { ReserveService } from "../../src/trade-document/reserve.service";
 import type { DocumentSetupService } from "../../src/document-setup/document-setup.service";
@@ -52,8 +51,8 @@ async function startHttp(authReader = vi.fn(async () => ({
   const companyProfile = { get: vi.fn(async () => ({ profile: null })), options: vi.fn(), save: vi.fn(), removeLogo: vi.fn() };
   const stoneMaster = { list: vi.fn(async () => ({ items: [], nextCursor: null, total: 0 })), get: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
   const purchase = {
-    list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), purchaseOrderLines: vi.fn(),
-    memoStock: vi.fn(async () => ({ items: [], nextCursor: null, counts: { all: 0, sold: 0, inStock: 0 } })),
+    list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(),
+    purchaseOrderLines: vi.fn(async () => ({ items: [], nextCursor: null, counts: { all: 0, open: 0, partlyPurchased: 0 } })),
     approve: vi.fn(async (_actorId: string, id: string, expectedVersion: number) => ({ id, version: expectedVersion + 1, status: "APPROVED", lineCount: 1 })),
   };
   const setup = { weightPlaces: 2, pricePlaces: 2, version: 1, updatedAt: "2026-11-03T02:00:00.000Z", updatedBy: null };
@@ -78,7 +77,6 @@ async function startHttp(authReader = vi.fn(async () => ({
     memoOutReturn: {} as unknown as MemoOutReturnService,
     memoReceive: {} as unknown as MemoReceiveService,
     memoReturn: {} as unknown as MemoReturnService,
-    memoStock: {} as unknown as MemoStockService,
     memoOutstanding: {} as unknown as MemoOutstandingService,
     reserve: {} as unknown as ReserveService,
     purchaseOrder: {} as never,
@@ -202,14 +200,14 @@ describe("master HTTP/tRPC adapter integration", () => {
     }));
     const csrf = { origin, "x-gms-csrf": "1", "sec-fetch-site": "same-origin", "content-type": "application/json" };
     const ID = "0b9f3c4e-1d2a-4b3c-8d4e-5f6a7b8c9d0e";
-    const pickerUrl = (baseUrl: string, input: unknown) => `${baseUrl}/purchase.memoStock?input=${encodeURIComponent(JSON.stringify(input))}`;
+    const pickerUrl = (baseUrl: string, input: unknown) => `${baseUrl}/purchase.purchaseOrderLines?input=${encodeURIComponent(JSON.stringify(input))}`;
     const approveBody = JSON.stringify({ id: ID, expectedVersion: 3 });
 
     const viewer = await startHttp(grants(["purchase:VIEW"]));
     const picked = await fetch(pickerUrl(viewer.baseUrl, { vendorId: ID, currency: "THB" }), { headers: { cookie: `gms_access=${viewer.token}` } });
     expect(picked.status).toBe(200);
-    expect(await picked.json()).toMatchObject({ result: { data: { items: [], counts: { all: 0, sold: 0, inStock: 0 } } } });
-    expect(viewer.purchase.memoStock).toHaveBeenCalledWith(expect.objectContaining({ vendorId: ID, currency: "THB", status: "ALL", limit: 50 }));
+    expect(await picked.json()).toMatchObject({ result: { data: { items: [], counts: { all: 0, open: 0, partlyPurchased: 0 } } } });
+    expect(viewer.purchase.purchaseOrderLines).toHaveBeenCalledWith(expect.objectContaining({ vendorId: ID, currency: "THB", status: "ALL", limit: 50 }));
     // Validation after the grant, with contract field errors.
     const bad = await fetch(pickerUrl(viewer.baseUrl, { vendorId: ID, currency: "THB", from: "2026-01-01", to: "2027-01-05" }), { headers: { cookie: `gms_access=${viewer.token}` } });
     expect(bad.status).toBe(400);
@@ -218,8 +216,8 @@ describe("master HTTP/tRPC adapter integration", () => {
     const denied = await fetch(`${viewer.baseUrl}/purchase.approve`, { method: "POST", headers: { cookie: `gms_access=${viewer.token}`, ...csrf }, body: approveBody });
     expect(denied.status).toBe(403);
     expect(await denied.json()).toMatchObject({ error: { data: { domainCode: "PERMISSION_DENIED" } } });
-    // memoStock.list is not opened to purchase:VIEW (SA-PU-12).
-    const memoStockList = await fetch(`${viewer.baseUrl}/memoStock.list?input=${encodeURIComponent(JSON.stringify({ vendorId: ID }))}`, { headers: { cookie: `gms_access=${viewer.token}` } });
+    // The Memo Return lot picker is not opened to purchase:VIEW (SA-PU-12).
+    const memoStockList = await fetch(`${viewer.baseUrl}/memoStock.lots?input=${encodeURIComponent(JSON.stringify({ vendorId: ID, currency: "THB" }))}`, { headers: { cookie: `gms_access=${viewer.token}` } });
     expect(memoStockList.status).toBe(403);
 
     const approver = await startHttp(grants(["purchase:APPROVE"]));
@@ -236,7 +234,7 @@ describe("master HTTP/tRPC adapter integration", () => {
     const unlicensed = await startHttp(grants(["purchase:VIEW"]), "DENIED");
     const licence = await fetch(pickerUrl(unlicensed.baseUrl, { vendorId: ID, currency: "THB" }), { headers: { cookie: `gms_access=${unlicensed.token}` } });
     expect(licence.status).toBe(403);
-    expect(unlicensed.purchase.memoStock).not.toHaveBeenCalled();
+    expect(unlicensed.purchase.purchaseOrderLines).not.toHaveBeenCalled();
   });
 
   it("IT-MAUTH-03 rejects bad mutation CSRF before JWKS, auth view, license, or customer/vendor services", async () => {

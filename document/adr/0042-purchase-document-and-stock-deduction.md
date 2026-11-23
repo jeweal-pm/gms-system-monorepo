@@ -1,6 +1,7 @@
 # ADR-0042: Purchase document and its stock deduction from Memo Stock and Purchase Orders
 
 - Status: Accepted; decision 7 (SA-PU-10, Stock IDs for MANUAL / PO lines) **amended by [ADR-0051](0051-purchase-lines-without-stock-id.md)** (Accepted 2026-11-13)
+- Amended by [ADR-0055](0055-lot-based-stock-picking-and-allocation.md) (2026-11-20, lot-based stock): D2/D6: Purchase STOCK lines may name a lot; the Sold / In-stock parts are allocated FIFO per Stock ID.
 - Date: 2026-11-04
 - Feature / source UI revision: `purchase` / 1 (approved), with the revision 2 pickers
 - SA revision: 1

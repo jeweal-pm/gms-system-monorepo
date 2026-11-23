@@ -114,7 +114,6 @@ describe.runIf(canRun)("IT-LS-P2 own stock in master documents on PostgreSQL", (
     invClient = await masterModule("src/inventory-client/inventory-client");
     const real = invClient.createInventoryClient(new URL(internalUrl), masterToken);
     const spy = {
-      available: (input: any, options: any) => { calls.push({ op: "available", body: input, at: Date.now() }); return real.available(input, options); },
       batch: (ids: any, options: any) => { calls.push({ op: "batch", body: ids, at: Date.now() }); if (fail?.("batch", ids) === "before") return Promise.reject(new invClient.InventoryUnavailable("test")); return real.batch(ids, options); },
       putHolds: async (type: string, id: string, body: any, options: any) => {
         calls.push({ op: `put:${type}`, body, at: Date.now() });
@@ -128,17 +127,29 @@ describe.runIf(canRun)("IT-LS-P2 own stock in master documents on PostgreSQL", (
         return result;
       },
     };
+    // lot-based-stock (ADR-0055 D3/D7): the two lot reads, spied like the others.
+    let afterLots: (() => Promise<void>) | null = null;
+    Object.assign(spy, {
+      lotsAvailable: (input: any, options: any) => { calls.push({ op: "lotsAvailable", body: input, at: Date.now() }); return real.lotsAvailable(input, options); },
+      stockLots: async (keys: any, options: any) => {
+        calls.push({ op: "stockLots", body: keys, at: Date.now() });
+        const result = await real.stockLots(keys, options);
+        const hook = afterLots; afterLots = null;
+        if (hook) await hook();
+        return result;
+      },
+    });
+    (globalThis as any).__afterLots = (fn: () => Promise<void>) => { afterLots = fn; };
     spyClient = spy;
     invClient.setInventoryClient(spy);
-    const { FromStockService } = await masterModule("src/trade-document/from-stock.service");
-    const { MemoStockService } = await masterModule("src/trade-document/memo-stock.service");
+    const { LotStockService } = await masterModule("src/trade-document/lot-stock.service");
     const { QuotationService } = await masterModule("src/quotation/quotation.service");
     const { ReserveService } = await masterModule("src/trade-document/reserve.service");
     const { MemoOutService } = await masterModule("src/trade-document/memo-out.service");
     const { MemoOutReturnService } = await masterModule("src/trade-document/memo-out-return.service");
     const { MemoReceiveService } = await masterModule("src/trade-document/memo-receive.service");
     const { holdSaga } = await masterModule("src/trade-document/inventory-hold-saga");
-    svc = { fromStock: new FromStockService(new MemoStockService()), quotation: new QuotationService(), reserve: new ReserveService(), memoOut: new MemoOutService(), memoOutReturn: new MemoOutReturnService(), receive: new MemoReceiveService(), saga: holdSaga };
+    svc = { fromStock: new LotStockService(), quotation: new QuotationService(), reserve: new ReserveService(), memoOut: new MemoOutService(), memoOutReturn: new MemoOutReturnService(), receive: new MemoReceiveService(), saga: holdSaga };
     schemas = { ...(await masterModule("src/trade-document/memo-schemas")), ...(await masterModule("src/quotation/quotation.schemas")) };
     approval = await masterModule("test/partner-shared/approval");
     const id = randomUUID(); const shipping = randomUUID(); const invoice = randomUUID();
@@ -200,10 +211,10 @@ describe.runIf(canRun)("IT-LS-P2 own stock in master documents on PostgreSQL", (
     expect((await fetch(`${internalUrl}/api/inventory/v1/internal/v1/master/stock/batch`, { method: "POST" })).status).not.toBe(200);
   });
 
-  it("IT-LS-P2-01 / NP-LS-P2-01 fromStock.list: one ordered list over both stocks, stable keyset paging, location / q filters, 1 HTTP + 1 inventory query per page", async () => {
+  it("IT-LS-P2-01 / NP-LS-P2-01 fromStock.lots: our stock first (one lot per stock, Q4), then Memo Stock lots; stable keyset paging, location / q filters, ≤ 1 inventory call and query per page", async () => {
     const lot = `LOT-${TAG}`;
     const ownA = await ownStocks([{ pcs: 3, weightCt: "1.5", lot }, { pcs: 3, weightCt: "1.5", lot }], "2081-01-03");
-    const ownB = await ownStocks([{ pcs: 3, weightCt: "1.5", lot }], "2081-01-01");
+    await ownStocks([{ pcs: 3, weightCt: "1.5", lot }], "2081-01-01");
     const receiveLine = { source: "MANUAL", stoneCode: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot, cerType: "", cerNo: "", pcs: 2, weightCt: "1", priceUnit: "PER_CT", unitPrice: "100", discount: { type: "NONE", value: "0" }, itemNote: "", photoIds: [] };
     for (const docDate of ["2081-01-04", "2081-01-02"]) {
       await svc.receive.create(TAG, { docDate, dueDate: "2081-02-01", currency: "THB", exchangeRate: null, ref: "", documentNote: "", ...money, lines: [receiveLine, receiveLine], vendorId: vendor.id, addressId: vendor.addressId });
@@ -212,28 +223,30 @@ describe.runIf(canRun)("IT-LS-P2 own stock in master documents on PostgreSQL", (
     let cursor: string | null = null;
     calls = [];
     do {
-      const measured: { queries: number; result: any } = await h.measured(() => svc.fromStock.list({ q: lot, from: "2081-01-01", to: "2081-01-31", cursor, limit: 2 }));
-      expect(measured.queries).toBe(1); // NP-LS-P2-01: inventory side one query
+      const measured: { queries: number; result: any } = await h.measured(() => svc.fromStock.fromStockLots({ q: lot, from: "2081-01-01", to: "2081-01-31", cursor, limit: 2 }));
+      // Owner 2026-11-20: our stock first; Memo Stock pages call inventory no more (≤ 1 inventory query per page).
+      expect(measured.queries).toBeLessThanOrEqual(1);
       pages.push(measured.result);
       cursor = measured.result.nextCursor;
     } while (cursor && pages.length < 10);
-    expect(calls.filter((call) => call.op === "available")).toHaveLength(pages.length); // one HTTP call per page
+    expect(calls.filter((call) => call.op === "lotsAvailable").length).toBeLessThanOrEqual(pages.length); // ≤ one HTTP call per page
     const items = pages.flatMap((page) => page.items);
-    expect(items).toHaveLength(7);
-    expect(new Set(items.map((item) => item.stockId)).size).toBe(7);
-    const keys = items.map((item) => `${item.ref.docDate}|${item.stockId}`);
-    expect([...keys].sort().reverse()).toEqual(keys);
-    expect(items.map((item) => item.source)).toEqual(["MEMO_STOCK", "MEMO_STOCK", "OWN_STOCK", "OWN_STOCK", "MEMO_STOCK", "MEMO_STOCK", "OWN_STOCK"]);
-    const own = items.find((item) => item.source === "OWN_STOCK");
-    expect(own).toMatchObject({ location: "Safe A", lot, unitPrice: null, amount: null, memoReceive: null, ref: { type: "LOAD", docNo: ownA.docNo }, load: { id: ownA.loadId }, pendingPcs: 3, ownStock: { salePrice: "200.00" } });
-    expect(JSON.stringify(own)).not.toContain("unitCost");
+    // Own stock is not merged (Q4): 3 stocks = 3 lots. The 4 Memo Stock items (same lot, same details, no cer no.) are ONE lot.
+    expect(items.map((item: any) => item.source)).toEqual(["OWN_STOCK", "OWN_STOCK", "OWN_STOCK", "MEMO_STOCK"]);
+    expect(new Set(items.map((item: any) => item.lotKey)).size).toBe(4);
+    expect(items.filter((item: any) => item.source === "OWN_STOCK").every((item: any) => item.merged === false && item.lotKey.startsWith("OS"))).toBe(true);
+    const ownDates = items.filter((item: any) => item.source === "OWN_STOCK").map((item: any) => item.ref.docDate);
+    expect([...ownDates].sort().reverse()).toEqual(ownDates);
+    const own = items.find((item: any) => item.source === "OWN_STOCK");
+    expect(own).toMatchObject({ location: "Safe A", lot, unitPrice: null, amount: null, vendor: null, ref: { type: "LOAD", docNo: ownA.docNo }, pendingPcs: 3 });
+    expect(JSON.stringify(own)).not.toMatch(/unitCost|stockId/);
+    expect(items[3]).toMatchObject({ source: "MEMO_STOCK", merged: true, pendingPcs: 8, pendingWeightCt: "4.000", refCount: 2 });
     expect(pages.every((page) => page.ownStock === "OK")).toBe(true);
-    void ownB;
     calls = [];
-    const memoOnly = await svc.fromStock.list({ q: lot, location: "memo", limit: 50 });
+    const memoOnly = await svc.fromStock.fromStockLots({ q: lot, location: "memo", limit: 50 });
     expect(calls).toHaveLength(0);
     expect(memoOnly.items.every((item: any) => item.source === "MEMO_STOCK")).toBe(true);
-    const ownOnly = await svc.fromStock.list({ q: lot, location: "safe a", limit: 50 });
+    const ownOnly = await svc.fromStock.fromStockLots({ q: lot, location: "safe a", limit: 50 });
     expect(ownOnly.items.map((item: any) => item.source)).toEqual(["OWN_STOCK", "OWN_STOCK", "OWN_STOCK"]);
   });
 
@@ -247,7 +260,7 @@ describe.runIf(canRun)("IT-LS-P2 own stock in master documents on PostgreSQL", (
       for (const client of [down, slowClient]) {
         invClient.setInventoryClient(client);
         const started = Date.now();
-        const page = await svc.fromStock.list({ limit: 5 });
+        const page = await svc.fromStock.fromStockLots({ limit: 5 });
         expect(page.ownStock).toBe("UNAVAILABLE");
         expect(page.items.every((item: any) => item.source === "MEMO_STOCK")).toBe(true);
         expect(Date.now() - started).toBeLessThan(2_600);
@@ -271,7 +284,7 @@ describe.runIf(canRun)("IT-LS-P2 own stock in master documents on PostgreSQL", (
     const input = (lines: unknown[]) => schemas.createQuotationSchema.parse({ ...header(), lines });
     const saved = await svc.quotation.create(TAG, input([qline(2, "1")]));
     const detail = await svc.quotation.get(saved.id);
-    expect(detail.lines[0]).toMatchObject({ source: "OWN_STOCK", ownStockId: stockUuid, memoStockId: null, stockId: own.stocks[0].stock_id, lot: "QT-LOT", location: "Safe A", stone: "Sapphire", stoneCode: "SC-1", stockPendingPcs: 4 });
+    expect(detail.lines[0]).toMatchObject({ source: "OWN_STOCK", ownStockId: stockUuid, memoStockId: null, stockId: null, lot: "QT-LOT", location: "Safe A", stone: "Sapphire", stoneCode: "SC-1", stockPendingPcs: 4 });
     expect(await failure(svc.quotation.create(TAG, input([qline(5, "1")])))).toMatchObject({ code: "VALIDATION_ERROR", fieldErrors: [{ path: "lines.0.pcs", code: "exceeds_pending", params: { availablePcs: 4 } }] });
     expect(await failure(svc.quotation.create(TAG, input([qline(1, "1", randomUUID())])))).toMatchObject({ code: "QUOTATION_REFERENCE_INVALID", fieldErrors: [{ path: "lines.0.ownStockId", code: "invalid_reference" }] });
     fail = (op) => (op === "batch" ? "before" : null);
@@ -483,7 +496,7 @@ describe.runIf(canRun)("IT-LS-P2 own stock in master documents on PostgreSQL", (
     let cursor: string | null = null;
     for (let i = 0; i < 40; i += 1) {
       const t0 = performance.now();
-      const page: { nextCursor: string | null } = await svc.fromStock.list({ limit: 50, cursor });
+      const page: { nextCursor: string | null } = await svc.fromStock.fromStockLots({ limit: 50, cursor });
       times.push(performance.now() - t0);
       cursor = page.nextCursor;
     }
@@ -572,8 +585,88 @@ describe.runIf(canRun)("IT-LS-P2 own stock in master documents on PostgreSQL", (
     });
     expect(edited.status).toBe(200);
     expect((await stock(own.stocks[0].id)).lot).toBe(`LX-${TAG}`);
-    const page = await svc.fromStock.list({ q: `LX-${TAG}`, limit: 5 });
+    const page = await svc.fromStock.fromStockLots({ q: `LX-${TAG}`, limit: 5 });
     expect(page.items.map((item: any) => [item.source, item.lot])).toEqual([["OWN_STOCK", `LX-${TAG}`]]);
+  });
+
+  const lotKeyOf = async (stockUuid: string) => (await h.ownerDb.$queryRaw<{ lot_key: string }[]>`SELECT "lot_key" FROM "inventory"."stock" WHERE "id" = ${stockUuid}::uuid`)[0].lot_key;
+
+  it("IT-LOT-I01 stock/lots/available and stock/lots: one row per own lot with the on-hand sum, no cost or price; FIFO candidates; invalid key → 422", async () => {
+    const lot = `LOT-I01-${TAG.slice(-4)}`;
+    const older = await ownStocks([{ pcs: 2, weightCt: "1", lot }], "2081-02-01");
+    const newer = await ownStocks([{ pcs: 3, weightCt: "1.5", lot }, { pcs: 1, weightCt: "0.5", lot }], "2081-02-03");
+    // Owner 2026-11-21 (Q4): our stock is not merged this round — every stock is its own lot (OS + id).
+    const key = await lotKeyOf(older.stocks[0].id);
+    expect(key).toBe(`OS${older.stocks[0].id}`);
+    expect(await lotKeyOf(newer.stocks[1].id)).toBe(`OS${newer.stocks[1].id}`);
+    const real = invClient.createInventoryClient(new URL(internalUrl), masterToken);
+    const measured: { queries: number; result: any } = await h.measured(() => real.lotsAvailable({ q: lot, limit: 51 }));
+    expect(measured.queries).toBe(1); // N+1 budget: one statement for any number of lots
+    expect(measured.result).toHaveLength(3);
+    expect(measured.result.every((row: any) => row.merged === false && row.refCount === 1)).toBe(true);
+    expect(measured.result.find((row: any) => row.lotKey === key)).toMatchObject({
+      source: "OWN_STOCK", lot, pendingPcs: 2, pendingWeightCt: "1.000", ref: expect.objectContaining({ type: "LOAD", docNo: older.docNo, docDate: "2081-02-01" }),
+      unitPrice: null, netUnitPrice: null, amount: null, vendor: null, currency: null,
+    });
+    expect(JSON.stringify(measured.result)).not.toMatch(/unitCost|stockPrice|salePrice|stockId/);
+    // Search never matches a Stock ID (Q-LOT-10a).
+    expect(await real.lotsAvailable({ q: older.stocks[0].stock_id, limit: 51 })).toEqual([]);
+    const groups = await real.stockLots([key]);
+    expect(groups).toEqual([{ lotKey: key, rows: [expect.objectContaining({ stockUuid: older.stocks[0].id, onHandPcs: 2, refDocDate: "2081-02-01", loadSyncing: false })] }]);
+    await expect(real.stockLots([`ML${"a".repeat(32)}`])).rejects.toMatchObject({ status: 422 });
+    // INV-20261121-002 H3: an impossible calendar date in the cursor is a clean 422, not a database error (500).
+    const badCursor = Buffer.from(`2026-02-31|${key}`).toString("base64url");
+    await expect(real.lotsAvailable({ cursor: badCursor, limit: 51 })).rejects.toMatchObject({ status: 422 });
+    expect(await real.lotsAvailable({ cursor: Buffer.from(`2090-01-01|${key}`).toString("base64url"), q: lot, limit: 51 })).toHaveLength(3);
+  });
+
+  it("IT-LOT-I02 / I03 Reserve with an own-stock lot: holds per stock = the FIFO allocation, own allocation rows; a stock taken between the pre-read and the PUT → line error, nothing held", async () => {
+    await approval.setApproval(prisma(), "reserve", false);
+    const lot = `LOT-I02-${TAG.slice(-4)}`;
+    const newer = await ownStocks([{ pcs: 6, weightCt: "3", lot }], "2081-03-02");
+    const key = await lotKeyOf(newer.stocks[0].id);
+    const saved = await svc.reserve.create(TAG, memoOutInput([line({}, 4, "2", { lotKey: key })]));
+    const detail = await svc.reserve.get(saved.id);
+    expect(detail.lines[0]).toMatchObject({ source: "OWN_STOCK", lotKey: key, ownStockId: null, stockId: null, allocated: true, stockPendingPcs: 6 });
+    expect((await holds("reserve", saved.id)).map((hold: any) => [hold.stock_uuid, hold.pcs])).toEqual([[newer.stocks[0].id, 4]]);
+    const allocs = await prisma().$queryRawUnsafe(`SELECT seq, own_stock_id::text AS own, pcs FROM "partner"."reserve_line_alloc" WHERE line_id = $1::uuid ORDER BY seq`, detail.lines[0].id);
+    expect(allocs).toEqual([{ seq: 1, own: newer.stocks[0].id, pcs: 4 }]);
+    expect(await headerOf("reserve", saved.id)).toMatchObject({ syncState: "IDLE" });
+    // I03: another document takes the newer stock after the pre-read (simulated: on-hand → reserved) → refused, nothing held.
+    (globalThis as any).__afterLots(async () => {
+      await h.ownerDb.$executeRaw`UPDATE "inventory"."stock" SET "on_hand_pcs" = 0, "reserved_pcs" = "reserved_pcs" + 2 WHERE "id" = ${newer.stocks[0].id}::uuid`;
+    });
+    const raced = await failure(svc.reserve.create(TAG, memoOutInput([line({}, 1, "0.5", { lotKey: key })])));
+    expect(raced).toMatchObject({ status: 409, code: "RESERVE_PENDING_SHORT" });
+    expect((raced.fieldErrors as any[])[0]).toMatchObject({ path: "lines.0.pcs", code: "exceeds_pending" });
+    expect(JSON.stringify(raced)).not.toContain(newer.stocks[0].stock_id);
+    await h.ownerDb.$executeRaw`UPDATE "inventory"."stock" SET "on_hand_pcs" = 2, "reserved_pcs" = "reserved_pcs" - 2 WHERE "id" = ${newer.stocks[0].id}::uuid`;
+    // Delete (auto-approved) releases every hold and the allocation rows.
+    await svc.reserve.delete(TAG, saved.id, (await headerOf("reserve", saved.id)).version);
+    expect(await holds("reserve", saved.id)).toEqual([]);
+    await approval.setApproval(prisma(), "reserve", true);
+  });
+
+  it("IT-LOT-F1 two drafts naming the same own lot (5 pcs): the first approve holds it, the second is refused with PENDING_SHORT and writes no hold, no allocation, no status change", async () => {
+    await approval.setApproval(prisma(), "memo-out", true);
+    const lot = `LOT-F1-${TAG.slice(-4)}`;
+    const own = await ownStocks([{ pcs: 5, weightCt: "2.5", lot }], "2081-04-01");
+    const key = await lotKeyOf(own.stocks[0].id);
+    const draftA = await svc.memoOut.create(TAG, memoOutInput([line({}, 5, "2.5", { lotKey: key })]));
+    const draftB = await svc.memoOut.create(TAG, memoOutInput([line({}, 5, "2.5", { lotKey: key })]));
+    expect(await holds("memo-out", draftB.id)).toEqual([]);
+    for (const draft of [draftA, draftB]) await svc.memoOut.submit({ id: TAG, name: null }, draft.id, draft.version);
+    await svc.memoOut.approve(TAG, draftA.id, draftA.version + 1);
+    expect((await holds("memo-out", draftA.id)).map((hold: any) => hold.pcs)).toEqual([5]);
+    const refused = await failure(svc.memoOut.approve(TAG, draftB.id, draftB.version + 1));
+    expect(refused).toMatchObject({ status: 409, code: "MEMO_OUT_PENDING_SHORT" });
+    expect(refused.details).toMatchObject({ lines: [{ index: 0, lotKey: key, availablePcs: 0, availableWeightCt: "0.000" }] });
+    expect(await holds("memo-out", draftB.id)).toEqual([]);
+    expect(await headerOf("memoOut", draftB.id)).toMatchObject({ status: "PENDING_APPROVAL", syncState: "IDLE" });
+    const lineB = await prisma().memoOutLine.findFirstOrThrow({ where: { memoOutId: draftB.id } });
+    expect(await prisma().$queryRawUnsafe(`SELECT id FROM "partner"."memo_out_line_alloc" WHERE line_id = $1::uuid`, lineB.id)).toEqual([]);
+    expect((await stock(own.stocks[0].id))).toMatchObject({ on_hand_pcs: 0, memo_out_pcs: 5 });
+    await approval.setApproval(prisma(), "memo-out", false);
   });
 
   it("NP-LS-P2-05 a sweep tick with nothing due drives nothing", async () => {

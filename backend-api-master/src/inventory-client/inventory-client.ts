@@ -42,14 +42,25 @@ export type OwnStockRow = {
   vendor: { id: string; code: string; name: string }; load: { id: string; docNo: string; docDate: string }; itemNote: string;
 };
 export type OwnStockBatchRow = OwnStockRow & { status: "ACTIVE" | "REVERSED"; stoneCodeId: string | null };
-export type AvailableInput = { q?: string; from?: string; to?: string; location?: string; after?: { date: string; stockId: string }; limit: number };
 export type HoldResult = { revision: number; replayed: boolean; holds: HoldEntry[]; stocks: { stockUuid: string; stockId: string; availablePcs: number; availableWeightCt: string }[] };
 export type CallOptions = { requestId?: string; actorId?: string };
+/** lot-based-stock (ADR-0055 D3/D7): an own-stock lot row (no cost / price / vendor) and the FIFO candidates of a lot. */
+export type OwnLotRow = {
+  lotKey: string; source: "OWN_STOCK"; lot: string; merged: boolean; stoneCode: string; stone: string; shape: string; size: string; color: string; clarity: string;
+  cutting: string; quality: string; cerType: string; cerNo: string; location: string; itemNote: string; ref: { type: "LOAD"; id: string; docNo: string; docDate: string };
+  refCount: number; pendingPcs: number; pendingWeightCt: string; priceUnit: "PER_CT" | "PER_PCS"; unitPrice: null; netUnitPrice: null; amount: null; currency: null; vendor: null;
+};
+export type LotsAvailableInput = { q?: string; from?: string; to?: string; location?: string; cursor?: string; limit: number };
+export type OwnLotCandidate = { stockUuid: string; stockId: string; refDocDate: string; onHandPcs: number; onHandWeightCt: string; loadSyncing: boolean };
+export type OwnLotGroup = { lotKey: string; rows: OwnLotCandidate[] };
 
 export interface InventoryClient {
-  available(input: AvailableInput, options?: CallOptions): Promise<OwnStockRow[]>;
   batch(ids: readonly string[], options?: CallOptions): Promise<OwnStockBatchRow[]>;
   putHolds(type: HoldDocType, id: string, body: { revision: number; documentNo: string | null; holds: HoldEntry[] }, options?: CallOptions): Promise<HoldResult>;
+  /** fromStock.lots: own lots page (2 s). */
+  lotsAvailable(input: LotsAvailableInput, options?: CallOptions): Promise<OwnLotRow[]>;
+  /** Own-stock lot candidates FIFO for allocation (≤ 200 keys, 5 s); > 500 per lot → InventoryRefusal 422 STOCK_LOT_TOO_LARGE. */
+  stockLots(lotKeys: readonly string[], options?: CallOptions): Promise<OwnLotGroup[]>;
 }
 
 /** Reads the token file (trailing newline trimmed); null when unset, unreadable or malformed. */
@@ -137,9 +148,10 @@ export function createInventoryClient(base: URL | null, token: string | null, lo
   };
 
   return {
-    available: async (input, options) => (await call<{ items: OwnStockRow[] }>("POST", "/stock/available", input, PICKER_TIMEOUT_MS, options)).items,
     batch: async (ids, options) => (ids.length === 0 ? [] : (await call<{ items: OwnStockBatchRow[] }>("POST", "/stock/batch", { ids: [...ids] }, WRITE_TIMEOUT_MS, options)).items),
     putHolds: (type, id, body, options) => call<HoldResult>("PUT", `/stock-holds/${type}/${id}`, body, WRITE_TIMEOUT_MS, options),
+    lotsAvailable: async (input, options) => (await call<{ items: OwnLotRow[] }>("POST", "/stock/lots/available", input, PICKER_TIMEOUT_MS, options)).items,
+    stockLots: async (lotKeys, options) => (lotKeys.length === 0 ? [] : (await call<{ groups: OwnLotGroup[] }>("POST", "/stock/lots", { lotKeys: [...lotKeys] }, WRITE_TIMEOUT_MS, options)).groups),
   };
 }
 

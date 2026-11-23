@@ -1,6 +1,7 @@
 # ADR-0038: Quotation From Stock (Memo Stock rows copied into a quotation, nothing held)
 
 - Status: **Accepted** (2026-11-03)
+- Amended by [ADR-0055](0055-lot-based-stock-picking-and-allocation.md) (2026-11-20, lot-based stock): From Stock rows are lot groups; a Quotation lot line copies the group snapshot.
 - Date: 2026-11-03
 - Feature / source UI revision: `quotation` / 2
 - SA revision: 2 ([decisions](../apps/backend/master/quotation/decisions.md#sa-revision-2-2026-11-03--from-stock-approved), [API contract](../apps/backend/master/quotation/api-contract.md#sa-revision-2-2026-11-03--from-stock-lines-pending-review))

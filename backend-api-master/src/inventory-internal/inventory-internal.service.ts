@@ -18,7 +18,7 @@ import type {
   SaleReserveLineSearchInput, VendorsQuery,
 } from "./inventory-internal.schemas";
 import { lineBatch, loadableVendors, searchLoadableLines } from "./purchase-lines";
-import { applyConsumption, consumptionException, unpackCaps, type ConsumptionResult } from "./sale-consumption";
+import { applyConsumption, consumptionException, unpackAllocations, unpackCaps, type ConsumptionResult } from "./sale-consumption";
 import { prepareSale, searchSaleReserveLines } from "./sale-reads";
 
 const PURCHASE_PHOTO = LINE_PHOTO_DOCUMENTS.purchase;
@@ -148,7 +148,7 @@ export class InventoryInternalService {
         select: { revision: true, result: true },
       });
       if (!header) throw consumptionException("SALE_CONSUMPTION_NOT_FOUND", HttpStatus.NOT_FOUND);
-      return { revision: header.revision, lines: unpackCaps(header.result) };
+      return { revision: header.revision, lines: unpackCaps(header.result), allocations: unpackAllocations(header.result) };
     });
   }
 

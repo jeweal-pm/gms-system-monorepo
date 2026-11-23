@@ -124,9 +124,9 @@ describe("Save normalisation (ADR-0054 D3)", () => {
 
   it("copies item fields, caps and prices from master; computes line amounts and totals; one prepare request", () => {
     const value = parsed([line({ source: "RESERVE", reserveLineId: RL, memoStockId: undefined, pcs: 1, weightCt: "0.5", unitPrice: "3000" }), line({ pcs: 2, weightCt: "0", unitPrice: "100" })]);
-    expect(prepareRequest(value, { saleId: "s1", keepCustomerId: CUSTOMER })).toEqual({ party: { customerId: CUSTOMER, shippingAddressId: ADDR, invoiceAddressId: ADDR, keepCustomerId: CUSTOMER }, currency: "THB", reserveLineIds: [RL], memoStockIds: [MS], saleId: "s1" });
+    expect(prepareRequest(value, { saleId: "s1", keepCustomerId: CUSTOMER })).toEqual({ party: { customerId: CUSTOMER, shippingAddressId: ADDR, invoiceAddressId: ADDR, keepCustomerId: CUSTOMER }, currency: "THB", reserveLineIds: [RL], memoStockIds: [MS], lotKeys: [], saleId: "s1" });
     const doc = normalizeSale(value, prepared(), { lineId: ids });
-    expect(doc.lines[0]).toMatchObject({ id: "line-0", position: 1, reserveId: "r1", reserveDocNo: "RS-1", memoStockId: MS2, stockId: "850001", priceUnit: "PER_CT", capPcs: 2, capWeightCt: "1.000", reserveNetUnitPrice: "2500.0000", amount: "1500.00" });
+    expect(doc.lines[0]).toMatchObject({ id: "line-0", position: 1, reserveId: "r1", reserveDocNo: "RS-1", memoStockId: MS2, stockId: "850001", lotKey: null, priceUnit: "PER_CT", capPcs: 2, capWeightCt: "1.000", reserveNetUnitPrice: "2500.0000", amount: "1500.00" });
     expect(doc.lines[1]).toMatchObject({ memoReceiveDocNo: "MR-1", priceUnit: "PER_PCS", capPcs: 3, amount: "200.00", reserveNetUnitPrice: null });
     expect(doc.totals).toMatchObject({ lineCount: 2, pcs: 3, weightCt: "0.500", subtotal: "1700.00", grandTotal: "1700.00" });
     expect(doc).toMatchObject({ customerCode: "C1", customerName: "Cust", shippingText: "ship", exchangeRate: null });

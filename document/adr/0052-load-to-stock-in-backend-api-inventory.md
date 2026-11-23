@@ -1,6 +1,7 @@
 # ADR-0052: Load to Stock in the new `backend-api-inventory` service, with Purchase deduction and Stock IDs owned by master
 
 - Status: **Accepted** (2026-11-17; SA revision 1 incl. the 2026-11-16/17 owner-answer and ADR-0053 alignment revisions)
+- Amended by [ADR-0055](0055-lot-based-stock-picking-and-allocation.md) (2026-11-20, lot-based stock): D16–D20: From Stock rows are lot groups (our stock first); own-stock holds are computed from a FIFO lot allocation; Load to Stock hides Stock IDs (Q-LOT-17).
 - Date: 2026-11-16
 - Feature / source UI revision: `load-to-stock` / UI revision 1 (draft) with the owner answers of 2026-11-16 ([open-questions](../apps/frontend/load-to-stock/open-questions.md#owner-answers-2026-11-16))
 - SA revision: 1 ([decisions](../apps/backend/inventory/load-to-stock/decisions.md))

@@ -13,11 +13,14 @@ import { TradeDocumentEngine, type DocumentActor, type DocumentEffects, type Lin
 import { customerDocumentOptions, customerParty, type CustomerOut } from "./memo-out.service";
 import type { MemoOutOutstandingInput, MemoOutReturnInput, MemoReceiveListInput, MemoReceiveStatus } from "./memo-schemas";
 import { latestStockUser, releaseToMemoStock, takeFromMemoStock, type MemoStockTake } from "./memo-stock.service";
+import { readAllocations, type StoredAlloc } from "./lot-apply";
+import { settleOldestFirst, type Part } from "./lot-allocation";
+import { uuidV7 as newId } from "@gms/storage";
 import { lockSourceHeaders } from "./source-lock";
 import { LINE_PHOTO_DOCUMENTS, withLinePhotos } from "./line-photos";
 import { uuidV7 } from "@gms/storage";
 import { peekApprovalSetting } from "../approval-setting/approval-setting.service";
-import { DOC_SPECS, holdSaga, lineIndexOf, registerHoldErrors, sumLines } from "./inventory-hold-saga";
+import { DOC_SPECS, holdSaga, ownStocksOfOutLines, registerHoldErrors, returnHoldsOf } from "./inventory-hold-saga";
 
 const Decimal = Prisma.Decimal;
 type Dec = Prisma.Decimal;
@@ -99,7 +102,7 @@ async function completeReturnLines(tx: Tx, input: MemoOutReturnInput): Promise<M
   const quantities: FieldError[] = [];
   const lines = input.lines.map((line, index) => {
     const row = byId.get(line.memoOutLineId);
-    if (!row || (!row.memoStockId && !row.ownStockId) || row.document.status !== APPROVED || row.document.deletedAt || row.document.customerId !== input.customerId || row.document.currencyCode !== input.currency) {
+    if (!row || (!row.memoStockId && !row.ownStockId && !row.lotKey) || row.document.status !== APPROVED || row.document.deletedAt || row.document.customerId !== input.customerId || row.document.currencyCode !== input.currency) {
       references.push({ path: `lines.${index}.memoOutLineId`, code: "invalid_reference" });
       return line;
     }
@@ -135,13 +138,13 @@ async function completeReturnLines(tx: Tx, input: MemoOutReturnInput): Promise<M
   return { ...input, lines };
 }
 
-type MemoOutLineRef = { memoStockId: string | null; stockId: string | null; document: { id: string; docNo: string } };
+type MemoOutLineRef = { memoStockId: string | null; stockId: string | null; lotKey: string | null; document: { id: string; docNo: string } };
 
 /** Lines store their Memo Out line (source STOCK); the output names it, its Memo Out and the Memo Stock item. */
 const memoOutLines: LineHook<MemoOutReturnInput> = {
   storedSelect: { id: true },
   assign: async (_tx, input) => input.lines.map((line) => ({ source: "STOCK", memoOutLineId: line.memoOutLineId })),
-  lineInclude: { memoOutLine: { select: { memoStockId: true, stockId: true, document: { select: { id: true, docNo: true } } } } },
+  lineInclude: { memoOutLine: { select: { memoStockId: true, stockId: true, lotKey: true, document: { select: { id: true, docNo: true } } } } },
   output: (line, base) => {
     const { stoneCodeId: _stoneCodeId, ...rest } = base;
     const ref = line.memoOutLine as MemoOutLineRef | undefined;
@@ -151,7 +154,9 @@ const memoOutLines: LineHook<MemoOutReturnInput> = {
       memoOutLineId: line.memoOutLineId as string,
       memoOut: ref ? { id: ref.document.id, docNo: ref.document.docNo } : null,
       memoStockId: ref?.memoStockId ?? null,
+      // Owner 2026-11-21 (Q3): Memo Out Return keeps the Stock ID (null on a lot line); lot key added.
       stockId: ref?.stockId ?? null,
+      lotKey: ref?.lotKey ?? null,
     };
   },
   result: () => ({}),
@@ -179,7 +184,8 @@ type OutstandingRow = {
   currency_code: string;
   memo_stock_id: string | null;
   own_stock_id: string | null;
-  stock_id: string;
+  stock_id: string | null;
+  lot_key: string | null;
   lot: string;
   location: string;
   stone: string;
@@ -214,8 +220,10 @@ export function toOutstandingItem(row: OutstandingRow) {
     memoOut: { id: row.memo_out_id, docNo: row.doc_no, docDate: fromDbDate(row.doc_date), dueDate: fromDbDate(row.due_date) },
     memoStockId: row.memo_stock_id,
     ownStockId: row.own_stock_id,
-    source: (row.own_stock_id ? "OWN_STOCK" : "MEMO_STOCK") as "OWN_STOCK" | "MEMO_STOCK",
-    stockId: row.stock_id,
+    source: (row.own_stock_id || row.lot_key?.startsWith("O") ? "OWN_STOCK" : "MEMO_STOCK") as "OWN_STOCK" | "MEMO_STOCK",
+    // Owner 2026-11-21 (Q3): the Stock ID stays on this picker ("" on a lot line); the lot key is added.
+    stockId: row.stock_id ?? "",
+    lotKey: row.lot_key,
     lot: row.lot,
     location: row.location,
     stone: row.stone,
@@ -241,10 +249,48 @@ export function toOutstandingItem(row: OutstandingRow) {
   };
 }
 
-type ReturnLine = { memoOutLineId: string; pcs: number; weightCt: Dec };
+type ReturnLine = { id: string; memoOutLineId: string; pcs: number; weightCt: Dec };
 
 async function returnLines(tx: Tx, id: string): Promise<ReturnLine[]> {
-  return tx.memoOutReturnLine.findMany({ where: { memoOutReturnId: id }, orderBy: { position: "asc" }, select: { memoOutLineId: true, pcs: true, weightCt: true } });
+  return tx.memoOutReturnLine.findMany({ where: { memoOutReturnId: id }, orderBy: { position: "asc" }, select: { id: true, memoOutLineId: true, pcs: true, weightCt: true } });
+}
+
+/** One settled part of a Memo Out allocation row by a return line (ADR-0055 D5). */
+type Settled = { lineId: string; index: number; alloc: StoredAlloc; part: Part };
+
+/**
+ * Settles each return line against its Memo Out line's unsettled allocation, oldest seq first (Q-LOT-07). Pure; null for a
+ * line whose allocation can't cover it (an out line applied without one would be a ledger break; reported as short).
+ */
+export function settleReturnLines(lines: readonly ReturnLine[], allocs: readonly StoredAlloc[]): { settled: Settled[]; short: number[] } {
+  const byOutLine = new Map<string, StoredAlloc[]>();
+  for (const row of allocs) byOutLine.set(row.lineId, [...(byOutLine.get(row.lineId) ?? []), row]);
+  const settled: Settled[] = [];
+  const short: number[] = [];
+  lines.forEach((line, index) => {
+    const rows = byOutLine.get(line.memoOutLineId) ?? [];
+    const parts = settleOldestFirst(rows, { pcs: line.pcs, weight: line.weightCt });
+    if (!parts) return void short.push(index);
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    for (const part of parts) settled.push({ lineId: line.id, index, alloc: byId.get(part.id)!, part });
+  });
+  return { settled, short };
+}
+
+/** Adds `sign` × the settled parts to the Memo Out allocation rows' `settled_*` (one bound UPDATE). */
+async function addSettled(tx: Tx, parts: readonly { allocId: string; pcs: number; weight: Dec }[], sign: 1 | -1) {
+  if (parts.length === 0) return;
+  const totals = new Map<string, { pcs: number; weight: Dec }>();
+  for (const part of parts) {
+    const total = totals.get(part.allocId) ?? { pcs: 0, weight: new Decimal(0) };
+    totals.set(part.allocId, { pcs: total.pcs + part.pcs, weight: total.weight.plus(part.weight) });
+  }
+  const values = [...totals].map(([id, qty]) => Prisma.sql`(${id}::uuid, ${sign * qty.pcs}::int, ${(sign === 1 ? qty.weight : qty.weight.negated()).toFixed(3)}::numeric)`);
+  await tx.$executeRaw(Prisma.sql`
+    UPDATE "partner"."memo_out_line_alloc" AS a
+    SET settled_pcs = a.settled_pcs + r.pcs, settled_weight_ct = a.settled_weight_ct + r.weight
+    FROM (VALUES ${Prisma.join(values)}) AS r(id, pcs, weight)
+    WHERE a.id = r.id`);
 }
 
 /**
@@ -289,29 +335,41 @@ const memoOutReturnEffects: DocumentEffects = {
     const gone = lines.flatMap((line, index) => (sources.get(line.memoOutLineId)?.live ? [] : [{ path: `lines.${index}.memoOutLineId`, code: "invalid_reference" }]));
     if (gone.length > 0) throw memoOutReturnErrors.referenceInvalid(gone);
     const outLines = await lockOutLines(tx, lines);
+    // ADR-0055 D5: lock order header → source lines → allocation rows (id order) → stock rows.
+    const allocs = await readAllocations(tx, "memoOut", lines.map((line) => line.memoOutLineId), true);
     const short: FieldError[] = [];
-    const puts: MemoStockTake[] = [];
     lines.forEach((line, index) => {
       const out = outLines.get(line.memoOutLineId);
       if (!out || line.pcs > Number(out.pcs) - Number(out.returned_pcs)) short.push({ path: `lines.${index}.pcs`, code: "exceeds_outstanding" });
       if (!out || line.weightCt.gt(dec(out.weight_ct).minus(dec(out.returned_weight_ct)))) short.push({ path: `lines.${index}.weightCt`, code: "exceeds_outstanding" });
-      if (out?.memo_stock_id) puts.push({ memoStockId: out.memo_stock_id, pcs: line.pcs, weightCt: line.weightCt, index });
     });
     if (short.length > 0) throw memoOutReturnOutstandingShort(short);
+    const plan = settleReturnLines(lines, allocs);
+    if (plan.short.length > 0) throw memoOutReturnOutstandingShort(plan.short.flatMap((index) => [{ path: `lines.${index}.pcs`, code: "exceeds_outstanding" }, { path: `lines.${index}.weightCt`, code: "exceeds_outstanding" }]));
+    const puts: MemoStockTake[] = plan.settled.flatMap((entry) => (entry.alloc.memoStockId ? [{ memoStockId: entry.alloc.memoStockId, pcs: entry.part.pcs, weightCt: entry.part.weight, index: entry.index }] : []));
     await addReturned(tx, lines, 1);
+    await addSettled(tx, plan.settled.map((entry) => ({ allocId: entry.alloc.id, pcs: entry.part.pcs, weight: entry.part.weight })), 1);
+    await writeReturnAllocs(tx, lines.map((line) => line.id), plan.settled);
     await releaseToMemoStock(tx, puts, memoOutReturnOutstandingShort, now);
     return { result: {}, log: { lineCount: lines.length } };
   },
   reverse: async (tx, doc, now) => {
     const lines = await returnLines(tx, doc.id);
     const outLines = await lockOutLines(tx, lines);
-    const takes: MemoStockTake[] = [];
-    lines.forEach((line, index) => {
+    await readAllocations(tx, "memoOut", lines.map((line) => line.memoOutLineId), true);
+    // The exact settled parts this return recorded (ADR-0055 D5); legacy rows were backfilled one per line.
+    const recorded = await returnAllocs(tx, lines.map((line) => line.id));
+    const indexOf = new Map(lines.map((line, index) => [line.id, index]));
+    lines.forEach((line) => {
       const out = outLines.get(line.memoOutLineId);
       if (!out || line.pcs > Number(out.returned_pcs) || line.weightCt.gt(dec(out.returned_weight_ct))) throw memoOutReturnErrors.inUse(null);
-      if (out.memo_stock_id) takes.push({ memoStockId: out.memo_stock_id, pcs: line.pcs, weightCt: line.weightCt, index });
     });
+    const takes: MemoStockTake[] = recorded.flatMap((row) => (row.memo_stock_id
+      ? [{ memoStockId: row.memo_stock_id, pcs: row.pcs, weightCt: dec(row.weight_ct), index: indexOf.get(row.line_id) ?? 0 }]
+      : []));
     await addReturned(tx, lines, -1);
+    await addSettled(tx, recorded.map((row) => ({ allocId: row.memo_out_line_alloc_id, pcs: row.pcs, weight: dec(row.weight_ct) })), -1);
+    await tx.$executeRaw`DELETE FROM "partner"."memo_out_return_line_alloc" WHERE line_id = ANY(${lines.map((line) => line.id)}::uuid[])`;
     try {
       await takeFromMemoStock(tx, takes, "reserved", () => new ReversalShort(), now);
     } catch (error) {
@@ -328,19 +386,47 @@ const memoOutReturnEffects: DocumentEffects = {
  * live document naming such an item (other than the Memo Outs being returned), else its Stock ID, else null.
  */
 export async function memoOutReturnUsedBy(client: Tx | typeof prisma, id: string): Promise<string | null> {
+  // ADR-0055 D5: what the return gave back per item comes from its recorded settlement (memo_out_return_line_alloc).
   const short = await client.$queryRaw<{ memo_stock_id: string; stock_id: string; memo_out_ids: string[] }[]>(Prisma.sql`
     SELECT s.id::text AS memo_stock_id, s.stock_id, array_agg(DISTINCT o.memo_out_id::text) AS memo_out_ids
     FROM "partner"."memo_out_return_line" l
+    JOIN "partner"."memo_out_return_line_alloc" r ON r.line_id = l.id
+    JOIN "partner"."memo_out_line_alloc" a ON a.id = r.memo_out_line_alloc_id
     JOIN "partner"."memo_out_line" o ON o.id = l.memo_out_line_id
-    JOIN "partner"."memo_stock" s ON s.id = o.memo_stock_id
+    JOIN "partner"."memo_stock" s ON s.id = a.memo_stock_id
     WHERE l.memo_out_return_id = ${id}::uuid
     GROUP BY s.id, s.stock_id, s.pending_pcs, s.pending_weight_ct
-    HAVING sum(l.pcs) > s.pending_pcs OR sum(l.weight_ct) > s.pending_weight_ct
+    HAVING sum(r.pcs) > s.pending_pcs OR sum(r.weight_ct) > s.pending_weight_ct
     ORDER BY s.id
     LIMIT 200`);
   if (short.length === 0) return null;
   const user = await latestStockUser(client, short.map((row) => row.memo_stock_id), short.flatMap((row) => row.memo_out_ids));
   return user ?? short[0].stock_id;
+}
+
+/** Stores the settled parts of the return lines (one bulk INSERT). */
+async function writeReturnAllocs(tx: Tx, lineIds: readonly string[], settled: readonly Settled[]) {
+  await tx.$executeRaw`DELETE FROM "partner"."memo_out_return_line_alloc" WHERE line_id = ANY(${[...lineIds]}::uuid[])`;
+  if (settled.length === 0) return;
+  const totals = new Map<string, { lineId: string; allocId: string; pcs: number; weight: Dec }>();
+  for (const entry of settled) {
+    const key = `${entry.lineId}|${entry.alloc.id}`;
+    const total = totals.get(key) ?? { lineId: entry.lineId, allocId: entry.alloc.id, pcs: 0, weight: new Decimal(0) };
+    totals.set(key, { ...total, pcs: total.pcs + entry.part.pcs, weight: total.weight.plus(entry.part.weight) });
+  }
+  const values = [...totals.values()].map((row) => Prisma.sql`(${newId()}::uuid, ${row.lineId}::uuid, ${row.allocId}::uuid, ${row.pcs}::int, ${row.weight.toFixed(3)}::numeric)`);
+  await tx.$executeRaw(Prisma.sql`INSERT INTO "partner"."memo_out_return_line_alloc" (id, line_id, memo_out_line_alloc_id, pcs, weight_ct) VALUES ${Prisma.join(values)}`);
+}
+
+type ReturnAllocRow = { line_id: string; memo_out_line_alloc_id: string; memo_stock_id: string | null; own_stock_id: string | null; pcs: number; weight_ct: string };
+/** The recorded settlement of return lines with each source allocation row's stock (one statement). */
+async function returnAllocs(client: Tx | typeof prisma, lineIds: readonly string[]): Promise<ReturnAllocRow[]> {
+  if (lineIds.length === 0) return [];
+  return client.$queryRaw<ReturnAllocRow[]>`
+    SELECT r.line_id::text AS line_id, r.memo_out_line_alloc_id::text AS memo_out_line_alloc_id, a.memo_stock_id::text AS memo_stock_id,
+      a.own_stock_id::text AS own_stock_id, r.pcs, r.weight_ct::text AS weight_ct
+    FROM "partner"."memo_out_return_line_alloc" r JOIN "partner"."memo_out_line_alloc" a ON a.id = r.memo_out_line_alloc_id
+    WHERE r.line_id = ANY(${[...lineIds]}::uuid[]) ORDER BY r.id`;
 }
 
 /**
@@ -396,8 +482,8 @@ export class MemoOutReturnService {
     const owned = await this.ownStockOf(input);
     return holdSaga.withHolds(owned.size > 0, {
       type: "memo-out-return", id, isCreate: true, actorId,
-      next: async () => ((await peekApprovalSetting(prisma, "memo-out-return")) ? new Map() : this.inputHolds(input, owned)),
-      lineIndex: lineIndexOf(input.lines.map((line) => owned.get(line.memoOutLineId))),
+      next: async () => ((await peekApprovalSetting(prisma, "memo-out-return")) ? new Map() : this.inputHolds(input)),
+      lineIndex: this.lineIndex(input, owned),
       call: () => this.engine.create(actorId, input, viewer, { id }),
     });
   }
@@ -408,11 +494,11 @@ export class MemoOutReturnService {
       return {
       type: "memo-out-return", id, isCreate: false, actorId, expectedVersion,
       next: async () => {
-        if (header?.status === "APPROVED" && header.autoApproved) return this.inputHolds(input, owned);
-        if (header?.status === "DRAFT" && !(await peekApprovalSetting(prisma, "memo-out-return"))) return this.inputHolds(input, owned);
+        if (header?.status === "APPROVED" && header.autoApproved) return this.inputHolds(input);
+        if (header?.status === "DRAFT" && !(await peekApprovalSetting(prisma, "memo-out-return"))) return this.inputHolds(input);
         return null;
       },
-      lineIndex: lineIndexOf(input.lines.map((line) => owned.get(line.memoOutLineId))),
+      lineIndex: this.lineIndex(input, owned),
       call: () => this.engine.update(actorId, id, expectedVersion, input, viewer),
       };
     }, () => this.engine.update(actorId, id, expectedVersion, input, viewer));
@@ -440,13 +526,20 @@ export class MemoOutReturnService {
     });
   }
 
-  /** Memo Out line id -> its own stock (one indexed read; lines of Memo Stock are absent). */
-  private async ownStockOf(input: MemoOutReturnInput): Promise<Map<string, string>> {
-    const rows = await prisma.memoOutLine.findMany({ where: { id: { in: (input.lines ?? []).map((line) => line.memoOutLineId) }, ownStockId: { not: null } }, select: { id: true, ownStockId: true } });
-    return new Map(rows.flatMap((row) => (row.ownStockId ? [[row.id, row.ownStockId] as const] : [])));
+  /** Memo Out line id -> its own stocks (legacy line or own-lot allocation, ADR-0055; Memo Stock lines are absent). */
+  private ownStockOf(input: MemoOutReturnInput): Promise<Map<string, string[]>> {
+    return ownStocksOfOutLines(prisma, (input.lines ?? []).map((line) => line.memoOutLineId));
   }
-  private inputHolds(input: MemoOutReturnInput, owned: Map<string, string>) {
-    return sumLines(input.lines.map((line) => ({ stock: owned.get(line.memoOutLineId), pcs: line.pcs, weightCt: line.weightCt })));
+  /** H_new: the oldest-first settlement of each line over its Memo Out line's own allocation. */
+  private inputHolds(input: MemoOutReturnInput) {
+    return returnHoldsOf(prisma, input.lines.map((line) => ({ memoOutLineId: line.memoOutLineId, pcs: line.pcs, weightCt: line.weightCt })));
+  }
+  private lineIndex(input: MemoOutReturnInput, owned: Map<string, string[]>) {
+    const index = new Map<string, number[]>();
+    input.lines.forEach((line, position) => {
+      for (const stock of owned.get(line.memoOutLineId) ?? []) index.set(stock, [...(index.get(stock) ?? []), position]);
+    });
+    return index;
   }
 
   /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction. */
@@ -480,11 +573,11 @@ export class MemoOutReturnService {
       Prisma.sql`o.customer_id = ${input.customerId}::uuid`,
       Prisma.sql`o.currency_code = ${input.currency}::char(3)`,
       // ADR-0052 D20: lines of Memo Stock and of our stock (Q-LS-P2-04: items carry `source` and `location`).
-      Prisma.sql`(l.memo_stock_id IS NOT NULL OR l.own_stock_id IS NOT NULL) AND (l.returned_pcs < l.pcs OR l.returned_weight_ct < l.weight_ct)`,
+      Prisma.sql`(l.memo_stock_id IS NOT NULL OR l.own_stock_id IS NOT NULL OR l.lot_key IS NOT NULL) AND (l.returned_pcs < l.pcs OR l.returned_weight_ct < l.weight_ct)`,
     ];
     if (input.q) {
       const pattern = `%${escapeLike(input.q)}%`;
-      filters.push(Prisma.sql`(o.doc_no ILIKE ${pattern} OR l.stock_id ILIKE ${pattern} OR l.lot ILIKE ${pattern} OR l.stone ILIKE ${pattern} OR l.cer_no ILIKE ${pattern})`);
+      filters.push(Prisma.sql`(o.doc_no ILIKE ${pattern} OR l.stock_id ILIKE ${pattern} OR l.lot ILIKE ${pattern} OR l.stone ILIKE ${pattern} OR l.stone_code_snapshot ILIKE ${pattern} OR l.cer_no ILIKE ${pattern})`);
     }
     if (input.from) filters.push(Prisma.sql`o.doc_date >= ${toDbDate(input.from)}::date`);
     if (input.to) filters.push(Prisma.sql`o.doc_date <= ${toDbDate(input.to)}::date`);
@@ -498,7 +591,7 @@ export class MemoOutReturnService {
     try {
       const rows = await prisma.$queryRaw<OutstandingRow[]>(Prisma.sql`
         SELECT l.id::text AS id, o.id::text AS memo_out_id, o.doc_no, o.doc_date, o.due_date, o.currency_code,
-          l.memo_stock_id::text AS memo_stock_id, l.own_stock_id::text AS own_stock_id, l.stock_id, l.lot, l.location, l.stone, l.shape, l.size, l.color, l.clarity,
+          l.memo_stock_id::text AS memo_stock_id, l.own_stock_id::text AS own_stock_id, l.stock_id, l.lot_key, l.lot, l.location, l.stone, l.shape, l.size, l.color, l.clarity,
           l.cutting, l.quality, l.cer_type, l.cer_no, l.item_note, l.pcs, l.weight_ct, l.returned_pcs, l.returned_weight_ct,
           l.price_unit, l.unit_price, l.amount
         FROM "partner"."memo_out_line" l
@@ -528,6 +621,7 @@ type MemoOutReturnLineOut = Omit<EngineDetail["lines"][number], "stoneCodeId" | 
   memoOut: { id: string; docNo: string } | null;
   memoStockId: string | null;
   stockId: string | null;
+  lotKey: string | null;
 };
 /** api-contract `MemoOutReturn` rev 2 (the line hook and `detailExtra` shape the engine output at run time). */
 export type MemoOutReturnDetail = Omit<EngineDetail, "lines"> & { lines: MemoOutReturnLineOut[]; approvedAt: string | null; approvedBy: string | null; syncState: "IDLE" | "SYNCING" };

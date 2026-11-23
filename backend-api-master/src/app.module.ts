@@ -27,7 +27,6 @@ import { ReserveService } from "./trade-document/reserve.service";
 import { MemoOutReturnService } from "./trade-document/memo-out-return.service";
 import { MemoReceiveService } from "./trade-document/memo-receive.service";
 import { MemoReturnService } from "./trade-document/memo-return.service";
-import { MemoStockService } from "./trade-document/memo-stock.service";
 import { MemoOutstandingService } from "./trade-document/memo-outstanding.service";
 import { InventorySyncSweep } from "./inventory-client/inventory-sync.sweep";
 import { HealthController } from "./health/health.controller";
@@ -83,7 +82,6 @@ type SerializedRequest = { id?: unknown; method?: unknown; url?: unknown };
     PurchaseOrderService,
     PurchaseService,
     MemoReturnService,
-    MemoStockService,
     MemoOutstandingService,
     ReserveService,
     InventoryInternalService,

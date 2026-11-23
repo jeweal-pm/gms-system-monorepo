@@ -24,7 +24,7 @@ function lineRow(saleId: string, line: NormalizedLine) {
   return {
     id: line.id, sale_id: saleId, position: line.position, source: line.source,
     reserve_line_id: line.reserveLineId, reserve_id: line.reserveId, reserve_doc_no: line.reserveDocNo,
-    memo_stock_id: line.memoStockId, stock_id: line.stockId.slice(0, 10), memo_receive_id: line.memoReceiveId, memo_receive_doc_no: line.memoReceiveDocNo,
+    memo_stock_id: line.memoStockId, lot_key: line.lotKey, stock_count: line.stockCount, stock_id: line.stockId.slice(0, 10), memo_receive_id: line.memoReceiveId, memo_receive_doc_no: line.memoReceiveDocNo,
     stone_code: line.attrs.stoneCode.slice(0, 60), stone: line.attrs.stone.slice(0, 60), shape: line.attrs.shape.slice(0, 60), size: line.attrs.size.slice(0, 60),
     color: line.attrs.color.slice(0, 60), clarity: line.attrs.clarity.slice(0, 60), cutting: line.attrs.cutting.slice(0, 60), quality: line.attrs.quality.slice(0, 60),
     lot: line.attrs.lot.slice(0, 40), location: line.attrs.location.slice(0, 40), cer_type: line.attrs.cerType.slice(0, 20), cer_no: line.attrs.cerNo.slice(0, 60),
@@ -32,6 +32,21 @@ function lineRow(saleId: string, line: NormalizedLine) {
     reserve_net_unit_price: line.reserveNetUnitPrice, unit_price: line.unitPrice, discount_type: line.discount.type, discount_value: line.discount.value,
     discount_amount: line.discountAmount, amount: line.amount, item_note: line.itemNote.slice(0, 500),
   };
+}
+
+/**
+ * ADR-0055 D7: replaces the Sale's allocation copy with master's result for the applied revision (one DELETE + one
+ * INSERT … SELECT joined to the live lines, so a line removed meanwhile is skipped). Audit / reports only.
+ */
+export async function writeSaleAllocations(tx: Tx, saleId: string, allocations: readonly { lineId: string; rows: { seq: number; stockUuid: string; stockId: string; pcs: number; weightCt: string }[] }[]) {
+  await tx.$executeRaw`DELETE FROM "inventory"."sale_line_alloc" a USING "inventory"."sale_line" l WHERE a."sale_line_id" = l."id" AND l."sale_id" = ${saleId}::uuid`;
+  const rows = allocations.flatMap((entry) => entry.rows.filter((row) => row.pcs > 0 || Number(row.weightCt) > 0).map((row) => ({ lineId: entry.lineId, ...row })));
+  if (rows.length === 0) return;
+  const values = rows.map((row) => Prisma.sql`(${row.lineId}::uuid, ${row.seq}::smallint, ${row.stockUuid}::uuid, ${row.stockId.slice(0, 10)}, ${row.pcs}::int, ${row.weightCt}::numeric)`);
+  await tx.$executeRaw(Prisma.sql`
+    INSERT INTO "inventory"."sale_line_alloc" ("id", "sale_line_id", "seq", "memo_stock_id", "stock_id", "pcs", "weight_ct")
+    SELECT uuidv7(), v.line_id, v.seq, v.stock, v.stock_id, v.pcs, v.weight FROM (VALUES ${Prisma.join(values)}) AS v(line_id, seq, stock, stock_id, pcs, weight)
+    JOIN "inventory"."sale_line" l ON l."id" = v.line_id AND l."sale_id" = ${saleId}::uuid`);
 }
 
 /** Header columns of a normalized document (snapshots clipped to their column sizes). */

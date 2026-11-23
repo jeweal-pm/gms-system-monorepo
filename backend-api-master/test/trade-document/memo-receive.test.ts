@@ -3,8 +3,8 @@ import { Prisma } from "../../src/generated/prisma/client";
 import { HttpException } from "@nestjs/common";
 import type { Tx } from "../../src/common/persistence";
 import { formatStockId, issueStockIds, netUnitPrice, STOCK_ID_LOCK_KEY, STOCK_NO_MAX, stockIdYear } from "../../src/trade-document/memo-receive.service";
-import { encodeStockCursor, pendingAmount, totalPerItem } from "../../src/trade-document/memo-stock.service";
-import { createMemoReceiveSchema, memoStockListSchema, updateMemoReceiveSchema } from "../../src/trade-document/memo-schemas";
+import { pendingAmount, totalPerItem } from "../../src/trade-document/memo-stock.service";
+import { createMemoReceiveSchema, updateMemoReceiveSchema } from "../../src/trade-document/memo-schemas";
 
 /**
  * Unit cases for memo-receive SA rev 1 (ADR-0034) that need no database: input rules (IT-MR-07 schema part), the
@@ -60,14 +60,6 @@ describe("memo receive input (SA-MR-07/09)", () => {
     expect(paths(createMemoReceiveSchema.safeParse(input({ discount: { type: "PERCENT", value: "101" } })))).toEqual(["discount.value:too_big"]);
   });
 
-  it("UT-MR-S2 memoStock.list input: vendor required, from ≤ to, range ≤ 366 days, limit ≤ 50", () => {
-    expect(memoStockListSchema.parse({ vendorId: ID(1) })).toMatchObject({ limit: 50 });
-    expect(memoStockListSchema.safeParse({ vendorId: ID(1), from: "2026-01-01", to: "2027-01-02" }).success).toBe(true);
-    expect(paths(memoStockListSchema.safeParse({ vendorId: ID(1), from: "2026-01-01", to: "2027-01-03" }))).toEqual(["to:range_too_long"]);
-    expect(paths(memoStockListSchema.safeParse({ vendorId: ID(1), from: "2026-02-01", to: "2026-01-31" }))).toEqual(["to:before_from"]);
-    expect(memoStockListSchema.safeParse({ vendorId: ID(1), limit: 51 }).success).toBe(false);
-    expect(memoStockListSchema.safeParse({ vendorId: ID(1), extra: 1 }).success).toBe(false);
-  });
 });
 
 describe("Stock ID (SA-MR-04)", () => {
@@ -169,9 +161,6 @@ describe("Memo Stock prices (SA-MR-06/11)", () => {
     expect(pendingAmount({ ...row, received_weight_ct: D("0"), pending_weight_ct: D("0"), line_amount: D("0") }).toFixed(2)).toBe("0.00");
   });
 
-  it("UT-MR-P3 the keyset cursor is base64url of date|stockId", () => {
-    expect(Buffer.from(encodeStockCursor("2026-10-29", "260001"), "base64url").toString("utf8")).toBe("2026-10-29|260001");
-  });
 });
 
 describe("Memo Stock approval totals (INV-20261031-001)", () => {

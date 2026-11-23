@@ -180,8 +180,9 @@ describe("approval.pending (UT-AP-B12)", () => {
   it("search: doc no., party, ref, line stone and Stock ID; Memo Out Return via its Memo Out line; PO by stone only; LIKE-escaped", () => {
     const search = (type: "reserve" | "memo-out-return" | "purchase-order") => pendingSql(APPROVAL_REGISTRY[type], { ...base, q: "50%_a\\b" });
     const reserve = search("reserve");
-    expect(flat(reserve.sql)).toContain(`(d."doc_no" ILIKE ? ESCAPE '\\' OR d."customer_name_snapshot" ILIKE ? ESCAPE '\\' OR d."ref" ILIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM "partner"."reserve_line" l WHERE l."reserve_id" = d."id" AND (l."stone" ILIKE ? ESCAPE '\\' OR l."stock_id" ILIKE ? ESCAPE '\\')))`);
+    expect(flat(reserve.sql)).toContain(`(d."doc_no" ILIKE ? ESCAPE '\\' OR d."customer_name_snapshot" ILIKE ? ESCAPE '\\' OR d."ref" ILIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM "partner"."reserve_line" l WHERE l."reserve_id" = d."id" AND (l."stone" ILIKE ? ESCAPE '\\' OR l."lot" ILIKE ? ESCAPE '\\')))`);
     expect(reserve.values).toContain("%50\\%\\_a\\\\b%");
+    // Owner 2026-11-21 (Q3): Reserve searches the lot; Memo Out Return keeps the Stock ID through its Memo Out line.
     expect(flat(search("memo-out-return").sql)).toContain(`JOIN "partner"."memo_out_line" o ON o."id" = l."memo_out_line_id" WHERE l."memo_out_return_id" = d."id" AND (l."stone" ILIKE ? ESCAPE '\\' OR o."stock_id" ILIKE ? ESCAPE '\\')`);
     const po = flat(search("purchase-order").sql);
     expect(po).toContain(`EXISTS (SELECT 1 FROM "partner"."purchase_order_line" l WHERE l."purchase_order_id" = d."id" AND l."stone" ILIKE ? ESCAPE '\\')`);

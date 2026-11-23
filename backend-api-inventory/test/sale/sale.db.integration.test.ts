@@ -182,7 +182,7 @@ describe.runIf(canRun)("IT-SL sale on PostgreSQL", () => {
       totals: { lineCount: 2, pcs: 3, weightCt: "1.500", subtotal: "4000.00", grandTotal: "4000.00" },
     });
     expect(detail.body.lines).toEqual([
-      expect.objectContaining({ position: 1, source: "RESERVE", reserveLineId: rs.lineIds[0], memoStockId: a.id, stockId: a.stockId, sourceDoc: { type: "RESERVE", id: rs.id, docNo: rs.docNo }, capPcs: 3, capWeightCt: "1.500", priceUnit: "PER_CT", amount: "3000.00" }),
+      expect.objectContaining({ position: 1, source: "RESERVE", reserveLineId: rs.lineIds[0], memoStockId: a.id, stockId: a.stockId, lotKey: null, sourceDoc: { type: "RESERVE", id: rs.id, docNo: rs.docNo }, capPcs: 3, capWeightCt: "1.500", priceUnit: "PER_CT", amount: "3000.00" }),
       expect.objectContaining({ position: 2, source: "STOCK", reserveLineId: null, memoStockId: b.id, sourceDoc: expect.objectContaining({ type: "MEMO_RECEIVE" }), capPcs: 5, itemNote: "n", amount: "1000.00" }),
     ]);
     const exceeds = await created(body([rLine(rs.lineIds[0], 4, "1")]));
@@ -285,6 +285,33 @@ describe.runIf(canRun)("IT-SL sale on PostgreSQL", () => {
     }
     expect(await h.ownerDb.sale.count({ where: { ref: `race-${TAG}` } })).toBe(0);
     expect(await buckets(a.id)).toMatchObject({ pending: 1, sold: 2 });
+  });
+
+  it("IT-LOT-I04 Sale lot line (OFF): master allocates the lot FIFO, inventory copies it into sale_line_alloc; detail shows lotKey / allocated, never a Stock ID; edit re-allocates; delete releases", async () => {
+    await setting(false);
+    const lot = `SLLOT-${TAG.slice(-4)}`;
+    const items = await memoStock([receiveLine({ lot, cerNo: "", pcs: 2, weightCt: "1" }), receiveLine({ lot, cerNo: "", pcs: 3, weightCt: "1.5" })]);
+    const key = (await prisma.memoStock.findUniqueOrThrow({ where: { id: items[0].id } })).lotKey as string;
+    expect((await prisma.memoStock.findUniqueOrThrow({ where: { id: items[1].id } })).lotKey).toBe(key);
+    const lotLine = (pcs: number, weightCt: string, patch: Record<string, unknown> = {}) => ({ source: "STOCK", lotKey: key, pcs, weightCt, unitPrice: "2000", discount: { type: "NONE", value: "0" }, photoIds: [], ...patch });
+    const saved = await created(body([lotLine(3, "1.5")]));
+    expect(saved.body.status).toBe("APPROVED");
+    const detail = await maker.call("GET", `/sale/${saved.body.id}`);
+    // A lot line has no single Stock ID (""); the per-stock allocation stays server-side.
+    expect(detail.body.lines[0]).toMatchObject({ source: "STOCK", lotKey: key, memoStockId: null, stockId: "", allocated: true, lot, capPcs: 5 });
+    const allocs = async () => h.ownerDb.$queryRaw<{ seq: number; memo_stock_id: string; stock_id: string; pcs: number }[]>`SELECT a."seq", a."memo_stock_id"::text AS "memo_stock_id", a."stock_id", a."pcs" FROM "inventory"."sale_line_alloc" a JOIN "inventory"."sale_line" l ON l."id" = a."sale_line_id" WHERE l."sale_id" = ${saved.body.id}::uuid ORDER BY a."seq"`;
+    expect(await allocs()).toEqual([{ seq: 1, memo_stock_id: items[0].id, stock_id: items[0].stockId, pcs: 2 }, { seq: 2, memo_stock_id: items[1].id, stock_id: items[1].stockId, pcs: 1 }]);
+    expect(await buckets(items[0].id)).toMatchObject({ pending: 0, sold: 2 });
+    const edited = await maker.call("PUT", `/sale/${saved.body.id}`, { ...body([lotLine(1, "0.5", { id: detail.body.lines[0].id })]), expectedVersion: 1 });
+    expect(edited.body).toMatchObject({ status: "APPROVED", version: 2 });
+    expect((await allocs()).map((row) => [row.memo_stock_id, row.pcs])).toEqual([[items[0].id, 1]]);
+    expect(await buckets(items[1].id)).toMatchObject({ pending: 3, sold: 0 });
+    const short = await maker.call("PUT", `/sale/${saved.body.id}`, { ...body([lotLine(9, "0", { id: detail.body.lines[0].id })]), expectedVersion: 2 });
+    expect(short.status).toBeGreaterThanOrEqual(400);
+    const deleted = await maker.call("POST", `/sale/${saved.body.id}/delete`, { expectedVersion: 2 });
+    expect(deleted.status).toBe(200);
+    expect(await allocs()).toEqual([]);
+    expect(await buckets(items[0].id)).toMatchObject({ pending: 2, sold: 0 });
   });
 
   it("IT-SL-B07 auto-approved edit / delete until used: edit re-applies the delta; delete releases everything; after a Purchase took a sold quantity → SALE_IN_USE, nothing changes", async () => {

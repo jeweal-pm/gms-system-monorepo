@@ -7,8 +7,10 @@ import { documentErrors } from "./document-errors";
 import { TradeDocumentEngine, type DocumentActor, type DocumentEffects, type LineHook } from "./document-engine";
 import { vendorDocumentOptions, vendorParty, type VendorOut } from "./memo-out-return.service";
 import type { MemoReceiveListInput, MemoReceiveStatus, MemoReturnInput } from "./memo-schemas";
-import { releaseToMemoStock, takeFromMemoStock } from "./memo-stock.service";
+import { applyMemoStockLines, memoStockLinesOf, reverseMemoStockLines } from "./lot-apply";
 import { LINE_PHOTO_DOCUMENTS, withLinePhotos } from "./line-photos";
+import { isMemoLot, stockLotUnavailable } from "./lot-key";
+import { readMemoLotGroups, refuseNewItemReferences } from "./stock-lines";
 
 export const memoReturnErrors = documentErrors("MEMO_RETURN", "MemoReturn", "memo_return");
 /** Approval found a Memo Stock item with less pending than the line returns (another return took it first). */
@@ -22,15 +24,42 @@ type MemoReturnStatus = MemoReceiveStatus;
  * (Q-MR-13, 2 dp) are copied, and Outstanding = the item's pending quantity now. Return pcs / weight may not exceed
  * it. Saving reserves nothing: approval re-checks pending under a row lock (owner Q-MR-15 over-pull guard).
  */
-async function completeReturnLines(tx: Tx, input: MemoReturnInput): Promise<MemoReturnInput> {
-  const ids = input.lines.map((line) => line.memoStockId);
-  const duplicates = ids.flatMap((id, index) => (ids.indexOf(id) === index ? [] : [{ path: `lines.${index}.memoStockId`, code: "duplicate" }]));
+async function completeReturnLines(tx: Tx, input: MemoReturnInput, documentId: string | null): Promise<MemoReturnInput> {
+  await refuseNewItemReferences(tx, "memoReturn", documentId, input.lines);
+  const refs = input.lines.map((line) => line.memoStockId ?? line.lotKey ?? "");
+  const duplicates = refs.flatMap((ref, index) => (refs.indexOf(ref) === index ? [] : [{ path: `lines.${index}.${input.lines[index].memoStockId ? "memoStockId" : "reference"}`, code: "duplicate" }]));
   if (duplicates.length > 0) throw validationException(duplicates);
-  const items = await tx.memoStock.findMany({ where: { id: { in: ids } } });
+  const ids = input.lines.flatMap((line) => (line.memoStockId ? [line.memoStockId] : []));
+  const [items, groups] = await Promise.all([
+    ids.length === 0 ? Promise.resolve([]) : tx.memoStock.findMany({ where: { id: { in: ids } } }),
+    readMemoLotGroups(tx, input.lines.flatMap((line) => (!line.memoStockId && isMemoLot(line.lotKey) ? [line.lotKey] : []))),
+  ]);
   const byId = new Map(items.map((item) => [item.id, item]));
   const references: FieldError[] = [];
+  const unavailable: number[] = [];
   const quantities: FieldError[] = [];
   const lines = input.lines.map((line, index) => {
+    if (!line.memoStockId) {
+      // ADR-0055 D4: a lot of this vendor and currency (price uniform by the key); Outstanding = the lot's pending now.
+      const group = line.lotKey ? groups.get(line.lotKey) : undefined;
+      if (!group || group.stockCount === 0) {
+        unavailable.push(index);
+        return line;
+      }
+      if (group.vendorId !== input.vendorId) references.push({ path: `lines.${index}.reference`, code: "vendor_mismatch" });
+      else if (group.currency !== input.currency) references.push({ path: `lines.${index}.reference`, code: "currency_mismatch" });
+      const params = { availablePcs: group.pendingPcs, availableWeightCt: group.pendingWeight.toFixed(3) };
+      if (line.pcs > group.pendingPcs) quantities.push({ path: `lines.${index}.pcs`, code: "exceeds_outstanding", params });
+      if (new Prisma.Decimal(line.weightCt).gt(group.pendingWeight)) quantities.push({ path: `lines.${index}.weightCt`, code: "exceeds_outstanding", params });
+      return {
+        ...line,
+        source: "MANUAL" as const, stoneCodeId: null, stoneCode: "", stone: group.stone, shape: group.shape, size: group.size, color: group.color,
+        clarity: group.clarity, cutting: group.cutting, quality: group.quality, lot: group.lot, location: group.location, cerType: group.cerType, cerNo: group.cerNo,
+        priceUnit: group.priceUnit, unitPrice: group.netUnitPrice.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP).toFixed(2),
+        discount: { type: "NONE" as const, value: "0" }, outstandingPcs: group.pendingPcs, outstandingWeightCt: group.pendingWeight.toFixed(3),
+        stockCount: group.stockCount,
+      };
+    }
     const item = byId.get(line.memoStockId);
     if (!item || item.vendorId !== input.vendorId || item.currencyCode !== input.currency) {
       references.push({ path: `lines.${index}.memoStockId`, code: "invalid_reference" });
@@ -61,22 +90,34 @@ async function completeReturnLines(tx: Tx, input: MemoReturnInput): Promise<Memo
       outstandingWeightCt: item.pendingWeightCt.toFixed(3),
     };
   });
-  if (references.length > 0) throw memoReturnErrors.referenceInvalid(references);
+  if (references.some((error) => error.code === "invalid_reference")) throw memoReturnErrors.referenceInvalid(references);
+  if (unavailable.length > 0) throw stockLotUnavailable(unavailable);
+  if (references.length > 0) throw validationException(references);
   if (quantities.length > 0) throw validationException(quantities);
   return { ...input, lines };
 }
 
-/** Lines store their Memo Stock item and its Stock ID; the output names them in place of a stone code id. */
+/**
+ * Lines store their Memo Stock item and its Stock ID, or their lot (ADR-0055 D4: no Stock ID, the group size); the output
+ * names the reference in place of a stone code id. The Stock ID is not returned (owner Q-LOT-10).
+ */
 const memoStockLines: LineHook<MemoReturnInput> = {
   storedSelect: { id: true },
+  lineInclude: { _count: { select: { allocs: true } } },
   assign: async (tx, input) => {
-    const items = await tx.memoStock.findMany({ where: { id: { in: input.lines.map((line) => line.memoStockId) } }, select: { id: true, stockId: true } });
+    const ids = input.lines.flatMap((line) => (line.memoStockId ? [line.memoStockId] : []));
+    const items = ids.length === 0 ? [] : await tx.memoStock.findMany({ where: { id: { in: ids } }, select: { id: true, stockId: true } });
     const stockIds = new Map(items.map((item) => [item.id, item.stockId]));
-    return input.lines.map((line) => ({ memoStockId: line.memoStockId, stockId: stockIds.get(line.memoStockId) }));
+    return input.lines.map((line) => (line.memoStockId
+      ? { memoStockId: line.memoStockId, stockId: stockIds.get(line.memoStockId) }
+      : { memoStockId: null, stockId: null, lotKey: line.lotKey, stockCount: (line as { stockCount?: number }).stockCount }));
   },
   output: (line, base) => {
     const { stoneCodeId: _stoneCodeId, ...rest } = base;
-    return { ...rest, memoStockId: line.memoStockId as string, stockId: line.stockId as string };
+    return {
+      ...rest, memoStockId: (line.memoStockId as string | null) ?? null, stockId: null, lotKey: (line.lotKey as string | null) ?? null,
+      allocated: ((line._count as { allocs?: number } | undefined)?.allocs ?? 0) > 0,
+    };
   },
   result: () => ({}),
 };
@@ -85,11 +126,6 @@ const memoStockLines: LineHook<MemoReturnInput> = {
  * memo-return SA rev 2 (owner 2026-10-29): Memo Stock items sent back to their vendor. Document Setup key
  * `memo-return`; PENDING_APPROVAL → APPROVED, and approval reduces the items' pending pcs / weight (Q-MR-15).
  */
-/** Return lines as Memo Stock moves, in position order (error paths `lines.N`). */
-async function returnTakes(tx: Tx, id: string) {
-  const lines = await tx.memoReturnLine.findMany({ where: { memoReturnId: id }, orderBy: { position: "asc" }, select: { memoStockId: true, pcs: true, weightCt: true } });
-  return lines.map((line, index) => ({ memoStockId: line.memoStockId, pcs: line.pcs, weightCt: line.weightCt, index }));
-}
 
 /**
  * Effects (memo-outstanding-vendor SA-MOV-02, CHECK memo_stock_balance; approval-setup "Effects and their reversal"):
@@ -99,13 +135,14 @@ async function returnTakes(tx: Tx, id: string) {
  * is never "used"; the balance CHECK stays the final guard.
  */
 const memoReturnEffects: DocumentEffects = {
+  // lot-based-stock (ADR-0055 D5): a lot line returns the oldest borrowed items first (Q-LOT-06); allocation stored.
   apply: async (tx, doc, _actorId, now) => {
-    const takes = await returnTakes(tx, doc.id);
-    await takeFromMemoStock(tx, takes, "returned", memoReturnPendingShort, now);
-    return { result: {}, log: { lineCount: takes.length } };
+    const lines = await memoStockLinesOf(tx, "memoReturn", "memo_return_id", doc.id);
+    const count = await applyMemoStockLines(tx, { table: "memoReturn", lines, bucket: "returned", shortCode: "MEMO_RETURN_PENDING_SHORT", now });
+    return { result: {}, log: { lineCount: count } };
   },
   reverse: async (tx, doc, now) => {
-    await releaseToMemoStock(tx, await returnTakes(tx, doc.id), () => memoReturnErrors.inUse(null), now, "returned");
+    await reverseMemoStockLines(tx, { table: "memoReturn", lines: await memoStockLinesOf(tx, "memoReturn", "memo_return_id", doc.id), bucket: "returned", inUse: () => memoReturnErrors.inUse(null), now });
   },
   usedBy: async () => null,
 };
@@ -190,6 +227,6 @@ export class MemoReturnService {
 }
 
 type EngineDetail = Awaited<ReturnType<TradeDocumentEngine<MemoReturnInput, VendorOut, MemoReturnStatus>["get"]>>;
-type MemoReturnLineOut = Omit<EngineDetail["lines"][number], "stoneCodeId"> & { memoStockId: string; stockId: string };
+type MemoReturnLineOut = Omit<EngineDetail["lines"][number], "stoneCodeId"> & { memoStockId: string | null; stockId: null; lotKey: string | null; allocated: boolean };
 /** api-contract `MemoReturn` (the line hook and `detailExtra` shape the engine output at run time). */
 export type MemoReturnDetail = Omit<EngineDetail, "lines"> & { lines: MemoReturnLineOut[]; approvedAt: string | null; approvedBy: string | null };

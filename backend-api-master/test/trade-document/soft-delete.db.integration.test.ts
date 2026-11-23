@@ -28,7 +28,7 @@ type Services = {
   po: InstanceType<typeof import("../../src/purchase-order/purchase-order.service").PurchaseOrderService>;
   memoOut: InstanceType<typeof import("../../src/trade-document/memo-out.service").MemoOutService>;
   memoOutReturn: InstanceType<typeof import("../../src/trade-document/memo-out-return.service").MemoOutReturnService>;
-  stock: InstanceType<typeof import("../../src/trade-document/memo-stock.service").MemoStockService>;
+  stock: InstanceType<typeof import("../../src/trade-document/lot-stock.service").LotStockService>;
   purchase: InstanceType<typeof import("../../src/purchase/purchase.service").PurchaseService>;
   quotation: InstanceType<typeof import("../../src/quotation/quotation.service").QuotationService>;
   setup: InstanceType<typeof import("../../src/document-setup/document-setup.service").DocumentSetupService>;
@@ -102,13 +102,13 @@ describe.runIf(canRun)("IT-SD transaction soft delete on PostgreSQL", () => {
     const { PurchaseOrderService } = await import("../../src/purchase-order/purchase-order.service");
     const { MemoOutService } = await import("../../src/trade-document/memo-out.service");
     const { MemoOutReturnService } = await import("../../src/trade-document/memo-out-return.service");
-    const { MemoStockService } = await import("../../src/trade-document/memo-stock.service");
+    const { LotStockService } = await import("../../src/trade-document/lot-stock.service");
     const { PurchaseService } = await import("../../src/purchase/purchase.service");
     const { QuotationService } = await import("../../src/quotation/quotation.service");
     const { DocumentSetupService } = await import("../../src/document-setup/document-setup.service");
     s = {
       receive: new MemoReceiveService(), po: new PurchaseOrderService(), memoOut: new MemoOutService(), memoOutReturn: new MemoOutReturnService(),
-      stock: new MemoStockService(), purchase: new PurchaseService(), quotation: new QuotationService(), setup: new DocumentSetupService(),
+      stock: new LotStockService(), purchase: new PurchaseService(), quotation: new QuotationService(), setup: new DocumentSetupService(),
     };
     s.receive.clock = clock;
     const createIfAbsent = async (create: () => Promise<unknown>) => {
@@ -231,9 +231,11 @@ describe.runIf(canRun)("IT-SD transaction soft delete on PostgreSQL", () => {
 
     // IT-SD-07: editable again; save keeps the Stock IDs; approve fills Memo Stock.
     const updated = await s.receive.update(ACTOR, saved.id, 3, receiveInput(vendorA, before.lines.map((line) => receiveLine({ id: line.id, lot: line.lot, photoIds: line.photoIds }))) as never);
-    expect(updated.stockIds).toEqual(before.lines.map((line) => line.stockId));
+    // The detail hides Stock IDs (Q-LOT-17); the stored ones are compared through the database.
+    const storedIds = (await prisma.memoReceiveLine.findMany({ where: { memoReceiveId: saved.id }, orderBy: { position: "asc" } })).map((line) => line.stockId);
+    expect(updated.stockIds).toEqual(storedIds);
     await expect(sendAndApprove(s.receive, ACTOR, saved.id, 4)).resolves.toMatchObject({ status: "APPROVED", memoStockCount: 2 });
-    expect((await prisma.memoStock.findMany({ where: { memoReceiveId: saved.id }, orderBy: { stockId: "asc" } })).map((item) => item.stockId)).toEqual(before.lines.map((line) => line.stockId).sort());
+    expect((await prisma.memoStock.findMany({ where: { memoReceiveId: saved.id }, orderBy: { stockId: "asc" } })).map((item) => item.stockId)).toEqual([...storedIds].sort());
     expect(await failure(s.receive.delete(ACTOR, saved.id, 6))).toEqual({ status: 409, code: "MEMO_RECEIVE_STATUS_INVALID" });
   });
 
@@ -295,7 +297,7 @@ describe.runIf(canRun)("IT-SD transaction soft delete on PostgreSQL", () => {
     await s.memoOut.delete(DELETER, out.id, 1);
     expect(await failure(s.memoOut.approve(ACTOR, out.id, 2))).toEqual({ status: 409, code: "MEMO_OUT_DELETED" });
     expect(await prisma.memoStock.findUniqueOrThrow({ where: { id: item.id } })).toMatchObject({ pendingPcs: 4, reservedPcs: 0 });
-    expect((await s.stock.list(schemas.memoStockListSchema.parse({ vendorId: vendor.id }))).items.map((row) => row.id)).toContain(item.id);
+    expect((await s.stock.memoStockLots({ vendorId: vendor.id, currency: "THB", limit: 50 })).items.map((row) => row.lotKey)).toContain(item.lotKey);
     const outstanding = await s.memoOutReturn.outstanding(schemas.memoOutOutstandingSchema.parse({ customerId: customer.id, currency: "THB" }));
     expect(JSON.stringify(outstanding)).not.toContain(out.id);
     expect((await s.memoOut.list(schemas.memoOutListSchema.parse({ partyId: customer.id }))).items.map((row) => row.id)).not.toContain(out.id);

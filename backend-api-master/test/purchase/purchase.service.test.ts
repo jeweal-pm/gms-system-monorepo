@@ -243,7 +243,7 @@ describe("PurchaseService save (UT-PU-B02)", () => {
     db.getRow = row("DRAFT");
     const pending = await service.get(DOC);
     expect(pending.lines.map((l) => [l.source, l.stockId, l.limitPcs, l.limitWeightCt, l.memoReceive, l.purchaseOrder])).toEqual([
-      ["STOCK", "260042", 1, "0.500", { docNo: "MR-3" }, null],
+      ["STOCK", null, 1, "0.500", { docNo: "MR-3" }, null],
       ["PURCHASE_ORDER", null, 6, "2.500", null, { id: "po-1", docNo: "PO-9", position: 2 }],
       ["MANUAL", null, null, null, null, null],
     ]);

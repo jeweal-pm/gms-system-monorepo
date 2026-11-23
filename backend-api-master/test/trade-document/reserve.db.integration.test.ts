@@ -27,7 +27,7 @@ type Prisma = typeof import("../../src/database/prisma-client").prisma;
 type Receive = InstanceType<typeof import("../../src/trade-document/memo-receive.service").MemoReceiveService>;
 type Out = InstanceType<typeof import("../../src/trade-document/memo-out.service").MemoOutService>;
 type Res = InstanceType<typeof import("../../src/trade-document/reserve.service").ReserveService>;
-type Stock = InstanceType<typeof import("../../src/trade-document/memo-stock.service").MemoStockService>;
+type Stock = InstanceType<typeof import("../../src/trade-document/lot-stock.service").LotStockService>;
 type Vendor = { id: string; addressId: string };
 
 let prisma: Prisma;
@@ -112,13 +112,13 @@ describe.runIf(canRun)("IT-RS reserve From Stock on PostgreSQL", () => {
     const { MemoReceiveService } = await import("../../src/trade-document/memo-receive.service");
     const { MemoOutService } = await import("../../src/trade-document/memo-out.service");
     const { ReserveService } = await import("../../src/trade-document/reserve.service");
-    const { MemoStockService } = await import("../../src/trade-document/memo-stock.service");
+    const { LotStockService } = await import("../../src/trade-document/lot-stock.service");
     ({ createMemoOutSchema } = await import("../../src/trade-document/memo-schemas"));
     receive = new MemoReceiveService();
     receive.clock = () => new Date(`20${YEAR}-06-01T03:00:00Z`);
     memoOut = new MemoOutService();
     reserve = new ReserveService();
-    stock = new MemoStockService();
+    stock = new LotStockService();
     if (!(await prisma.currency.findUnique({ where: { code: "THB" } }))) {
       await prisma.currency.create({ data: { code: "THB", name: "THB", createdBy: ACTOR, updatedBy: ACTOR } });
     }
@@ -158,12 +158,13 @@ describe.runIf(canRun)("IT-RS reserve From Stock on PostgreSQL", () => {
     const detail = await reserve.get(saved.id);
     expect(detail).toMatchObject({ status: "DRAFT", approvedAt: null, customerId: customer.id });
     expect(detail.lines[0]).toMatchObject({
-      source: "STOCK", memoStockId: item.id, stockId: item.stockId, stoneCode: "", stone: "Ruby", lot: "LOT-A", location: "Memo",
+      // Owner Q-LOT-10 (ADR-0055 D9): no Stock ID in public outputs.
+      source: "STOCK", memoStockId: item.id, stockId: null, lotKey: null, allocated: false, stoneCode: "", stone: "Ruby", lot: "LOT-A", location: "Memo",
       pcs: 4, weightCt: "2.000", unitPrice: "2500.00", amount: "5000.00", stockPendingPcs: 10, stockPendingWeightCt: "5.000",
     });
     expect(await bucketsOf(item.id)).toEqual({ pending: [10, "5.000"], reserved: [0, "0.000"] });
     // Saving holds nothing, so From Stock still offers the item.
-    expect((await stock.list({ limit: 50 })).items.map((row) => row.id)).toContain(item.id);
+    expect((await stock.fromStockLots({ limit: 50 })).items.map((row) => row.lotKey)).toContain(item.lotKey);
     expect((await reserve.nextNumber("2026-11-02")).docNo).toEqual(expect.any(String));
     expect((await reserve.list({ partyId: customer.id, status: "DRAFT", limit: 50, deleted: false })).items.map((row) => row.id)).toContain(saved.id);
   });

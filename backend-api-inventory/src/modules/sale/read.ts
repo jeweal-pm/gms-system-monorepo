@@ -32,7 +32,7 @@ export type HeaderRow = {
 };
 type LineRow = {
   id: string; position: number; source: "RESERVE" | "STOCK"; reserve_line_id: string | null; reserve_id: string | null; reserve_doc_no: string | null;
-  memo_stock_id: string; stock_id: string; memo_receive_id: string | null; memo_receive_doc_no: string | null;
+  memo_stock_id: string | null; lot_key: string | null; allocated: boolean; stock_id: string; memo_receive_id: string | null; memo_receive_doc_no: string | null;
   stone_code: string; stone: string; shape: string; size: string; color: string; clarity: string; cutting: string; quality: string; lot: string; location: string; cer_type: string; cer_no: string;
   price_unit: string; pcs: number; weight_ct: string; cap_pcs: number; cap_weight_ct: string; reserve_net_unit_price: string | null;
   unit_price: string; discount_type: string; discount_value: string; discount_amount: string; amount: string; item_note: string; photo_ids: string[];
@@ -79,7 +79,8 @@ export async function readHeader(db: Pick<Db, "$queryRaw">, id: string): Promise
 
 export async function readLines(db: Pick<Db, "$queryRaw">, id: string): Promise<LineRow[]> {
   return db.$queryRaw<LineRow[]>`
-    SELECT l."id", l."position", l."source", l."reserve_line_id", l."reserve_id", l."reserve_doc_no", l."memo_stock_id", l."stock_id", l."memo_receive_id", l."memo_receive_doc_no",
+    SELECT l."id", l."position", l."source", l."reserve_line_id", l."reserve_id", l."reserve_doc_no", l."memo_stock_id", l."lot_key", l."stock_id", l."memo_receive_id", l."memo_receive_doc_no",
+      EXISTS (SELECT 1 FROM "inventory"."sale_line_alloc" a WHERE a."sale_line_id" = l."id") AS "allocated",
       l."stone_code", l."stone", l."shape", l."size", l."color", l."clarity", l."cutting", l."quality", l."lot", l."location", l."cer_type", l."cer_no",
       l."price_unit", l."pcs", l."weight_ct"::text AS "weight_ct", l."cap_pcs", l."cap_weight_ct"::text AS "cap_weight_ct", l."reserve_net_unit_price"::text AS "reserve_net_unit_price",
       l."unit_price"::text AS "unit_price", l."discount_type", l."discount_value"::text AS "discount_value", l."discount_amount"::text AS "discount_amount", l."amount"::text AS "amount", l."item_note",
@@ -94,7 +95,8 @@ async function liveCaps(master: MasterApi, header: HeaderRow, lines: LineRow[], 
     prepared = await master.salePrepare({
       currency: header.currency_code,
       reserveLineIds: lines.flatMap((line) => (line.reserve_line_id ? [line.reserve_line_id] : [])),
-      memoStockIds: lines.flatMap((line) => (line.source === "STOCK" ? [line.memo_stock_id] : [])),
+      memoStockIds: lines.flatMap((line) => (line.source === "STOCK" && line.memo_stock_id ? [line.memo_stock_id] : [])),
+      lotKeys: lines.flatMap((line) => (line.source === "STOCK" && !line.memo_stock_id && line.lot_key ? [line.lot_key] : [])),
       saleId: header.id,
     }, { requestId });
   } catch (error) {
@@ -103,6 +105,7 @@ async function liveCaps(master: MasterApi, header: HeaderRow, lines: LineRow[], 
   }
   const reserve = new Map(prepared.reserveLines.map((ref) => [ref.reserveLineId, ref]));
   const stock = new Map(prepared.memoStocks.map((item) => [item.memoStockId, item]));
+  const lots = new Map((prepared.memoLots ?? []).map((lot) => [lot.lotKey, lot]));
   const caps = new Map<string, { capPcs: number; capWeightCt: string }>();
   for (const line of lines) {
     if (line.source === "RESERVE") {
@@ -110,6 +113,11 @@ async function liveCaps(master: MasterApi, header: HeaderRow, lines: LineRow[], 
       const usable = ref && ref.status !== "UNAVAILABLE" && ref.customerId === header.customer_id && ref.currency === header.currency_code;
       caps.set(line.id, usable ? { capPcs: ref.openPcs, capWeightCt: ref.openWeightCt } : { capPcs: 0, capWeightCt: "0.000" });
     } else {
+      if (!line.memo_stock_id) {
+        const lot = line.lot_key ? lots.get(line.lot_key) : undefined;
+        caps.set(line.id, lot && lot.status === "OK" ? { capPcs: lot.pendingPcs ?? 0, capWeightCt: lot.pendingWeightCt ?? "0.000" } : { capPcs: 0, capWeightCt: "0.000" });
+        continue;
+      }
       const item = stock.get(line.memo_stock_id);
       caps.set(line.id, item && item.status === "OK" ? { capPcs: item.pendingPcs, capWeightCt: item.pendingWeightCt } : { capPcs: 0, capWeightCt: "0.000" });
     }
@@ -140,7 +148,9 @@ export async function getDetail(db: Db, master: MasterApi, id: string, principal
     lines: lines.map((line) => {
       const cap = caps?.get(line.id);
       return {
+        // ADR-0055: lot key + allocated flag; the Stock ID stays (owner 2026-11-21 Q3: "" on a lot line); no allocation rows.
         id: line.id, position: line.position, source: line.source, reserveLineId: line.reserve_line_id, memoStockId: line.memo_stock_id, stockId: line.stock_id,
+        lotKey: line.lot_key, allocated: line.allocated,
         sourceDoc: line.source === "RESERVE"
           ? { type: "RESERVE" as const, id: line.reserve_id!, docNo: line.reserve_doc_no ?? "" }
           : { type: "MEMO_RECEIVE" as const, id: line.memo_receive_id ?? "", docNo: line.memo_receive_doc_no ?? "" },

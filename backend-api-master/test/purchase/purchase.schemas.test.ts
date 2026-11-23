@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createPurchaseSchema,
   purchaseListSchema,
-  purchaseMemoStockSchema,
   purchaseOrderLinesSchema,
   updatePurchaseSchema,
 } from "../../src/purchase/purchase.schemas";
+import { purchaseMemoStockLotsSchema } from "../../src/trade-document/lot-stock.service";
 
 /**
  * UT-PU-B01 (purchase SA rev 1, api-contract "Input rules"): strict input, the line source rules, duplicates,
@@ -100,17 +100,15 @@ describe("purchase input (UT-PU-B01)", () => {
     expect(purchaseListSchema.safeParse({ limit: 51 }).success).toBe(false);
   });
 
-  it("pickers: vendor + currency required, status enums, dates ≤ 366 days, limit ≤ 50, strict", () => {
-    expect(purchaseMemoStockSchema.parse({ vendorId: ID(1), currency: "THB" })).toMatchObject({ status: "ALL", limit: 50 });
-    expect(purchaseMemoStockSchema.safeParse({ vendorId: ID(1) }).success).toBe(false);
-    expect(purchaseMemoStockSchema.safeParse({ currency: "THB" }).success).toBe(false);
-    expect(purchaseMemoStockSchema.safeParse({ vendorId: ID(1), currency: "thb" }).success).toBe(false);
-    expect(purchaseMemoStockSchema.parse({ vendorId: ID(1), currency: "THB", status: "SOLD", direction: "forward" })).toMatchObject({ status: "SOLD" });
-    expect(purchaseMemoStockSchema.safeParse({ vendorId: ID(1), currency: "THB", status: "OPEN" }).success).toBe(false);
-    expect(paths(purchaseMemoStockSchema.safeParse({ vendorId: ID(1), currency: "THB", from: "2026-03-01", to: "2026-02-01" }))).toEqual(["to:before_from"]);
-    expect(purchaseMemoStockSchema.safeParse({ vendorId: ID(1), currency: "THB", limit: 51 }).success).toBe(false);
-    expect(purchaseMemoStockSchema.safeParse({ vendorId: ID(1), currency: "THB", q: "x".repeat(101) }).success).toBe(false);
-    expect(purchaseMemoStockSchema.safeParse({ vendorId: ID(1), currency: "THB", extra: true }).success).toBe(false);
+  it("Purchase Order picker: vendor + currency required, status enums, dates ≤ 366 days, limit ≤ 50, strict", () => {
+    expect(purchaseOrderLinesSchema.safeParse({ vendorId: ID(1) }).success).toBe(false);
+    expect(purchaseOrderLinesSchema.safeParse({ vendorId: ID(1), currency: "thb" }).success).toBe(false);
+    expect(paths(purchaseOrderLinesSchema.safeParse({ vendorId: ID(1), currency: "THB", from: "2026-03-01", to: "2026-02-01" }))).toEqual(["to:before_from"]);
+    expect(purchaseOrderLinesSchema.safeParse({ vendorId: ID(1), currency: "THB", limit: 51 }).success).toBe(false);
+    // The lot picker that replaced purchase.memoStock (ADR-0055): vendor + currency, group enum, strict.
+    expect(purchaseMemoStockLotsSchema.parse({ vendorId: ID(1), currency: "THB" })).toMatchObject({ group: "ALL", limit: 50 });
+    expect(purchaseMemoStockLotsSchema.safeParse({ vendorId: ID(1), currency: "THB", group: "MERGED" }).success).toBe(false);
+    expect(purchaseMemoStockLotsSchema.safeParse({ vendorId: ID(1), currency: "THB", extra: true }).success).toBe(false);
     expect(purchaseOrderLinesSchema.parse({ vendorId: ID(1), currency: "USD", status: "PARTLY_PURCHASED" })).toMatchObject({ status: "PARTLY_PURCHASED", limit: 50 });
     expect(purchaseOrderLinesSchema.safeParse({ vendorId: ID(1), currency: "USD", status: "SOLD" }).success).toBe(false);
     expect(paths(purchaseOrderLinesSchema.safeParse({ vendorId: ID(1), currency: "USD", from: "2025-01-01", to: "2026-11-04" }))).toEqual(["to:range_too_long"]);
@@ -124,6 +122,5 @@ describe("merged lines (UT-PU-B07, SA-PU-21)", () => {
     expect(paths(createPurchaseSchema.safeParse(input([stock(), stock({ memoGroup: "MERGED" })])))).toEqual(["lines.1.memoStockId:duplicate"]);
     expect(paths(createPurchaseSchema.safeParse(input([stock({ memoGroup: "MERGED" }), stock({ memoGroup: "MERGED" })])))).toContain("lines.1.memoStockId:duplicate");
     expect(createPurchaseSchema.safeParse(input([manual({ memoGroup: "MERGED" })])).success).toBe(false);
-    expect(purchaseMemoStockSchema.safeParse({ vendorId: ID(1), currency: "THB", status: "MERGED" }).success).toBe(false);
   });
 });

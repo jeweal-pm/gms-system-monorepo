@@ -287,6 +287,9 @@ model stock {
   /// ADR-0052 D16: the load's doc date / number (picker key of the one From Stock list).
   ref_doc_date         DateTime           @db.Date
   ref_doc_no           String             @db.VarChar(40)
+  /// lot-based-stock ADR-0055 D2: STORED GENERATED group key; owner change 2026-11-21 (Q4): OS+id for every stock (own stock
+  /// is not merged this round). Written by PostgreSQL only.
+  lot_key              String?            @db.VarChar(40)
   version              Int                @default(1)
   created_at           DateTime           @default(now()) @db.Timestamptz(3)
   updated_at           DateTime           @default(now()) @db.Timestamptz(3)
@@ -298,6 +301,7 @@ model stock {
   @@index([ref_doc_date(sort: Desc), stock_id(sort: Desc)], map: "stock_picker_idx", where: raw("(((status)::text = 'ACTIVE'::text) AND ((on_hand_pcs > 0) OR (on_hand_weight_ct > (0)::numeric)))"))
   @@index([load_id], map: "stock_in_use_idx", where: raw("((on_hand_pcs <> pcs) OR (on_hand_weight_ct <> weight_ct))"))
   @@index([load_id], map: "stock_load_idx")
+  @@index([lot_key, ref_doc_date, stock_id], map: "stock_lot_open_idx", where: raw("(((status)::text = 'ACTIVE'::text) AND ((on_hand_pcs > 0) OR (on_hand_weight_ct > (0)::numeric)))"))
   @@schema("inventory")
 }
 
@@ -498,8 +502,11 @@ model sale_line {
   reserve_line_id        String?           @db.Uuid
   reserve_id             String?           @db.Uuid
   reserve_doc_no         String?           @db.VarChar(40)
-  memo_stock_id          String            @db.Uuid
+  /// ADR-0055: NULL on a lot STOCK line (lot_key set) and on a lot Reserve line.
+  memo_stock_id          String?           @db.Uuid
   stock_id               String            @default("") @db.VarChar(10)
+  lot_key                String?           @db.VarChar(40)
+  stock_count            Int?              @db.SmallInt
   memo_receive_id        String?           @db.Uuid
   memo_receive_doc_no    String?           @db.VarChar(40)
   stone_code             String            @default("") @db.VarChar(60)
@@ -528,6 +535,7 @@ model sale_line {
   item_note              String            @default("") @db.VarChar(500)
   sale                   sale              @relation(fields: [sale_id], references: [id], onDelete: Cascade, map: "sale_line_sale_fkey")
   sale_line_photo        sale_line_photo[]
+  sale_line_alloc        sale_line_alloc[]
 
   @@unique([sale_id, position], map: "sale_line_position_key")
   @@unique([sale_id, reserve_line_id], map: "sale_line_reserve_line_key", where: raw("(reserve_line_id IS NOT NULL)"))
@@ -571,5 +579,22 @@ model sale_sync_op {
   @@unique([sale_id, revision], map: "sale_sync_op_sale_revision_key")
   @@index([updated_at], map: "sale_sync_op_done_idx", where: raw("((state)::text = 'DONE'::text)"))
   @@index([next_attempt_at], map: "sale_sync_op_due_idx", where: raw("((state)::text = ANY ((ARRAY['PREPARED'::character varying, 'CONFIRMED'::character varying])::text[]))"))
+  @@schema("inventory")
+}
+
+/// ADR-0055 D7: copy of master's per-stock allocation of an applied Sale line (audit / reports; never returned publicly).
+model sale_line_alloc {
+  id            String    @id @db.Uuid
+  sale_line_id  String    @db.Uuid
+  seq           Int       @db.SmallInt
+  memo_stock_id String    @db.Uuid
+  stock_id      String    @db.VarChar(10)
+  pcs           Int
+  weight_ct     Decimal   @db.Decimal(12, 3)
+  sale_line     sale_line @relation(fields: [sale_line_id], references: [id], onDelete: Cascade, map: "sale_line_alloc_line_fkey")
+
+  @@unique([sale_line_id, seq], map: "sale_line_alloc_seq_key")
+  @@unique([sale_line_id, memo_stock_id], map: "sale_line_alloc_memo_stock_key")
+  @@index([memo_stock_id], map: "sale_line_alloc_memo_stock_idx")
   @@schema("inventory")
 }
