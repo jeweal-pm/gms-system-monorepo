@@ -21,11 +21,14 @@ export const PURCHASE_LINES_MAX = 200;
 /** ADR-0050: Draft, Pending Approval, Approved, Revise, Rejected. */
 export const PURCHASE_STATUSES = APPROVAL_DOC_STATUSES;
 
-/** `purchase.memoStock` row (SA-PU-12): SOLD rows first, then IN_STOCK; `sale` / `locationType` are null (D6). */
-export type PurchaseMemoStockRow = InferQueryLikeData<typeof masterTrpc.purchase.memoStock>["items"][number];
+/**
+ * `purchase.memoStockLots` row (lot-based-stock FE-LOT-003, ADR-0055 D3): one row per lot and part, SOLD rows first, then
+ * IN_STOCK; `pendingPcs` / `pendingWeightCt` are the part's quantity, `soldOpen*` the lot's sold-not-yet-purchased part.
+ */
+export type PurchaseMemoStockRow = InferQueryLikeData<typeof masterTrpc.purchase.memoStockLots>["items"][number];
 /** `purchase.purchaseOrderLines` row (SA-PU-13): an approved PO line with an open quantity. */
 export type PurchaseOrderLineRow = InferQueryLikeData<typeof masterTrpc.purchase.purchaseOrderLines>["items"][number];
-export type MemoGroup = PurchaseMemoStockRow["status"];
+export type MemoGroup = PurchaseMemoStockRow["memoGroup"];
 export type PurchaseLineSource = "STOCK" | "PURCHASE_ORDER" | "MANUAL";
 
 /**
@@ -34,7 +37,9 @@ export type PurchaseLineSource = "STOCK" | "PURCHASE_ORDER" | "MANUAL";
  * No. or PO No., shown only. Manual and empty rows have none of these.
  */
 const purchaseLineSchema = lineSchema.extend({
+  /** Legacy lines (saved before lots, Q-LOT-09) keep their item id; a new pick names its lot. */
   memoStockId: z.string().default(""),
+  lotKey: z.string().default(""),
   /** rev 3 (ADR-0043): MERGED = the item's Sold part plus part or all of its In-stock part in one row. */
   memoGroup: z.enum(["", "IN_STOCK", "SOLD", "MERGED"]).default(""),
   purchaseOrderLineId: z.string().default(""),
@@ -48,8 +53,8 @@ const purchaseLineSchema = lineSchema.extend({
 export type PurchaseLine = z.infer<typeof purchaseLineSchema>;
 
 /** Where a row comes from, as the contract names it. */
-export function purchaseLineSource(line: Partial<Pick<PurchaseLine, "memoStockId" | "purchaseOrderLineId">>): PurchaseLineSource {
-  if (line.memoStockId) return "STOCK";
+export function purchaseLineSource(line: Partial<Pick<PurchaseLine, "memoStockId" | "lotKey" | "purchaseOrderLineId">>): PurchaseLineSource {
+  if (line.memoStockId || line.lotKey) return "STOCK";
   if (line.purchaseOrderLineId) return "PURCHASE_ORDER";
   return "MANUAL";
 }
@@ -70,8 +75,10 @@ function purchaseLineRules(lines: readonly PurchaseLine[], ctx: z.RefinementCtx)
       const word = source === "PURCHASE_ORDER" ? "open" : line.memoGroup === "IN_STOCK" ? "pending" : "available";
       const capPcs = line.stockPendingPcs || "0";
       const capWeight = line.stockPendingWeightCt || "0";
-      if (pcs > dec(capPcs)) issue("pcs", `More than the ${word} ${capPcs} pcs`);
-      if (weight > dec(capWeight)) issue("weightCt", `More than the ${word} ${capWeight} ct`);
+      // A saved lot line comes back without its range (the picker row shows it); the server checks it on Save.
+      const capKnown = !(line.lotKey && line.stockPendingPcs === "");
+      if (capKnown && pcs > dec(capPcs)) issue("pcs", `More than the ${word} ${capPcs} pcs`);
+      if (capKnown && weight > dec(capWeight)) issue("weightCt", `More than the ${word} ${capWeight} ct`);
       // R3-02: never below the Sold part (already sold to customers).
       if (line.stockMinPcs !== "" && pcs < dec(line.stockMinPcs)) issue("pcs", `At least ${line.stockMinPcs} pcs (already sold to customers)`);
       if (line.stockMinWeightCt !== "" && weight < dec(line.stockMinWeightCt)) issue("weightCt", `At least ${line.stockMinWeightCt} ct (already sold to customers)`);
@@ -96,7 +103,7 @@ export const purchaseSchema = z
 
 export type PurchaseFormValues = z.infer<typeof purchaseSchema>;
 
-const NO_SOURCE = { memoStockId: "", memoGroup: "", purchaseOrderLineId: "", sourceDocNo: "", stockPendingPcs: "", stockPendingWeightCt: "", stockMinPcs: "", stockMinWeightCt: "" } as const;
+const NO_SOURCE = { memoStockId: "", lotKey: "", memoGroup: "", purchaseOrderLineId: "", sourceDocNo: "", stockPendingPcs: "", stockPendingWeightCt: "", stockMinPcs: "", stockMinWeightCt: "" } as const;
 export const emptyPurchaseLine = (): PurchaseLine => ({ ...emptyLine(), ...NO_SOURCE });
 
 /** A new purchase: today, five empty rows, the company currency once it loads. */
@@ -127,9 +134,9 @@ const copied = (row: Copied): Copied => ({
 });
 
 /**
- * A Memo Stock row → a purchase row (R2-03, Q-PU-04): Stock ID, lot, location, stone and certificate copied and locked;
- * Pcs and Weight start at the row's available quantity (its cap); Price starts at the net unit price after the memo line
- * discount (Q-MR-13) at 2 dp. The row's group is sent back as `memoGroup`. Memo Stock has no stone code.
+ * A Memo Stock lot row → a purchase row (R2-03, Q-PU-04, lot-based-stock): lot, location, stone and certificate copied and
+ * locked, no Stock ID (owner Q-LOT-10); Pcs and Weight start at the part's quantity (its cap); Price starts at the lot's net
+ * unit price (the weighted average of its items, owner 2026-11-21) at 2 dp. The part is sent back as `memoGroup`.
  */
 export function memoStockToPurchaseLine(row: PurchaseMemoStockRow): PurchaseLine {
   return {
@@ -137,19 +144,19 @@ export function memoStockToPurchaseLine(row: PurchaseMemoStockRow): PurchaseLine
     ...copied(row),
     key: newKey(),
     source: "STOCK",
-    stockId: row.stockId,
+    stockId: "",
     locationId: row.location,
-    pcs: String(row.availablePcs),
-    weightCt: toFixed(dec(row.availableWeightCt), 3),
-    priceUnit: row.priceUnit === "PCS" ? "PER_PCS" : "PER_CT",
-    unitPrice: toFixed(dec(row.netUnitPrice), 2),
-    memoStockId: row.memoStockId,
-    memoGroup: row.status,
-    sourceDocNo: row.memoReceive.docNo,
-    stockPendingPcs: String(row.availablePcs),
-    stockPendingWeightCt: row.availableWeightCt,
+    pcs: String(row.pendingPcs),
+    weightCt: toFixed(dec(row.pendingWeightCt), 3),
+    priceUnit: row.priceUnit === "PER_PCS" ? "PER_PCS" : "PER_CT",
+    unitPrice: toFixed(dec(row.netUnitPrice ?? "0"), 2),
+    lotKey: row.lotKey,
+    memoGroup: row.memoGroup,
+    sourceDocNo: row.ref.docNo,
+    stockPendingPcs: String(row.pendingPcs),
+    stockPendingWeightCt: row.pendingWeightCt,
     // R3-03 (Q-PU-29): a Sold row is bought whole, so its quantity is fixed (min = cap); only Price changes.
-    ...(row.status === "SOLD" ? { stockMinPcs: String(row.availablePcs), stockMinWeightCt: row.availableWeightCt } : {}),
+    ...(row.memoGroup === "SOLD" ? { stockMinPcs: String(row.pendingPcs), stockMinWeightCt: row.pendingWeightCt } : {}),
   };
 }
 
@@ -185,8 +192,11 @@ export const MEMO_GROUP_TAG: Record<"SOLD" | "IN_STOCK" | "MERGED", string> = { 
 
 /** One part of an item for the merge question: a row ticked in Add Memo Stock or a row already on the form. */
 export type MergePart = { line: PurchaseLine; existingIndex: number | null };
-/** R3-01: the Sold part and the In-stock part of one Memo Stock item (Q-PU-24). */
-export type MergePair = { memoStockId: string; stockId: string; sold: MergePart; inStock: MergePart };
+/** The item a row came from: its lot, or (a legacy line) its Memo Stock item. */
+export const itemKeyOf = (line: Partial<Pick<PurchaseLine, "lotKey" | "memoStockId">>) => line.lotKey || line.memoStockId || "";
+
+/** R3-01: the Sold part and the In-stock part of one lot (Q-PU-24, per lot since ADR-0055). `lot` names it in the dialog. */
+export type MergePair = { itemKey: string; lot: string; sold: MergePart; inStock: MergePart };
 
 /**
  * R3-01 / Q-PU-24/27: pairs among the ticked rows, and between a ticked row and a row of the same item already on the
@@ -195,16 +205,16 @@ export type MergePair = { memoStockId: string; stockId: string; sold: MergePart;
 export function findMergePairs(picked: readonly PurchaseLine[], existing: readonly PurchaseLine[]): MergePair[] {
   const pairs: MergePair[] = [];
   const used = new Set<number>();
-  const partOf = (group: string, memoStockId: string) => {
-    const pickedIndex = picked.findIndex((line, index) => !used.has(index) && line.memoStockId === memoStockId && line.memoGroup === group);
+  const partOf = (group: string, itemKey: string) => {
+    const pickedIndex = picked.findIndex((line, index) => !used.has(index) && itemKeyOf(line) === itemKey && line.memoGroup === group);
     if (pickedIndex >= 0) return { part: { line: picked[pickedIndex]!, existingIndex: null }, pickedIndex };
-    const existingIndex = existing.findIndex((line) => line.memoStockId === memoStockId && line.memoGroup === group);
+    const existingIndex = existing.findIndex((line) => itemKeyOf(line) === itemKey && line.memoGroup === group);
     return existingIndex >= 0 ? { part: { line: existing[existingIndex]!, existingIndex }, pickedIndex: null } : null;
   };
   picked.forEach((line, index) => {
-    if (used.has(index) || !line.memoStockId || (line.memoGroup !== "SOLD" && line.memoGroup !== "IN_STOCK")) return;
+    if (used.has(index) || !itemKeyOf(line) || (line.memoGroup !== "SOLD" && line.memoGroup !== "IN_STOCK")) return;
     used.add(index);
-    const other = partOf(line.memoGroup === "SOLD" ? "IN_STOCK" : "SOLD", line.memoStockId);
+    const other = partOf(line.memoGroup === "SOLD" ? "IN_STOCK" : "SOLD", itemKeyOf(line));
     if (!other) {
       used.delete(index);
       return;
@@ -212,7 +222,7 @@ export function findMergePairs(picked: readonly PurchaseLine[], existing: readon
     if (other.pickedIndex !== null) used.add(other.pickedIndex);
     const self: MergePart = { line, existingIndex: null };
     const [sold, inStock] = line.memoGroup === "SOLD" ? [self, other.part] : [other.part, self];
-    pairs.push({ memoStockId: line.memoStockId, stockId: line.stockId, sold, inStock });
+    pairs.push({ itemKey: itemKeyOf(line), lot: line.lot, sold, inStock });
   });
   return pairs;
 }
@@ -280,8 +290,8 @@ export function purchaseStockNote(line: Partial<PurchaseLine>): string | null {
   return `Sold ${line.stockMinPcs} pcs / ${line.stockMinWeightCt} cts must be purchased. Up to ${morePcs} pcs / ${moreWeight} cts more from stock.`;
 }
 
-/** The picker key of a Memo Stock row (`purchase.memoStock` `key`). */
-export const memoStockKey = (memoStockId: string, group: string) => `${memoStockId}:${group}`;
+/** The picker key of a Memo Stock row: the lot (or legacy item) and its part. */
+export const memoStockKey = (itemKey: string, group: string) => `${itemKey}:${group}`;
 
 /** Sources already on the form; both pickers leave them out (Memo Stock by `key`, PO by line id). */
 export function pickedSourceKeys(lines: readonly QuotationLine[]): Set<string> {
@@ -289,8 +299,9 @@ export function pickedSourceKeys(lines: readonly QuotationLine[]): Set<string> {
     lines.flatMap((line) => {
       const row = line as Partial<PurchaseLine>;
       // A merged row holds both parts of its item, so both picker rows are left out.
-      if (row.memoStockId && row.memoGroup === "MERGED") return [memoStockKey(row.memoStockId, "SOLD"), memoStockKey(row.memoStockId, "IN_STOCK")];
-      if (row.memoStockId) return [memoStockKey(row.memoStockId, row.memoGroup || "IN_STOCK")];
+      const item = itemKeyOf(row);
+      if (item && row.memoGroup === "MERGED") return [memoStockKey(item, "SOLD"), memoStockKey(item, "IN_STOCK")];
+      if (item) return [memoStockKey(item, row.memoGroup || "IN_STOCK")];
       if (row.purchaseOrderLineId) return [row.purchaseOrderLineId];
       return [];
     }),
@@ -322,13 +333,14 @@ export function clearPickedRows(lines: readonly PurchaseLine[]): PurchaseLine[] 
 }
 
 /**
- * How a row reads in the page table (R2-05, FE-PU-005, ADR-0051 / Q-PU-37): a manual or PO row has no Stock ID and shows "—", a PO row
- * adds "from {PO No.}", and a blank Location shows "—". Display only; the form keeps its values.
+ * How a row reads in the page table (R2-05, FE-PU-005): the Lot leads (no Stock ID, owner Q-LOT-10); `stockId` carries only the
+ * grey tag under it: "from {PO No.}" for a PO row, "Sold" / "In stock" / "Sold + In stock" for a Memo Stock row. A blank Location
+ * shows "—". Display only; the form keeps its values.
  */
 export function purchaseTableLine<T extends QuotationLine>(line: T): T {
   if (!isFilledLine(line)) return line;
   const row = line as T & Partial<PurchaseLine>;
   // R3-02 + INV-20261107-003: a Memo Stock row names its part (Sold / In stock / both), so separate rows of one Stock ID differ.
   const from = row.purchaseOrderLineId ? ` · from ${row.sourceDocNo}` : row.memoGroup ? ` · ${MEMO_GROUP_TAG[row.memoGroup]}` : "";
-  return { ...line, stockId: `${line.stockId || "—"}${from}`, locationId: line.locationId || "—" };
+  return { ...line, stockId: from.replace(/^ · /, ""), locationId: line.locationId || "—" };
 }

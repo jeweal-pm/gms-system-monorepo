@@ -262,9 +262,10 @@ describe.runIf(canRun)("approval.summary / approval.pending on PostgreSQL", () =
     const draftReserve = await s.reserve.create(ACTOR, outInput(1));
     const ids = async (type: (typeof TYPES)[number], q: string) => (await allPages(type, "submittedAt", "asc", q)).ids;
 
-    // Stock ID: the Reserve line and the Memo Out Return through its Memo Out line; the draft is never listed.
-    expect(await ids("reserve", item.stockId)).toEqual([reserve.id]);
+    // Owner 2026-11-21 (Q3, Q-LOT-10a): Reserve hides the Stock ID (lot search instead); Memo Out Return keeps it via its Memo Out line.
+    expect(await ids("reserve", item.stockId)).toEqual([]);
     expect(await ids("memo-out-return", item.stockId.toLowerCase())).toEqual([back.id]);
+    expect(await ids("reserve", item.lot)).toContain(reserve.id);
     expect(await ids("reserve", customer.name.slice(3).toUpperCase())).toEqual([reserve.id]);
     // Without a Document Setup row numbers are plain (1, 2, 3 …): doc no. is a substring match, so check membership.
     expect(await ids("reserve", reserve.docNo)).toContain(reserve.id);

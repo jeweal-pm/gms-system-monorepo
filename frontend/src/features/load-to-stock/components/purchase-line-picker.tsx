@@ -1,14 +1,30 @@
 "use client";
 
-import { ArrowRight, Search, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { DateInput } from "@/components/ui/date-input";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
-import { Button, cx, IconButton } from "@/features/quotation/components/ui";
+import { Button, cx } from "@/features/quotation/components/ui";
+import {
+  PickerChip,
+  PickerDialog,
+  PickerFooter,
+  PickerFrame,
+  PickerLoadMore,
+  PickerLot,
+  PickerMessage,
+  PickerTh,
+  PickerToolbar,
+  pickerCell,
+  pickerCheckbox,
+  pickerCheckCell,
+  pickerHead,
+  pickerIndexCell,
+  pickerRowClass,
+  pickerSub,
+} from "@/features/trade-document/picker-ui";
 import { loadLoadError, usePurchaseLineSearch, type SearchInput } from "../api";
 import { shortDate } from "../form";
 import type { PurchaseLineRef } from "../types";
-import { CerCell, GradeCell, HeaderCell, StoneCell, StoneCodeCell } from "./cells";
+import { GradeCell, StoneCell } from "./cells";
 import { priceSub } from "./load-source-table";
 
 export const PICKER_EMPTY_TEXT = "No purchase lines left to load";
@@ -42,6 +58,7 @@ export function PurchaseLinePicker({ vendorId, companyCurrency, excludeLineIds, 
   onConfirm: (picked: PurchaseLineRef[]) => void;
 }) {
   const nf = useNumberFormat();
+  const titleId = useId();
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
   const [from, setFrom] = useState("");
@@ -79,152 +96,108 @@ export function PurchaseLinePicker({ vendorId, companyCurrency, excludeLineIds, 
     });
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#1C252E]/40 p-6" onClick={suspended ? undefined : onCancel}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="load-picker-title"
-        className="flex max-h-[90vh] w-full max-w-[1195px] flex-col rounded-2xl bg-white shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
+    <PickerDialog titleId={titleId} title="Add From Purchase" onClose={onCancel} onBackdrop={suspended ? undefined : onCancel}>
+      <PickerToolbar
+        search={{ value: search, onChange: setSearch, placeholder: PICKER_SEARCH_PLACEHOLDER, label: "Search purchase lines", maxLength: 100 }}
+        dates={{ from, to, onFrom: setFrom, onTo: setTo, fromLabel: "PU date from", toLabel: "PU date to" }}
+      />
+      <PickerFrame
+        minWidth="min-w-[1100px]"
+        footer={<PickerFooter count={checked.size} onCancel={onCancel} onOk={() => onConfirm(items.filter((item) => checked.has(item.purchaseLineId)))} />}
       >
-        <header className="flex items-center justify-between border-b border-[#E3E6EA] px-6 py-4">
-          <h2 id="load-picker-title" className="text-lg font-medium text-[#1C252E]">Add From Purchase</h2>
-          <IconButton label="Close" onClick={onCancel}>
-            <X className="size-5" />
-          </IconButton>
-        </header>
-
-        <div className="flex min-h-0 flex-1 flex-col px-6 py-5 md:px-10">
-          <div className="mb-5 flex flex-wrap justify-end gap-3">
-            <label className="flex h-10 w-full max-w-80 items-center gap-2 rounded-lg bg-[#F6F7F8] px-3 text-sm">
-              <Search aria-hidden className="size-4 text-[#6B7480]" />
+        <thead className={pickerHead}>
+          <tr className="h-14">
+            <th scope="col" className="w-14 px-4">
               <input
-                autoFocus
-                value={search}
-                maxLength={100}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder={PICKER_SEARCH_PLACEHOLDER}
-                aria-label="Search purchase lines"
-                className="w-full bg-transparent outline-none placeholder:text-[#A9B1B9]"
+                type="checkbox"
+                aria-label="Select all"
+                className={pickerCheckbox}
+                checked={allChecked}
+                disabled={items.length === 0}
+                onChange={() => setChecked(allChecked ? new Set() : new Set(items.map((item) => item.purchaseLineId)))}
               />
-            </label>
-            <div className="flex h-10 items-center gap-2 rounded-lg border border-[#E3E6EA] px-3 text-sm">
-              <DateInput aria-label="PU date from" placeholder="Start" value={from} onChange={setFrom} className="w-[120px] bg-transparent outline-none" />
-              <ArrowRight aria-hidden className="size-4 text-[#6B7480]" />
-              <DateInput aria-label="PU date to" placeholder="Due" value={to} onChange={setTo} className="w-[120px] bg-transparent outline-none" />
-            </div>
-          </div>
-
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#E3E6EA]">
-            <div className="min-h-[360px] flex-1 overflow-auto">
-              <table className="w-full min-w-[1100px] border-collapse text-sm text-[#1C252E]">
-                <thead className="sticky top-0 bg-[#F6F7F8] text-left">
-                  <tr>
-                    <th scope="col" className="w-12 px-4 py-3">
-                      <input
-                        type="checkbox"
-                        aria-label="Select all"
-                        className="size-5 accent-[#0E5E63]"
-                        checked={allChecked}
-                        disabled={items.length === 0}
-                        onChange={() => setChecked(allChecked ? new Set() : new Set(items.map((item) => item.purchaseLineId)))}
-                      />
-                    </th>
-                    <th scope="col" className="w-8 font-normal text-[#6B7480]">#</th>
-                    <HeaderCell title="PU No." sub="Doc Date" />
-                    <HeaderCell title="Stone Code" sub="Stock ID · Lot" />
-                    <HeaderCell title="Location" />
-                    <HeaderCell title="Stone" sub="Shape · Size" />
-                    <HeaderCell title="Color · Clarity" sub="Cutting · Quality" />
-                    <HeaderCell title="Cer Type" sub="Cer No." />
-                    <HeaderCell title="Pcs" right />
-                    <HeaderCell title="Weight (ct)" right />
-                    <HeaderCell title="Price" sub="Unit" right />
-                    <HeaderCell title="Amount" right />
-                  </tr>
-                </thead>
-                <tbody>
-                  {search$.isPending && (
-                    <tr>
-                      <td colSpan={12} className="py-16 text-center text-[#6B7480]">Loading…</td>
-                    </tr>
+            </th>
+            <th scope="col" className="w-8 text-sm font-medium">#</th>
+            <PickerTh title="PU No." sub="Doc Date" upper plainSub />
+            <PickerTh title="Stone Code" sub="Stock ID · Lot" />
+            <PickerTh title="Location" upper />
+            <PickerTh title="Stone" sub="Shape · Size" upper />
+            <PickerTh title="Color · Clarity" sub="Cutting · Quality" upper />
+            <PickerTh title="Cer Type" sub="Cer No." upper />
+            <PickerTh title="Pcs" right upper />
+            <PickerTh title="Weight" right />
+            <PickerTh title="Price" sub="Unit" right upper />
+            <PickerTh title="Amount" right upper />
+          </tr>
+        </thead>
+        <tbody>
+          {search$.isPending && <PickerMessage span={12}>Loading…</PickerMessage>}
+          {search$.isError && (
+            <tr>
+              <td colSpan={12} className="py-16 text-center">
+                <p role="alert" className="text-[#E5484D]">{loadLoadError(search$.error, "purchase lines")}</p>
+                <Button size="sm" className="mt-3" onClick={() => void search$.refetch()}>Retry</Button>
+              </td>
+            </tr>
+          )}
+          {search$.isSuccess && items.length === 0 && <PickerMessage span={12}>{PICKER_EMPTY_TEXT}</PickerMessage>}
+          {items.map((item, index) => {
+            const on = checked.has(item.purchaseLineId);
+            return (
+              <tr key={item.purchaseLineId} onClick={() => toggle(item.purchaseLineId)} className={pickerRowClass(on)}>
+                <td className={pickerCheckCell}>
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${item.stoneCode || "line"} from ${item.purchase.docNo}`}
+                    className={pickerCheckbox}
+                    checked={on}
+                    onChange={() => toggle(item.purchaseLineId)}
+                    onClick={(event) => event.stopPropagation()}
+                  />
+                </td>
+                <td className={pickerIndexCell}>{index + 1}</td>
+                <td className={pickerCell}>
+                  <div className="font-medium">{item.purchase.docNo}</div>
+                  <div className={pickerSub}>{shortDate(item.purchase.docDate)}</div>
+                </td>
+                <td className={pickerCell}>
+                  {/* Design 148: "New on load" (the Stock ID is issued on save) with the lot chip. */}
+                  <div className="font-medium">{item.stoneCode || "—"}</div>
+                  <div className={cx(pickerSub, "flex flex-wrap items-center gap-1.5")}>
+                    <span>New on load</span>
+                    {item.lot && <span aria-hidden>·</span>}
+                    {item.lot && <PickerLot>{item.lot}</PickerLot>}
+                  </div>
+                </td>
+                <td className={pickerCell}>{item.location || "—"}</td>
+                <td className={pickerCell}><StoneCell attrs={item} /></td>
+                <td className={pickerCell}><GradeCell attrs={item} /></td>
+                <td className={pickerCell}>
+                  {item.cerType || item.cerNo ? (
+                    <>
+                      {item.cerType && <PickerChip>{item.cerType}</PickerChip>}
+                      <div className={pickerSub}>{item.cerNo}</div>
+                    </>
+                  ) : (
+                    <span className="text-xs text-gms-text-secondary">No certificate</span>
                   )}
-                  {search$.isError && (
-                    <tr>
-                      <td colSpan={12} className="py-16 text-center">
-                        <p role="alert" className="text-[#E5484D]">{loadLoadError(search$.error, "purchase lines")}</p>
-                        <Button size="sm" className="mt-3" onClick={() => void search$.refetch()}>Retry</Button>
-                      </td>
-                    </tr>
-                  )}
-                  {search$.isSuccess && items.length === 0 && (
-                    <tr>
-                      <td colSpan={12} className="py-16 text-center text-[#6B7480]">{PICKER_EMPTY_TEXT}</td>
-                    </tr>
-                  )}
-                  {items.map((item, index) => {
-                    const on = checked.has(item.purchaseLineId);
-                    return (
-                      <tr
-                        key={item.purchaseLineId}
-                        onClick={() => toggle(item.purchaseLineId)}
-                        className={cx("cursor-pointer border-b border-[#EEF0F2] align-top", on ? "bg-[#E6F1F1]" : "hover:bg-[#FAFBFB]")}
-                      >
-                        <td className="px-4 py-4">
-                          <input
-                            type="checkbox"
-                            aria-label={`Select ${item.stoneCode || "line"} from ${item.purchase.docNo}`}
-                            className="size-5 accent-[#0E5E63]"
-                            checked={on}
-                            onChange={() => toggle(item.purchaseLineId)}
-                            onClick={(event) => event.stopPropagation()}
-                          />
-                        </td>
-                        <td className="py-4 text-[#6B7480]">{index + 1}</td>
-                        <td className="px-3 py-4">
-                          <div className="font-medium">{item.purchase.docNo}</div>
-                          <div className="mt-1 text-xs text-[#6B7480]">{shortDate(item.purchase.docDate)}</div>
-                        </td>
-                        <td className="px-3 py-4"><StoneCodeCell code={item.stoneCode} label="New on load" stockId={null} lot={item.lot} /></td>
-                        <td className="px-3 py-4">{item.location || "—"}</td>
-                        <td className="px-3 py-4"><StoneCell attrs={item} /></td>
-                        <td className="px-3 py-4"><GradeCell attrs={item} /></td>
-                        <td className="px-3 py-4"><CerCell attrs={item} /></td>
-                        <td className="px-3 py-4 text-right tabular-nums">{item.remainingPcs}</td>
-                        <td className="px-3 py-4 text-right tabular-nums">{nf.weight(item.remainingWeightCt)}</td>
-                        <td className="px-3 py-4 text-right tabular-nums">
-                          {nf.unitPrice(item.unitPrice)} {item.purchase.currency}
-                          <div className="mt-1 text-xs text-[#6B7480]">{priceSub(item, companyCurrency)}</div>
-                        </td>
-                        <td className="px-3 py-4 text-right tabular-nums">
-                          {nf.money(item.remainingAmountBase)}
-                          <div className="mt-1 text-xs text-[#6B7480]">{companyCurrency}</div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {search$.hasNextPage && (
-                    <tr>
-                      <td colSpan={12} className="py-4 text-center">
-                        <Button size="sm" disabled={search$.isFetchingNextPage} onClick={() => void search$.fetchNextPage()}>
-                          {search$.isFetchingNextPage ? "Loading…" : "Load more"}
-                        </Button>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <footer className="flex items-center justify-end gap-2 border-t border-[#E3E6EA] px-5 py-3">
-              {checked.size > 0 && <span className="mr-auto text-sm font-medium text-[#1C252E]">{checked.size} selected</span>}
-              <Button onClick={onCancel}>Cancel</Button>
-              <Button variant="primary" className="min-w-24" disabled={checked.size === 0} onClick={() => onConfirm(items.filter((item) => checked.has(item.purchaseLineId)))}>
-                OK
-              </Button>
-            </footer>
-          </div>
-        </div>
-      </div>
-    </div>
+                </td>
+                <td className={cx(pickerCell, "text-right tabular-nums")}>{item.remainingPcs}</td>
+                <td className={cx(pickerCell, "text-right tabular-nums")}>{nf.weight(item.remainingWeightCt)}</td>
+                <td className={cx(pickerCell, "text-right tabular-nums")}>
+                  {nf.unitPrice(item.unitPrice)} {item.purchase.currency}
+                  <div className={pickerSub}>{priceSub(item, companyCurrency)}</div>
+                </td>
+                <td className={cx(pickerCell, "text-right tabular-nums")}>
+                  {nf.money(item.remainingAmountBase)}
+                  <div className={pickerSub}>{companyCurrency}</div>
+                </td>
+              </tr>
+            );
+          })}
+          {search$.hasNextPage && <PickerLoadMore span={12} loading={search$.isFetchingNextPage} onMore={() => void search$.fetchNextPage()} />}
+        </tbody>
+      </PickerFrame>
+    </PickerDialog>
   );
 }

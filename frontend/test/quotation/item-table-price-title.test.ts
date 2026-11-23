@@ -84,7 +84,7 @@ describe("UT-PU-02 price column title and row-panel price label", () => {
   it("purchase shows Price (Unit) in the table and Price in the row panel, never Sale Price", () => {
     const html = table(PURCHASE_KIND);
     const titles = headers(html);
-    expect(titles).toEqual(["Stone Code", "Location", "Stone", "Color · Clarity", "Cer Type", "Pcs", "Weight (ct)", "Price", "Amount"]);
+    expect(titles).toEqual(["Lot / Stone Code", "Location", "Stone", "Color · Clarity", "Cer Type", "Pcs", "Weight (ct)", "Price", "Amount"]);
     expect(html).not.toContain("Sale Price");
     const row = panel(PURCHASE_KIND);
     expect(row).toContain(">Price<");

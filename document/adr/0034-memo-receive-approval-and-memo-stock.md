@@ -1,6 +1,7 @@
 # ADR-0034: Memo Receive API, approval and Memo Stock in the master service (before inventory)
 
 - Status: Accepted (2026-10-29)
+- Amended by [ADR-0055](0055-lot-based-stock-picking-and-allocation.md) (2026-11-20, lot-based stock): D7 (Add Memo Stock picker unit): pickers list lot groups; Stock IDs are still issued per line but no longer shown (Q-LOT-17).
 - Date: 2026-10-29
 - Feature / source UI revision: `memo-receive` / 3
 - SA revision: 1 ([decisions](../apps/backend/master/memo-receive/decisions.md), [API contract](../apps/backend/master/memo-receive/api-contract.md))

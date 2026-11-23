@@ -85,7 +85,7 @@ describe("Outstanding reports prune before grouping (INV-20261029-004)", () => {
     expect((await service.customerList(memoOutstandingCustomerListSchema.parse({ page: 1, pageSize: 10 }))).total).toBe(4);
     expect(db.queries[0]).toContain("WITH open_docs AS MATERIALIZED");
     expect(db.queries[0]).toMatch(/FROM "partner"\."memo_out" o WHERE o\.status = \? AND o\.deleted_at IS NULL AND EXISTS \(SELECT 1 FROM "partner"\."memo_out_line" x WHERE x\.memo_out_id = o\.id/);
-    expect(db.queries[0]).toMatch(/FROM page p JOIN "partner"\."memo_out_line" l ON l\.memo_out_id = p\.id AND \(l\.memo_stock_id IS NOT NULL OR l\.own_stock_id IS NOT NULL\) GROUP BY l\.memo_out_id/);
+    expect(db.queries[0]).toMatch(/FROM page p JOIN "partner"\."memo_out_line" l ON l\.memo_out_id = p\.id AND \(l\.memo_stock_id IS NOT NULL OR l\.own_stock_id IS NOT NULL OR l\.lot_key IS NOT NULL\) GROUP BY l\.memo_out_id/);
     db.results = [[docRow(5)]];
     expect((await service.purchaseList(purchaseOutstandingListSchema.parse({ page: 1, pageSize: 10 }))).total).toBe(5);
     expect(db.queries[1]).toMatch(/AND EXISTS \(SELECT 1 FROM "partner"\."memo_stock" o WHERE o\.memo_receive_id = r\.id AND \(\(o\.received_pcs - o\.returned_pcs - o\.purchased_pcs\) > 0 OR \(o\.received_weight_ct - o\.returned_weight_ct - o\.purchased_weight_ct\) > 0\)\) GROUP BY r\.id\)/);

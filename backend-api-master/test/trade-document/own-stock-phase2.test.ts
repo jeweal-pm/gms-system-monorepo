@@ -3,61 +3,17 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Prisma } from "../../src/generated/prisma/client";
 import { createInventoryClient, inventoryBaseUrl, InventoryRefusal, InventoryUnavailable, setInventoryClient, type InventoryClient } from "../../src/inventory-client/inventory-client";
-import { compareDesc, fromStockListSchema, mergePages, ownStockItem, type FromStockItem } from "../../src/trade-document/from-stock.service";
 import { covered, holdsEqual, lineIndexOf, splitHolds, sumLines, toEntries, type HoldSet } from "../../src/trade-document/inventory-hold-saga";
 import { completeOwnStockLines, storedOwnLines } from "../../src/trade-document/own-stock-lines";
 import { createMemoOutSchema } from "../../src/trade-document/memo-schemas";
 import { createQuotationSchema } from "../../src/quotation/quotation.schemas";
 
 /**
- * load-to-stock SA rev 2 (ADR-0052 D16–D20) master units: UT-LS-P2-01 (merge), UT-LS-P2-02 (acquire / release split),
+ * load-to-stock SA rev 2 (ADR-0052 D16–D20) master units: UT-LS-P2-02 (acquire / release split),
  * the inventory client (timeouts, BUSY retry, auth / refusal mapping) and the own-stock line completion (kept rule).
  */
 const D = (value: string | number) => new Prisma.Decimal(value);
 const set = (entries: [string, number, string][]): HoldSet => new Map(entries.map(([stock, pcs, weight]) => [stock, { pcs, weight: D(weight) }]));
-const item = (date: string, stockId: string, source: "MEMO_STOCK" | "OWN_STOCK"): FromStockItem => ({ stockId, ref: { type: source === "OWN_STOCK" ? "LOAD" : "MEMO_RECEIVE", id: stockId, docNo: "", docDate: date }, source } as FromStockItem);
-
-describe("UT-LS-P2-01 fromStock merge", () => {
-  const memo = [item("2026-11-05", "260010", "MEMO_STOCK"), item("2026-11-03", "260009", "MEMO_STOCK"), item("2026-11-01", "260001", "MEMO_STOCK")];
-  const own = [item("2026-11-04", "810005", "OWN_STOCK"), item("2026-11-03", "810004", "OWN_STOCK"), item("2026-11-02", "810002", "OWN_STOCK")];
-
-  it("orders both sides by (date DESC, Stock ID DESC) and keys the cursor on the last returned row", () => {
-    const page = mergePages(memo.slice(0, 2), true, own, 3);
-    expect(page.items.map((row) => row.stockId)).toEqual(["260010", "810005", "810004"]);
-    expect(Buffer.from(page.nextCursor!, "base64url").toString()).toBe("2026-11-03|810004");
-  });
-  it("one side empty; nothing left → no cursor; both > limit → cursor", () => {
-    expect(mergePages([], false, own.slice(0, 2), 3)).toMatchObject({ nextCursor: null });
-    expect(mergePages(memo, false, [], 3).nextCursor).toBeNull();
-    expect(mergePages(memo, false, own, 5).nextCursor).not.toBeNull();
-  });
-  it("three pages walk the union with no duplicate or skip", () => {
-    const all = [...memo, ...own].sort(compareDesc);
-    const seen: string[] = [];
-    let after: { date: string; stockId: string } | null = null;
-    for (let i = 0; i < 3; i += 1) {
-      const older = (row: FromStockItem) => !after || row.ref.docDate < after.date || (row.ref.docDate === after.date && row.stockId < after.stockId);
-      const m = memo.filter(older);
-      const page = mergePages(m.slice(0, 2), m.length > 2, own.filter(older).slice(0, 3), 2);
-      seen.push(...page.items.map((row) => row.stockId));
-      const last = page.items.at(-1)!;
-      after = { date: last.ref.docDate, stockId: last.stockId };
-    }
-    expect(seen).toEqual(all.map((row) => row.stockId));
-  });
-  it("own rows carry Location, Lot, LOAD ref and no price; input schema bounds", () => {
-    const row = ownStockItem({
-      stockUuid: "u", stockId: "810001", location: "BKK-01", priceUnit: "PER_PCS", stoneCode: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "",
-      lot: "L1", cerType: "", cerNo: "", pcs: 3, weightCt: "1.000", availablePcs: 2, availableWeightCt: "0.500", stockPrice: "1.00", salePrice: "2.00", currency: "THB",
-      vendor: { id: "v", code: "V", name: "Vn" }, load: { id: "l", docNo: "LS-1", docDate: "2026-11-01" }, itemNote: "",
-    });
-    expect(row).toMatchObject({ source: "OWN_STOCK", location: "BKK-01", lot: "L1", priceUnit: "PCS", pendingPcs: 2, unitPrice: null, amount: null, memoReceive: null, ref: { type: "LOAD", docNo: "LS-1" } });
-    expect(fromStockListSchema.safeParse({ limit: 51 }).success).toBe(false);
-    expect(fromStockListSchema.safeParse({ from: "2026-01-01", to: "2027-06-01" }).success).toBe(false);
-    expect(fromStockListSchema.parse({}).limit).toBe(50);
-  });
-});
-
 describe("UT-LS-P2-02 acquire / release split (D19)", () => {
   it("RESERVED / MEMO_OUT: up = acquire, down = release; H_mid = max per dimension", () => {
     const old = set([["A", 3, "3"], ["B", 2, "2"]]);
@@ -115,7 +71,7 @@ describe("inventory client (D21/D22)", () => {
       seen.push({ path: req.url ?? "", auth: req.headers.authorization, actor: req.headers["x-actor-user-id"] as string | undefined });
       req.resume();
       req.on("end", () => {
-        if (req.url?.endsWith("/stock/available")) {
+        if (req.url?.endsWith("/stock/lots/available")) {
           if (busyOnce) { busyOnce = false; res.writeHead(503, { "retry-after": "1", "content-type": "application/json" }).end(JSON.stringify({ error: { code: "INVENTORY_BUSY" } })); return; }
           res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ items: [] }));
         } else if (req.url?.includes("/stock-holds/")) {
@@ -135,9 +91,9 @@ describe("inventory client (D21/D22)", () => {
 
   it("bearer + actor headers; INVENTORY_BUSY retried once after 1 s; refusal carries code and details", async () => {
     const client = createInventoryClient(base, token);
-    expect(await client.available({ limit: 2 }, { actorId: "u-1" })).toEqual([]);
-    expect(seen.filter((call) => call.path.endsWith("/stock/available"))).toHaveLength(2);
-    expect(seen[0]).toMatchObject({ path: "/internal/v1/master/stock/available", auth: `Bearer ${token}`, actor: "u-1" });
+    expect(await client.lotsAvailable({ limit: 2 }, { actorId: "u-1" })).toEqual([]);
+    expect(seen.filter((call) => call.path.endsWith("/stock/lots/available"))).toHaveLength(2);
+    expect(seen[0]).toMatchObject({ path: "/internal/v1/master/stock/lots/available", auth: `Bearer ${token}`, actor: "u-1" });
     const refusal = await client.putHolds("reserve", "x", { revision: 1, documentNo: null, holds: [] }).catch((error: unknown) => error);
     expect(refusal).toBeInstanceOf(InventoryRefusal);
     expect(refusal).toMatchObject({ status: 409, code: "STOCK_HOLD_STALE", details: { appliedRevision: 4 } });
@@ -146,8 +102,8 @@ describe("inventory client (D21/D22)", () => {
     const started = Date.now();
     await expect(createInventoryClient(base, token).batch(["a"])).rejects.toBeInstanceOf(InventoryUnavailable);
     expect(Date.now() - started).toBeLessThan(5_800);
-    await expect(createInventoryClient(null, token).available({ limit: 1 })).rejects.toMatchObject({ reason: "disabled" });
-    await expect(createInventoryClient(base, null).available({ limit: 1 })).rejects.toMatchObject({ reason: "token_missing" });
+    await expect(createInventoryClient(null, token).lotsAvailable({ limit: 1 })).rejects.toMatchObject({ reason: "disabled" });
+    await expect(createInventoryClient(base, null).lotsAvailable({ limit: 1 })).rejects.toMatchObject({ reason: "token_missing" });
     expect(inventoryBaseUrl("http://u:p@x")).toBeNull();
     expect(inventoryBaseUrl("http://backend-api-inventory:3301")?.host).toBe("backend-api-inventory:3301");
   }, 10_000);
@@ -157,7 +113,7 @@ describe("own-stock line completion (D17 kept rule)", () => {
   const S = "00000000-0000-4000-8000-0000000000aa";
   const row = { stockUuid: S, stockId: "810001", status: "ACTIVE" as const, stoneCodeId: null, location: "Safe A", priceUnit: "PER_CT" as const, stoneCode: "SC", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "L1", cerType: "", cerNo: "", pcs: 5, weightCt: "5.000", availablePcs: 3, availableWeightCt: "3.000", stockPrice: "1.00", salePrice: "2.00", currency: "THB", vendor: { id: "v", code: "V", name: "N" }, load: { id: "l", docNo: "LS", docDate: "2026-11-01" }, itemNote: "" };
   let batches = 0;
-  const fake: InventoryClient = { available: async () => [], batch: async () => { batches += 1; return [row]; }, putHolds: async () => { throw new Error("no"); } };
+  const fake: InventoryClient = { batch: async () => { batches += 1; return [row]; }, putHolds: async () => { throw new Error("no"); }, lotsAvailable: async () => [], stockLots: async () => [] };
   beforeAll(() => setInventoryClient(fake));
   afterAll(() => setInventoryClient(null));
   const refInvalid = (fields: unknown) => Object.assign(new Error("ref"), { fields });

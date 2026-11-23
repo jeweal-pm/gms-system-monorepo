@@ -11,16 +11,19 @@ type GatewayErrorInit = {
   code?: string;
   /** Raw server message; mappers must never show it. */
   message?: string;
+  /** Structured error data (`data.details`), e.g. `{ lines: [...] }` of a lot short. */
+  details?: Record<string, unknown>;
 };
 
 /**
  * A real `TRPCClientError` in the gateway errorFormatter envelope
  * (`data.code`, `data.httpStatus`, `data.domainCode`, `data.fieldErrors`).
  */
-export function gatewayError({ domainCode, fieldErrors, httpStatus = 400, code = "BAD_REQUEST", message = "raw server text" }: GatewayErrorInit): TRPCClientError<never> {
+export function gatewayError({ domainCode, fieldErrors, httpStatus = 400, code = "BAD_REQUEST", message = "raw server text", details }: GatewayErrorInit): TRPCClientError<never> {
   const data: Record<string, unknown> = { code, httpStatus };
   if (domainCode !== undefined) data.domainCode = domainCode;
   if (fieldErrors !== undefined) data.fieldErrors = fieldErrors;
+  if (details !== undefined) data.details = details;
   return new TRPCClientError(message, { result: { error: { code: -32600, message, data } } } as never);
 }
 

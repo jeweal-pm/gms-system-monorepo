@@ -15,7 +15,7 @@ import { calculateTotals, oversizeAmounts, type Discount } from "./totals";
 export type NormalizedLine = {
   id: string; position: number; source: SaleSource;
   reserveLineId: string | null; reserveId: string | null; reserveDocNo: string | null;
-  memoStockId: string; stockId: string; memoReceiveId: string | null; memoReceiveDocNo: string | null;
+  memoStockId: string | null; lotKey: string | null; stockCount: number | null; stockId: string; memoReceiveId: string | null; memoReceiveDocNo: string | null;
   attrs: SaleStoneAttrs; priceUnit: PriceUnit;
   pcs: number; weightCt: string; capPcs: number; capWeightCt: string; reserveNetUnitPrice: string | null;
   unitPrice: string; discount: Discount; discountAmount: string; amount: string; itemNote: string; photoIds: string[];
@@ -39,6 +39,7 @@ export function prepareRequest(input: Pick<SaleInput, "customerId" | "shippingAd
     currency: input.currency,
     reserveLineIds: [...new Set(input.lines.flatMap((line) => (line.source === "RESERVE" && line.reserveLineId ? [line.reserveLineId] : [])))],
     memoStockIds: [...new Set(input.lines.flatMap((line) => (line.source === "STOCK" && line.memoStockId ? [line.memoStockId] : [])))],
+    lotKeys: [...new Set(input.lines.flatMap((line) => (line.source === "STOCK" && !line.memoStockId && line.lotKey ? [line.lotKey] : [])))],
     ...(options.saleId ? { saleId: options.saleId } : {}),
   };
 }
@@ -61,6 +62,7 @@ export function normalizeSale(input: SaleInput, prepared: SalePrepared, options:
 
   const reserveById = new Map(prepared.reserveLines.map((line) => [line.reserveLineId, line]));
   const stockById = new Map(prepared.memoStocks.map((item) => [item.memoStockId, item]));
+  const lotByKey = new Map((prepared.memoLots ?? []).map((lot) => [lot.lotKey, lot]));
   const unavailable: FieldError[] = [];
   const exceeds: FieldError[] = [];
   const lines: Omit<NormalizedLine, "discountAmount" | "amount">[] = [];
@@ -77,9 +79,21 @@ export function normalizeSale(input: SaleInput, prepared: SalePrepared, options:
       }
       const { stoneCode, stone, shape, size, color, clarity, cutting, quality, lot, location, cerType, cerNo } = ref;
       lines.push({
-        ...base, reserveLineId: ref.reserveLineId, reserveId: ref.reserveId, reserveDocNo: ref.reserveNo, memoStockId: ref.memoStockId, stockId: ref.stockId,
+        ...base, reserveLineId: ref.reserveLineId, reserveId: ref.reserveId, reserveDocNo: ref.reserveNo, memoStockId: ref.memoStockId, lotKey: null, stockCount: null, stockId: ref.stockId,
         memoReceiveId: null, memoReceiveDocNo: null, attrs: { stoneCode, stone, shape, size, color, clarity, cutting, quality, lot, location, cerType, cerNo },
         priceUnit: ref.priceUnit, capPcs: ref.openPcs, capWeightCt: fixed(ref.openWeightCt, 3), reserveNetUnitPrice: fixed(ref.netUnitPrice, 4),
+      });
+    } else if (!line.memoStockId && line.lotKey) {
+      // ADR-0055 D4: a lot line keeps the group snapshot; master allocates it to Stock IDs when applied.
+      const lot = lotByKey.get(line.lotKey);
+      if (!lot || lot.status !== "OK" || !lot.attrs || !lot.priceUnit) {
+        unavailable.push({ path: `lines.${index}.reference`, code: "unavailable" });
+        return;
+      }
+      lines.push({
+        ...base, reserveLineId: null, reserveId: null, reserveDocNo: null, memoStockId: null, lotKey: lot.lotKey, stockCount: lot.stockCount ?? 1, stockId: "",
+        memoReceiveId: null, memoReceiveDocNo: null, attrs: lot.attrs, priceUnit: lot.priceUnit,
+        capPcs: lot.pendingPcs ?? 0, capWeightCt: fixed(lot.pendingWeightCt ?? "0", 3), reserveNetUnitPrice: null,
       });
     } else {
       const item = stockById.get(line.memoStockId!);
@@ -88,7 +102,7 @@ export function normalizeSale(input: SaleInput, prepared: SalePrepared, options:
         return;
       }
       lines.push({
-        ...base, reserveLineId: null, reserveId: null, reserveDocNo: null, memoStockId: item.memoStockId, stockId: item.stockId,
+        ...base, reserveLineId: null, reserveId: null, reserveDocNo: null, memoStockId: item.memoStockId, lotKey: null, stockCount: null, stockId: item.stockId,
         memoReceiveId: item.memoReceive.id, memoReceiveDocNo: item.memoReceive.docNo, attrs: item.attrs, priceUnit: item.priceUnit,
         capPcs: item.pendingPcs, capWeightCt: fixed(item.pendingWeightCt, 3), reserveNetUnitPrice: null,
       });
@@ -133,8 +147,11 @@ export function normalizeSale(input: SaleInput, prepared: SalePrepared, options:
 }
 
 /** The consumption set of stored / normalized lines (ADR-0054 D6 set semantics). */
-export function consumptionLines(lines: readonly { id: string; source: SaleSource; reserveLineId: string | null; memoStockId: string; pcs: number; weightCt: string }[]): SaleConsumptionLine[] {
+export function consumptionLines(lines: readonly { id: string; source: SaleSource; reserveLineId: string | null; memoStockId: string | null; lotKey?: string | null; pcs: number; weightCt: string }[]): SaleConsumptionLine[] {
+  // v1 shape for legacy lines (memoStockId); v2 (ADR-0055 D7): `lotKey` for a lot line, no item for a lot Reserve line.
   return lines.map((line) => ({
-    lineId: line.id, source: line.source, ...(line.source === "RESERVE" ? { reserveLineId: line.reserveLineId! } : {}), memoStockId: line.memoStockId, pcs: line.pcs, weightCt: new Decimal(line.weightCt).toFixed(3),
+    lineId: line.id, source: line.source, ...(line.source === "RESERVE" ? { reserveLineId: line.reserveLineId! } : {}),
+    ...(line.memoStockId ? { memoStockId: line.memoStockId } : line.lotKey ? { lotKey: line.lotKey } : {}),
+    pcs: line.pcs, weightCt: new Decimal(line.weightCt).toFixed(3),
   }));
 }

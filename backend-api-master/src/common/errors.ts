@@ -125,6 +125,9 @@ const messages: Record<string, string> = {
   RESERVE_BUSY: "Updating our stock; try again in a few seconds",
   MEMO_OUT_BUSY: "Updating our stock; try again in a few seconds",
   MEMO_OUT_RETURN_BUSY: "Updating our stock; try again in a few seconds",
+  // lot-based-stock SA rev 1 error-handling.md (ADR-0055).
+  STOCK_LOT_TOO_LARGE: "This lot is too large to pick in one document; contact an administrator",
+  STOCK_LOT_UNAVAILABLE: "This lot has nothing left",
   INTERNAL_SERVER_ERROR: "The request could not be completed",
 };
 
@@ -132,7 +135,7 @@ const messages: Record<string, string> = {
  * Small, non-sensitive facts a client needs to explain a refusal (approval-setup api-contract: `HAS_WAITING {pending,
  * revision}`, `<CODE>_IN_USE {usedBy}`). Counts and document numbers only; never notes, names or input echoes.
  */
-export type ErrorDetails = Readonly<Record<string, string | number>>;
+export type ErrorDetails = Readonly<Record<string, string | number | readonly Readonly<Record<string, string | number | null>>[]>>;
 
 export function errorBody(code: string, fieldErrors?: FieldError[] | null, details?: ErrorDetails) {
   return {

@@ -99,6 +99,25 @@
   --radius-gms-xl: 16px;
   --radius-gms-2xl: 30px;
 
+  /*
+   * Picker table design system (owner 2026-11-20, design 136): grey header, row states and column-group tints
+   * (group header 30 %, sub-header 18 %, cell 8 % of the group colour).
+   */
+  --color-gms-table-head: #e9eded;
+  --color-gms-row-hover: #f6fafa;
+  --color-gms-row-active: #e5f3f2;
+  --color-gms-row-accent: #df1016;
+  --color-gms-group-band: #f6f8f8;
+  --color-gms-group-orange-head: #f6dcc0;
+  --color-gms-group-orange-sub: #f9ead9;
+  --color-gms-group-orange-cell: #fdf6ee;
+  --color-gms-group-green-head: #c0e2ce;
+  --color-gms-group-green-sub: #d9eee1;
+  --color-gms-group-green-cell: #eef7f2;
+  --color-gms-group-red-head: #f4cbce;
+  --color-gms-group-red-sub: #f8e0e2;
+  --color-gms-group-red-cell: #fcf1f2;
+
   --shadow-gms-overlay: 0 12px 32px rgb(0 0 0 / 0.08);
   --shadow-gms-tile: 0 1px 3px rgb(0 0 0 / 0.12);
   --shadow-gms-setup-tile: 0 2px 10px rgb(0 0 0 / 0.1);

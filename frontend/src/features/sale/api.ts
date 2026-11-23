@@ -160,6 +160,7 @@ export function fromSale(detail: SaleOut): SaleFormValues {
     saleSource: line.source,
     reserveLineId: line.reserveLineId ?? "",
     memoStockId: line.memoStockId,
+    lotKey: line.lotKey,
     sourceDocNo: line.sourceDoc.docNo,
     stockPendingPcs: String(line.capPcs),
     stockPendingWeightCt: line.capWeightCt,
@@ -333,6 +334,11 @@ export function mapSaleSaveError(error: unknown, values?: SaleFormValues): SaveO
   switch (domainCode) {
     case "SALE_SOURCE_SHORT":
       return rowsOutcome(detailed.filter((entry) => entry.code === "exceeds_open" || entry.code === "exceeds_pending").map(exceeds), "Some items no longer have enough available. Lower the quantity and save again.");
+    // lot-based-stock: a lot with nothing left (or too large to take in one sale).
+    case "STOCK_LOT_UNAVAILABLE":
+      return rowsOutcome(detailed.map((entry) => rowError(entry.path, "This lot has nothing left. Remove the row.")), "Some lots have nothing left. Remove those rows.");
+    case "STOCK_LOT_TOO_LARGE":
+      return { fieldErrors: [], message: "A lot is too large to pick in one document; contact admin" };
     case "SALE_REFERENCE_INVALID":
       return rowsOutcome(detailed.map((entry) => rowError(entry.path, "This item is no longer available. Remove the row.")), "Some items are no longer available. Remove those rows.");
     case "SALE_DELETED":

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMemoReturnSchema, memoReturnListSchema, memoStockListSchema, updateMemoReturnSchema } from "../../src/trade-document/memo-schemas";
+import { createMemoReturnSchema, memoReturnListSchema, updateMemoReturnSchema } from "../../src/trade-document/memo-schemas";
 
 /**
  * Unit cases for memo-return SA rev 2 that need no database: input rules. The SQL paths (copy from Memo Stock,
@@ -35,12 +35,10 @@ describe("memo return input (memo-return SA rev 2)", () => {
     expect(updateMemoReturnSchema.safeParse({ ...input(), id: ID(9), expectedVersion: 1 }).success).toBe(true);
   });
 
-  it("UT-MRT-B02 list filters by status; the Memo Stock dialog filters by currency", () => {
+  it("UT-MRT-B02 list filters by status", () => {
     expect(memoReturnListSchema.parse({ status: "APPROVED" })).toMatchObject({ status: "APPROVED", limit: 50 });
     // ADR-0050: DRAFT is a list status (BE-AP-006); a status outside the approval set is refused.
     expect(memoReturnListSchema.safeParse({ status: "DRAFT" }).success).toBe(true);
     expect(memoReturnListSchema.safeParse({ status: "CANCELLED" }).success).toBe(false);
-    expect(memoStockListSchema.parse({ vendorId: ID(1), currency: "USD" })).toMatchObject({ currency: "USD" });
-    expect(memoStockListSchema.safeParse({ vendorId: ID(1), currency: "usd" }).success).toBe(false);
   });
 });

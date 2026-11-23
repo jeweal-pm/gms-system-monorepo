@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { fromSale, mapSaleSaveError, saleCalls, saleDeleted, saleFlow, saleLoadError, salePhotoUrl, saleRestoreError, uploadSalePhoto } from "@/features/sale/api";
-import { emptySale, memoStockToSaleLine, reserveLineToSaleLine, toSaleInput, type SaleFormValues } from "@/features/sale/form";
+import { emptySale, lotToSaleLine, reserveLineToSaleLine, toSaleInput, type SaleFormValues } from "@/features/sale/form";
 import { InventoryApiError } from "@/lib/inventory-client";
-import { CUSTOMER_B, ID, RESERVE_LINE, reserveLine, saleOut, STOCK, stockItem } from "./fixtures";
+import { CUSTOMER_B, ID, LOT, RESERVE_LINE, reserveLine, saleOut, STOCK, stockItem } from "./fixtures";
 
 /** UT-SL-07 (FE-SL-006/007): the inventory REST adapter, server → form mapping, Flow, and the error mapping. */
 
@@ -71,7 +71,7 @@ describe("UT-SL-07a REST calls (verified contract)", () => {
 
 const valid = (): SaleFormValues => ({
   ...emptySale(), docDate: "2026-11-20", dueDate: "2026-11-30", customerId: ID, shippingAddressId: ID, invoiceAddressId: CUSTOMER_B, currency: "USD", exchangeRate: "35.5",
-  lines: [emptySale().lines[0]!, reserveLineToSaleLine(reserveLine()), { ...memoStockToSaleLine(stockItem()), unitPrice: "950" }, ...emptySale().lines.slice(3)],
+  lines: [emptySale().lines[0]!, reserveLineToSaleLine(reserveLine()), { ...lotToSaleLine(stockItem()), unitPrice: "950" }, ...emptySale().lines.slice(3)],
 });
 
 describe("UT-SL-07b server → form, Flow, deleted", () => {
@@ -80,15 +80,15 @@ describe("UT-SL-07b server → form, Flow, deleted", () => {
     expect(form).toMatchObject({ id: ID, docNo: "SL-1001", version: 3, status: "DRAFT", customerId: ID, invoiceAddressId: CUSTOMER_B, currency: "USD", exchangeRate: "35.5", ref: "PO-9", documentNote: "Paid" });
     expect(form.lines.map((line) => [line.lineId, line.saleSource, line.reserveLineId, line.memoStockId, line.sourceDocNo, line.stockPendingPcs, line.stockPendingWeightCt])).toEqual([
       ["line-1", "RESERVE", RESERVE_LINE, STOCK, "RS-1001", "40", "336.000"],
-      ["line-2", "STOCK", "", STOCK, "MR-26100012", "3", "2.100"],
+      ["line-2", "STOCK", "", "", "MR-26100012", "3", "2.100"],
     ]);
-    expect(form.lines[1]).toMatchObject({ source: "STOCK", pcs: "1", weightCt: "0.700", unitPrice: "950.00", priceUnit: "PER_PCS", discountType: "AMOUNT", discountValue: "5", photos: [{ id: "p1", url: salePhotoUrl("p1") }] });
+    expect(form.lines[1]).toMatchObject({ source: "STOCK", lotKey: LOT, stockId: "", pcs: "1", weightCt: "0.700", unitPrice: "950.00", priceUnit: "PER_PCS", discountType: "AMOUNT", discountValue: "5", photos: [{ id: "p1", url: salePhotoUrl("p1") }] });
     expect(form.lines[0]).toMatchObject({ discountValue: "", itemNote: "gift" });
     expect(form.tax).toEqual({ enabled: true, rate: "7.0000", includeInPrice: false });
     expect(form.serviceCharges).toEqual([{ chargeId: "SHIPPING", amount: "10.00" }]);
     // Sent back unchanged: each line keeps its id and reference.
     const input = toSaleInput(form);
-    expect(input.lines.map((line) => [line.id, line.source, "reserveLineId" in line ? line.reserveLineId : line.memoStockId])).toEqual([["line-1", "RESERVE", RESERVE_LINE], ["line-2", "STOCK", STOCK]]);
+    expect(input.lines.map((line) => [line.id, line.source, "reserveLineId" in line ? line.reserveLineId : "lotKey" in line ? line.lotKey : line.memoStockId])).toEqual([["line-1", "RESERVE", RESERVE_LINE], ["line-2", "STOCK", LOT]]);
   });
 
   it("saleFlow uses the server flags; a syncing sale can't be edited or deleted; deleted info", () => {

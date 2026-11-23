@@ -11,21 +11,14 @@ import { ItemTable } from "@/features/quotation/components/items/ItemTable";
 import { DocumentKindContext, QUOTATION_KIND, type DocumentKind } from "@/features/quotation/document-kind";
 import { calculateTotals } from "@/features/quotation/lib/calculate";
 import { customerStockConfig } from "@/features/trade-document/customer-stock-config";
-import { emptyCustomerStock, memoStockToStockLine, toCustomerStockInput, type CustomerStockFormValues } from "@/features/trade-document/customer-stock";
-import type { MemoStockItem } from "@/features/trade-document/memo-stock-api";
+import { emptyCustomerStock, lotToStockLine, toCustomerStockInput, type CustomerStockFormValues } from "@/features/trade-document/customer-stock";
+import { memoLot } from "../trade-document/lot-fixture";
 import { gatewayError } from "../partner/helpers";
 
 /** UT-RS-01…05: reserve UI rev 1 + SA rev 1 (owner 2026-11-02). */
 
 const ID = "11111111-1111-4111-8111-111111111111";
-const STOCK = "22222222-2222-4222-8222-222222222222";
-const stockItem: MemoStockItem = {
-  id: STOCK, stockId: "260003", stoneCode: "", lot: "L-2607-007", location: "Memo", itemNote: "", stone: "Tourmaline", shape: "Oval", size: "7.2×5.4 mm", color: "Red", clarity: "VVS",
-  cutting: "Excellent", quality: "AAA", cerType: "GIA", cerNo: "GRS2024-081233", receivedPcs: 2, receivedWeightCt: "1.360", pendingPcs: 2, pendingWeightCt: "1.360",
-  priceUnit: "CTS", unitPrice: "12500.00", netUnitPrice: "12500.0000", currency: "THB", amount: "17000.00", vendor: { id: ID, code: "V001", name: "Aom" },
-  memoReceive: { id: ID, docNo: "1", docDate: "2026-10-29", dueDate: "2026-11-29" },
-  ref: { type: "MEMO_RECEIVE" as const, id: ID, docNo: "1", docDate: "2026-10-29" },
-};
+const stockItem = memoLot;
 const noop = () => undefined;
 const config = customerStockConfig({
   photos: DOCUMENT_PHOTOS.reserve, noun: "reserve", title: "Reserve", newHref: RESERVE_HREF, detailHref: reserveHref, useApi: () => { throw new Error("not called"); },
@@ -62,24 +55,24 @@ describe("page settings (UT-RS-02, design 01/02)", () => {
 });
 
 describe("mapping (UT-RS-03/04)", () => {
-  it("UT-RS-03 sends the Memo Stock item of a From Stock row with its Sale Price, and none for a manual row", () => {
+  it("UT-RS-03 sends the lotKey of a From Stock row with its Sale Price, and none for a manual row", () => {
     const values: CustomerStockFormValues = {
       ...emptyCustomerStock(), currency: "THB", dueDate: "2026-11-30", customerId: ID, shippingAddressId: ID, invoiceAddressId: ID,
-      lines: [{ ...memoStockToStockLine(stockItem), pcs: "1", weightCt: "0.68", unitPrice: "5000" }, { ...emptyCustomerStock().lines[0], stone: "Topaz", pcs: "1", weightCt: "1", unitPrice: "100" }],
+      lines: [{ ...lotToStockLine(stockItem), pcs: "1", weightCt: "0.68", unitPrice: "5000" }, { ...emptyCustomerStock().lines[0], stone: "Topaz", pcs: "1", weightCt: "1", unitPrice: "100" }],
     };
     const input = toCustomerStockInput(values);
-    expect(input.lines.map((line) => [line.memoStockId, line.pcs, line.weightCt, line.unitPrice])).toEqual([[STOCK, 1, "0.68", "5000"], [null, 1, "1", "100"]]);
+    expect(input.lines.map((line) => [line.lotKey, line.memoStockId, line.pcs, line.weightCt, line.unitPrice])).toEqual([[memoLot.lotKey, null, 1, "0.68", "5000"], [null, null, 1, "1", "100"]]);
     expect(input).toMatchObject({ customerId: ID, shippingAddressId: ID, invoiceAddressId: ID });
   });
 
-  it("UT-RS-04 loads a saved reserve with its status, Stock ID and pending maximum", () => {
+  it("UT-RS-04 loads a saved reserve with its status, lot and pending maximum (no Stock ID)", () => {
     const base = { id: ID, stoneCodeId: null, stoneCode: "", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "", cerType: "", cerNo: "",
       priceUnit: "PER_CT" as const, discount: { type: "NONE" as const, value: "0" }, discountAmount: "0.00", itemNote: "", photoIds: [], outstandingPcs: null, outstandingWeightCt: null };
     const detail = {
       id: ID, docNo: "RS-1", status: "APPROVED", version: 2, docDate: "2026-11-02", dueDate: "2026-11-30",
       customerId: ID, customer: { code: "C001", name: "Aom" }, shippingAddressId: ID, shippingAddressText: "S", invoiceAddressId: null, invoiceAddressText: "I",
       currency: "THB", exchangeRate: null, ref: "", documentNote: "",
-      lines: [{ ...base, source: "STOCK" as const, stone: "Tourmaline", location: "Memo", pcs: 1, weightCt: "0.680", unitPrice: "5000.00", amount: "3400.00", memoStockId: STOCK, ownStockId: null, stockId: "260003", stockPendingPcs: 2, stockPendingWeightCt: "1.360" }],
+      lines: [{ ...base, source: "STOCK" as const, stone: "Tourmaline", location: "Memo", pcs: 1, weightCt: "0.680", unitPrice: "5000.00", amount: "3400.00", memoStockId: null, ownStockId: null, stockId: null, lotKey: memoLot.lotKey, allocated: true, stockPendingPcs: 2, stockPendingWeightCt: "1.360" }],
       discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "3400.00", discountAmount: "0.00", priceBeforeTax: "3400.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "3400.00" },
       approvedAt: "2026-11-02T03:00:00.000Z", approvedBy: "u", createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, syncState: "IDLE" as const, ...FLOW_DETAIL,
@@ -91,7 +84,7 @@ describe("mapping (UT-RS-03/04)", () => {
     ]);
     expect(fromReserve(detail)).toMatchObject({
       docNo: "RS-1", status: "APPROVED", invoiceAddressId: "",
-      lines: [{ source: "STOCK", stockId: "260003", memoStockId: STOCK, stockPendingPcs: "2", stockPendingWeightCt: "1.360", pcs: "1" }],
+      lines: [{ source: "STOCK", stockId: "", lotKey: memoLot.lotKey, memoStockId: "", stockPendingPcs: "2", stockPendingWeightCt: "1.360", pcs: "1" }],
     });
   });
 });

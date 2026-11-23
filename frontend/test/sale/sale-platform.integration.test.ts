@@ -53,7 +53,7 @@ describe("IT-SL-06b Approve Center Sale menu", () => {
     const client = saleDocumentClient(saleCalls({ fetch: fetch as unknown as typeof globalThis.fetch, renew: async () => false }));
     const preview = await client.get.query({ id: ID });
     expect(preview).toMatchObject({ docNo: "SL-1001", customer: { name: "Al Noor" }, currency: "USD", totals: { grandTotal: "1225.15" } });
-    expect(preview.lines.map((line) => line.stockId)).toEqual(["260014", "260009"]);
+    expect(preview.lines.map((line) => line.stockId)).toEqual(["260014", ""]);
     await client.approve.mutate({ id: ID, expectedVersion: 0 });
     await client.requestRevision.mutate({ id: ID, expectedVersion: 3, note: "fix" });
     await client.reject.mutate({ id: ID, expectedVersion: 3, reason: "no" });

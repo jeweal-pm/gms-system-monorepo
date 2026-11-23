@@ -1,15 +1,35 @@
 "use client";
 
-import { ArrowRight, ChevronsUpDown, MessageSquare, Search, X } from "lucide-react";
-import { useEffect, useState } from "react";
-import { DateInput } from "@/components/ui/date-input";
-import { Badge, Button, cx, IconButton } from "@/features/quotation/components/ui";
+import { useEffect, useId, useState } from "react";
 import { dec } from "@/features/quotation/lib/decimal";
 import { formatMoneyText, formatUnitPrice, formatWeight } from "@/features/quotation/lib/format";
 import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
+import { cx } from "@/features/quotation/components/ui";
 import { memoStockLoadError, useMemoStock, type MemoStockItem } from "./memo-stock-api";
 import { OWN_STOCK_UNAVAILABLE_TEXT, ownStockUnavailable, pickKey, useFromStock, type FromStockItem } from "./from-stock-api";
 import { stockRef, stockRefLabel, type StockRefSource } from "./stock-ref";
+import {
+  PickerChip,
+  PickerDialog,
+  PickerFooter,
+  PickerFrame,
+  PickerGroupSubTh,
+  PickerGroupTh,
+  LotCell,
+  PickerLoadMore,
+  PickerMessage,
+  PickerTh,
+  PickerToolbar,
+  pickerCell,
+  pickerCheckbox,
+  pickerCheckCell,
+  pickerGroupTone,
+  pickerHead,
+  pickerIndexCell,
+  pickerRowClass,
+  pickerSub,
+  lotSelectLabel,
+} from "./picker-ui";
 
 /**
  * Ref. column (owner 2026-11-04/05, after Location): the transaction the item came from — the Memo Receive no. today,
@@ -17,49 +37,54 @@ import { stockRef, stockRefLabel, type StockRefSource } from "./stock-ref";
  */
 export function RefCell({ item }: { item: StockRefSource }) {
   const ref = stockRef(item);
-  if (!ref) return <td className="px-3 py-4">—</td>;
+  if (!ref) return <td className={pickerCell}>—</td>;
   return (
-    <td className="px-3 py-4">
+    <td className={pickerCell}>
       <div className="font-medium">
         {ref.docNo}
-        {ref.type === "LOAD" && <span className="ml-1.5 text-[11px] font-normal text-[#6B7480]">Load</span>}
+        {ref.type === "LOAD" && <span className="ml-1.5 text-[11px] font-normal text-gms-text-secondary">Load</span>}
       </div>
-      <div className="mt-1 text-xs text-[#6B7480]">{ref.dateText}</div>
+      <div className={pickerSub}>{ref.dateText}</div>
     </td>
   );
 }
 
 /**
  * Memo Stock picker (shared):
- * - Memo Return "Add Memo Stock" (memo-return design, SA-MR-11): the vendor's items in the return's currency, with the
- *   price after the line discount (Q-MR-13) and amount.
- * - Memo Out "From Stock" (memo-out rev 2, SA-MO-15): every vendor's items (`vendorId` left out), without the vendor's
- *   cost.
- * Each row shows Stock ID, location Memo and Pending Pcs / Weight. Search + Start → Due (memo receive Doc Date, Q-MR-10)
- * filter; rows already on the document are left out; 50 a page with Load more. OK adds the checked rows.
+ * - Memo Return "Add Memo Stock" (memo-return design, SA-MR-11; look: design 139): the vendor's items in the return's
+ *   currency, with Pending Pcs / Weight under the orange PENDING group, the price after the line discount (Q-MR-13)
+ *   and amount.
+ * - Quotation / Sale / Memo Out "Add From Stock" (look: designs 135 / 137 / 138): Memo Stock and our stock without
+ *   prices; Pcs and Weight (ct) are plain columns.
+ * Every row is a lot (lot-based-stock): Memo Return reads `memoStock.lots`, From Stock `fromStock.lots`; one row per lot,
+ * key `lotKey`, Lot chip over Stone Code and the note, no Stock ID anywhere. Location, Ref. Search + Start → Due (memo receive Doc
+ * Date, Q-MR-10) filter; rows already on the document are left out; 50 a page with Load more. OK adds the checked rows.
  */
 type PickerItem = MemoStockItem | FromStockItem;
 type MemoStockModalProps = {
   title: string;
   showPrice: boolean;
   emptyText: string;
-  /** Keys of rows already on the document (`pickKey`: Memo Stock id, or `own:<uuid>` for our stock). */
+  /** `lotKey`s of the lots already on the document. */
   pickedIds: Set<string>;
   onCancel: () => void;
 } & (
   | {
-      /** Memo Stock only (Memo Return: the vendor's items in its currency). Leave `vendorId` out to list every vendor. */
+      /** Memo Return: the vendor's Memo Stock lots in its currency (`memoStock.lots`). */
       fromStock?: false;
-      vendorId?: string;
-      currency?: string;
+      memoOnly?: undefined;
+      vendorId: string;
+      currency: string;
       onConfirm: (items: MemoStockItem[]) => void;
     }
   | {
       /**
        * load-to-stock phase 2 (quotation ui-spec Revision 3): the customer-side "Add From Stock" list of Memo Stock and
-       * our stock (`fromStock.list`); Location tells the source.
+       * our stock (`fromStock.lots`, one row per lot); Location tells the source.
        */
       fromStock: true;
+      /** Sale (inventory accepts Memo Stock lots only): our stock's rows are left out and its notice is not shown. */
+      memoOnly?: boolean;
       vendorId?: undefined;
       currency?: undefined;
       onConfirm: (items: FromStockItem[]) => void;
@@ -69,6 +94,7 @@ type MemoStockModalProps = {
 export function MemoStockModal(props: MemoStockModalProps) {
   const { title, vendorId, currency, showPrice, emptyText, pickedIds, onCancel } = props;
   const fromStock = props.fromStock === true;
+  const titleId = useId();
   const [search, setSearch] = useState("");
   const nf = useNumberFormat();
   const [q, setQ] = useState("");
@@ -88,14 +114,17 @@ export function MemoStockModal(props: MemoStockModalProps) {
   }, [onCancel]);
 
   const memoStock = useMemoStock(fromStock ? { vendorId: "", currency: "", q, from, to } : { vendorId, currency, q, from, to });
+  const memoOnly = props.memoOnly === true;
   const ownAndMemo = useFromStock({ q, from, to }, fromStock);
   const stock = fromStock ? ownAndMemo : memoStock;
   const pages = (stock.data?.pages ?? []) as { items: PickerItem[]; ownStock?: "OK" | "UNAVAILABLE" }[];
-  const items = pages.flatMap((page) => page.items).filter((item) => !pickedIds.has(pickKey(item)));
+  const keyOf = (item: PickerItem) => pickKey(item);
+  const items = pages.flatMap((page) => page.items).filter((item) => !pickedIds.has(keyOf(item)) && !(memoOnly && item.source === "OWN_STOCK"));
   // FE-LS-P2-03: our stock down → Memo Stock rows stay listed and pickable under a notice (also instead of the empty text).
-  const ownDown = fromStock && ownStockUnavailable(pages as { ownStock: "OK" | "UNAVAILABLE" }[]);
-  const allChecked = items.length > 0 && items.every((item) => checked.has(pickKey(item)));
+  const ownDown = fromStock && !memoOnly && ownStockUnavailable(pages as { ownStock: "OK" | "UNAVAILABLE" }[]);
+  const allChecked = items.length > 0 && items.every((item) => checked.has(keyOf(item)));
   const columns = showPrice ? 12 : 10;
+  const pending = pickerGroupTone.orange;
   const toggle = (id: string) =>
     setChecked((prev) => {
       const next = new Set(prev);
@@ -103,195 +132,123 @@ export function MemoStockModal(props: MemoStockModalProps) {
       else next.add(id);
       return next;
     });
+  const confirm = () => {
+    const picked = items.filter((item) => checked.has(keyOf(item)));
+    if (props.fromStock) props.onConfirm(picked);
+    else props.onConfirm(picked);
+  };
+  // Memo Return has the PENDING group row (2-row header); From Stock has a single 56 px header row.
+  const rows = showPrice ? 2 : undefined;
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#1C252E]/40 p-6" onClick={onCancel}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="memo-stock-title"
-        className="flex max-h-[90vh] w-full max-w-[1480px] flex-col rounded-2xl bg-white shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <header className="flex items-center justify-between border-b border-[#E3E6EA] px-6 py-4">
-          <h2 id="memo-stock-title" className="text-lg font-medium text-[#1C252E]">
-            {title}
-          </h2>
-          <IconButton label="Close" onClick={onCancel}>
-            <X className="size-5" />
-          </IconButton>
-        </header>
-
-        <div className="flex min-h-0 flex-1 flex-col px-10 py-6">
-          <div className="mb-5 flex flex-wrap justify-end gap-3">
-            <label className="flex h-10 w-80 items-center gap-2 rounded-lg bg-[#F6F7F8] px-3 text-sm">
-              <Search className="size-4 text-[#6B7480]" />
+    <PickerDialog titleId={titleId} title={title} onClose={onCancel}>
+      <PickerToolbar
+        search={{ value: search, onChange: setSearch, placeholder: "Search Lot, Stone, Stone Code, Cer No., Doc No.", label: "Search memo stock" }}
+        dates={{ from, to, onFrom: setFrom, onTo: setTo, fromLabel: "Received from", toLabel: "Received to" }}
+      />
+      <PickerFrame footer={<PickerFooter count={checked.size} onCancel={onCancel} onOk={confirm} />}>
+        <thead className={pickerHead}>
+          <tr className={showPrice ? undefined : "h-14"}>
+            <th scope="col" rowSpan={rows} className="w-14 px-4">
               <input
-                autoFocus
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search Stock ID, Lot, Stone, Cer No."
-                aria-label="Search memo stock"
-                className="w-full bg-transparent outline-none placeholder:text-[#A9B1B9]"
+                type="checkbox"
+                aria-label="Select all"
+                className={pickerCheckbox}
+                checked={allChecked}
+                disabled={items.length === 0}
+                onChange={() => setChecked(allChecked ? new Set() : new Set(items.map(keyOf)))}
               />
-            </label>
-            <div className="flex h-10 items-center gap-2 rounded-lg border border-[#E3E6EA] px-3 text-sm">
-              <DateInput aria-label="Received from" placeholder="Start" value={from} onChange={setFrom} className="w-[120px] bg-transparent outline-none" />
-              <ArrowRight className="size-4 text-[#6B7480]" />
-              <DateInput aria-label="Received to" placeholder="Due" value={to} onChange={setTo} className="w-[120px] bg-transparent outline-none" />
-            </div>
-          </div>
-
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-[#E3E6EA]">
-            <div className="min-h-[420px] flex-1 overflow-auto">
-              <table className="w-full min-w-[1200px] border-collapse text-sm text-[#1C252E]">
-                <thead className="sticky top-0 bg-[#F6F7F8] text-left">
-                  <tr>
-                    <th rowSpan={2} className="w-12 px-4 py-3">
-                      <input
-                        type="checkbox"
-                        aria-label="Select all"
-                        className="size-5 accent-[#0E5E63]"
-                        checked={allChecked}
-                        disabled={items.length === 0}
-                        onChange={() => setChecked(allChecked ? new Set() : new Set(items.map(pickKey)))}
-                      />
-                    </th>
-                    <th rowSpan={2} className="w-8 font-normal text-[#6B7480]">#</th>
-                    <Th title="Stone Code" sub="Stock ID · Lot" />
-                    <Th title="Location" />
-                    <Th title="Ref." sub="Doc Date" />
-                    <Th title="Stone" sub="Shape · Size" />
-                    <Th title="Color · Clarity" sub="Cutting · Quality" />
-                    <Th title="Cer Type" sub="Cer No." />
-                    <th colSpan={2} className="border-b border-l border-[#E3E6EA] px-3 py-3 text-center font-medium">Pending</th>
-                    {showPrice && <Th title="Price" sub="Unit" right divider />}
-                    {showPrice && <Th title="Amount" right />}
-                  </tr>
-                  <tr>
-                    <th className="w-[90px] border-l border-[#E3E6EA] px-3 py-2.5 text-right font-medium">Pcs</th>
-                    <th className="w-[100px] px-3 py-2.5 text-right font-medium">Weight</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stock.isPending && (
-                    <tr>
-                      <td colSpan={columns} className="py-16 text-center text-[#6B7480]">Loading…</td>
-                    </tr>
-                  )}
-                  {stock.isError && (
-                    <tr>
-                      <td colSpan={columns} className="py-16 text-center text-[#E5484D]">{memoStockLoadError(stock.error)}</td>
-                    </tr>
-                  )}
-                  {ownDown && (
-                    <tr>
-                      <td colSpan={columns} className="bg-[#FFF8E6] px-4 py-3 text-sm text-[#7A5A00]">
-                        <span role="status">{OWN_STOCK_UNAVAILABLE_TEXT}</span>
-                        {" — "}
-                        <button type="button" className="font-medium underline" disabled={stock.isRefetching} onClick={() => void stock.refetch()}>
-                          Retry
-                        </button>
-                      </td>
-                    </tr>
-                  )}
-                  {stock.isSuccess && items.length === 0 && !ownDown && (
-                    <tr>
-                      <td colSpan={columns} className="py-16 text-center text-[#6B7480]">{emptyText}</td>
-                    </tr>
-                  )}
-                  {items.map((item, index) => (
-                    <tr key={pickKey(item)} onClick={() => toggle(pickKey(item))} className="cursor-pointer border-b border-[#EEF0F2] align-top hover:bg-[#FAFBFB]">
-                      <td className="px-4 py-4">
-                        <input
-                          type="checkbox"
-                          aria-label={`Select ${item.stockId} from ${stockRefLabel(item)}`}
-                          className="size-5 accent-[#0E5E63]"
-                          checked={checked.has(pickKey(item))}
-                          onChange={() => toggle(pickKey(item))}
-                          onClick={(event) => event.stopPropagation()}
-                        />
-                      </td>
-                      <td className="py-4 text-[#6B7480]">{index + 1}</td>
-                      <td className="px-3 py-4">
-                        {/* Owner 2026-11-05: Stone Code first (bold), then Stock ID with the lot badge. */}
-                        <div className="font-medium">{item.stoneCode || "—"}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6B7480]">
-                          <span>{item.stockId}</span>
-                          {item.lot && <Badge variant="lot">{item.lot}</Badge>}
-                          {vendorId === undefined && item.vendor?.code && <span>{item.vendor.code}</span>}
-                        </div>
-                        {item.itemNote && (
-                          <div className="mt-1 flex items-center gap-1.5 text-xs text-[#6B7480]">
-                            <MessageSquare className="size-3" /> {item.itemNote}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-3 py-4">{item.location}</td>
-                      <RefCell item={item} />
-                      <td className="px-3 py-4">
-                        <div className="font-medium">{item.stone}</div>
-                        <div className="mt-1 text-xs text-[#6B7480]">{[item.shape, item.size].filter(Boolean).join(" · ")}</div>
-                      </td>
-                      <td className="px-3 py-4">
-                        <div>{[item.color, item.clarity].filter(Boolean).join(" · ")}</div>
-                        <div className="mt-1 text-xs text-[#6B7480]">{[item.cutting, item.quality].filter(Boolean).join(" · ")}</div>
-                      </td>
-                      <td className="px-3 py-4">
-                        {item.cerType && <Badge>{item.cerType}</Badge>}
-                        <div className="mt-1 text-xs text-[#6B7480]">{item.cerNo}</div>
-                      </td>
-                      <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">{item.pendingPcs}</td>
-                      <td className="px-3 py-4 text-right">{formatWeight(dec(item.pendingWeightCt), nf.weightPlaces)}</td>
-                      {showPrice && (
-                        <td className="border-l border-[#E3E6EA] px-3 py-4 text-right">
-                          {formatUnitPrice(item.netUnitPrice ?? "0", nf.pricePlaces)} {item.currency}
-                          <div className="mt-1 text-xs text-[#6B7480]">{item.priceUnit === "PCS" ? "pcs" : "cts"}</div>
-                        </td>
-                      )}
-                      {showPrice && <td className="px-3 py-4 text-right">{formatMoneyText(item.amount ?? "0", nf.pricePlaces)}</td>}
-                    </tr>
-                  ))}
-                  {stock.hasNextPage && (
-                    <tr>
-                      <td colSpan={columns} className="py-4 text-center">
-                        <Button size="sm" disabled={stock.isFetchingNextPage} onClick={() => void stock.fetchNextPage()}>
-                          {stock.isFetchingNextPage ? "Loading…" : "Load more"}
-                        </Button>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <footer className="flex items-center justify-end gap-2 border-t border-[#E3E6EA] px-5 py-3">
-              {checked.size > 0 && <span className="mr-auto text-sm font-medium text-[#1C252E]">{checked.size} selected</span>}
-              <Button onClick={onCancel}>Cancel</Button>
-              <Button variant="primary" className="min-w-24" disabled={checked.size === 0} onClick={() => {
-                  const picked = items.filter((item) => checked.has(pickKey(item)));
-                  if (props.fromStock) props.onConfirm(picked as FromStockItem[]);
-                  else props.onConfirm(picked as MemoStockItem[]);
-                }}>
-                OK
-              </Button>
-            </footer>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Th({ title, sub, right, divider }: { title: string; sub?: string; right?: boolean; divider?: boolean }) {
-  return (
-    <th rowSpan={2} className={cx("px-3 py-3 font-medium", right && "text-right", divider && "border-l border-[#E3E6EA]")}>
-      <span className={cx("inline-flex items-center gap-1.5", right && "flex-row-reverse")}>
-        <span className="leading-tight">
-          <span className="block">{title}</span>
-          {sub && <span className="block text-[11px] font-normal text-[#6B7480]">{sub}</span>}
-        </span>
-        <ChevronsUpDown className="size-3 text-[#95A0A9]" />
-      </span>
-    </th>
+            </th>
+            <th scope="col" rowSpan={rows} className="w-8 text-sm font-medium">#</th>
+            <PickerTh rowSpan={rows} title="Lot / Stone Code" />
+            <PickerTh rowSpan={rows} title="Location" upper />
+            <PickerTh rowSpan={rows} title="Ref." sub="Doc Date" plainSub />
+            <PickerTh rowSpan={rows} title="Stone" sub="Shape · Size" upper />
+            <PickerTh rowSpan={rows} title="Color · Clarity" sub="Cutting · Quality" upper />
+            <PickerTh rowSpan={rows} title="Cer Type" sub="Cer No." upper />
+            {showPrice ? (
+              <PickerGroupTh title="Pending" span={2} tone="orange" />
+            ) : (
+              <>
+                <PickerTh title="Pcs" right upper className="w-[90px]" />
+                <PickerTh title="Weight (ct)" right className="w-[110px]" />
+              </>
+            )}
+            {showPrice && <PickerTh rowSpan={rows} title="Price" sub="Unit" right upper />}
+            {showPrice && <PickerTh rowSpan={rows} title="Amount" right />}
+          </tr>
+          {showPrice && (
+            <tr>
+              <PickerGroupSubTh title="Pcs" tone="orange" className="w-[90px]" />
+              <PickerGroupSubTh title="Weight" tone="orange" className="w-[100px]" />
+            </tr>
+          )}
+        </thead>
+        <tbody>
+          {stock.isPending && <PickerMessage span={columns}>Loading…</PickerMessage>}
+          {stock.isError && (
+            <PickerMessage span={columns} error>
+              {memoStockLoadError(stock.error)}
+            </PickerMessage>
+          )}
+          {ownDown && (
+            <tr>
+              <td colSpan={columns} className="bg-[#FFF8E6] px-4 py-3 text-sm text-[#7A5A00]">
+                <span role="status">{OWN_STOCK_UNAVAILABLE_TEXT}</span>
+                {" — "}
+                <button type="button" className="font-medium underline" disabled={stock.isRefetching} onClick={() => void stock.refetch()}>
+                  Retry
+                </button>
+              </td>
+            </tr>
+          )}
+          {stock.isSuccess && items.length === 0 && !ownDown && <PickerMessage span={columns}>{emptyText}</PickerMessage>}
+          {items.map((item, index) => {
+            const key = keyOf(item);
+            const ticked = checked.has(key);
+            return (
+              <tr key={key} onClick={() => toggle(key)} className={pickerRowClass(ticked)}>
+                <td className={pickerCheckCell}>
+                  <input
+                    type="checkbox"
+                    aria-label={lotSelectLabel(item.lot, item.stoneCode, stockRefLabel(item))}
+                    className={pickerCheckbox}
+                    checked={ticked}
+                    onChange={() => toggle(key)}
+                    onClick={(event) => event.stopPropagation()}
+                  />
+                </td>
+                <td className={pickerIndexCell}>{index + 1}</td>
+                <LotCell lot={item.lot} stoneCode={item.stoneCode} note={item.itemNote} detail={fromStock ? item.vendor?.code : undefined} />
+                <td className={pickerCell}>{item.location}</td>
+                <RefCell item={item} />
+                <td className={pickerCell}>
+                  <div className="font-medium">{item.stone}</div>
+                  <div className={pickerSub}>{[item.shape, item.size].filter(Boolean).join(" · ")}</div>
+                </td>
+                <td className={pickerCell}>
+                  <div>{[item.color, item.clarity].filter(Boolean).join(" · ")}</div>
+                  <div className={pickerSub}>{[item.cutting, item.quality].filter(Boolean).join(" · ")}</div>
+                </td>
+                <td className={pickerCell}>
+                  {item.cerType && <PickerChip>{item.cerType}</PickerChip>}
+                  <div className={pickerSub}>{item.cerNo}</div>
+                </td>
+                <td className={cx(pickerCell, "text-right tabular-nums", showPrice && pending.cell)}>{item.pendingPcs}</td>
+                <td className={cx(pickerCell, "text-right tabular-nums", showPrice && pending.cell)}>{formatWeight(dec(item.pendingWeightCt), nf.weightPlaces)}</td>
+                {showPrice && (
+                  <td className={cx(pickerCell, "text-right tabular-nums")}>
+                    {formatUnitPrice(item.netUnitPrice ?? "0", nf.pricePlaces)} {item.currency}
+                    <div className={pickerSub}>{item.priceUnit === "PER_PCS" ? "pcs" : "cts"}</div>
+                  </td>
+                )}
+                {showPrice && <td className={cx(pickerCell, "text-right tabular-nums")}>{formatMoneyText(item.amount ?? "0", nf.pricePlaces)}</td>}
+              </tr>
+            );
+          })}
+          {stock.hasNextPage && <PickerLoadMore span={columns} loading={stock.isFetchingNextPage} onMore={() => void stock.fetchNextPage()} />}
+        </tbody>
+      </PickerFrame>
+    </PickerDialog>
   );
 }

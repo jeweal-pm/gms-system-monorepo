@@ -3,13 +3,13 @@ import { toTradeDocumentInput } from "@/features/quotation/api";
 import { dec, toFixed } from "@/features/quotation/lib/decimal";
 import { emptyLine, emptyQuotation, newKey } from "@/features/quotation/lib/defaults";
 import { isFilledLine, lineSchema, tradeDocumentRules, tradeDocumentShape, type QuotationLine } from "@/features/quotation/schema";
-import type { MemoStockItem } from "@/features/trade-document/memo-stock-api";
+import type { FromStockItem } from "@/features/trade-document/from-stock-api";
 import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
 
 /**
  * Sale (SL) form model: UI rev 1 + SA rev 1 / ADR-0054 (owner "อนุมัติทั้งสอง" 2026-11-18). Every row is picked
  * (Q-SL-07): From Reserve (an open line of an approved Reserve of this customer in this currency, Q-SL-05) or From Stock
- * (a Memo Stock item with pending, phase 1, Q-SL-01). Picked rows are `source: "STOCK"` in the shared form, so the row
+ * (a Memo Stock lot with pending, `fromStock.lots`, lot-based-stock round 2). Picked rows are `source: "STOCK"` in the shared form, so the row
  * panel locks the copied fields; `saleSource` says which picker they came from. Only Pcs, Weight (≤ the row's cap),
  * Sale Price (> 0), the line discount and the Item Note are edited (Q-SL-06/08).
  */
@@ -67,13 +67,15 @@ const saleLineSchema = lineSchema.extend({
   saleSource: z.enum(["", "RESERVE", "STOCK"]).default(""),
   reserveLineId: z.string().default(""),
   memoStockId: z.string().default(""),
+  /** lot-based-stock: a From Stock row names its Memo Stock lot (a legacy line keeps its item id). */
+  lotKey: z.string().default(""),
   sourceDocNo: z.string().default(""),
   stockPendingPcs: z.string().default(""),
   stockPendingWeightCt: z.string().default(""),
 });
 export type SaleLine = z.infer<typeof saleLineSchema>;
 
-const NO_SOURCE = { lineId: "", saleSource: "", reserveLineId: "", memoStockId: "", sourceDocNo: "", stockPendingPcs: "", stockPendingWeightCt: "" } as const;
+const NO_SOURCE = { lineId: "", saleSource: "", reserveLineId: "", memoStockId: "", lotKey: "", sourceDocNo: "", stockPendingPcs: "", stockPendingWeightCt: "" } as const;
 export const emptySaleLine = (): SaleLine => ({ ...emptyLine(), ...NO_SOURCE });
 
 /** Where a row comes from; "" for an empty (or, never on this page, a typed) row. */
@@ -169,15 +171,15 @@ export function reserveLineToSaleLine(row: SaleReserveLineRef): SaleLine {
 }
 
 /**
- * A Memo Stock item → a From Stock row (P-02 phase 1, as Reserve / Memo Out): the full pending as the starting quantity
- * (the cap), location Memo, and an empty Sale Price the user must type (TC-SL-05).
+ * A Memo Stock lot → a From Stock row (P-02, as Reserve / Memo Out): the full pending as the starting quantity (the cap),
+ * location Memo, `lotKey` and no Stock ID (a lot line has none, `""`), and an empty Sale Price the user must type (TC-SL-05).
  */
-export function memoStockToSaleLine(item: MemoStockItem): SaleLine {
+export function lotToSaleLine(item: FromStockItem): SaleLine {
   return {
     ...emptySaleLine(),
     key: newKey(),
     source: "STOCK",
-    stockId: item.stockId,
+    stockId: "",
     lot: item.lot,
     locationId: item.location,
     stone: item.stone,
@@ -191,11 +193,11 @@ export function memoStockToSaleLine(item: MemoStockItem): SaleLine {
     cerNo: item.cerNo,
     pcs: String(item.pendingPcs),
     weightCt: toFixed(dec(item.pendingWeightCt), 3),
-    priceUnit: item.priceUnit === "PCS" ? "PER_PCS" : "PER_CT",
+    priceUnit: item.priceUnit === "PER_PCS" ? "PER_PCS" : "PER_CT",
     unitPrice: "",
     saleSource: "STOCK",
-    memoStockId: item.id,
-    sourceDocNo: item.memoReceive.docNo,
+    lotKey: item.lotKey,
+    sourceDocNo: item.ref.docNo,
     stockPendingPcs: String(item.pendingPcs),
     stockPendingWeightCt: item.pendingWeightCt,
   };
@@ -217,9 +219,9 @@ const asSale = (line: QuotationLine) => line as Partial<SaleLine>;
 export const pickedReserveLineIds = (lines: readonly QuotationLine[]) =>
   new Set(lines.flatMap((line) => (asSale(line).saleSource === "RESERVE" && asSale(line).reserveLineId ? [asSale(line).reserveLineId!] : [])));
 
-/** Memo Stock items already on the form as From Stock rows (Add From Stock leaves them out; Reserve rows don't count). */
+/** Lots already on the form as From Stock rows (Add From Stock leaves them out by `lotKey`; Reserve rows don't count). */
 export const pickedStockIds = (lines: readonly QuotationLine[]) =>
-  new Set(lines.flatMap((line) => (asSale(line).saleSource === "STOCK" && asSale(line).memoStockId ? [asSale(line).memoStockId!] : [])));
+  new Set(lines.flatMap((line) => (asSale(line).saleSource === "STOCK" && asSale(line).lotKey ? [asSale(line).lotKey!] : [])));
 
 /** From Reserve rows on the form. */
 export const reserveRowCount = (lines: readonly QuotationLine[]) => lines.filter((line) => asSale(line).saleSource === "RESERVE").length;
@@ -252,11 +254,11 @@ export function saleStockNote(line: Partial<SaleLine>): string | null {
   return null;
 }
 
-/** The table's first column (T-06): the Stock ID with "from {Reserve No. / Memo Receive No.}". Display only. */
+/** The table's first column (T-06): the Stock ID (none on a lot line) with "from {Reserve No. / Memo Receive No.}". Display only. */
 export function saleTableLine<T extends QuotationLine>(line: T): T {
   const row = line as T & Partial<SaleLine>;
   if (!isFilledLine(line) || !row.sourceDocNo) return line;
-  return { ...line, stockId: `${line.stockId} · from ${row.sourceDocNo}` };
+  return { ...line, stockId: line.stockId ? `${line.stockId} · from ${row.sourceDocNo}` : `from ${row.sourceDocNo}` };
 }
 
 /**
@@ -277,7 +279,8 @@ export function toSaleInput(values: SaleFormValues) {
       return {
         ...(line.lineId ? { id: line.lineId } : {}),
         source,
-        ...(source === "RESERVE" ? { reserveLineId: line.reserveLineId } : { memoStockId: line.memoStockId }),
+        // A lot pick sends `lotKey`; a legacy stock line keeps its `memoStockId` (inventory accepts both).
+        ...(source === "RESERVE" ? { reserveLineId: line.reserveLineId } : line.lotKey ? { lotKey: line.lotKey } : { memoStockId: line.memoStockId }),
         pcs: shared.pcs,
         weightCt: shared.weightCt,
         unitPrice: shared.unitPrice,

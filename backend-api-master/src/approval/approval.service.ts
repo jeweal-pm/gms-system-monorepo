@@ -121,13 +121,19 @@ function keyValues(entry: ApprovalRegistryEntry, sort: PendingSort, after: { key
   }
 }
 
-/** Search across doc no., party name, ref, any line's stone name and Stock ID (Memo Out Return via its Memo Out line). */
+/**
+ * Search across doc no., party name, ref and any line's stone name plus its Stock ID (`line`; Memo Out Return via its
+ * Memo Out line) or, on the documents that hide the Stock ID (owner 2026-11-21 Q3: Quotation, Reserve, Memo Out,
+ * Memo Return, Purchase; Q-LOT-10a), the line's lot (`lot`).
+ */
 function searchSql(entry: ApprovalRegistryEntry, pattern: string): Prisma.Sql {
   const lines = tableOf(entry.lineTable);
   const parent = Prisma.raw(`l."${entry.parentColumn}"`);
   const stone = Prisma.sql`l."stone" ILIKE ${pattern} ESCAPE '\\'`;
   const lineMatch = entry.stock === "line"
     ? Prisma.sql`EXISTS (SELECT 1 FROM ${lines} l WHERE ${parent} = d."id" AND (${stone} OR l."stock_id" ILIKE ${pattern} ESCAPE '\\'))`
+    : entry.stock === "lot"
+      ? Prisma.sql`EXISTS (SELECT 1 FROM ${lines} l WHERE ${parent} = d."id" AND (${stone} OR l."lot" ILIKE ${pattern} ESCAPE '\\'))`
     : entry.stock === "memoOutLine"
       ? Prisma.sql`EXISTS (SELECT 1 FROM ${lines} l JOIN "partner"."memo_out_line" o ON o."id" = l."memo_out_line_id" WHERE ${parent} = d."id" AND (${stone} OR o."stock_id" ILIKE ${pattern} ESCAPE '\\'))`
       : Prisma.sql`EXISTS (SELECT 1 FROM ${lines} l WHERE ${parent} = d."id" AND ${stone})`;

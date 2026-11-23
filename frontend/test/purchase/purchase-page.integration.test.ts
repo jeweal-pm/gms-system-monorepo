@@ -17,14 +17,14 @@ import {
   type PurchaseFormValues,
 } from "@/features/purchase/api";
 import { EditPurchasePage, MemoStockPickStep, PURCHASE_CONFIG } from "@/features/purchase/components/PurchasePage";
-import { MemoStockPicker, pickerInput, PurchaseOrderPicker } from "@/features/purchase/components/purchase-pickers";
+import { lotPickerInput, MemoStockPicker, pickerInput, PurchaseOrderPicker } from "@/features/purchase/components/purchase-pickers";
 import { todayIso } from "@/features/quotation/lib/format";
 import { daybookInput } from "@/features/trade-document/document-api";
 import { MemoStockModal } from "@/features/trade-document/memo-stock-modal";
 import { memoStockInput } from "@/features/trade-document/memo-stock-api";
 import { authTrpc, createAuthTrpcClient } from "@/lib/auth-trpc";
 import { createMasterTrpcClient, masterTrpc } from "@/lib/master-trpc";
-import { ID, memoRow, POL, poRow, savedPurchase, STOCK } from "./fixtures";
+import { ID, LOT, memoRow, POL, poRow, savedPurchase } from "./fixtures";
 
 /**
  * IT-PU-01…04 (purchase FE-PU-003/004/005/008/009/010 on SA rev 1): the route pages and the purchase API through the
@@ -160,9 +160,11 @@ describe("IT-PU-02 purchase page composition (rev 2, wired)", () => {
     expect(html).toContain("PU-7");
     expect(html).toContain("Pending Approval");
     expect(html).toContain("Waiting for approval · Read-only until it is approved, sent back or rejected");
-    expect(html).toContain(">260003 · In stock<");
-    // FE-PU-014 (ADR-0051): purchase.get returns stockId null for PO / manual rows; they show "—".
-    expect(html).toContain(">— · from PO2611001<");
+    // lot-based-stock (owner Q3): the row shows its Lot (a legacy line too) and its part; never a Stock ID.
+    expect(html).toContain(">In stock<");
+    expect(html).toContain(">L-1</span>");
+    expect(html).not.toContain("260003");
+    expect(html).toContain(">from PO2611001<");
     expect(html).not.toContain("260012");
     expect(html).not.toContain("260011");
     expect(html).not.toMatch(/>Auto(?: · from [^<]*)?</);
@@ -285,17 +287,17 @@ describe("IT-SD-F02 restore and the deleted daybook through the real link (FE-SD
 });
 
 describe("IT-PU-01 purchase API wiring (FE-PU-003, SA rev 1 contract)", () => {
-  it("create → POST purchase.create with the contract input and CSRF; the result has the number and Stock IDs", async () => {
-    respond = (path) => (path === "purchase.create" ? ok({ id: ID, docNo: "PU-8", version: 1, stockIds: ["260003", null] }) : ok(null));
+  it("create → POST purchase.create with the contract input (lotKey alone) and CSRF; the result has the number and null Stock IDs", async () => {
+    respond = (path) => (path === "purchase.create" ? ok({ id: ID, docNo: "PU-8", version: 1, stockIds: [null, null] }) : ok(null));
     const { api } = probe(seeded(ALL));
     const input = toPurchaseInput(validValues());
-    await expect(api.create(input)).resolves.toEqual({ id: ID, docNo: "PU-8", version: 1, stockIds: ["260003", null] });
+    await expect(api.create(input)).resolves.toEqual({ id: ID, docNo: "PU-8", version: 1, stockIds: [null, null] });
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({ path: "purchase.create", method: "POST", csrf: "1" });
     expect(calls[0]!.input).toMatchObject({
       vendorId: ID, addressId: ID, currency: "THB",
       lines: [
-        { source: "STOCK", memoStockId: STOCK, memoGroup: "IN_STOCK", purchaseOrderLineId: null, discount: { type: "NONE", value: "0" }, photoIds: [] },
+        { source: "STOCK", lotKey: LOT, memoStockId: null, memoGroup: "IN_STOCK", purchaseOrderLineId: null, discount: { type: "NONE", value: "0" }, photoIds: [] },
         { source: "PURCHASE_ORDER", purchaseOrderLineId: POL, memoStockId: null, memoGroup: null, pcs: 6, weightCt: "3.000", unitPrice: "950.00" },
       ],
     });
@@ -304,7 +306,7 @@ describe("IT-PU-01 purchase API wiring (FE-PU-003, SA rev 1 contract)", () => {
   it("get → fromPurchase → update sends the saved line ids and expectedVersion; delete and Send to approve (submit) carry the version", async () => {
     respond = (path) => {
       if (path === "purchase.get") return ok(savedPurchase());
-      if (path === "purchase.update") return ok({ id: ID, version: 4, stockIds: ["260003", null, null] });
+      if (path === "purchase.update") return ok({ id: ID, version: 4, stockIds: [null, null, null] });
       if (path === "purchase.delete") return ok({ ok: true });
       if (path === "purchase.submit") return ok({ id: ID, version: 4, status: "PENDING_APPROVAL", submittedAt: "2026-11-12T03:00:00.000Z" });
       return ok(null);
@@ -349,7 +351,7 @@ describe("IT-PU-01 purchase API wiring (FE-PU-003, SA rev 1 contract)", () => {
     const queryClient = seeded(ALL);
     const keys = {
       list: getQueryKey(masterTrpc.purchase.list, { limit: 50 }, "query"),
-      picker: getQueryKey(masterTrpc.purchase.memoStock, pickerInput(ID, "THB", { status: "ALL" as const, q: "", from: "", to: "" }), "infinite"),
+      picker: getQueryKey(masterTrpc.purchase.memoStockLots, lotPickerInput(ID, "THB", { status: "ALL" as const, q: "", from: "", to: "" }), "infinite"),
       po: getQueryKey(masterTrpc.purchaseOrder.get, { id: ID }, "query"),
       outstanding: getQueryKey(masterTrpc.memoOutstanding.vendorSummary, {} as never, "query"),
       other: getQueryKey(masterTrpc.quotation.list, { limit: 50 }, "query"),
@@ -370,36 +372,37 @@ const lazyChild = (node: ReactNode) => {
 };
 
 describe("IT-PU-03 Add Memo Stock wired (FE-PU-004)", () => {
-  const input = pickerInput(ID, "THB", { status: "ALL" as const, q: "", from: "", to: "" });
+  const input = lotPickerInput(ID, "THB", { status: "ALL" as const, q: "", from: "", to: "" });
 
-  it("purchase.memoStock: the input carries status / q / from / to / limit and the next page's cursor", async () => {
-    respond = (path, received) => (path === "purchase.memoStock"
+  it("purchase.memoStockLots: the input carries group / q / from / to / limit and the next page's cursor", async () => {
+    respond = (path, received) => (path === "purchase.memoStockLots"
       ? ok({ items: [memoRow()], nextCursor: (received as { cursor?: string }).cursor ? null : "MHwyMDI2LTEwLTI5fDI2MDAwMw", counts: { all: 2, sold: 0, inStock: 2 } })
       : ok(null));
     const { utils } = probe(seeded(ALL));
-    const filtered = pickerInput(ID, "THB", { status: "IN_STOCK" as const, q: "2600", from: "2026-10-01", to: "2026-10-31" });
-    await utils.purchase.memoStock.fetchInfinite(filtered);
-    expect(calls[0]).toMatchObject({ path: "purchase.memoStock", method: "GET", input: { vendorId: ID, currency: "THB", status: "IN_STOCK", q: "2600", from: "2026-10-01", to: "2026-10-31", limit: 50 } });
+    const filtered = lotPickerInput(ID, "THB", { status: "IN_STOCK" as const, q: "2600", from: "2026-10-01", to: "2026-10-31" });
+    await utils.purchase.memoStockLots.fetchInfinite(filtered);
+    expect(calls[0]).toMatchObject({ path: "purchase.memoStockLots", method: "GET", input: { vendorId: ID, currency: "THB", group: "IN_STOCK", q: "2600", from: "2026-10-01", to: "2026-10-31", limit: 50 } });
     const queryClient = seeded(ALL);
     const second = probe(queryClient);
-    await second.utils.purchase.memoStock.fetchInfinite(input, { pages: 2, getNextPageParam: (page) => page.nextCursor ?? undefined });
+    await second.utils.purchase.memoStockLots.fetchInfinite(input, { pages: 2, getNextPageParam: (page) => page.nextCursor ?? undefined });
     expect(calls.slice(1).map((call) => (call.input as { cursor?: string }).cursor ?? null)).toEqual([null, "MHwyMDI2LTEwLTI5fDI2MDAwMw"]);
   });
 
   it("the dialog reads the hook's cache: counts, In stock group, rows, Load more; picked rows left out", () => {
     const queryClient = seeded(ALL);
-    queryClient.setQueryData(getQueryKey(masterTrpc.purchase.memoStock, input, "infinite"), {
-      pages: [{ items: [memoRow(), memoRow({ key: "x:IN_STOCK", memoStockId: "x", stockId: "260002" })], nextCursor: "next", counts: { all: 3, sold: 0, inStock: 3 } }],
+    queryClient.setQueryData(getQueryKey(masterTrpc.purchase.memoStockLots, input, "infinite"), {
+      pages: [{ items: [memoRow(), memoRow({ lotKey: `ML${"2".repeat(32)}`, lot: "L-OTHER" })], nextCursor: "next", counts: { all: 3, sold: 0, inStock: 3 } }],
       pageParams: [null],
     });
-    const html = render(queryClient, createElement(MemoStockPicker, { vendorId: ID, currency: "THB", excluded: new Set(["x:IN_STOCK"]), onCancel: () => undefined, onConfirm: () => undefined }));
+    const html = render(queryClient, createElement(MemoStockPicker, { vendorId: ID, currency: "THB", excluded: new Set([`ML${"2".repeat(32)}:IN_STOCK`]), onCancel: () => undefined, onConfirm: () => undefined }));
     expect(html).toContain(">Add Memo Stock</h2>");
     expect(html).toContain('aria-label="All, 3"');
     expect(html).toContain('aria-label="Sold, 0"');
     expect(html).toContain("Still in stock on memo · buy now or return later");
     expect(html).not.toContain("Sold to customers");
-    expect(html).toContain(">260003 · L-2607-007</div>");
-    expect(html).not.toContain(">260002 · L-2607-007</div>");
+    expect(html).toContain(">L-2607-007</span>");
+    expect(html).not.toContain("L-OTHER");
+    expect(html).not.toMatch(/Stock ID/);
     expect(html).toContain("Load more");
     expect(calls).toEqual([]);
   });
@@ -411,8 +414,8 @@ describe("IT-PU-03 Add Memo Stock wired (FE-PU-004)", () => {
     const step = lazyChild(PURCHASE_CONFIG.picker!.render({ values, onClose: () => undefined, onAdd }));
     expect(step.type).toBe(MemoStockPickStep);
     expect(step.props).toMatchObject({ values, onAdd });
-    expect([...pickedSourceKeys(values.lines)]).toEqual([`${STOCK}:IN_STOCK`]);
-    expect(memoStockToPurchaseLine(memoRow({ key: "y:SOLD", memoStockId: "y", status: "SOLD" }))).toMatchObject({ source: "STOCK", memoStockId: "y", memoGroup: "SOLD", stockPendingPcs: "2", stockMinPcs: "2" });
+    expect([...pickedSourceKeys(values.lines)]).toEqual([`${LOT}:IN_STOCK`]);
+    expect(memoStockToPurchaseLine(memoRow({ lotKey: "y", memoGroup: "SOLD" }))).toMatchObject({ source: "STOCK", lotKey: "y", memoStockId: "", memoGroup: "SOLD", stockPendingPcs: "2", stockMinPcs: "2" });
   });
 });
 
@@ -451,21 +454,25 @@ describe("IT-PU-04 Add Purchase Order wired (FE-PU-009)", () => {
   });
 });
 
-describe("TC-PU-07 regression: the shared Memo Stock picker keeps its layout (Memo Return / Memo Out), plus the rev 3 Ref. column", () => {
+describe("TC-PU-07 regression: the shared Memo Stock picker keeps its layout (Memo Return / From Stock lots), plus the rev 3 Ref. column", () => {
   it("MemoStockModal keeps its two-row Pending header and no tabs or groups; Ref. shows the memo no. over its Doc Date", () => {
     const queryClient = seeded(["memo-return:VIEW"]);
     const filter = { vendorId: ID, currency: "THB", q: "", from: "", to: "" };
-    queryClient.setQueryData(getQueryKey(masterTrpc.memoStock.list, memoStockInput(filter)!, "infinite"), {
-      pages: [{ items: [{ id: STOCK, stockId: "260003", lot: "L-1", location: "Memo", itemNote: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", cerType: "", cerNo: "", receivedPcs: 2, receivedWeightCt: "1.000", pendingPcs: 2, pendingWeightCt: "1.000", priceUnit: "CTS", unitPrice: "10.00", netUnitPrice: "10.0000", currency: "THB", amount: "10.00", vendor: { id: ID, code: "V001", name: "Aom" }, memoReceive: { id: ID, docNo: "MR-1001", docDate: "2026-10-29", dueDate: "2026-11-29" }, ref: { type: "MEMO_RECEIVE", id: ID, docNo: "MR-1001", docDate: "2026-10-29" } }], nextCursor: null }],
+    queryClient.setQueryData(getQueryKey(masterTrpc.memoStock.lots, memoStockInput(filter)!, "infinite"), {
+      pages: [{ items: [memoRow({ lot: "L-1", stone: "Ruby", pendingPcs: 2, pendingWeightCt: "1.000", netUnitPrice: "10.0000", amount: "10.00" })], nextCursor: null }],
       pageParams: [null],
     });
     const html = render(queryClient, createElement(MemoStockModal, { title: "Add Memo Stock", vendorId: ID, currency: "THB", showPrice: true, emptyText: "none", pickedIds: new Set<string>(), onCancel: () => undefined, onConfirm: () => undefined }));
     expect(html).toContain(">Pending</th>");
     expect(html).toContain(">Ref.</span>");
-    expect(html).toContain('<div class="font-medium">MR-1001</div><div class="mt-1 text-xs text-[#6B7480]">29/10/2026</div>');
+    expect(html).toContain('<div class="font-medium">MR-1001</div><div class="mt-1 text-xs leading-4 text-gms-text-secondary">29/10/2026</div>');
+    // Design 139: the PENDING group is orange (header 30 %, sub-header 18 %, cells 8 %).
+    expect(html).toContain('bg-gms-group-orange-head">Pending</th>');
+    expect(html.match(/bg-gms-group-orange-sub/g)).toHaveLength(2);
+    expect(html.match(/bg-gms-group-orange-cell/g)).toHaveLength(2);
     expect(html).not.toContain("<span>from MR-1001");
-    expect(html).toContain('aria-label="Select 260003 from MR-1001"');
-    expect(html).toContain('placeholder="Search Stock ID, Lot, Stone, Cer No."');
+    expect(html).toContain('aria-label="Select lot L-1"');
+    expect(html).toContain('placeholder="Search Lot, Stone, Stone Code, Cer No., Doc No."');
     expect(html).not.toContain('role="tablist"');
     expect(html).not.toContain("Still in stock on memo");
   });

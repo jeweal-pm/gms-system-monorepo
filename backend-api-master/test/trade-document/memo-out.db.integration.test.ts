@@ -26,7 +26,7 @@ const YEAR = 71;
 type Prisma = typeof import("../../src/database/prisma-client").prisma;
 type Receive = InstanceType<typeof import("../../src/trade-document/memo-receive.service").MemoReceiveService>;
 type Out = InstanceType<typeof import("../../src/trade-document/memo-out.service").MemoOutService>;
-type Stock = InstanceType<typeof import("../../src/trade-document/memo-stock.service").MemoStockService>;
+type Stock = InstanceType<typeof import("../../src/trade-document/lot-stock.service").LotStockService>;
 type Vendor = { id: string; addressId: string };
 
 let prisma: Prisma;
@@ -109,12 +109,12 @@ describe.runIf(canRun)("IT-MO memo out From Stock on PostgreSQL", () => {
     ({ prisma } = await import("../../src/database/prisma-client"));
     const { MemoReceiveService } = await import("../../src/trade-document/memo-receive.service");
     const { MemoOutService } = await import("../../src/trade-document/memo-out.service");
-    const { MemoStockService } = await import("../../src/trade-document/memo-stock.service");
+    const { LotStockService } = await import("../../src/trade-document/lot-stock.service");
     ({ createMemoOutSchema } = await import("../../src/trade-document/memo-schemas"));
     receive = new MemoReceiveService();
     receive.clock = () => new Date(`20${YEAR}-06-01T03:00:00Z`);
     memoOut = new MemoOutService();
-    stock = new MemoStockService();
+    stock = new LotStockService();
     if (!(await prisma.currency.findUnique({ where: { code: "THB" } }))) {
       await prisma.currency.create({ data: { code: "THB", name: "THB", createdBy: ACTOR, updatedBy: ACTOR } });
     }
@@ -153,14 +153,15 @@ describe.runIf(canRun)("IT-MO memo out From Stock on PostgreSQL", () => {
     const detail = await memoOut.get(saved.id);
     expect(detail).toMatchObject({ status: "DRAFT", approvedAt: null, approvedBy: null });
     expect(detail.lines[0]).toMatchObject({
-      source: "STOCK", memoStockId: item.id, stockId: item.stockId, stoneCodeId: null, stoneCode: "", stone: "Ruby", lot: "LOT-A", location: "Memo",
+      // Owner Q-LOT-10 (ADR-0055 D9): no Stock ID in public outputs.
+      source: "STOCK", memoStockId: item.id, stockId: null, lotKey: null, allocated: false, stoneCodeId: null, stoneCode: "", stone: "Ruby", lot: "LOT-A", location: "Memo",
       cerType: "GIA", cerNo: "C-1", priceUnit: "PER_CT", pcs: 4, weightCt: "2.000", unitPrice: "2500.00", amount: "5000.00", itemNote: "for viewing",
       stockPendingPcs: 10, stockPendingWeightCt: "5.000",
     });
     expect(await bucketsOf(item.id)).toEqual({ pending: [10, "5.000"], reserved: [0, "0.000"] });
-    // From Stock lists every vendor's items (no vendorId).
-    const listed = (await stock.list({ limit: 50 })).items.map((row) => row.id);
-    expect(listed).toContain(item.id);
+    // From Stock lists every vendor's lots (ADR-0055; the Stock ID list was removed with FE-LOT-008).
+    const listed = (await stock.fromStockLots({ limit: 50 })).items.map((row) => row.lotKey);
+    expect(listed).toContain(item.lotKey);
   });
 
   it("IT-MO-02 save rejects a missing item and more than pending; the schema refuses duplicates and a stock row without a Sale Price", async () => {
@@ -205,7 +206,7 @@ describe.runIf(canRun)("IT-MO memo out From Stock on PostgreSQL", () => {
     await memoOut.update(ACTOR, second.id, 3, outInput([stockLine(item.id, 1, "0.5")]));
     await sendAndApprove(memoOut, ACTOR, second.id, 4);
     expect(await bucketsOf(item.id)).toEqual({ pending: [0, "0.000"], reserved: [3, "1.500"] });
-    expect((await stock.list({ limit: 50 })).items.map((row) => row.id)).not.toContain(item.id);
+    expect((await stock.fromStockLots({ limit: 50 })).items.map((row) => row.lotKey)).not.toContain(item.lotKey);
   });
 
   it("IT-MO-05 parallel approvals of the same item never take more than pending", async () => {

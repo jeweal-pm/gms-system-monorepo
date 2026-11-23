@@ -4,6 +4,8 @@ import { errorBody } from "../common/errors";
 import type { Tx } from "../common/persistence";
 import { Prisma } from "../generated/prisma/client";
 import type { SaleConsumptionPutInput } from "./inventory-internal.schemas";
+import { allocateFifo, settleOldestFirst, type AllocRow } from "../trade-document/lot-allocation";
+import { lockLotCandidates, readAllocations } from "../trade-document/lot-apply";
 
 /**
  * sale SA rev 1 / ADR-0054 D4–D6 (BE-SL-002): the idempotent "set consumption" of one inventory Sale, in ONE master
@@ -26,16 +28,23 @@ const Decimal = Prisma.Decimal;
 type Dec = Prisma.Decimal;
 const ZERO = new Decimal(0);
 
+/** One consumed item of a Sale line (a lot line / lot Reserve line has one per allocated Memo Stock item, ADR-0055 D7). */
 export type ConsumptionLine = { lineId: string; source: "RESERVE" | "STOCK"; reserveLineId?: string | null; memoStockId: string; pcs: number; weightCt: string };
 export type CapLine = { lineId: string; capPcs: number; capWeightCt: string };
-export type ConsumptionResult = { revision: number; replayed: boolean; lines: CapLine[] };
+/** ADR-0055 api-contract `LotAllocation` (server-to-server only; never returned to the browser). */
+export type LotAllocation = { seq: number; source: "MEMO_STOCK"; stockUuid: string; stockId: string; pcs: number; weightCt: string; settledPcs: number; settledWeightCt: string };
+export type LineAllocation = { lineId: string; rows: LotAllocation[] };
+export type ConsumptionResult = { revision: number; replayed: boolean; lines: CapLine[]; allocations: LineAllocation[] };
+/** A desired line of the v2 request. */
+type RequestLine = SaleConsumptionPutInput["lines"][number];
 export type ShortLine = { lineId: string; field: "pcs" | "weightCt"; code: "exceeds_open" | "exceeds_pending"; availablePcs: number; availableWeightCt: string };
 
 /** Same-revision replays must carry the same payload: sha256 over customer, currency, doc no and the sorted lines. */
 export function consumptionHash(input: Pick<SaleConsumptionPutInput, "saleDocNo" | "customerId" | "currency" | "lines">): string {
+  // v1 lines hash exactly as before (stored replays stay valid); a v2 lot line adds its key.
   const lines = [...input.lines]
     .sort((a, b) => (a.lineId < b.lineId ? -1 : a.lineId > b.lineId ? 1 : 0))
-    .map((line) => [line.lineId.toLowerCase(), line.source, (line.reserveLineId ?? "").toLowerCase(), line.memoStockId.toLowerCase(), line.pcs, new Decimal(line.weightCt).toFixed(3)]);
+    .map((line) => [line.lineId.toLowerCase(), line.source, (line.reserveLineId ?? "").toLowerCase(), (line.memoStockId ?? "").toLowerCase(), line.pcs, new Decimal(line.weightCt).toFixed(3), ...(line.lotKey ? [line.lotKey] : [])]);
   return createHash("sha256").update(JSON.stringify({ d: input.saleDocNo, c: input.customerId.toLowerCase(), k: input.currency, l: lines })).digest("hex");
 }
 
@@ -43,6 +52,8 @@ export function consumptionHash(input: Pick<SaleConsumptionPutInput, "saleDocNo"
 export type LockedReserveLine = {
   id: string; reserveId: string; memoStockId: string | null; pcs: number; weightCt: Dec; soldPcs: number; soldWeightCt: Dec;
   live: boolean; customerId: string; currency: string;
+  /** ADR-0055: the items the Reserve line's allocation names (legacy: its one item). */
+  stocks?: readonly string[];
 };
 /** A locked Memo Stock item. */
 export type LockedItem = { id: string; pendingPcs: number; pendingWeightCt: Dec; reservedPcs: number; reservedWeightCt: Dec; soldPcs: number; soldWeightCt: Dec; purchasedPcs: number; purchasedWeightCt: Dec; stockId: string };
@@ -80,7 +91,8 @@ export function planConsumption(
     if (!itemById.has(line.memoStockId)) return true;
     if (line.source === "STOCK") return false;
     const reserveLine = line.reserveLineId ? lineById.get(line.reserveLineId) : undefined;
-    return !reserveLine || !reserveLine.live || reserveLine.memoStockId !== line.memoStockId || reserveLine.customerId !== sale.customerId || reserveLine.currency !== sale.currency;
+    const stocks = reserveLine ? (reserveLine.stocks ?? (reserveLine.memoStockId ? [reserveLine.memoStockId] : [])) : [];
+    return !reserveLine || !reserveLine.live || !stocks.includes(line.memoStockId) || reserveLine.customerId !== sale.customerId || reserveLine.currency !== sale.currency;
   }).map((line) => line.lineId);
   if (unavailable.length > 0) return { ok: false, status: 422, code: "SALE_CONSUMPTION_LINE_UNAVAILABLE", lineIds: unavailable };
 
@@ -106,14 +118,23 @@ export function planConsumption(
 
   const short: ShortLine[] = [];
   const reserveDeltas: ReserveDelta[] = [];
+  // Per item: the RESERVE rows' delta (a lot Reserve line spreads over several items).
+  const itemReserveKey = (line: ConsumptionLine) => (line.source === "RESERVE" ? line.memoStockId : null);
+  const ownReserveItem = sumBy(applied, itemReserveKey);
+  const wantReserveItem = sumBy(desired, itemReserveKey);
   const itemReserveDelta = new Map<string, Qty>();
+  for (const id of new Set([...ownReserveItem.keys(), ...wantReserveItem.keys()])) {
+    const own = ownReserveItem.get(id) ?? none;
+    const want = wantReserveItem.get(id) ?? none;
+    itemReserveDelta.set(id, { pcs: want.pcs - own.pcs, weight: want.weight.minus(own.weight) });
+  }
   for (const id of [...new Set([...ownReserve.keys(), ...wantReserve.keys()])].sort()) {
     const own = ownReserve.get(id) ?? none;
     const want = wantReserve.get(id) ?? none;
     const d = { pcs: want.pcs - own.pcs, weight: want.weight.minus(own.weight) };
     if (d.pcs === 0 && d.weight.isZero()) continue;
     const line = lineById.get(id);
-    if (!line || !line.memoStockId) throw new Error("consumption ledger out of balance"); // an applied line always exists (FK RESTRICT)
+    if (!line) throw new Error("consumption ledger out of balance"); // an applied line always exists (FK RESTRICT)
     const openPcs = line.pcs - line.soldPcs + own.pcs;
     const openWeight = line.weightCt.minus(line.soldWeightCt).plus(own.weight);
     const wanted = desired.find((entry) => entry.reserveLineId === id);
@@ -123,8 +144,6 @@ export function planConsumption(
     }
     if (line.soldPcs + d.pcs < 0 || line.soldWeightCt.plus(d.weight).isNegative()) throw new Error("consumption ledger out of balance");
     reserveDeltas.push({ reserveLineId: id, pcs: d.pcs, weightCt: d.weight });
-    const entry = itemReserveDelta.get(line.memoStockId) ?? { pcs: 0, weight: ZERO };
-    itemReserveDelta.set(line.memoStockId, { pcs: entry.pcs + d.pcs, weight: entry.weight.plus(d.weight) });
   }
 
   const itemDeltas: ItemDelta[] = [];
@@ -159,7 +178,7 @@ export function planConsumption(
   if (short.length > 0) return { ok: false, status: 409, code: "SALE_CONSUMPTION_EXCEEDS_AVAILABLE", lines: short };
   if (inUse.length > 0) return { ok: false, status: 409, code: "SALE_CONSUMPTION_IN_USE", stockIds: inUse.slice(0, 20) };
 
-  const caps: CapLine[] = desired.map((line) => {
+  const caps: CapLine[] = dedupe(desired).map((line) => {
     if (line.source === "RESERVE") {
       const reserveLine = lineById.get(line.reserveLineId!)!;
       const own = ownReserve.get(line.reserveLineId!) ?? none;
@@ -170,6 +189,12 @@ export function planConsumption(
     return { lineId: line.lineId, capPcs: item.pendingPcs + own.pcs, capWeightCt: item.pendingWeightCt.plus(own.weight).toFixed(3) };
   });
   return { ok: true, reserveDeltas, itemDeltas, caps };
+}
+
+/** One cap per Sale line (a lot line has several per-item rows). */
+function dedupe(lines: readonly ConsumptionLine[]): ConsumptionLine[] {
+  const seen = new Set<string>();
+  return lines.filter((line) => (seen.has(line.lineId) ? false : (seen.add(line.lineId), true)));
 }
 
 /** Internal envelope with array details (ids and quantities only). */
@@ -186,9 +211,98 @@ const CONSUMPTION_MESSAGES: Record<string, string> = {
   SALE_CONSUMPTION_NOT_FOUND: "The sale consumption was not found",
 };
 
-/** Compact stored result: {l: [[lineId, capPcs, capWeight]]}. */
-export function packCaps(lines: readonly CapLine[]) {
-  return { l: lines.map((line) => [line.lineId, line.capPcs, line.capWeightCt]) };
+/** Compact stored result: {l: [[lineId, capPcs, capWeight]], a: [[lineId, [[seq, memoStockId, stockId, pcs, weight]]]]}. */
+export function packCaps(lines: readonly CapLine[], allocations: readonly LineAllocation[] = []) {
+  return {
+    l: lines.map((line) => [line.lineId, line.capPcs, line.capWeightCt]),
+    ...(allocations.length > 0 ? { a: allocations.map((entry) => [entry.lineId, entry.rows.map((row) => [row.seq, row.stockUuid, row.stockId, row.pcs, row.weightCt, row.settledPcs, row.settledWeightCt])]) } : {}),
+  };
+}
+export function unpackAllocations(value: unknown): LineAllocation[] {
+  const stored = (value ?? {}) as { a?: unknown };
+  if (!Array.isArray(stored.a)) return [];
+  return stored.a.flatMap((entry) => (Array.isArray(entry) && entry.length === 2 && Array.isArray(entry[1])
+    ? [{ lineId: String(entry[0]), rows: (entry[1] as unknown[][]).map((row) => ({
+      seq: Number(row[0]), source: "MEMO_STOCK" as const, stockUuid: String(row[1]), stockId: String(row[2]), pcs: Number(row[3]), weightCt: String(row[4]),
+      settledPcs: Number(row[5] ?? 0), settledWeightCt: String(row[6] ?? "0.000"),
+    })) }]
+    : []));
+}
+
+/**
+ * ADR-0055 D7 (BE-LOT-006): expands the v2 request into per-item rows. A line whose desired quantity and reference equal
+ * what is applied keeps its applied rows (deterministic replays and edits); otherwise:
+ * - STOCK item: its one item; STOCK lot: FIFO (oldest first) over the lot's items with pending + this line's own applied;
+ * - RESERVE: settles the Reserve line's allocation oldest seq first, each row's open = qty − settled + this line's own.
+ * Short → the line in `short` with the group's available. Pure.
+ */
+export function expandConsumption(input: {
+  lines: readonly RequestLine[];
+  applied: readonly ConsumptionLine[];
+  appliedLot: ReadonlyMap<string, string>;
+  candidates: readonly { id: string; stockId: string; lotKey: string; refDate: string; pendingPcs: number; pendingWeight: Dec }[];
+  reserveAllocs: ReadonlyMap<string, readonly (AllocRow & { memoStockId: string | null })[]>;
+  reserveItem: ReadonlyMap<string, string | null>;
+}): { rows: ConsumptionLine[]; short: ShortLine[] } {
+  const byLine = new Map<string, ConsumptionLine[]>();
+  for (const row of input.applied) byLine.set(row.lineId, [...(byLine.get(row.lineId) ?? []), row]);
+  const rows: ConsumptionLine[] = [];
+  const short: ShortLine[] = [];
+  for (const line of input.lines) {
+    const own = byLine.get(line.lineId) ?? [];
+    const ownTotal = own.reduce((sum, row) => ({ pcs: sum.pcs + row.pcs, weight: sum.weight.plus(row.weightCt) }), { pcs: 0, weight: ZERO });
+    const same = own.length > 0 && own.every((row) => row.source === line.source && (row.reserveLineId ?? null) === (line.reserveLineId ?? null))
+      && ownTotal.pcs === line.pcs && ownTotal.weight.equals(line.weightCt)
+      && (line.source === "RESERVE" || (line.lotKey ? input.appliedLot.get(line.lineId) === line.lotKey : own.length === 1 && own[0].memoStockId === line.memoStockId));
+    if (same) {
+      rows.push(...own);
+      continue;
+    }
+    const want = { pcs: line.pcs, weight: new Decimal(line.weightCt) };
+    const ownOn = (stock: string) => own.filter((row) => row.memoStockId === stock).reduce((sum, row) => ({ pcs: sum.pcs + row.pcs, weight: sum.weight.plus(row.weightCt) }), { pcs: 0, weight: ZERO });
+    if (line.source === "STOCK" && line.memoStockId) {
+      rows.push({ lineId: line.lineId, source: "STOCK", reserveLineId: null, memoStockId: line.memoStockId, pcs: line.pcs, weightCt: line.weightCt });
+      continue;
+    }
+    if (line.source === "STOCK" && line.lotKey) {
+      const candidates = input.candidates.filter((row) => row.lotKey === line.lotKey).map((row) => {
+        const mine = ownOn(row.id);
+        return { id: row.id, stockId: row.stockId, refDate: row.refDate, pcs: row.pendingPcs + mine.pcs, weight: row.pendingWeight.plus(mine.weight) };
+      });
+      const result = allocateFifo(candidates, want);
+      if (!result.ok) {
+        short.push({ lineId: line.lineId, field: "pcs", code: "exceeds_pending", availablePcs: result.available.pcs, availableWeightCt: result.available.weight.toFixed(3) });
+        continue;
+      }
+      for (const row of result.rows) rows.push({ lineId: line.lineId, source: "STOCK", reserveLineId: null, memoStockId: row.id, pcs: row.pcs, weightCt: row.weight.toFixed(3) });
+      continue;
+    }
+    // RESERVE
+    const allocs = input.reserveAllocs.get(line.reserveLineId ?? "") ?? [];
+    if (allocs.length === 0) {
+      // A Reserve line applied before its allocation existed: its one item (planConsumption checks the open quantity).
+      const item = line.memoStockId ?? input.reserveItem.get(line.reserveLineId ?? "") ?? null;
+      if (item) rows.push({ lineId: line.lineId, source: "RESERVE", reserveLineId: line.reserveLineId, memoStockId: item, pcs: line.pcs, weightCt: line.weightCt });
+      else short.push({ lineId: line.lineId, field: "pcs", code: "exceeds_open", availablePcs: 0, availableWeightCt: "0.000" });
+      continue;
+    }
+    const open = allocs.map((row) => {
+      const mine = row.memoStockId ? ownOn(row.memoStockId) : { pcs: 0, weight: ZERO };
+      return { ...row, settledPcs: row.settledPcs - mine.pcs, settledWeight: row.settledWeight.minus(mine.weight) };
+    });
+    const parts = settleOldestFirst(open, want);
+    if (!parts) {
+      const available = open.reduce((sum, row) => ({ pcs: sum.pcs + row.pcs - row.settledPcs, weight: sum.weight.plus(row.weight.minus(row.settledWeight)) }), { pcs: 0, weight: ZERO });
+      short.push({ lineId: line.lineId, field: "pcs", code: "exceeds_open", availablePcs: available.pcs, availableWeightCt: available.weight.toFixed(3) });
+      continue;
+    }
+    const memoOf = new Map(allocs.map((row) => [row.id, row.memoStockId]));
+    for (const part of parts) {
+      const item = memoOf.get(part.id);
+      if (item) rows.push({ lineId: line.lineId, source: "RESERVE", reserveLineId: line.reserveLineId, memoStockId: item, pcs: part.pcs, weightCt: part.weight.toFixed(3) });
+    }
+  }
+  return { rows, short };
 }
 export function unpackCaps(value: unknown): CapLine[] {
   const stored = (value ?? {}) as { l?: unknown };
@@ -201,10 +315,6 @@ type HeaderRow = { revision: number; request_hash: string; result: unknown };
 type AppliedRow = { line_id: string; source: "RESERVE" | "STOCK"; reserve_line_id: string | null; memo_stock_id: string; pcs: number; weight_ct: string };
 type LockedLineRow = { id: string; reserve_id: string; memo_stock_id: string | null; pcs: number; weight_ct: string; sold_pcs: number; sold_weight_ct: string };
 type LockedHeaderRow = { id: string; live: boolean; customer_id: string; currency_code: string };
-type LockedItemRow = {
-  id: string; stock_id: string; pending_pcs: number; pending_weight_ct: string; reserved_pcs: number; reserved_weight_ct: string;
-  sold_pcs: number; sold_weight_ct: string; purchased_pcs: number; purchased_weight_ct: string;
-};
 
 const sortedUnique = (values: readonly (string | null | undefined)[]) => [...new Set(values.filter((value): value is string => Boolean(value)))].sort();
 
@@ -219,7 +329,7 @@ export async function applyConsumption(tx: Tx, saleId: string, input: SaleConsum
     RETURNING "revision", "request_hash", "result"`);
   if (input.revision === header.revision) {
     if (header.request_hash !== hash) throw consumptionException("SALE_CONSUMPTION_STALE", HttpStatus.CONFLICT, { appliedRevision: header.revision });
-    return { revision: input.revision, replayed: true, lines: unpackCaps(header.result) };
+    return { revision: input.revision, replayed: true, lines: unpackCaps(header.result), allocations: unpackAllocations(header.result) };
   }
   if (input.revision < header.revision) throw consumptionException("SALE_CONSUMPTION_STALE", HttpStatus.CONFLICT, { appliedRevision: header.revision });
 
@@ -228,6 +338,7 @@ export async function applyConsumption(tx: Tx, saleId: string, input: SaleConsum
     SELECT "line_id"::text AS "line_id", "source", "reserve_line_id"::text AS "reserve_line_id", "memo_stock_id"::text AS "memo_stock_id", "pcs", "weight_ct"::text AS "weight_ct"
     FROM "partner"."sale_consumption_line" WHERE "sale_id" = ${saleId}::uuid`);
   const applied: ConsumptionLine[] = appliedRows.map((row) => ({ lineId: row.line_id, source: row.source, reserveLineId: row.reserve_line_id, memoStockId: row.memo_stock_id, pcs: row.pcs, weightCt: row.weight_ct }));
+  const appliedLot = new Map(unpackLots(header.result));
   const reserveLineIds = sortedUnique([...applied, ...input.lines].map((line) => (line.source === "RESERVE" ? line.reserveLineId : null)));
 
   // 3. Reserve headers FOR SHARE (id order), then 4. the Reserve lines FOR UPDATE (id order).
@@ -252,24 +363,40 @@ export async function applyConsumption(tx: Tx, saleId: string, input: SaleConsum
       };
     });
   }
+  // 4b. ADR-0055: the Reserve lines' allocation rows FOR UPDATE (id order; lock order header → lines → allocation → stock).
+  const reserveAllocRows = await readAllocations(tx, "reserve", reserveLineIds, true);
+  const reserveAllocs = new Map<string, typeof reserveAllocRows>();
+  for (const row of reserveAllocRows) if (row.memoStockId) reserveAllocs.set(row.lineId, [...(reserveAllocs.get(row.lineId) ?? []), row]);
+  reserveLines = reserveLines.map((line) => ({ ...line, stocks: reserveAllocs.has(line.id) ? reserveAllocs.get(line.id)!.map((row) => row.memoStockId!) : line.memoStockId ? [line.memoStockId] : [] }));
 
-  // 5. Memo Stock items FOR NO KEY UPDATE (id order): every item named by an applied or desired line (and by their Reserve lines).
-  const itemIds = sortedUnique([...applied.map((line) => line.memoStockId), ...input.lines.map((line) => line.memoStockId), ...reserveLines.map((line) => line.memoStockId)]);
-  const itemRows = itemIds.length === 0 ? [] : await tx.$queryRaw<LockedItemRow[]>(Prisma.sql`
-    SELECT "id"::text AS "id", "stock_id", "pending_pcs", "pending_weight_ct"::text AS "pending_weight_ct", "reserved_pcs", "reserved_weight_ct"::text AS "reserved_weight_ct",
-      "sold_pcs", "sold_weight_ct"::text AS "sold_weight_ct", "purchased_pcs", "purchased_weight_ct"::text AS "purchased_weight_ct"
-    FROM "partner"."memo_stock" WHERE "id" = ANY(${itemIds}::uuid[]) ORDER BY "id" FOR NO KEY UPDATE`);
-  const items: LockedItem[] = itemRows.map((row) => ({
-    id: row.id, stockId: row.stock_id, pendingPcs: row.pending_pcs, pendingWeightCt: new Decimal(row.pending_weight_ct), reservedPcs: row.reserved_pcs, reservedWeightCt: new Decimal(row.reserved_weight_ct),
-    soldPcs: row.sold_pcs, soldWeightCt: new Decimal(row.sold_weight_ct), purchasedPcs: row.purchased_pcs, purchasedWeightCt: new Decimal(row.purchased_weight_ct),
+  // 5. Memo Stock items FOR NO KEY UPDATE (id order, ONE statement): every item named by an applied or desired line, the
+  //    Reserve lines' allocated items and the open items of the desired lots (≤ 500 per lot / 2,000 in all, D6).
+  const itemIds = sortedUnique([
+    ...applied.map((line) => line.memoStockId), ...input.lines.map((line) => line.memoStockId), ...reserveLines.map((line) => line.memoStockId),
+    ...reserveAllocRows.map((row) => row.memoStockId),
+  ]);
+  const lotKeys = sortedUnique(input.lines.map((line) => (line.source === "STOCK" ? line.lotKey : null)));
+  const locked = await lockLotCandidates(tx, lotKeys, itemIds);
+  const items: LockedItem[] = locked.map((row) => ({
+    id: row.id, stockId: row.stockId, pendingPcs: row.pendingPcs, pendingWeightCt: row.pendingWeight, reservedPcs: row.reservedPcs, reservedWeightCt: row.reservedWeight,
+    soldPcs: row.soldPcs, soldWeightCt: row.soldWeight, purchasedPcs: row.purchasedPcs, purchasedWeightCt: row.purchasedWeight,
   }));
+  const reserveItem = new Map(reserveLines.map((line) => [line.id, line.memoStockId]));
+  const expanded = expandConsumption({
+    lines: input.lines, applied, appliedLot,
+    candidates: locked.filter((row) => lotKeys.includes(row.lotKey)).map((row) => ({ id: row.id, stockId: row.stockId, lotKey: row.lotKey, refDate: row.refDate, pendingPcs: row.pendingPcs, pendingWeight: row.pendingWeight })),
+    reserveAllocs, reserveItem,
+  });
+  if (expanded.short.length > 0) throw consumptionException("SALE_CONSUMPTION_EXCEEDS_AVAILABLE", HttpStatus.CONFLICT, { lines: expanded.short });
+  const desired = expanded.rows;
 
-  const plan = planConsumption({ customerId: input.customerId, currency: input.currency }, input.lines, applied, reserveLines, items);
+  const plan = planConsumption({ customerId: input.customerId, currency: input.currency }, desired, applied, reserveLines, items);
   if (!plan.ok) {
     if (plan.code === "SALE_CONSUMPTION_LINE_UNAVAILABLE") throw consumptionException(plan.code, HttpStatus.UNPROCESSABLE_ENTITY, { lineIds: plan.lineIds });
     if (plan.code === "SALE_CONSUMPTION_IN_USE") throw consumptionException(plan.code, HttpStatus.CONFLICT, { stockIds: plan.stockIds });
     throw consumptionException(plan.code, HttpStatus.CONFLICT, { lines: plan.lines });
   }
+  const caps = lineCaps(input.lines, plan.caps, locked, applied, desired);
   // 6. Bucket moves (only what changes), one statement per table.
   if (plan.reserveDeltas.length > 0) {
     const values = plan.reserveDeltas.map((delta) => Prisma.sql`(${delta.reserveLineId}::uuid, ${delta.pcs}::int, ${delta.weightCt.toFixed(3)}::numeric)`);
@@ -278,6 +405,25 @@ export async function applyConsumption(tx: Tx, saleId: string, input: SaleConsum
       SET "sold_pcs" = l."sold_pcs" + d.pcs, "sold_weight_ct" = l."sold_weight_ct" + d.weight
       FROM (VALUES ${Prisma.join(values)}) AS d(id, pcs, weight)
       WHERE l."id" = d.id`);
+  }
+  // 6b. ADR-0055: the Reserve lines' allocation rows carry what the Sales settled (oldest seq first).
+  const settle = new Map<string, { line: string; stock: string; pcs: number; weight: Dec }>();
+  const addSettle = (row: ConsumptionLine, sign: 1 | -1) => {
+    if (row.source !== "RESERVE" || !row.reserveLineId) return;
+    const key = `${row.reserveLineId}|${row.memoStockId}`;
+    const entry = settle.get(key) ?? { line: row.reserveLineId, stock: row.memoStockId, pcs: 0, weight: ZERO };
+    settle.set(key, { ...entry, pcs: entry.pcs + sign * row.pcs, weight: entry.weight.plus(new Decimal(row.weightCt).times(sign)) });
+  };
+  desired.forEach((row) => addSettle(row, 1));
+  applied.forEach((row) => addSettle(row, -1));
+  const settleValues = [...settle.values()].filter((entry) => entry.pcs !== 0 || !entry.weight.isZero())
+    .map((entry) => Prisma.sql`(${entry.line}::uuid, ${entry.stock}::uuid, ${entry.pcs}::int, ${entry.weight.toFixed(3)}::numeric)`);
+  if (settleValues.length > 0) {
+    await tx.$executeRaw(Prisma.sql`
+      UPDATE "partner"."reserve_line_alloc" AS a
+      SET "settled_pcs" = a."settled_pcs" + d.pcs, "settled_weight_ct" = a."settled_weight_ct" + d.weight
+      FROM (VALUES ${Prisma.join(settleValues)}) AS d(line_id, stock, pcs, weight)
+      WHERE a."line_id" = d.line_id AND a."memo_stock_id" = d.stock`);
   }
   if (plan.itemDeltas.length > 0) {
     const values = plan.itemDeltas.map((delta) => Prisma.sql`(${delta.memoStockId}::uuid, ${delta.pendingPcs}::int, ${delta.pendingWeight.toFixed(3)}::numeric, ${delta.reservedPcs}::int, ${delta.reservedWeight.toFixed(3)}::numeric, ${delta.soldPcs}::int, ${delta.soldWeight.toFixed(3)}::numeric)`);
@@ -292,16 +438,53 @@ export async function applyConsumption(tx: Tx, saleId: string, input: SaleConsum
   }
   // 7. Replace the consumption lines (set semantics).
   if (applied.length > 0) await tx.saleConsumptionLine.deleteMany({ where: { saleId } });
-  if (input.lines.length > 0) {
+  if (desired.length > 0) {
     await tx.saleConsumptionLine.createMany({
-      data: input.lines.map((line) => ({ saleId, lineId: line.lineId, source: line.source, reserveLineId: line.source === "RESERVE" ? line.reserveLineId! : null, memoStockId: line.memoStockId, pcs: line.pcs, weightCt: line.weightCt })),
+      data: desired.map((line) => ({ saleId, lineId: line.lineId, source: line.source, reserveLineId: line.source === "RESERVE" ? line.reserveLineId! : null, memoStockId: line.memoStockId, pcs: line.pcs, weightCt: line.weightCt })),
     });
   }
+  // The per-line allocation returned to inventory (copied into sale_line_alloc) and stored for replays.
+  const stockIdOf = new Map(locked.map((row) => [row.id, row.stockId]));
+  const allocations: LineAllocation[] = input.lines.map((line) => ({
+    lineId: line.lineId,
+    rows: desired.filter((row) => row.lineId === line.lineId).map((row, index) => ({
+      seq: index + 1, source: "MEMO_STOCK" as const, stockUuid: row.memoStockId, stockId: stockIdOf.get(row.memoStockId) ?? "", pcs: row.pcs,
+      weightCt: new Decimal(row.weightCt).toFixed(3), settledPcs: 0, settledWeightCt: "0.000",
+    })),
+  }));
+  const lots = input.lines.flatMap((line) => (line.lotKey ? [[line.lineId, line.lotKey]] : []));
   // 8. Header: applied revision, hash and result.
   await tx.$executeRaw(Prisma.sql`
     UPDATE "partner"."sale_consumption"
     SET "revision" = ${input.revision}::int, "request_hash" = ${hash}, "sale_doc_no" = ${input.saleDocNo}, "customer_id" = ${input.customerId}::uuid,
-        "currency_code" = ${input.currency}::char(3), "result" = ${JSON.stringify(packCaps(plan.caps))}::jsonb, "applied_at" = now(), "applied_by" = ${actorId}, "updated_at" = now()
+        "currency_code" = ${input.currency}::char(3), "result" = ${JSON.stringify({ ...packCaps(caps, allocations), ...(lots.length > 0 ? { k: lots } : {}) })}::jsonb, "applied_at" = now(), "applied_by" = ${actorId}, "updated_at" = now()
     WHERE "sale_id" = ${saleId}::uuid`);
-  return { revision: input.revision, replayed: false, lines: plan.caps };
+  return { revision: input.revision, replayed: false, lines: caps, allocations };
+}
+
+/** The lot key of each applied lot line (stored result `k`). */
+function unpackLots(value: unknown): [string, string][] {
+  const stored = (value ?? {}) as { k?: unknown };
+  return Array.isArray(stored.k) ? stored.k.flatMap((entry) => (Array.isArray(entry) && entry.length === 2 ? [[String(entry[0]), String(entry[1])] as [string, string]] : [])) : [];
+}
+
+/** Caps per Sale line: a lot line's cap = the lot's pending + what this Sale holds of it (planConsumption caps items). */
+function lineCaps(lines: readonly RequestLine[], planCaps: readonly CapLine[], locked: readonly { id: string; lotKey: string; pendingPcs: number; pendingWeight: Dec }[], applied: readonly ConsumptionLine[], desired: readonly ConsumptionLine[]): CapLine[] {
+  const byLine = new Map(planCaps.map((cap) => [cap.lineId, cap]));
+  return lines.map((line) => {
+    if (!(line.source === "STOCK" && line.lotKey)) return byLine.get(line.lineId)!;
+    let pcs = 0;
+    let weight = ZERO;
+    for (const row of locked) {
+      if (row.lotKey !== line.lotKey) continue;
+      const taken = desired.filter((entry) => entry.lineId === line.lineId && entry.memoStockId === row.id);
+      const before = applied.filter((entry) => entry.lineId === line.lineId && entry.memoStockId === row.id);
+      const delta = taken.reduce((sum, entry) => sum + entry.pcs, 0) - before.reduce((sum, entry) => sum + entry.pcs, 0);
+      const deltaW = taken.reduce((sum, entry) => sum.plus(entry.weightCt), ZERO).minus(before.reduce((sum, entry) => sum.plus(entry.weightCt), ZERO));
+      // pending after this apply + this line's quantity on it
+      pcs += row.pendingPcs - delta + taken.reduce((sum, entry) => sum + entry.pcs, 0);
+      weight = weight.plus(row.pendingWeight.minus(deltaW).plus(taken.reduce((sum, entry) => sum.plus(entry.weightCt), ZERO)));
+    }
+    return { lineId: line.lineId, capPcs: pcs, capWeightCt: weight.toFixed(3) };
+  });
 }

@@ -13,8 +13,9 @@ import { Badge, Button, cx } from "../ui";
 
 type Column = { title: string; sub?: string; align?: "right"; className?: string };
 
-export const itemColumns = (stoneCode: boolean, location = true, stockId = true, priceTitle = DEFAULT_PRICE_TITLE): Column[] => [
-  stoneCode ? { title: "Stone Code", sub: stockId ? "Stock ID · Lot" : "Lot", className: "w-[200px]" } : { title: "Stock ID", sub: "Lot", className: "w-[200px]" },
+/** `stockId`: true = Stock ID column text, false = none (Purchase Order), "lot" = the Lot replaces the Stock ID (lot-based-stock round 1). */
+export const itemColumns = (stoneCode: boolean, location = true, stockId: boolean | "lot" = true, priceTitle = DEFAULT_PRICE_TITLE): Column[] => [
+  stockId === "lot" ? { title: "Lot / Stone Code", className: "w-[200px]" } : stoneCode ? { title: "Stone Code", sub: stockId ? "Stock ID · Lot" : "Lot", className: "w-[200px]" } : { title: "Stock ID", sub: "Lot", className: "w-[200px]" },
   ...(location ? [{ title: "Location", className: "w-[96px]" }] : []),
   { title: "Stone", sub: "Shape · Size", className: "w-[150px]" },
   { title: "Color · Clarity", sub: "Cutting · Quality", className: "w-[150px]" },
@@ -60,7 +61,7 @@ export function ItemTable({
 }) {
   const kind = useDocumentKind();
   const nf = useNumberFormat();
-  const COLUMNS = itemColumns(kind.stoneCode, kind.location, kind.stockId !== "none", kind.priceTitle);
+  const COLUMNS = itemColumns(kind.stoneCode, kind.location, kind.stockId === "lot" ? "lot" : kind.stockId !== "none", kind.priceTitle);
   const allChecked = lines.length > 0 && lines.every((l) => checkedKeys.has(l.key));
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -168,7 +169,7 @@ export function ItemTable({
                   <td className="px-2 py-4 text-center text-[#6B7480]">{index + 1}</td>
 
                   {filled ? (
-                    <FilledCells line={line} currency={currency} stoneCode={kind.stoneCode} location={kind.location} />
+                    <FilledCells line={line} currency={currency} stoneCode={kind.stoneCode} location={kind.location} lotView={kind.stockId === "lot"} />
                   ) : (
                     <>
                       <td colSpan={COLUMNS.length - 1} className="px-3 py-4 text-[#A9B1B9]">
@@ -229,12 +230,20 @@ function fitVisibleRows(box: HTMLDivElement) {
   box.style.maxHeight = height === null ? "" : `${height}px`;
 }
 
-function FilledCells({ line, currency, stoneCode, location }: { line: QuotationLine; currency: string; stoneCode: boolean; location: boolean }) {
+function FilledCells({ line, currency, stoneCode, location, lotView }: { line: QuotationLine; currency: string; stoneCode: boolean; location: boolean; lotView: boolean }) {
   const nf = useNumberFormat();
   return (
     <>
       <td className="px-3 py-4">
-        {stoneCode ? (
+        {lotView ? (
+          // lot-based-stock (UI notes § Lot cell): the Lot chip, then the Stone Code; "—" without a lot. No Stock ID.
+          <div className="flex flex-wrap items-center gap-2">
+            {line.lot ? <Badge variant="lot">{line.lot}</Badge> : <span className="text-[#A9B1B9]">—</span>}
+            <span className="font-medium">{line.stoneCode || "—"}</span>
+            {/* Display tag under the lot (Purchase: "Sold", "In stock", "from PO No."); empty on every other lot document. */}
+            {line.stockId && <span className="basis-full text-xs text-[#6B7480]">{line.stockId}</span>}
+          </div>
+        ) : stoneCode ? (
           <>
             <div className="font-medium">{line.stoneCode || "—"}</div>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6B7480]">

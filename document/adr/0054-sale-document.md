@@ -1,6 +1,7 @@
 # ADR-0054: Sale document in `backend-api-inventory`, consuming Reserve lines and Memo Stock through master
 
 - Status: **Accepted** 2026-11-18 (SA revision 1; owner "อนุมัติทั้งสอง" in chat, 2026-11-18 (UI rev 1 + SA rev 1 / ADR-0054; Q-SL-01…16 and SQ-SL-01…04 take their defaults; Sale in backend-api-inventory))
+- Amended by [ADR-0055](0055-lot-based-stock-picking-and-allocation.md) (2026-11-20, lot-based stock): D3–D6: Sale From Stock lines may name a lot; the consumption API v2 returns the per-Stock-ID allocation.
 - Date: 2026-11-18
 - Feature / source UI revision: `sale` / UI revision 1 (pending-review, [ui-spec](../apps/frontend/sale/ui-spec.md), Q-SL-01…16 with defaults)
 - SA revision: 1 ([decisions](../apps/backend/inventory/sale/decisions.md))

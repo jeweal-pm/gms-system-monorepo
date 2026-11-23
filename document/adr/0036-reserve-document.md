@@ -1,6 +1,7 @@
 # ADR-0036: Reserve document in the master service (holds Memo Stock for a later Sale)
 
 - Status: Accepted (2026-11-02)
+- Amended by [ADR-0055](0055-lot-based-stock-picking-and-allocation.md) (2026-11-20, lot-based stock): D1/D2: Reserve stock lines name a lot and are allocated to Stock IDs FIFO at apply.
 - Date: 2026-11-02
 - Feature / source UI revision: `reserve` / 1
 - SA revision: 1 ([decisions](../apps/backend/master/reserve/decisions.md), [API contract](../apps/backend/master/reserve/api-contract.md))

@@ -102,21 +102,35 @@ describe("UT-AP-16 value in the company currency (Q-AP-17) and the view model", 
     expect(stoneCodeText({ stoneCode: null, stockId: null })).toBe("—");
   });
 
-  it("FE-PU-014 Purchase (ADR-0051): a Memo Stock row shows its Stock ID, a PO / manual row its stone code, and a row with neither and stockId null shows —", () => {
+  it("UT-LOT-FE-10 Quotation / Reserve / Memo Out / Purchase / Memo Return preview: a line without a stone code shows its Lot, never a Stock ID; other documents keep the Stock ID", () => {
+    const line = { stoneCode: "", stockId: "260005", lot: "L-7", stone: "Ruby", shape: "", size: "", pcs: 1, weightCt: "1.000", amount: "10.00" };
+    for (const slug of ["quotation", "reserve", "memo-out", "purchase", "memo-return"]) {
+      const menu = approveMenuFor(slug) as AvailableMenu;
+      expect(previewView(menu, reserveDetail({ lines: [line] }), "THB", 2).rows[0]?.code).toBe("L-7");
+      expect(previewView(menu, reserveDetail({ lines: [{ ...line, lot: "" }] }), "THB", 2).rows[0]?.code).toBe("—");
+      expect(previewView(menu, reserveDetail({ lines: [{ ...line, stoneCode: "RU-1" }] }), "THB", 2).rows[0]?.code).toBe("RU-1");
+    }
+    expect(previewView(memoReceive, reserveDetail({ lines: [line] }), "THB", 2).rows[0]?.code).toBe("260005");
+    expect(previewView(approveMenuFor("sale") as AvailableMenu, reserveDetail({ lines: [line] }), "THB", 2).rows[0]?.code).toBe("260005");
+    expect(stoneCodeText({ stoneCode: "", stockId: "1", lot: "L" }, true)).toBe("L");
+    expect(stoneCodeText({ stoneCode: "", stockId: "1", lot: "L" })).toBe("1");
+  });
+
+  it("FE-PU-014 Purchase (ADR-0051, lot-based-stock): a Memo Stock row shows its Lot, a PO / manual row its stone code, and a row with neither shows —", () => {
     const detail = reserveDetail({
       customer: undefined,
       vendor: { name: "Aom" },
       currency: "THB",
       exchangeRate: null,
       lines: [
-        { stoneCode: "", stockId: "260003", stone: "Ruby", shape: "", size: "", pcs: 1, weightCt: "0.680", amount: "100.00", location: "Memo" },
+        { stoneCode: "", stockId: null, lot: "L-7", stone: "Ruby", shape: "", size: "", pcs: 1, weightCt: "0.680", amount: "100.00", location: "Memo" },
         { stoneCode: "RU-OV-1", stockId: null, stone: "Ruby", shape: "Oval", size: "", pcs: 6, weightCt: "3.000", amount: "200.00", location: "Safe A" },
         { stoneCode: null, stockId: null, stone: "Ruby", shape: "", size: "", pcs: 1, weightCt: "0.500", amount: "45.00", location: "" },
       ],
       totals: { grandTotal: "345.00" },
     });
     const view = previewView(purchase, detail, "THB", 2);
-    expect(view.rows.map((row) => row.code)).toEqual(["260003", "RU-OV-1", "—"]);
+    expect(view.rows.map((row) => row.code)).toEqual(["L-7", "RU-OV-1", "—"]);
     const html = renderToStaticMarkup(createElement(PreviewBody, { view, docNo: "PU-7", format }));
     expect(html).not.toContain("Auto");
   });

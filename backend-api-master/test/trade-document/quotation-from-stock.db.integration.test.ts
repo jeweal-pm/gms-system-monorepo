@@ -150,7 +150,7 @@ describe.runIf(canRun)("IT-QT quotation From Stock on PostgreSQL", () => {
     const saved = await quotation.create(ACTOR, quoteInput([stockLine(item.id, 4, "2"), typedLine()]));
     const detail = await quotation.get(saved.id);
     expect(detail.lines[0]).toMatchObject({
-      source: "STOCK", memoStockId: item.id, stockId: item.stockId, stoneCodeId: null, stoneCode: "", stone: "Ruby", shape: "Oval",
+      source: "STOCK", memoStockId: item.id, stockId: null, lotKey: null, allocated: false, stoneCodeId: null, stoneCode: "", stone: "Ruby", shape: "Oval",
       lot: "LOT-Q", location: "Memo", cerNo: "C-9", priceUnit: "PER_CT", pcs: 4, weightCt: "2.000", unitPrice: "2500.00", amount: "5000.00",
       stockPendingPcs: 10, stockPendingWeightCt: "5.000", itemNote: "quoted",
     });

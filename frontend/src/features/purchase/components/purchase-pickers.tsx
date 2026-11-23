@@ -1,22 +1,23 @@
 "use client";
 
 import { skipToken } from "@tanstack/react-query";
-import { MessageSquare } from "lucide-react";
 import type { ReactNode } from "react";
 import { useNumberFormat, type NumberFormat } from "@/features/decimal-setup/number-format-provider";
-import { Badge, cx } from "@/features/quotation/components/ui";
+import { cx } from "@/features/quotation/components/ui";
 import { dec } from "@/features/quotation/lib/decimal";
 import { formatDate, formatMoneyText, formatUnitPrice, formatWeight } from "@/features/quotation/lib/format";
 import { documentLoadError } from "@/features/trade-document/document-api";
 import { memoStockLoadError } from "@/features/trade-document/memo-stock-api";
 import { stockRefLabel } from "@/features/trade-document/stock-ref";
+import { PickerChip, PickerLot, PickerNote, lotSelectLabel, pickerCell, pickerSub } from "@/features/trade-document/picker-ui";
 import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
-import type { PurchaseMemoStockRow, PurchaseOrderLineRow } from "../form";
+import { memoStockKey, type PurchaseMemoStockRow, type PurchaseOrderLineRow } from "../form";
 import { StockPicker, usePickerFilters, type PickerColumn, type PickerData, type PickerFilter, type PickerGroup, type PickerTab, type StockPickerProps } from "@/features/trade-document/stock-picker";
 
 /**
- * The two Purchase pickers on the shared shell (FE-PU-004 / FE-PU-009): "Add Memo Stock" (`purchase.memoStock`, R2-MS)
+ * The two Purchase pickers on the shared shell (FE-PU-004 / FE-PU-009): "Add Memo Stock" (`purchase.memoStockLots`, R2-MS,
+ * one row per lot and part, lot-based-stock FE-LOT-003)
  * and "Add Purchase Order" (`purchase.purchaseOrderLines`, R2-PO). Both are scoped to the document's vendor + currency,
  * 50 rows a page, with the server's counts. Loaded lazily when a dialog opens.
  */
@@ -57,11 +58,19 @@ const pickerData = <T,>(query: Infinite<T>): PickerData<T> => ({
   fetchNextPage: () => void query.fetchNextPage(),
 });
 const lastCounts = <C,>(query: { data?: { pages: { counts: C }[] } }): C | undefined => query.data?.pages.at(-1)?.counts;
+type LotCounts = { all?: number; sold: number; inStock: number };
 const pageOptions = { getNextPageParam: (page: { nextCursor: string | null }) => page.nextCursor ?? undefined, staleTime: 10_000, retry: retryTransient };
 
+/** `purchase.memoStockLots` input: the tab is the `group` (ALL / SOLD / IN_STOCK). */
+export function lotPickerInput(vendorId: string, currency: string, filter: PickerFilter<MemoTab>) {
+  const { status, ...rest } = pickerInput(vendorId, currency, filter);
+  return { ...rest, group: status };
+}
+
 export function usePurchaseMemoStock(vendorId: string, currency: string, filter: PickerFilter<MemoTab>) {
-  const query = masterTrpc.purchase.memoStock.useInfiniteQuery(vendorId && currency ? pickerInput(vendorId, currency, filter) : skipToken, pageOptions);
-  return { data: pickerData<PurchaseMemoStockRow>(query), counts: lastCounts(query) };
+  const query = masterTrpc.purchase.memoStockLots.useInfiniteQuery(vendorId && currency ? lotPickerInput(vendorId, currency, filter) : skipToken, pageOptions);
+  const counts = lastCounts<LotCounts>(query);
+  return { data: pickerData<PurchaseMemoStockRow>(query), counts: counts && { all: counts.all ?? counts.sold + counts.inStock, sold: counts.sold, inStock: counts.inStock } };
 }
 
 export function usePurchaseOrderLines(vendorId: string, currency: string, filter: PickerFilter<PurchaseOrderTab>) {
@@ -71,27 +80,25 @@ export function usePurchaseOrderLines(vendorId: string, currency: string, filter
 
 // ---- shared cells ----
 
-const sub = "mt-1 text-xs text-[#656B71]";
-const shortDate = (iso: string) => {
-  const [y, m, d] = iso.slice(0, 10).split("-");
-  return y && m && d ? `${d}/${m}/${y.slice(2)}` : iso;
-};
+const sub = pickerSub;
+const cell = pickerCell;
+const num = cx(pickerCell, "text-right");
 const unitText = (currency: string, perCt: boolean) => `${currency} per ${perCt ? "cts" : "pcs"}`;
 
 function StoneCells({ row }: { row: Pick<PurchaseMemoStockRow, "location" | "stone" | "shape" | "size" | "color" | "clarity" | "cutting" | "quality" | "cerType" | "cerNo"> }) {
   return (
     <>
-      <td className="px-3 py-4">{row.location || "—"}</td>
-      <td className="px-3 py-4">
+      <td className={cell}>{row.location || "—"}</td>
+      <td className={cell}>
         <div className="font-medium">{row.stone}</div>
         <div className={sub}>{[row.shape, row.size].filter(Boolean).join(" · ")}</div>
       </td>
-      <td className="px-3 py-4">
+      <td className={cell}>
         <div>{[row.color, row.clarity].filter(Boolean).join(" · ")}</div>
         <div className={sub}>{[row.cutting, row.quality].filter(Boolean).join(" · ")}</div>
       </td>
-      <td className="px-3 py-4">
-        {row.cerType && <Badge>{row.cerType}</Badge>}
+      <td className={cell}>
+        {row.cerType && <PickerChip>{row.cerType}</PickerChip>}
         <div className={sub}>{row.cerNo}</div>
       </td>
     </>
@@ -101,25 +108,20 @@ function StoneCells({ row }: { row: Pick<PurchaseMemoStockRow, "location" | "sto
 function QuantityPriceCells({ pcs, weightCt, price, perCt, amount, currency, nf }: { pcs: number; weightCt: string; price: string; perCt: boolean; amount: string; currency: string; nf: NumberFormat }) {
   return (
     <>
-      <td className="px-3 py-4 text-right">
+      <td className={num}>
         <div>{pcs}</div>
         <div className={sub}>{formatWeight(dec(weightCt), nf.weightPlaces)} cts</div>
       </td>
-      <td className="border-l border-[#EDEDED] px-3 py-4 text-right">
+      <td className={num}>
         <div>{formatUnitPrice(price, nf.pricePlaces)}</div>
         <div className={sub}>{unitText(currency, perCt)}</div>
       </td>
-      <td className="px-3 py-4 text-right">{formatMoneyText(amount, nf.pricePlaces)}</td>
+      <td className={num}>{formatMoneyText(amount, nf.pricePlaces)}</td>
     </>
   );
 }
 
-const Note = ({ text }: { text: string }) =>
-  text ? (
-    <div className={cx(sub, "flex items-center gap-1.5")}>
-      <MessageSquare className="size-3" aria-hidden /> {text}
-    </div>
-  ) : null;
+const Note = PickerNote;
 
 /** Status badge (DV-09): the design's fills with darker text for WCAG AA; the status is always given as text. */
 export function StatusBadge({ tone, children }: { tone: "sold" | "inStock" | "open" | "partly"; children: ReactNode }) {
@@ -132,22 +134,30 @@ export function StatusBadge({ tone, children }: { tone: "sold" | "inStock" | "op
   return <span className={cx("inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium", tones[tone])}>{children}</span>;
 }
 
-const columns = (lead: PickerColumn[], status: PickerColumn | null): PickerColumn[] => [
+/** Designs 144 / 146: attribute columns in capitals, identity columns and Amount as written. */
+const columns = (lead: PickerColumn[], status: PickerColumn | null, price: string): PickerColumn[] => [
   ...lead,
-  { title: "Location" },
-  { title: "Stone", sub: "Shape · Size" },
-  { title: "Color · Clarity", sub: "Cutting · Quality" },
-  { title: "Cer Type", sub: "Cer No." },
+  { title: "Location", upper: true },
+  { title: "Stone", sub: "Shape · Size", upper: true },
+  { title: "Color · Clarity", sub: "Cutting · Quality", upper: true },
+  { title: "Cer Type", sub: "Cer No.", upper: true },
   ...(status ? [status] : []),
-  { title: "Pcs", sub: "Weight", right: true },
-  { title: "Price", sub: "Unit", right: true, divider: true },
+  { title: "Pcs", sub: "Weight", right: true, upper: true },
+  { title: price, sub: "Unit", right: true, upper: true },
   { title: "Amount", right: true },
 ];
 
 // ---- Add Memo Stock (R2-MS) ----
 
-/** Rev 3 (owner 2026-11-04): the first column leads with the Memo ID; the Stock ID and lot sit under it. */
-export const MEMO_STOCK_COLUMNS = columns([{ title: "Memo ID", sub: "Stock ID · Lot", className: "w-[240px]" }], { title: "Status", sub: "Sale Invoice · Customer" });
+/**
+ * Design 144 (owner 2026-11-20): the Lot leads with its Stone Code and the Memo Receive no. under it (lot-based-stock,
+ * no Stock ID); Memo Price per unit is the lot's weighted average.
+ */
+export const MEMO_STOCK_COLUMNS = columns(
+  [{ title: "Lot / Stone Code", sub: "Memo No.", plainSub: true, className: "w-[240px]" }],
+  { title: "Status", sub: "Sale Invoice · Customer", upper: true },
+  "Memo Price",
+);
 export const SOLD_GROUP_LABEL = "Sold to customers · must be purchased";
 export const IN_STOCK_GROUP_LABEL = "Still in stock on memo · buy now or return later";
 type MemoCounts = { all: number; sold: number; inStock: number };
@@ -162,8 +172,8 @@ export function memoStockTabs(counts: MemoCounts | undefined): PickerTab<MemoTab
 
 /** Sold first, then In stock (source 05). A group's count is the server's for the current search and dates. */
 export function memoStockGroups(rows: readonly PurchaseMemoStockRow[], counts: MemoCounts | undefined): PickerGroup<PurchaseMemoStockRow>[] {
-  const sold = rows.filter((row) => row.status === "SOLD");
-  const inStock = rows.filter((row) => row.status !== "SOLD");
+  const sold = rows.filter((row) => row.memoGroup === "SOLD");
+  const inStock = rows.filter((row) => row.memoGroup !== "SOLD");
   return [
     { id: "SOLD", label: SOLD_GROUP_LABEL, tone: "sold", count: counts?.sold ?? sold.length, rows: sold },
     { id: "IN_STOCK", label: IN_STOCK_GROUP_LABEL, tone: "neutral", count: counts?.inStock ?? inStock.length, rows: inStock },
@@ -179,33 +189,23 @@ export function memoStockEmptyText(currency: string) {
   };
 }
 
-/** api-contract `PurchaseMemoStockRow.sale`: always null in SA rev 1 (no Sale entity, D6 / Q-PU-16). */
-type SaleInfo = { invoiceNo: string; invoiceDate: string; customerName: string } | null;
-
 /** One Memo Stock row's cells after the checkbox and # (columns 3–11 of R2-MS). */
 export function MemoStockCells({ row, currency }: { row: PurchaseMemoStockRow; currency: string }) {
   const nf = useNumberFormat();
-  const sale = row.sale as SaleInfo;
   return (
     <>
-      <td className="px-3 py-4">
-        <div className="font-medium">{stockRefLabel(row) || "—"}</div>
-        <div className={sub}>{[row.stockId, row.lot].filter(Boolean).join(" · ")}</div>
+      <td className={cell}>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {row.lot ? <PickerLot>{row.lot}</PickerLot> : <span className="text-gms-text-muted">—</span>}
+          <span className="font-medium">{row.stoneCode || "—"}</span>
+        </div>
+        <div className={sub}>{stockRefLabel(row)}</div>
         <Note text={row.itemNote} />
       </td>
       <StoneCells row={row} />
-      <td className="px-3 py-4">
-        {row.status === "SOLD" ? (
-          <>
-            <StatusBadge tone="sold">Sold</StatusBadge>
-            {/* Q-PU-16 / SA D6: the sale data comes from the Sale page, which doesn't exist yet; shown only when given. */}
-            {sale && (
-              <>
-                <div className={sub}>{`${sale.invoiceNo} · ${shortDate(sale.invoiceDate)}`}</div>
-                <div className={sub}>{sale.customerName}</div>
-              </>
-            )}
-          </>
+      <td className={cell}>
+        {row.memoGroup === "SOLD" ? (
+          <StatusBadge tone="sold">Sold</StatusBadge>
         ) : (
           <>
             <StatusBadge tone="inStock">In stock</StatusBadge>
@@ -213,7 +213,7 @@ export function MemoStockCells({ row, currency }: { row: PurchaseMemoStockRow; c
           </>
         )}
       </td>
-      <QuantityPriceCells pcs={row.availablePcs} weightCt={row.availableWeightCt} price={row.netUnitPrice} perCt={row.priceUnit !== "PCS"} amount={row.amount} currency={currency} nf={nf} />
+      <QuantityPriceCells pcs={row.pendingPcs} weightCt={row.pendingWeightCt} price={row.netUnitPrice ?? "0"} perCt={row.priceUnit !== "PER_PCS"} amount={row.amount ?? "0"} currency={currency} nf={nf} />
     </>
   );
 }
@@ -225,14 +225,14 @@ export function memoStockPickerProps({ currency, counts, excluded, onCancel, onC
   return {
     title: "Add Memo Stock",
     tabs: memoStockTabs(counts),
-    searchPlaceholder: "Search Stock ID, lot, memo, invoice",
+    searchPlaceholder: "Search Lot, Stone, Stone Code, Cer No., Doc No.",
     searchLabel: "Search memo stock",
     dateLabels: { from: "Received from", to: "Received to" },
     columns: MEMO_STOCK_COLUMNS,
     groups: (rows) => memoStockGroups(rows, counts),
-    rowKey: (row) => row.key,
-    rowLabel: (row) => `Select ${row.stockId} from ${stockRefLabel(row)}`,
-    rowMarked: (row) => row.status === "SOLD",
+    rowKey: (row) => memoStockKey(row.lotKey, row.memoGroup),
+    rowLabel: (row) => lotSelectLabel(row.lot, row.stoneCode, stockRefLabel(row)),
+    rowMarked: (row) => row.memoGroup === "SOLD",
     cells: (row) => <MemoStockCells row={row} currency={currency} />,
     emptyText: memoStockEmptyText(currency),
     loadError: memoStockLoadError,
@@ -256,10 +256,11 @@ export function MemoStockPicker({ vendorId, ...scope }: PickerScope<PurchaseMemo
  */
 export const PURCHASE_ORDER_COLUMNS = columns(
   [
-    { title: "PO No.", sub: "Doc Date", className: "w-[150px]" },
+    { title: "PO No.", sub: "Doc Date", plainSub: true, className: "w-[150px]" },
     { title: "Stone Code", sub: "Stock ID · Lot", className: "w-[220px]" },
   ],
   null,
+  "Price",
 );
 
 /** One flat list in the server's order (newest PO first, lines by position). */
@@ -278,15 +279,15 @@ export function PurchaseOrderLineCells({ row, currency }: { row: PurchaseOrderLi
   const nf = useNumberFormat();
   return (
     <>
-      <td className="px-3 py-4">
+      <td className={cell}>
         <div className="font-medium">{row.purchaseOrder.docNo}</div>
         <div className={sub}>{formatDate(row.purchaseOrder.docDate)}</div>
       </td>
-      <td className="px-3 py-4">
+      <td className={cell}>
         <div className="font-medium">{row.stoneCode || "—"}</div>
         <div className={cx(sub, "flex flex-wrap items-center gap-2")}>
           <span>—</span>
-          {row.lot && <Badge variant="lot">{row.lot}</Badge>}
+          {row.lot && <PickerLot>{row.lot}</PickerLot>}
         </div>
         <Note text={row.itemNote} />
       </td>

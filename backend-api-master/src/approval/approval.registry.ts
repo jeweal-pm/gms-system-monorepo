@@ -22,18 +22,18 @@ export type ApprovalRegistryEntry = {
    * Where a line's Stock ID is for search: `line` = `l.stock_id`; `memoOutLine` = the linked Memo Out line's
    * `stock_id` (Memo Out Return); `none` = no Stock ID (Purchase Order: search by stone only).
    */
-  stock: "line" | "memoOutLine" | "none";
+  stock: "line" | "lot" | "memoOutLine" | "none";
 };
 
 const LINES: Readonly<Record<ApprovalDocType, Omit<ApprovalRegistryEntry, "type" | "menu" | "table">>> = {
-  quotation: { lineTable: "quotation_line", parentColumn: "quotation_id", party: "customer", stock: "line" },
-  reserve: { lineTable: "reserve_line", parentColumn: "reserve_id", party: "customer", stock: "line" },
+  quotation: { lineTable: "quotation_line", parentColumn: "quotation_id", party: "customer", stock: "lot" },
+  reserve: { lineTable: "reserve_line", parentColumn: "reserve_id", party: "customer", stock: "lot" },
   "memo-receive": { lineTable: "memo_receive_line", parentColumn: "memo_receive_id", party: "vendor", stock: "line" },
-  "memo-return": { lineTable: "memo_return_line", parentColumn: "memo_return_id", party: "vendor", stock: "line" },
-  "memo-out": { lineTable: "memo_out_line", parentColumn: "memo_out_id", party: "customer", stock: "line" },
+  "memo-return": { lineTable: "memo_return_line", parentColumn: "memo_return_id", party: "vendor", stock: "lot" },
+  "memo-out": { lineTable: "memo_out_line", parentColumn: "memo_out_id", party: "customer", stock: "lot" },
   "memo-out-return": { lineTable: "memo_out_return_line", parentColumn: "memo_out_return_id", party: "customer", stock: "memoOutLine" },
   "purchase-order": { lineTable: "purchase_order_line", parentColumn: "purchase_order_id", party: "vendor", stock: "none" },
-  purchase: { lineTable: "purchase_line", parentColumn: "purchase_id", party: "vendor", stock: "line" },
+  purchase: { lineTable: "purchase_line", parentColumn: "purchase_id", party: "vendor", stock: "lot" },
 };
 
 export const APPROVAL_REGISTRY: Readonly<Record<ApprovalDocType, ApprovalRegistryEntry>> = Object.fromEntries(

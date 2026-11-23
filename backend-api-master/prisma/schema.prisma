@@ -616,6 +616,9 @@ model QuotationLine {
   stockId              String?              @map("stock_id") @db.VarChar(10)
   stockPendingPcs      Int?                 @map("stock_pending_pcs")
   stockPendingWeightCt Decimal?             @map("stock_pending_weight_ct") @db.Decimal(12, 3)
+  /// ADR-0055 D4: a lot line names its group (no single item, Stock ID NULL) and the group size at save.
+  lotKey               String?  @map("lot_key") @db.VarChar(40)
+  stockCount           Int?     @map("stock_count") @db.SmallInt
   quotation            Quotation            @relation(fields: [quotationId], references: [id], onDelete: Cascade)
   stoneCode            StoneCode?           @relation(fields: [stoneCodeId], references: [id], onDelete: SetNull)
   memoStock            MemoStock?           @relation(fields: [memoStockId], references: [id], onDelete: Restrict)
@@ -822,6 +825,9 @@ model MemoOutLine {
   /// The item's pending when the line was saved: the row's maximum (pcs / weightCt ≤ it).
   stockPendingPcs      Int?                @map("stock_pending_pcs")
   stockPendingWeightCt Decimal?            @map("stock_pending_weight_ct") @db.Decimal(12, 3)
+  /// ADR-0055 D4: a lot line names its group (no single item, Stock ID NULL) and the group size at save.
+  lotKey               String?  @map("lot_key") @db.VarChar(40)
+  stockCount           Int?     @map("stock_count") @db.SmallInt
   document             MemoOut             @relation(fields: [memoOutId], references: [id], onDelete: Cascade)
   stoneCode            StoneCode?          @relation(fields: [stoneCodeId], references: [id], onDelete: SetNull)
   /// memo-out-return SA-MOR-14: quantity brought back by approved Memo Out Returns; outstanding = pcs / weight − returned.
@@ -829,6 +835,7 @@ model MemoOutLine {
   returnedWeightCt     Decimal             @default(0) @map("returned_weight_ct") @db.Decimal(12, 3)
   memoStock            MemoStock?          @relation(fields: [memoStockId], references: [id], onDelete: Restrict)
   returnLines          MemoOutReturnLine[]
+  allocs               MemoOutLineAlloc[]
 
   /// Line photos in order (ADR-0048, owner 2026-11-11).
   photos MemoOutLinePhoto[]
@@ -983,6 +990,7 @@ model MemoOutReturnLine {
   document            MemoOutReturn @relation(fields: [memoOutReturnId], references: [id], onDelete: Cascade)
   stoneCode           StoneCode?    @relation(fields: [stoneCodeId], references: [id], onDelete: SetNull)
   memoOutLine         MemoOutLine   @relation(fields: [memoOutLineId], references: [id], onDelete: Restrict)
+  allocs              MemoOutReturnLineAlloc[]
 
   /// Line photos in order (ADR-0048, owner 2026-11-11).
   photos MemoOutReturnLinePhoto[]
@@ -1205,6 +1213,10 @@ model MemoStock {
   lineAmount           Decimal               @map("line_amount") @db.Decimal(18, 2)
   netUnitPrice         Decimal               @map("net_unit_price") @db.Decimal(18, 4)
   currencyCode         String                @map("currency_code") @db.Char(3)
+  /// lot-based-stock ADR-0055 D2 (owner change 2026-11-21): STORED GENERATED group key (ML+md5 of every item detail except
+  /// the price, or MS+id for a group of one).
+  /// Written by PostgreSQL only; never set it from code.
+  lotKey               String?               @map("lot_key") @db.VarChar(40)
   version              Int                   @default(1)
   createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamp(3)
   createdBy            String                @map("created_by") @db.VarChar(64)
@@ -1218,6 +1230,10 @@ model MemoStock {
   quotationLines       QuotationLine[]
   purchaseLines        PurchaseLine[]
   saleConsumptionLines SaleConsumptionLine[]
+  reserveAllocs        ReserveLineAlloc[]
+  memoOutAllocs        MemoOutLineAlloc[]
+  memoReturnAllocs     MemoReturnLineAlloc[]
+  purchaseAllocs       PurchaseLineAlloc[]
 
   /// Add Memo Stock dialog: a vendor's items with something still pending, newest receive first (SA-MR-11).
   @@index([vendorId, receivedDocDate(sort: Desc), stockId(sort: Desc)], where: raw("((pending_pcs > 0) OR (pending_weight_ct > (0)::numeric))"), map: "memo_stock_pending_idx")
@@ -1228,6 +1244,9 @@ model MemoStock {
   @@index([memoReceiveId], where: raw("((pending_pcs > 0) OR (pending_weight_ct > (0)::numeric) OR (reserved_pcs > 0) OR (reserved_weight_ct > (0)::numeric))"), map: "memo_stock_open_idx")
   /// Purchase "Add Memo Stock" SOLD group (purchase SA-PU-12): sold to customers, not yet purchased.
   @@index([vendorId, receivedDocDate(sort: Desc), stockId(sort: Desc)], where: raw("((sold_pcs > purchased_pcs) OR (sold_weight_ct > purchased_weight_ct))"), map: "memo_stock_sold_open_idx")
+  /// ADR-0055: lot pickers and the apply lock (open groups); Purchase Sold lots.
+  @@index([lotKey, receivedDocDate, stockId], where: raw("((pending_pcs > 0) OR (pending_weight_ct > (0)::numeric))"), map: "memo_stock_lot_open_idx")
+  @@index([vendorId, lotKey], where: raw("((sold_pcs > purchased_pcs) OR (sold_weight_ct > purchased_weight_ct))"), map: "memo_stock_lot_sold_open_idx")
   @@map("memo_stock")
   @@schema("partner")
 }
@@ -1333,8 +1352,11 @@ model MemoReturnLine {
   id                  String     @id @db.Uuid
   memoReturnId        String     @map("memo_return_id") @db.Uuid
   position            Int        @db.SmallInt
-  memoStockId         String     @map("memo_stock_id") @db.Uuid
-  stockId             String     @map("stock_id") @db.VarChar(10)
+  /// ADR-0055: NULL on a lot line (lotKey set).
+  memoStockId         String?    @map("memo_stock_id") @db.Uuid
+  stockId             String?    @map("stock_id") @db.VarChar(10)
+  lotKey              String?    @map("lot_key") @db.VarChar(40)
+  stockCount          Int?       @map("stock_count") @db.SmallInt
   outstandingPcs      Int        @map("outstanding_pcs")
   outstandingWeightCt Decimal    @map("outstanding_weight_ct") @db.Decimal(12, 3)
   source              String     @db.VarChar(10)
@@ -1360,7 +1382,8 @@ model MemoReturnLine {
   amount              Decimal    @db.Decimal(18, 2)
   itemNote            String     @default("") @map("item_note") @db.VarChar(500)
   document            MemoReturn @relation(fields: [memoReturnId], references: [id], onDelete: Cascade)
-  memoStock           MemoStock  @relation(fields: [memoStockId], references: [id], onDelete: Restrict)
+  memoStock           MemoStock? @relation(fields: [memoStockId], references: [id], onDelete: Restrict)
+  allocs              MemoReturnLineAlloc[]
 
   /// Line photos in order (ADR-0048, owner 2026-11-11).
   photos MemoReturnLinePhoto[]
@@ -1517,6 +1540,9 @@ model ReserveLine {
   /// The item's pending when the line was saved: the row's maximum (pcs / weightCt ≤ it).
   stockPendingPcs      Int?       @map("stock_pending_pcs")
   stockPendingWeightCt Decimal?   @map("stock_pending_weight_ct") @db.Decimal(12, 3)
+  /// ADR-0055 D4: a lot line names its group (no single item, Stock ID NULL) and the group size at save.
+  lotKey               String?  @map("lot_key") @db.VarChar(40)
+  stockCount           Int?     @map("stock_count") @db.SmallInt
   /// sale ADR-0054 D4: quantity sold by applied Sales (Σ sale_consumption_line); open = qty − sold (CHECK reserve_line_sold_check).
   soldPcs              Int        @default(0) @map("sold_pcs")
   soldWeightCt         Decimal    @default(0) @map("sold_weight_ct") @db.Decimal(12, 3)
@@ -1527,6 +1553,7 @@ model ReserveLine {
   /// Line photos in order (ADR-0048, owner 2026-11-11).
   photos               ReserveLinePhoto[]
   saleConsumptionLines SaleConsumptionLine[]
+  allocs               ReserveLineAlloc[]
 
   @@unique([reserveId, position], map: "reserve_line_position_key")
   @@unique([reserveId, memoStockId], map: "reserve_line_memo_stock_key")
@@ -1883,6 +1910,9 @@ model PurchaseLine {
   /// ADR-0051: the Memo Stock item's Stock ID on a STOCK line; NULL on MANUAL / PURCHASE_ORDER lines until Load to Stock
   /// (CHECK purchase_line_stock_id_source_check).
   stockId             String?            @map("stock_id") @db.VarChar(10)
+  /// ADR-0055: a lot STOCK line (memoStockId and stockId NULL) and its group size at save.
+  lotKey              String?            @map("lot_key") @db.VarChar(40)
+  stockCount          Int?               @map("stock_count") @db.SmallInt
   stoneCodeId         String?            @map("stone_code_id") @db.Uuid
   stoneCodeSnapshot   String             @default("") @map("stone_code_snapshot") @db.VarChar(60)
   stone               String             @default("") @db.VarChar(60)
@@ -1917,6 +1947,7 @@ model PurchaseLine {
   /// Line photos in order (ADR-0048, owner 2026-11-11).
   photos          PurchaseLinePhoto[]
   loadAllocations LoadAllocationLine[]
+  allocs          PurchaseLineAlloc[]
 
   @@unique([purchaseId, position], map: "purchase_line_position_key")
   @@unique([purchaseId, memoStockId, memoGroup], map: "purchase_line_memo_stock_key")
@@ -2054,8 +2085,8 @@ model SaleConsumptionLine {
   reserveLine   ReserveLine?    @relation(fields: [reserveLineId], references: [id], onDelete: Restrict, map: "sale_consumption_line_reserve_line_fkey")
   memoStock     MemoStock       @relation(fields: [memoStockId], references: [id], onDelete: Restrict, map: "sale_consumption_line_memo_stock_fkey")
 
-  @@id([saleId, lineId])
-  @@unique([saleId, reserveLineId], where: raw("(reserve_line_id IS NOT NULL)"), map: "sale_consumption_line_reserve_line_key")
+  /// ADR-0055 D7: one row per (sale, line, memo stock); a lot line or a lot Reserve line consumes several items.
+  @@id([saleId, lineId, memoStockId])
   @@index([reserveLineId], map: "sale_consumption_line_reserve_line_idx")
   @@index([memoStockId], map: "sale_consumption_line_memo_stock_idx")
   @@map("sale_consumption_line")
@@ -2083,5 +2114,118 @@ model InventorySyncOp {
   @@index([nextAttemptAt], where: raw("((state)::text = 'PREPARED'::text)"), map: "inventory_sync_op_due_idx")
   @@index([updatedAt], where: raw("((state)::text = ANY ((ARRAY['DONE'::character varying, 'REFUSED'::character varying, 'ABANDONED'::character varying])::text[]))"), map: "inventory_sync_op_finished_idx")
   @@map("inventory_sync_op")
+  @@schema("partner")
+}
+
+/// ADR-0055 D5: the Stock IDs an applied ReserveLine took (FIFO seq); server-side audit only (owner Q-LOT-10).
+model ReserveLineAlloc {
+  id              String     @id @db.Uuid
+  lineId          String     @map("line_id") @db.Uuid
+  seq             Int        @db.SmallInt
+  memoStockId     String?    @map("memo_stock_id") @db.Uuid
+  ownStockId      String?    @map("own_stock_id") @db.Uuid
+  stockId         String     @map("stock_id") @db.VarChar(10)
+  pcs             Int
+  weightCt        Decimal    @map("weight_ct") @db.Decimal(12, 3)
+  /// Sold by applied Sales (oldest seq first).
+  settledPcs      Int        @default(0) @map("settled_pcs")
+  settledWeightCt Decimal    @default(0) @map("settled_weight_ct") @db.Decimal(12, 3)
+  line            ReserveLine @relation(fields: [lineId], references: [id], onDelete: Cascade, map: "reserve_line_alloc_line_fkey")
+  memoStock       MemoStock? @relation(fields: [memoStockId], references: [id], onDelete: Restrict, map: "reserve_line_alloc_memo_stock_fkey")
+
+  @@unique([lineId, seq], map: "reserve_line_alloc_seq_key")
+  @@unique([lineId, memoStockId], map: "reserve_line_alloc_memo_stock_key")
+  @@unique([lineId, ownStockId], map: "reserve_line_alloc_own_stock_key")
+  @@index([memoStockId], map: "reserve_line_alloc_memo_stock_idx")
+  @@index([ownStockId], map: "reserve_line_alloc_own_stock_idx")
+  @@map("reserve_line_alloc")
+  @@schema("partner")
+}
+
+/// ADR-0055 D5: the Stock IDs an applied MemoOutLine took (FIFO seq); server-side audit only (owner Q-LOT-10).
+model MemoOutLineAlloc {
+  id              String     @id @db.Uuid
+  lineId          String     @map("line_id") @db.Uuid
+  seq             Int        @db.SmallInt
+  memoStockId     String?    @map("memo_stock_id") @db.Uuid
+  ownStockId      String?    @map("own_stock_id") @db.Uuid
+  stockId         String     @map("stock_id") @db.VarChar(10)
+  pcs             Int
+  weightCt        Decimal    @map("weight_ct") @db.Decimal(12, 3)
+  /// Returned by applied Memo Out Returns (oldest seq first).
+  settledPcs      Int        @default(0) @map("settled_pcs")
+  settledWeightCt Decimal    @default(0) @map("settled_weight_ct") @db.Decimal(12, 3)
+  line            MemoOutLine @relation(fields: [lineId], references: [id], onDelete: Cascade, map: "memo_out_line_alloc_line_fkey")
+  memoStock       MemoStock? @relation(fields: [memoStockId], references: [id], onDelete: Restrict, map: "memo_out_line_alloc_memo_stock_fkey")
+  returns         MemoOutReturnLineAlloc[]
+
+  @@unique([lineId, seq], map: "memo_out_line_alloc_seq_key")
+  @@unique([lineId, memoStockId], map: "memo_out_line_alloc_memo_stock_key")
+  @@unique([lineId, ownStockId], map: "memo_out_line_alloc_own_stock_key")
+  @@index([memoStockId], map: "memo_out_line_alloc_memo_stock_idx")
+  @@index([ownStockId], map: "memo_out_line_alloc_own_stock_idx")
+  @@map("memo_out_line_alloc")
+  @@schema("partner")
+}
+
+/// ADR-0055 D5: the Stock IDs an applied MemoReturnLine took (FIFO seq); server-side audit only (owner Q-LOT-10).
+model MemoReturnLineAlloc {
+  id              String     @id @db.Uuid
+  lineId          String     @map("line_id") @db.Uuid
+  seq             Int        @db.SmallInt
+  memoStockId     String?    @map("memo_stock_id") @db.Uuid
+  ownStockId      String?    @map("own_stock_id") @db.Uuid
+  stockId         String     @map("stock_id") @db.VarChar(10)
+  pcs             Int
+  weightCt        Decimal    @map("weight_ct") @db.Decimal(12, 3)
+  /// Unused (always 0).
+  settledPcs      Int        @default(0) @map("settled_pcs")
+  settledWeightCt Decimal    @default(0) @map("settled_weight_ct") @db.Decimal(12, 3)
+  line            MemoReturnLine @relation(fields: [lineId], references: [id], onDelete: Cascade, map: "memo_return_line_alloc_line_fkey")
+  memoStock       MemoStock? @relation(fields: [memoStockId], references: [id], onDelete: Restrict, map: "memo_return_line_alloc_memo_stock_fkey")
+
+  @@unique([lineId, seq], map: "memo_return_line_alloc_seq_key")
+  @@unique([lineId, memoStockId], map: "memo_return_line_alloc_memo_stock_key")
+  @@unique([lineId, ownStockId], map: "memo_return_line_alloc_own_stock_key")
+  @@index([memoStockId], map: "memo_return_line_alloc_memo_stock_idx")
+  @@index([ownStockId], map: "memo_return_line_alloc_own_stock_idx")
+  @@map("memo_return_line_alloc")
+  @@schema("partner")
+}
+
+/// ADR-0055 D5 / ADR-0043 per lot: the Memo Stock items an applied Purchase STOCK line paid, per part.
+model PurchaseLineAlloc {
+  id          String       @id @db.Uuid
+  lineId      String       @map("line_id") @db.Uuid
+  seq         Int          @db.SmallInt
+  memoStockId String       @map("memo_stock_id") @db.Uuid
+  stockId     String       @map("stock_id") @db.VarChar(10)
+  /// SOLD (sold - purchased -> purchased) or IN_STOCK (pending -> sold + purchased).
+  part        String       @db.VarChar(10)
+  pcs         Int
+  weightCt    Decimal      @map("weight_ct") @db.Decimal(12, 3)
+  line        PurchaseLine @relation(fields: [lineId], references: [id], onDelete: Cascade, map: "purchase_line_alloc_line_fkey")
+  memoStock   MemoStock    @relation(fields: [memoStockId], references: [id], onDelete: Restrict, map: "purchase_line_alloc_memo_stock_fkey")
+
+  @@unique([lineId, seq], map: "purchase_line_alloc_seq_key")
+  @@unique([lineId, memoStockId, part], map: "purchase_line_alloc_memo_stock_key")
+  @@index([memoStockId], map: "purchase_line_alloc_memo_stock_idx")
+  @@map("purchase_line_alloc")
+  @@schema("partner")
+}
+
+/// ADR-0055 D5: the Memo Out allocation rows an applied Memo Out Return line settled (exact reversal).
+model MemoOutReturnLineAlloc {
+  id                 String            @id @db.Uuid
+  lineId             String            @map("line_id") @db.Uuid
+  memoOutLineAllocId String            @map("memo_out_line_alloc_id") @db.Uuid
+  pcs                Int
+  weightCt           Decimal           @map("weight_ct") @db.Decimal(12, 3)
+  line               MemoOutReturnLine @relation(fields: [lineId], references: [id], onDelete: Cascade, map: "memo_out_return_line_alloc_line_fkey")
+  source             MemoOutLineAlloc  @relation(fields: [memoOutLineAllocId], references: [id], onDelete: Restrict, map: "memo_out_return_line_alloc_source_fkey")
+
+  @@unique([lineId, memoOutLineAllocId], map: "memo_out_return_line_alloc_source_key")
+  @@index([memoOutLineAllocId], map: "memo_out_return_line_alloc_source_idx")
+  @@map("memo_out_return_line_alloc")
   @@schema("partner")
 }

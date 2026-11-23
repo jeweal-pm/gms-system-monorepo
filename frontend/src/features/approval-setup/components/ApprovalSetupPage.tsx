@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, ChevronRight, LoaderCircle } from "lucide-react";
+import { ArrowRight, ChevronRight, Info, LoaderCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useState } from "react";
@@ -18,10 +18,12 @@ import { inventoryApprovalApi, inventoryApprovalKeys, isInventoryApprovalType, u
 import { masterTrpc } from "@/lib/master-trpc";
 import {
   blockedText,
-  helperText,
   isNotAvailable,
   mergeSettings,
   rowLocked,
+  SAVE_FLOW_BLOCKED_TEXT,
+  SAVE_FLOW_OFF_TEXT,
+  SAVE_FLOW_ON_TEXT,
   SETTINGS_LOAD_ERROR,
   settingOf,
   SETUP_ROWS,
@@ -126,7 +128,6 @@ function ApprovalSetupWorkspace({ canEdit }: { canEdit: boolean }) {
   return (
     <PartnerPageFrame>
       <h1 className="text-gms-title font-medium text-gms-text-heading">Approval</h1>
-      <StatusChainView on={true} />
       <section aria-label="Approval settings" className="mt-8 rounded-gms-lg bg-gms-surface p-6">
         {list.isError && !items ? (
           <div role="alert" className="flex flex-col items-start gap-3 py-8 text-gms-body text-gms-text">
@@ -140,10 +141,12 @@ function ApprovalSetupWorkspace({ canEdit }: { canEdit: boolean }) {
               <thead>
                 <tr className="h-14 border-b border-gms-border bg-gms-page text-gms-body font-semibold text-gms-text">
                   <th scope="col" className="w-[24%] min-w-[240px] pl-8 pr-4">Menu</th>
-                  {/* <th scope="col" className="min-w-[520px] px-4">When a document is saved</th> */}
                   <th scope="col" className="w-[200px] px-4">Waiting for approval</th>
                   <th scope="col" className="w-[180px] px-4" title={canEdit ? undefined : VIEW_ONLY_HINT}>
-                    Require approval
+                    <span className="inline-flex items-center gap-1.5">
+                      Require approval
+                      <SaveFlowInfo />
+                    </span>
                     {!canEdit && <span className="ml-2 text-gms-label font-normal text-gms-text-secondary">({VIEW_ONLY_HINT})</span>}
                   </th>
                 </tr>
@@ -212,16 +215,6 @@ export function SettingRow({ menu, setting, canEdit, canOpenApprove, saving, onT
           {menu.label}
         </span>
       </th>
-      {/* <td className="px-4 py-3">
-        {locked === "loading" ? (
-          <span aria-label="Loading" className="block h-4 w-64 animate-pulse rounded-gms-sm bg-gms-surface-sunken" />
-        ) : (
-          <>
-            <StatusChainView on={on} />
-            <p className="mt-1.5 text-gms-label text-gms-text-muted">{helperText(menu, on)}</p>
-          </>
-        )}
-      </td> */}
       <td className="px-4">
         {locked === "loading" ? (
           <span aria-label="Loading" className="block h-4 w-24 animate-pulse rounded-gms-sm bg-gms-surface-sunken" />
@@ -271,6 +264,39 @@ function StatusChainView({ on }: { on: boolean }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+/**
+ * ⓘ next to "Require approval" (owner 2026-11-20): what Save does with the switch On and Off. Opens on hover and on
+ * keyboard focus / tap (the button takes focus), so it is not hover-only; the text is the button's description.
+ */
+export function SaveFlowInfo() {
+  return (
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        aria-label="What happens when a document is saved"
+        aria-describedby="approval-save-flow"
+        className={cx("inline-flex size-5 items-center justify-center rounded-full text-gms-text-muted hover:text-gms-text", focusRing)}
+      >
+        <Info aria-hidden size={16} />
+      </button>
+      <span
+        id="approval-save-flow"
+        role="tooltip"
+        className="absolute right-0 top-full z-40 mt-2 hidden w-max max-w-[420px] rounded-gms-md border border-gms-border bg-gms-surface p-4 text-left text-gms-label font-normal text-gms-text shadow-gms-overlay group-focus-within:block group-hover:block"
+      >
+        <span className="block font-semibold text-gms-text-heading">When a document is saved</span>
+        <span className="mt-3 block font-medium">On</span>
+        <span className="mt-1.5 block"><StatusChainView on /></span>
+        <span className="mt-1.5 block text-gms-text-muted">{SAVE_FLOW_ON_TEXT}</span>
+        <span className="mt-3 block font-medium">Off</span>
+        <span className="mt-1.5 block"><StatusChainView on={false} /></span>
+        <span className="mt-1.5 block text-gms-text-muted">{SAVE_FLOW_OFF_TEXT}</span>
+        <span className="mt-3 block text-gms-text-muted">{SAVE_FLOW_BLOCKED_TEXT}</span>
+      </span>
+    </span>
   );
 }
 

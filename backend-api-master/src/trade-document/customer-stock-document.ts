@@ -13,13 +13,16 @@ import { customerLineOptions, formatAddress, stoneLineOptions } from "../quotati
 import { documentErrors, type DocumentErrors } from "./document-errors";
 import { TradeDocumentEngine, type DocumentActor, type DocumentEffects, type LineHook, type PartyAdapter, type TradeDocumentInput } from "./document-engine";
 import type { MemoOutInput, MemoReceiveListInput, MemoReceiveStatus } from "./memo-schemas";
-import { releaseToMemoStock, takeFromMemoStock } from "./memo-stock.service";
-import { completeFromMemoStock } from "./stock-lines";
+import { applyMemoStockLines, memoStockLinesOf, reverseMemoStockLines } from "./lot-apply";
+import { completeFromMemoStock, refuseNewItemReferences } from "./stock-lines";
 import { withLinePhotos, type LinePhotoDocument } from "./line-photos";
 import { uuidV7 } from "@gms/storage";
 import { peekApprovalSetting } from "../approval-setting/approval-setting.service";
 import { completeOwnStockLines, storedOwnLines, STORED_OWN_LINE_SELECT } from "./own-stock-lines";
-import { DOC_SPECS, holdSaga, lineIndexOf, registerHoldErrors, sumLines } from "./inventory-hold-saga";
+import { DOC_SPECS, holdSaga, lineIndexOf, registerHoldErrors, SagaRequired, sumLines, type HoldSet } from "./inventory-hold-saga";
+import { completeOwnLotLines, currentOwnLotPlan, mergeHolds, planCovers, planHolds, planLineIndex, planOwnLots, withOwnLotPlan, type OwnLotPlan } from "./own-lot-lines";
+import { ALLOC_TABLES, pendingShortError, writeAllocations, type AllocationRow, type ShortLine } from "./lot-apply";
+import { inventoryUnavailable } from "./own-stock-lines";
 
 /**
  * A customer document whose lines may come From Stock (memo-out SA rev 2 SA-MO-11…15; reserve SA rev 1 SA-RS-04…08):
@@ -44,7 +47,7 @@ export type CustomerOut = {
 };
 
 /** A stock line after `prepare`: the item's Stock ID and its pending at save, stored on the line (SA-MO-12). */
-type PreparedLine = CustomerStockInput["lines"][number] & { stockId?: string; stockPendingPcs?: number; stockPendingWeightCt?: string };
+type PreparedLine = CustomerStockInput["lines"][number] & { stockId?: string | null; stockPendingPcs?: number; stockPendingWeightCt?: string; stockCount?: number | null };
 
 type CustomerInput = TradeDocumentInput & { customerId: string; shippingAddressId: string; invoiceAddressId: string };
 
@@ -95,20 +98,27 @@ export function customerParty<Input extends CustomerInput>(errors: DocumentError
  * unit are copied from it, and stone code stays empty because Memo Stock has none. Sale Price, discount and item note
  * stay the user's. Saving holds nothing; approval re-checks under a row lock (Q-MR-15). Manual lines pass unchanged.
  */
-function completeStockLines(errors: DocumentErrors) {
-  return async (tx: Tx, input: CustomerStockInput): Promise<CustomerStockInput> => {
-    if (!input.lines.some((line) => line.memoStockId)) return input;
+function completeStockLines(errors: DocumentErrors, table: "reserve" | "memoOut") {
+  return async (tx: Tx, input: CustomerStockInput, documentId: string | null): Promise<CustomerStockInput> => {
+    await refuseNewItemReferences(tx, table, documentId, input.lines);
+    if (!input.lines.some((line) => line.memoStockId || line.lotKey?.startsWith("M"))) return input;
     const lines: PreparedLine[] = await completeFromMemoStock(tx, input.lines, errors.referenceInvalid);
     return { ...input, lines };
   };
 }
 
-/** Stock lines store their item, Stock ID and pending at save, with source STOCK; manual lines keep NULLs (SA-MO-12). */
+/**
+ * Stock lines store their item, Stock ID and pending at save, with source STOCK; manual lines keep NULLs (SA-MO-12).
+ * A lot line (ADR-0055 D4) stores its lot key, the group's available and stock count, and no Stock ID.
+ */
 const stockLines: LineHook<CustomerStockInput> = {
   storedSelect: { id: true },
+  lineInclude: { _count: { select: { allocs: true } } },
   assign: async (_tx, input) =>
     (input.lines as PreparedLine[]).map((line) =>
-      line.memoStockId
+      line.lotKey
+        ? { source: line.lotKey.startsWith("M") ? "STOCK" : "OWN_STOCK", lotKey: line.lotKey, stockCount: line.stockCount, stockId: null, stockPendingPcs: line.stockPendingPcs, stockPendingWeightCt: line.stockPendingWeightCt }
+        : line.memoStockId
         ? { source: "STOCK", memoStockId: line.memoStockId, stockId: line.stockId, stockPendingPcs: line.stockPendingPcs, stockPendingWeightCt: line.stockPendingWeightCt }
         : line.ownStockId
           // ADR-0052 D20: our stock, completed before the transaction (own-stock-lines.ts); held through the saga.
@@ -118,7 +128,10 @@ const stockLines: LineHook<CustomerStockInput> = {
   output: (line, base) => ({
     ...base,
     source: line.source as "MANUAL" | "STOCK" | "OWN_STOCK",
-    stockId: (line.stockId as string | null) ?? null,
+    // Owner Q-LOT-10 (ADR-0055 D9): the Stock ID is not returned to the browser (compatibility step: null, then removed).
+    stockId: null,
+    lotKey: (line.lotKey as string | null) ?? null,
+    allocated: ((line._count as { allocs?: number } | undefined)?.allocs ?? 0) > 0,
     memoStockId: (line.memoStockId as string | null) ?? null,
     ownStockId: (line.ownStockId as string | null) ?? null,
     stockPendingPcs: (line.stockPendingPcs as number | null) ?? null,
@@ -129,7 +142,39 @@ const stockLines: LineHook<CustomerStockInput> = {
   result: () => ({}),
 };
 
-const hasOwn = (input: CustomerStockInput) => (input.lines ?? []).some((line) => line.ownStockId);
+const hasOwn = (input: CustomerStockInput) => (input.lines ?? []).some((line) => line.ownStockId || line.lotKey?.startsWith("O"));
+
+type OwnLineRow = { id: string; own_stock_id: string | null; lot_key: string | null; stock_id: string | null; pcs: number; weight_ct: string; position: number };
+
+/**
+ * ADR-0055 D7 (BE-LOT-005): own-stock allocation rows of an applied document, inside tx1: a legacy own line → one row; an
+ * own-lot line → the plan the saga's hold PUT was built from (`currentOwnLotPlan`). A lot line without a plan (a path
+ * that bypassed the saga) → 503 INVENTORY_UNAVAILABLE, nothing applied.
+ */
+async function writeOwnAllocations(tx: Tx, table: "reserve" | "memoOut", parent: "reserve_id" | "memo_out_id", documentId: string, shortCode: string) {
+  const lines = await tx.$queryRaw<OwnLineRow[]>(Prisma.sql`
+    SELECT id::text AS id, own_stock_id::text AS own_stock_id, lot_key, stock_id, pcs, weight_ct::text AS weight_ct, position
+    FROM ${ALLOC_TABLES[table].line} WHERE ${Prisma.raw(`"${parent}"`)} = ${documentId}::uuid AND (own_stock_id IS NOT NULL OR lot_key LIKE 'O%') ORDER BY position`);
+  if (lines.length === 0) return;
+  const plan = currentOwnLotPlan();
+  const rows: AllocationRow[] = [];
+  for (const line of lines) {
+    if (line.own_stock_id) {
+      if (line.stock_id) rows.push({ lineId: line.id, seq: 1, memoStockId: null, ownStockId: line.own_stock_id, stockId: line.stock_id, pcs: line.pcs, weight: new Prisma.Decimal(line.weight_ct) });
+      continue;
+    }
+    // An empty / missing plan = the fast path (the input named no own stock, so the saga has not run): re-run through the
+    // saga, which pre-reads the lot and holds it. Under the saga every stored lot line is planned, so a gap there fails closed.
+    const planned = plan?.get(line.lot_key!);
+    if (!planned) throw !plan || plan.size === 0 ? new SagaRequired() : inventoryUnavailable();
+    // INV-20261121-002 F1: a plan that does not cover the line in full (never an empty one) refuses the whole apply.
+    if (!planCovers(planned, { pcs: line.pcs, weightCt: line.weight_ct })) {
+      throw pendingShortError(shortCode, [{ index: line.position - 1, lotKey: line.lot_key, availablePcs: planned.reduce((sum, row) => sum + row.pcs, 0), availableWeightCt: planned.reduce((sum, row) => sum.plus(row.weight), new Prisma.Decimal(0)).toFixed(3) }]);
+    }
+    planned.forEach((row, index) => rows.push({ lineId: line.id, seq: index + 1, memoStockId: null, ownStockId: row.stockUuid, stockId: row.stockId, pcs: row.pcs, weight: row.weight }));
+  }
+  await writeAllocations(tx, table, lines.map((line) => line.id), rows);
+}
 
 /** The table-specific parts of a customer stock document. */
 export type CustomerStockConfig = {
@@ -153,8 +198,6 @@ export type CustomerStockConfig = {
 /** The approval documents a customer stock document can be (registry key = permission menu). */
 type CustomerStockType = Extract<ApprovalDocType, "reserve" | "memo-out">;
 
-type StockLineRow = { memoStockId: string | null; pcs: number; weightCt: Prisma.Decimal };
-type LineDelegate = { findMany(args: unknown): Promise<StockLineRow[]> };
 
 export class CustomerStockDocument {
   readonly errors: DocumentErrors;
@@ -178,7 +221,7 @@ export class CustomerStockDocument {
       party: customerParty<CustomerStockInput>(this.errors),
       approvalType: config.approvalType,
       effects: this.effects(),
-      prepare: completeStockLines(this.errors),
+      prepare: completeStockLines(this.errors, config.holdType === "reserve" ? "reserve" : "memoOut"),
       lineHook: withLinePhotos(config.photos, stockLines),
       afterWrite: (tx, id, action) => holdSaga.inTx(config.holdType, tx, id, action),
       syncState: true,
@@ -197,20 +240,22 @@ export class CustomerStockDocument {
    * change no stock.
    */
   private effects(): DocumentEffects {
-    const takesOf = async (tx: Tx, id: string) => {
-      const lines = await (tx as unknown as Record<string, LineDelegate>)[this.config.lineModel].findMany({
-        where: { [this.config.parentKey]: id }, orderBy: { position: "asc" }, select: { memoStockId: true, pcs: true, weightCt: true },
-      });
-      return lines.flatMap((line, index) => (line.memoStockId ? [{ memoStockId: line.memoStockId, pcs: line.pcs, weightCt: line.weightCt, index }] : []));
-    };
+    // lot-based-stock (ADR-0055 D5): lot lines are allocated FIFO to Stock IDs under one id-ordered lock and the
+    // allocation is stored in <doc>_line_alloc; legacy item lines take their item (and get one allocation row).
+    const table = this.config.holdType === "reserve" ? "reserve" : "memoOut";
+    const parent = this.config.holdType === "reserve" ? "reserve_id" : "memo_out_id";
     return {
       apply: async (tx, doc, _actorId, now) => {
-        const takes = await takesOf(tx, doc.id);
-        await takeFromMemoStock(tx, takes, "reserved", this.pendingShort, now);
-        return { result: { stockLineCount: takes.length }, log: { stockLineCount: takes.length } };
+        const lines = await memoStockLinesOf(tx, table, parent, doc.id);
+        const count = await applyMemoStockLines(tx, { table, lines, bucket: "reserved", shortCode: `${this.config.code}_PENDING_SHORT`, now });
+        await writeOwnAllocations(tx, table, parent, doc.id, `${this.config.code}_PENDING_SHORT`);
+        return { result: { stockLineCount: count }, log: { stockLineCount: count } };
       },
       reverse: async (tx, doc, now) => {
-        await releaseToMemoStock(tx, await takesOf(tx, doc.id), () => this.errors.inUse(null), now, "reserved");
+        await reverseMemoStockLines(tx, { table, lines: await memoStockLinesOf(tx, table, parent, doc.id), bucket: "reserved", inUse: () => this.errors.inUse(null), now });
+        // Own-stock allocation rows go with the applied state (the saga sets the holds from what stays applied).
+        await tx.$executeRaw(Prisma.sql`DELETE FROM ${ALLOC_TABLES[table].table} a USING ${ALLOC_TABLES[table].line} l
+          WHERE a.line_id = l.id AND ${Prisma.raw(`l."${parent}"`)} = ${doc.id}::uuid AND a.own_stock_id IS NOT NULL`);
       },
       usedBy: (client, id) => (this.config.usedBy ? this.config.usedBy(client, id) : Promise.resolve(null)),
     };
@@ -230,13 +275,13 @@ export class CustomerStockDocument {
    * can change the applied hold set runs through the hold saga (acquire -> local -> release).
    */
   async create(actorId: string, input: CustomerStockInput, viewer: FlowPrincipal | null = null) {
-    const prepared = await this.completeOwn(input, null, new Map(), actorId);
+    const { input: prepared, plan } = await this.completeOwn(input, null, new Map(), actorId);
     const id = uuidV7();
     return holdSaga.withHolds(hasOwn(input), {
       type: this.config.holdType, id, isCreate: true, actorId,
-      next: async () => ((await peekApprovalSetting(prisma, this.config.approvalType)) ? new Map() : this.inputHolds(prepared)),
-      lineIndex: lineIndexOf(prepared.lines.map((line) => (line as PreparedLine).ownStockId)),
-      call: () => this.engine.create(actorId, prepared, viewer, { id }),
+      next: async () => ((await peekApprovalSetting(prisma, this.config.approvalType)) ? new Map() : this.inputHolds(prepared, plan)),
+      lineIndex: this.lineIndex(prepared, plan),
+      call: () => withOwnLotPlan(plan, () => this.engine.create(actorId, prepared, viewer, { id })),
     });
   }
   async update(actorId: string, id: string, expectedVersion: number, input: CustomerStockInput, viewer: FlowPrincipal | null = null) {
@@ -250,16 +295,16 @@ export class CustomerStockDocument {
       spec.lines(prisma, id, true),
       delegates[this.config.model].findUnique({ where: { id }, select: { status: true, autoApproved: true } }),
     ]);
-    const prepared = await this.completeOwn(input, stored, old, actorId);
+    const { input: prepared, plan } = await this.completeOwn(input, stored, old, actorId);
     return {
       type: this.config.holdType, id, isCreate: false, actorId, expectedVersion, old,
       next: async () => {
-        if (header?.status === "APPROVED" && header.autoApproved) return this.inputHolds(prepared);
-        if (header?.status === "DRAFT" && !(await peekApprovalSetting(prisma, this.config.approvalType))) return this.inputHolds(prepared);
+        if (header?.status === "APPROVED" && header.autoApproved) return this.inputHolds(prepared, plan);
+        if (header?.status === "DRAFT" && !(await peekApprovalSetting(prisma, this.config.approvalType))) return this.inputHolds(prepared, plan);
         return null;
       },
-      lineIndex: lineIndexOf(prepared.lines.map((line) => (line as PreparedLine).ownStockId)),
-      call: () => this.engine.update(actorId, id, expectedVersion, prepared, viewer),
+      lineIndex: this.lineIndex(prepared, plan),
+      call: () => withOwnLotPlan(plan, () => this.engine.update(actorId, id, expectedVersion, prepared, viewer)),
     };
   }
   delete(actorId: string, id: string, expectedVersion: number) {
@@ -267,11 +312,11 @@ export class CustomerStockDocument {
   }
   /** transaction-soft-delete D6 / approval-setup G3: back as DRAFT (ON) or re-approved automatically (OFF). */
   restore(actorId: string, id: string, expectedVersion: number) {
-    const spec = DOC_SPECS[this.config.holdType];
+    const plan: OwnLotPlan = new Map();
     return holdSaga.withHolds(false, {
       type: this.config.holdType, id, isCreate: false, actorId, expectedVersion,
-      next: async () => ((await peekApprovalSetting(prisma, this.config.approvalType)) ? new Map() : spec.lines(prisma, id, false)),
-      call: () => this.engine.restore(actorId, id, expectedVersion),
+      next: async () => ((await peekApprovalSetting(prisma, this.config.approvalType)) ? new Map() : this.storedHolds(id, actorId, plan)),
+      call: () => withOwnLotPlan(plan, () => this.engine.restore(actorId, id, expectedVersion)),
     });
   }
   submit(actor: DocumentActor, id: string, expectedVersion: number) {
@@ -281,22 +326,52 @@ export class CustomerStockDocument {
   async approve(actorId: string, id: string, expectedVersion: number) {
     const spec = DOC_SPECS[this.config.holdType];
     const lineModel = (prisma as unknown as Record<string, { findMany(args: unknown): Promise<{ ownStockId: string | null }[]> }>)[this.config.lineModel];
+    const plan: OwnLotPlan = new Map();
+    void spec;
     return holdSaga.withHolds(false, {
       type: this.config.holdType, id, isCreate: false, actorId, expectedVersion,
-      next: () => spec.lines(prisma, id, false),
-      lineIndex: async () => lineIndexOf((await lineModel.findMany({ where: { [this.config.parentKey]: id }, orderBy: { position: "asc" }, select: { ownStockId: true } })).map((line) => line.ownStockId)),
-      call: () => this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED"; stockLineCount: number }>,
+      next: () => this.storedHolds(id, actorId, plan),
+      lineIndex: async () => {
+        const lines = await (lineModel as unknown as { findMany(args: unknown): Promise<{ ownStockId: string | null; lotKey: string | null }[]> })
+          .findMany({ where: { [this.config.parentKey]: id }, orderBy: { position: "asc" }, select: { ownStockId: true, lotKey: true } });
+        return planLineIndex(lines, plan, lineIndexOf(lines.map((line) => line.ownStockId)));
+      },
+      call: () => withOwnLotPlan(plan, () => this.engine.approve(actorId, id, expectedVersion) as Promise<{ id: string; version: number; status: "APPROVED"; stockLineCount: number }>),
     });
   }
 
-  private inputHolds(input: CustomerStockInput) {
-    return sumLines(input.lines.map((line) => ({ stock: (line as PreparedLine).ownStockId, pcs: line.pcs, weightCt: line.weightCt })));
+  /** H_new of the input: legacy own lines by stock + the own-lot plan (ADR-0055 D7). */
+  private inputHolds(input: CustomerStockInput, plan: OwnLotPlan) {
+    return mergeHolds(sumLines(input.lines.map((line) => ({ stock: (line as PreparedLine).ownStockId, pcs: line.pcs, weightCt: line.weightCt }))), planHolds(plan));
   }
 
-  private async completeOwn(input: CustomerStockInput, stored: Record<string, unknown>[] | null, held: Map<string, { pcs: number; weight: Prisma.Decimal }>, actorId: string): Promise<CustomerStockInput> {
-    if (!input.lines.some((line) => line.ownStockId)) return input;
+  private lineIndex(input: CustomerStockInput, plan: OwnLotPlan) {
+    return planLineIndex(input.lines, plan, lineIndexOf(input.lines.map((line) => (line as PreparedLine).ownStockId)));
+  }
+
+  /**
+   * Approve / restore prediction: the stored legacy own lines + a fresh FIFO plan for the stored own-lot lines (one
+   * inventory read; available = on-hand + what this document holds now). The plan is kept for tx1's allocation rows.
+   */
+  private async storedHolds(id: string, actorId: string, plan: OwnLotPlan): Promise<HoldSet> {
+    const spec = DOC_SPECS[this.config.holdType];
+    const delegate = (prisma as unknown as Record<string, { findMany(args: unknown): Promise<{ ownStockId: string | null; lotKey: string | null; pcs: number; weightCt: Prisma.Decimal; position: number }[]> }>)[this.config.lineModel];
+    const [legacy, lines, held] = await Promise.all([
+      spec.lines(prisma, id, false),
+      delegate.findMany({ where: { [this.config.parentKey]: id, lotKey: { startsWith: "O" } }, select: { ownStockId: true, lotKey: true, pcs: true, weightCt: true, position: true } }),
+      spec.lines(prisma, id, true),
+    ]);
+    if (lines.length === 0) return legacy;
+    const fresh = await planOwnLots(lines.map((line) => ({ ...line, weightCt: line.weightCt.toFixed(3), index: line.position - 1 })), held, (short: ShortLine[]) => pendingShortError(`${this.config.code}_PENDING_SHORT`, short), actorId);
+    for (const [key, rows] of fresh) plan.set(key, rows);
+    return mergeHolds(legacy, planHolds(plan));
+  }
+
+  private async completeOwn(input: CustomerStockInput, stored: Record<string, unknown>[] | null, held: Map<string, { pcs: number; weight: Prisma.Decimal }>, actorId: string): Promise<{ input: CustomerStockInput; plan: OwnLotPlan }> {
+    if (!input.lines.some((line) => line.ownStockId || line.lotKey?.startsWith("O"))) return { input, plan: new Map() };
     const { lines } = await completeOwnStockLines(input.lines, { stored: storedOwnLines(stored ?? []), held, referenceInvalid: this.errors.referenceInvalid, actorId });
-    return { ...input, lines: lines as CustomerStockInput["lines"] };
+    const lots = await completeOwnLotLines(lines, { held, actorId });
+    return { input: { ...input, lines: lots.lines as CustomerStockInput["lines"] }, plan: lots.plan };
   }
 
   /** Go-live command (ADR-0050 D7): the same approve inside the caller's transaction. */
@@ -344,7 +419,10 @@ type CustomerStockLineOut = Omit<EngineDetail["lines"][number], "source"> & {
   source: "MANUAL" | "STOCK" | "OWN_STOCK";
   memoStockId: string | null;
   ownStockId: string | null;
+  /** Always null (owner Q-LOT-10); removed after FE-LOT-006. */
   stockId: string | null;
+  lotKey: string | null;
+  allocated: boolean;
   stockPendingPcs: number | null;
   stockPendingWeightCt: string | null;
   /** Reserve only (sale ADR-0054 D4, SQ-SL-04). */

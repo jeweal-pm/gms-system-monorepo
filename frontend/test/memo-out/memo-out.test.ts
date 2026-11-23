@@ -10,7 +10,7 @@ import {
   memoOutHref,
   memoOutLoadError,
   memoOutSchema,
-  memoStockToOutLine,
+  lotToOutLine,
   pickedStockIds,
   toMemoOutInput,
   type MemoOutDetail,
@@ -23,20 +23,20 @@ import { DocumentKindContext, QUOTATION_KIND, type DocumentKind } from "@/featur
 import { calculateTotals } from "@/features/quotation/lib/calculate";
 import { QuotationHeader } from "@/features/quotation/components/header/QuotationHeader";
 import { emptyLine, emptyQuotation } from "@/features/quotation/lib/defaults";
-import type { MemoStockItem } from "@/features/trade-document/memo-stock-api";
+import type { FromStockItem } from "@/features/trade-document/from-stock-api";
+import { lotShortText } from "@/features/trade-document/lot-stock";
 import { gatewayError } from "../partner/helpers";
 
 /** UT-MO-01…04: memo-out UI rev 1 + SA rev 1 (owner 2026-10-28); UT-MO-201…205: UI rev 2 + SA rev 2 (owner 2026-10-31). */
 
 const ID = "11111111-1111-4111-8111-111111111111";
-const STOCK = "22222222-2222-4222-8222-222222222222";
 const noop = () => undefined;
 const manual = (patch: Partial<MemoOutLine> = {}): MemoOutLine => ({ ...emptyMemoOut().lines[0], ...emptyLine(), stone: "Ruby", pcs: "1", weightCt: "1.12", unitPrice: "65000", ...patch });
-const stockItem: MemoStockItem = {
-  id: STOCK, stockId: "260005", stoneCode: "", lot: "L-1", location: "Memo", itemNote: "vendor note", stone: "Sapphire", shape: "Oval", size: "7×5", color: "Blue", clarity: "VS",
-  cutting: "Excellent", quality: "AA", cerType: "GIA", cerNo: "G-1", receivedPcs: 10, receivedWeightCt: "10.000", pendingPcs: 5, pendingWeightCt: "5.000",
-  priceUnit: "CTS", unitPrice: "100.00", netUnitPrice: "100.0000", currency: "THB", amount: "500.00", vendor: { id: ID, code: "V001", name: "Aom" },
-  memoReceive: { id: ID, docNo: "3", docDate: "2026-10-29", dueDate: "2026-10-30" },
+const LOT = `ML${"b".repeat(32)}`;
+const stockItem: FromStockItem = {
+  lotKey: LOT, source: "MEMO_STOCK", lot: "L-1", merged: false, stoneCode: "", location: "Memo", itemNote: "vendor note", stone: "Sapphire", shape: "Oval", size: "7×5", color: "Blue", clarity: "VS",
+  cutting: "Excellent", quality: "AA", cerType: "GIA", cerNo: "G-1", pendingPcs: 5, pendingWeightCt: "5.000", refCount: 1,
+  priceUnit: "PER_CT", unitPrice: "100.00", netUnitPrice: "100.0000", currency: "THB", amount: "500.00", vendor: { id: ID, code: "V001", name: "Aom" },
   ref: { type: "MEMO_RECEIVE" as const, id: ID, docNo: "3", docDate: "2026-10-29" },
 };
 const values = (patch: Partial<MemoOutFormValues> = {}): MemoOutFormValues => ({ ...emptyMemoOut(), dueDate: "2026-11-30", currency: "THB", customerId: ID, shippingAddressId: ID, invoiceAddressId: ID, ...patch });
@@ -97,18 +97,18 @@ describe("errors (UT-MO-04)", () => {
 });
 
 describe("From Stock rows (UT-MO-201…205, memo-out rev 2)", () => {
-  it("UT-MO-201 a Memo Stock item becomes a From Stock row: Stock ID, location Memo, full pending, empty Sale Price, no vendor note", () => {
-    expect(memoStockToOutLine(stockItem)).toMatchObject({
-      source: "STOCK", stockId: "260005", memoStockId: STOCK, stoneCode: "", stoneCodeId: "", locationId: "Memo", stone: "Sapphire", cerNo: "G-1",
+  it("UT-MO-201 a picked lot becomes a From Stock row: lot, no Stock ID, location Memo, full pending, empty Sale Price, no vendor note", () => {
+    expect(lotToOutLine(stockItem)).toMatchObject({
+      source: "STOCK", stockId: "", lot: "L-1", lotKey: LOT, memoStockId: "", ownStockId: "", stoneCode: "", stoneCodeId: "", locationId: "Memo", stone: "Sapphire", cerNo: "G-1",
       pcs: "5", weightCt: "5.000", priceUnit: "PER_CT", unitPrice: "", itemNote: "", stockPendingPcs: "5", stockPendingWeightCt: "5.000",
     });
-    expect(memoStockToOutLine({ ...stockItem, priceUnit: "PCS" }).priceUnit).toBe("PER_PCS");
-    expect([...pickedStockIds([memoStockToOutLine(stockItem), manual()])]).toEqual([STOCK]);
+    expect(lotToOutLine({ ...stockItem, priceUnit: "PER_PCS" }).priceUnit).toBe("PER_PCS");
+    expect([...pickedStockIds([lotToOutLine(stockItem), manual()])]).toEqual([LOT]);
   });
 
   it("UT-MO-202 a stock row takes part or all of its pending, needs a quantity and a Sale Price; manual rows keep their rules", () => {
     const issues = (v: MemoOutFormValues) => (memoOutSchema.safeParse(v).error?.issues ?? []).map((issue) => `${issue.path.join(".")}:${issue.message}`);
-    const picked = (patch: Partial<MemoOutLine> = {}) => ({ ...memoStockToOutLine(stockItem), unitPrice: "2500", ...patch });
+    const picked = (patch: Partial<MemoOutLine> = {}) => ({ ...lotToOutLine(stockItem), unitPrice: "2500", ...patch });
     expect(issues(values({ lines: [picked({ pcs: "3", weightCt: "3.00" })] }))).toEqual([]);
     expect(issues(values({ lines: [picked({ pcs: "6", weightCt: "5.01" })] }))).toEqual(["lines.0.pcs:More than pending", "lines.0.weightCt:More than pending"]);
     expect(issues(values({ lines: [picked({ pcs: "0", weightCt: "0" })] }))).toEqual(["lines.0.pcs:Enter the quantity"]);
@@ -119,9 +119,9 @@ describe("From Stock rows (UT-MO-201…205, memo-out rev 2)", () => {
     expect(issues(values({ status: "BOGUS" as never })).some((issue) => issue.startsWith("status:"))).toBe(true);
   });
 
-  it("UT-MO-203 sends the Memo Stock item of a stock row and none for a manual row; loads both back", () => {
-    const input = toMemoOutInput(values({ lines: [{ ...memoStockToOutLine(stockItem), pcs: "2", weightCt: "2.00", unitPrice: "2500" }, manual()] }));
-    expect(input.lines.map((line) => [line.memoStockId, line.pcs, line.weightCt, line.unitPrice])).toEqual([[STOCK, 2, "2.00", "2500"], [null, 1, "1.12", "65000"]]);
+  it("UT-MO-203 sends the lotKey of a stock row and none for a manual row; loads both back", () => {
+    const input = toMemoOutInput(values({ lines: [{ ...lotToOutLine(stockItem), pcs: "2", weightCt: "2.00", unitPrice: "2500" }, manual()] }));
+    expect(input.lines.map((line) => [line.lotKey, line.memoStockId, line.ownStockId, line.pcs, line.weightCt, line.unitPrice])).toEqual([[LOT, null, null, 2, "2.00", "2500"], [null, null, null, 1, "1.12", "65000"]]);
     const base = { id: ID, source: "MANUAL" as const, stoneCodeId: null, stoneCode: "", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "", cerType: "", cerNo: "",
       priceUnit: "PER_CT" as const, discount: { type: "NONE" as const, value: "0" }, discountAmount: "0.00", itemNote: "", photoIds: [], outstandingPcs: null, outstandingWeightCt: null };
     const detail = {
@@ -129,8 +129,8 @@ describe("From Stock rows (UT-MO-201…205, memo-out rev 2)", () => {
       customerId: ID, customer: { code: "C001", name: "Siam Gems" }, shippingAddressId: ID, shippingAddressText: "S", invoiceAddressId: ID, invoiceAddressText: "I",
       currency: "THB", exchangeRate: null, ref: "", documentNote: "",
       lines: [
-        { ...base, source: "STOCK" as const, stone: "Sapphire", location: "Memo", pcs: 2, weightCt: "2.000", unitPrice: "2500.00", amount: "5000.00", memoStockId: STOCK, ownStockId: null, stockId: "260005", stockPendingPcs: 5, stockPendingWeightCt: "5.000" },
-        { ...base, stone: "Ruby", location: "Shelf 1", pcs: 1, weightCt: "1.120", unitPrice: "65000.00", amount: "72800.00", memoStockId: null, ownStockId: null, stockId: null, stockPendingPcs: null, stockPendingWeightCt: null },
+        { ...base, source: "STOCK" as const, stone: "Sapphire", location: "Memo", pcs: 2, weightCt: "2.000", unitPrice: "2500.00", amount: "5000.00", memoStockId: null, ownStockId: null, stockId: null, lotKey: LOT, allocated: true, stockPendingPcs: 5, stockPendingWeightCt: "5.000" },
+        { ...base, stone: "Ruby", location: "Shelf 1", pcs: 1, weightCt: "1.120", unitPrice: "65000.00", amount: "72800.00", memoStockId: null, ownStockId: null, stockId: null, lotKey: null, allocated: false, stockPendingPcs: null, stockPendingWeightCt: null },
       ],
       discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "77800.00", discountAmount: "0.00", priceBeforeTax: "77800.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "77800.00" },
@@ -143,13 +143,25 @@ describe("From Stock rows (UT-MO-201…205, memo-out rev 2)", () => {
     ]);
     const loaded = fromMemoOut(detail);
     expect(loaded.status).toBe("APPROVED");
-    expect(loaded.lines[0]).toMatchObject({ source: "STOCK", stockId: "260005", memoStockId: STOCK, stockPendingPcs: "5", stockPendingWeightCt: "5.000", pcs: "2" });
-    expect(loaded.lines[1]).toMatchObject({ source: "MANUAL", stockId: "", memoStockId: "", stockPendingPcs: "" });
+    expect(loaded.lines[0]).toMatchObject({ source: "STOCK", stockId: "", lotKey: LOT, memoStockId: "", stockPendingPcs: "5", stockPendingWeightCt: "5.000", pcs: "2" });
+    expect(loaded.lines[1]).toMatchObject({ source: "MANUAL", stockId: "", memoStockId: "", lotKey: "", stockPendingPcs: "" });
   });
 
   it("UT-MO-204 maps a short approval (another document took the stock) and the status errors", () => {
     expect(mapMemoOutSaveError(gatewayError({ domainCode: "MEMO_OUT_PENDING_SHORT", httpStatus: 409, code: "CONFLICT" })).message).toContain("no longer have enough pending");
     expect(mapMemoOutSaveError(gatewayError({ domainCode: "MEMO_OUT_STATUS_INVALID", httpStatus: 409, code: "CONFLICT" })).message).toContain("can't be changed in its current status");
+  });
+
+  it("UT-MO-204b a short lot row reads \"Row n: only x pcs / y ct left in lot L\"; a lot with nothing left and a too-large lot have their own text", () => {
+    const form = values({ lines: [manual(), { ...lotToOutLine(stockItem), unitPrice: "1" }] });
+    const short = gatewayError({ domainCode: "MEMO_OUT_PENDING_SHORT", httpStatus: 409, code: "CONFLICT" });
+    expect(mapMemoOutSaveError(short, form).message).toContain("no longer have enough pending");
+    const withDetails = gatewayError({ domainCode: "MEMO_OUT_PENDING_SHORT", httpStatus: 409, code: "CONFLICT", details: { lines: [{ index: 1, lotKey: LOT, availablePcs: 3, availableWeightCt: "1.500" }] } });
+    expect(mapMemoOutSaveError(withDetails, form).message).toBe(`${lotShortText(2, { pcs: 3, weightCt: "1.500" }, "L-1")}. Nothing was saved.`);
+    const gone = gatewayError({ domainCode: "STOCK_LOT_UNAVAILABLE", httpStatus: 422, fieldErrors: [{ path: "lines.1.reference", code: "unavailable" }] });
+    expect(mapMemoOutSaveError(gone, form).message).toBe("Row 2: this lot has nothing left");
+    const large = gatewayError({ domainCode: "STOCK_LOT_TOO_LARGE", httpStatus: 422, details: { lotKey: LOT, limit: 500 } });
+    expect(mapMemoOutSaveError(large, form).message).toBe("Lot L-1 is too large to pick in one document; contact admin");
   });
 
   it("UT-MO-205 the approval badges and a new memo out waiting for approval", () => {

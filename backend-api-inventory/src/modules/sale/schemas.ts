@@ -29,6 +29,8 @@ export const saleLineSchema = z.object({
   source: z.enum(SOURCES),
   reserveLineId: uuid.optional(),
   memoStockId: uuid.optional(),
+  /** lot-based-stock (ADR-0055 D4): a From Stock line names a Memo Stock lot (prefix M); item ids stay for stored lines. */
+  lotKey: z.string().regex(/^ML[0-9a-f]{32}$|^MS[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/).optional(),
   pcs: z.number().int().min(0).max(999_999),
   weightCt: decimal(9, 3),
   unitPrice: decimal(16, 2),
@@ -80,10 +82,13 @@ export function saleRules(value: SaleShape, ctx: z.RefinementCtx) {
       else reserveLines.add(line.reserveLineId);
     } else {
       if (line.reserveLineId) issue(["lines", index, "reserveLineId"], "invalid");
-      if (!line.memoStockId) issue(["lines", index, "memoStockId"], "required");
-      else if (stocks.has(line.memoStockId)) issue(["lines", index, "memoStockId"], "duplicate");
-      else stocks.add(line.memoStockId);
+      const ref = line.memoStockId ?? line.lotKey;
+      if (line.memoStockId && line.lotKey) issue(["lines", index, "reference"], "invalid");
+      else if (!ref) issue(["lines", index, "memoStockId"], "required");
+      else if (stocks.has(ref)) issue(["lines", index, line.memoStockId ? "memoStockId" : "reference"], "duplicate");
+      else stocks.add(ref);
     }
+    if (line.source === "RESERVE" && line.lotKey) issue(["lines", index, "reference"], "invalid");
     if (line.pcs <= 0 && Number(line.weightCt) <= 0) issue(["lines", index, "pcs"], "required");
     if (Number(line.unitPrice) <= 0) issue(["lines", index, "unitPrice"], "required");
     if (line.discount.type === "PERCENT" && Number(line.discount.value) > 100) issue(["lines", index, "discount", "value"], "too_big");

@@ -59,7 +59,7 @@ export function useReserveApi(customerId: string | undefined, docDate: string, i
     submit: (args) => submit.mutateAsync(args),
     restore: (args) => restore.mutateAsync(args),
     invalidate: () =>
-      Promise.all([utils.reserve.list.invalidate(), utils.reserve.get.invalidate(), utils.reserve.nextNumber.invalidate(), utils.memoStock.list.invalidate(), utils.fromStock.list.invalidate()]),
+      Promise.all([utils.reserve.list.invalidate(), utils.reserve.get.invalidate(), utils.reserve.nextNumber.invalidate(), utils.memoStock.lots.invalidate(), utils.fromStock.lots.invalidate()]),
     busy: create.isPending || update.isPending || remove.isPending || submit.isPending || restore.isPending,
   };
 }

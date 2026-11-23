@@ -195,7 +195,8 @@ describe("numbering from Document Setup (SA-MO-04)", () => {
   it("UT-MO-B03 memo out return reads key memo-out-return; no setup row → plain 1, 2, 3 under its own advisory lock", async () => {
     db.numbering = { id: NUMBERING, prefix: "MOR", separator: "", start_no: 1 };
     await expect(memoOutReturn.create("actor", returnInput())).resolves.toMatchObject({ docNo: "MOR1" });
-    expect(db.rawSql[0].values[0]).toBe("memo-out-return");
+    // ADR-0055: the own-stock lookup of the source lines (one read) runs before the save; the numbering read follows.
+    expect(db.rawSql.find((sql) => sql.values[0] === "memo-out-return")).toBeDefined();
     db.numbering = null;
     db.rawSql = [];
     await expect(memoOutReturn.nextNumber("2026-10-28")).resolves.toEqual({ docNo: "1" });

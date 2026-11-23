@@ -71,7 +71,8 @@ export async function getDetail(db: Db, master: MasterApi, id: string, requestId
       return [ref];
     }),
     rows: rows.map((row) => ({
-      id: row.id, position: row.position, stockId: row.stock_id, location: row.location, parcel: row.parcel,
+      id: row.id, position: row.position, stockId: row.stock_id,
+      location: row.location, parcel: row.parcel,
       attrs: { stoneCodeId: row.stone_code_id, stoneCode: row.stone_code, stone: row.stone, shape: row.shape, size: row.size, color: row.color, clarity: row.clarity, cutting: row.cutting, quality: row.quality, lot: row.lot, cerType: row.cer_type, cerNo: row.cer_no },
       sources: row.sources, priceUnit: row.price_unit, pcs: row.pcs, weightCt: row.weight_ct, unitCostBase: row.unit_cost_base, costAmountBase: row.cost_amount_base,
       stockPrice: row.stock_price, salePrice: row.sale_price, itemNote: row.item_note, photoIds: row.photo_ids,

@@ -6,11 +6,13 @@ import { prisma } from "../database/prisma-client";
 import { Prisma } from "../generated/prisma/client";
 import { TradeDocumentEngine, type DocumentActor, type DocumentEffects, type LineHook, type TradeDocumentInput } from "../trade-document/document-engine";
 import { vendorDocumentOptions, vendorParty, type VendorOut } from "../trade-document/memo-out-return.service";
-import { purchaseMemoStock, purchaseOrderLines } from "./purchase-pickers";
+import { purchaseOrderLines } from "./purchase-pickers";
 import { lockSourceHeaders } from "../trade-document/source-lock";
 import { completeSourceLines, giveBackForPurchase, memoLineRange, purchaseOrderAvailable, takeForPurchase, type PreparedInput, type SoldPart } from "./purchase-stock";
 import { purchaseErrors, purchasePendingShort } from "./purchase.errors";
-import type { LineMemoGroup, PurchaseInput, PurchaseLineSource, PurchaseListInput, PurchaseMemoStockInput, PurchaseOrderLinesInput, PurchaseStatus } from "./purchase.schemas";
+import { allocGiveBacks, expandLotTakes, writePurchaseAllocs } from "./purchase-lots";
+import { refuseNewItemReferences } from "../trade-document/stock-lines";
+import type { LineMemoGroup, PurchaseInput, PurchaseLineSource, PurchaseListInput, PurchaseOrderLinesInput, PurchaseStatus } from "./purchase.schemas";
 import { LINE_PHOTO_DOCUMENTS, withLinePhotos } from "../trade-document/line-photos";
 import { activeLocationNames, checkLineLocations } from "../location-master/location-master.service";
 
@@ -52,10 +54,13 @@ export class PurchaseService {
       if (errors.length > 0) throw validationException(errors);
       return input.lines.map((line) => ({
         ...(line.id ? { id: line.id } : {}),
-        memoStockId: line.source === "STOCK" ? line.memoStockId : null,
+        memoStockId: line.source === "STOCK" ? (line.memoStockId ?? null) : null,
+        // ADR-0055 D4: a lot line stores its key and the group size; it has no Stock ID.
+        lotKey: line.source === "STOCK" && !line.memoStockId ? (line.lotKey ?? null) : null,
+        stockCount: line.source === "STOCK" && !line.memoStockId && line.lotKey ? (line.stockCount ?? null) : null,
         memoGroup: line.source === "STOCK" ? line.memoGroup : null,
         purchaseOrderLineId: line.source === "PURCHASE_ORDER" ? line.purchaseOrderLineId : null,
-        stockId: line.source === "STOCK" ? line.sourceStockId : null,
+        stockId: line.source === "STOCK" && line.memoStockId ? line.sourceStockId : null,
         ...(line.source === "PURCHASE_ORDER" ? { stoneCodeId: line.copiedStoneCodeId ?? null } : {}),
       }));
     },
@@ -75,7 +80,10 @@ export class PurchaseService {
         memoStockId: (line.memoStockId as string | null) ?? null,
         memoGroup: group ?? null,
         purchaseOrderLineId: (line.purchaseOrderLineId as string | null) ?? null,
-        stockId: (line.stockId as string | null) ?? null,
+        // Owner Q-LOT-10: no Stock ID to the browser (null, then removed after FE-LOT-006).
+        stockId: null,
+        lotKey: (line.lotKey as string | null) ?? null,
+        allocated: ((line._count as { allocs?: number } | undefined)?.allocs ?? 0) > 0,
         photoIds: [],
         memoReceive: memoStock ? { docNo: memoStock.receivedDocNo } : null,
         purchaseOrder: poLine ? { id: poLine.document.id, docNo: poLine.document.docNo, position: poLine.position } : null,
@@ -90,6 +98,7 @@ export class PurchaseService {
     result: (assigned) => ({ stockIds: assigned.map((line) => (line.stockId as string | null) ?? null) }),
     // SA-PU-16: the sources' current availability, read with the lines (one batched primary-key query per relation).
     lineInclude: {
+      _count: { select: { allocs: true } },
       memoStock: { select: { receivedDocNo: true, pendingPcs: true, pendingWeightCt: true, soldPcs: true, soldWeightCt: true, purchasedPcs: true, purchasedWeightCt: true } },
       purchaseOrderLine: { select: { position: true, pcs: true, weightCt: true, purchasedPcs: true, purchasedWeightCt: true, document: { select: { id: true, docNo: true } } } },
     },
@@ -107,21 +116,40 @@ export class PurchaseService {
         where: { id: doc.id },
         select: {
           vendorId: true, currencyCode: true,
-          lines: { orderBy: { position: "asc" }, select: { id: true, source: true, memoStockId: true, memoGroup: true, purchaseOrderLineId: true, pcs: true, weightCt: true } },
+          lines: { orderBy: { position: "asc" }, select: { id: true, source: true, memoStockId: true, lotKey: true, memoGroup: true, purchaseOrderLineId: true, pcs: true, weightCt: true, stockId: true } },
         },
       });
-      const takes = document.lines.map((line, index) => ({ ...line, index }));
-      const { soldParts, ...moved } = await takeForPurchase(tx, { vendorId: document.vendorId, currency: document.currencyCode }, takes, purchasePendingShort, now);
-      await writeSoldParts(tx, document.lines.map((line) => line.id), soldParts);
+      const scope = { vendorId: document.vendorId, currency: document.currencyCode };
+      // ADR-0055 D5 / ADR-0043 per lot: lot lines are split FIFO into per-item SOLD / IN_STOCK takes under one lock.
+      const lotLines = document.lines.flatMap((line, index) => (line.source === "STOCK" && !line.memoStockId && line.lotKey && line.memoGroup
+        ? [{ lineId: line.id, index, lotKey: line.lotKey, memoGroup: line.memoGroup as "SOLD" | "IN_STOCK" | "MERGED", pcs: line.pcs, weight: line.weightCt }] : []));
+      const lots = await expandLotTakes(tx, scope, lotLines, purchasePendingShort);
+      const takes = [...document.lines.flatMap((line, index) => (line.lotKey && !line.memoStockId ? [] : [{ ...line, index }])), ...lots.takes];
+      const { soldParts, ...moved } = await takeForPurchase(tx, scope, takes, purchasePendingShort, now);
+      await writeSoldParts(tx, document.lines.map((line) => line.id), [...soldParts, ...lots.soldParts]);
+      // Allocation (audit, exact reversal): lot lines' split rows; legacy item lines one row per part.
+      const legacyAllocs = document.lines.flatMap((line, index) => {
+        if (line.source !== "STOCK" || !line.memoStockId || !line.stockId) return [];
+        const merged = soldParts.find((part) => part.index === index);
+        const parts = line.memoGroup === "MERGED" && merged
+          ? [{ part: "SOLD" as const, pcs: merged.pcs, weight: merged.weightCt }, { part: "IN_STOCK" as const, pcs: line.pcs - merged.pcs, weight: line.weightCt.minus(merged.weightCt) }]
+          : [{ part: (line.memoGroup === "SOLD" ? "SOLD" : "IN_STOCK") as "SOLD" | "IN_STOCK", pcs: line.pcs, weight: line.weightCt }];
+        return parts.filter((part) => part.pcs > 0 || part.weight.gt(0)).map((part, seq) => ({ lineId: line.id, seq: seq + 1, memoStockId: line.memoStockId!, stockId: line.stockId!, ...part }));
+      });
+      await writePurchaseAllocs(tx, document.lines.filter((line) => line.source === "STOCK").map((line) => line.id), [...legacyAllocs, ...lots.allocs]);
       return { result: { lineCount: document.lines.length }, log: { lineCount: document.lines.length, ...moved } };
     },
     reverse: async (tx, doc, now) => {
       const lines = await tx.purchaseLine.findMany({
         where: { purchaseId: doc.id },
         orderBy: { position: "asc" },
-        select: { source: true, memoStockId: true, memoGroup: true, purchaseOrderLineId: true, pcs: true, weightCt: true, soldPartPcs: true, soldPartWeightCt: true },
+        select: { id: true, source: true, memoStockId: true, lotKey: true, memoGroup: true, purchaseOrderLineId: true, pcs: true, weightCt: true, soldPartPcs: true, soldPartWeightCt: true },
       });
-      await giveBackForPurchase(tx, lines.map((line, index) => ({ ...line, index })), () => purchaseErrors.inUse(null), now);
+      // ADR-0055: a lot line gives back exactly its stored allocation (per item and part).
+      const lotLines = lines.flatMap((line, index) => (line.lotKey && !line.memoStockId ? [{ id: line.id, index }] : []));
+      const giveBacks = [...lines.flatMap((line, index) => (line.lotKey && !line.memoStockId ? [] : [{ ...line, index }])), ...(await allocGiveBacks(tx, lotLines))];
+      await giveBackForPurchase(tx, giveBacks, () => purchaseErrors.inUse(null), now);
+      await tx.$executeRaw`DELETE FROM "partner"."purchase_line_alloc" WHERE line_id = ANY(${lines.map((line) => line.id)}::uuid[])`;
       await tx.purchaseLine.updateMany({ where: { purchaseId: doc.id, memoGroup: "MERGED" }, data: { soldPartPcs: null, soldPartWeightCt: null } });
     },
     // ADR-0052 D9 (BE-LS-005): a Purchase is used once an applied Load to Stock took any of its lines (loaded > 0);
@@ -142,6 +170,7 @@ export class PurchaseService {
     approvalType: "purchase",
     effects: this.effects,
     prepare: async (tx, input, documentId) => {
+      await refuseNewItemReferences(tx, "purchase", documentId, (input as unknown as PurchaseInput).lines);
       const completed = (await completeSourceLines(tx, input as unknown as PurchaseInput)) as unknown as PurchaseInput;
       // location-master SA-LM-05: typed (MANUAL) rows choose an active master name; copied rows keep theirs.
       const lines = await checkLineLocations(tx, completed.lines, (line) => line.source === "MANUAL", async () =>
@@ -221,9 +250,6 @@ export class PurchaseService {
     }
   }
 
-  memoStock(input: PurchaseMemoStockInput) {
-    return purchaseMemoStock(input);
-  }
   purchaseOrderLines(input: PurchaseOrderLinesInput) {
     return purchaseOrderLines(input);
   }
@@ -251,8 +277,12 @@ export type PurchaseLineOut = EngineLineOut & {
   memoStockId: string | null;
   memoGroup: LineMemoGroup | null;
   purchaseOrderLineId: string | null;
-  /** ADR-0051: the Memo Stock item's Stock ID on a STOCK line; null on MANUAL / PURCHASE_ORDER lines. */
+  /** Always null (owner 2026-11-21 Q3: Purchase hides the Stock ID; the lot key and the allocated flag replace it). */
   stockId: string | null;
+  /** ADR-0055 D4: the Memo Stock lot a STOCK line names; null on MANUAL / PURCHASE_ORDER lines and on legacy item lines. */
+  lotKey: string | null;
+  /** ADR-0055 D5: true once the applied line has its per-Stock-ID allocation (server-side only). */
+  allocated: boolean;
   /** ADR-0048: the line's photos in order (the photo hook replaces the `[]` this hook writes). */
   photoIds: string[];
   memoReceive: { docNo: string } | null;

@@ -22,7 +22,7 @@ const YEAR = 70;
 type Prisma = typeof import("../../src/database/prisma-client").prisma;
 type Receive = InstanceType<typeof import("../../src/trade-document/memo-receive.service").MemoReceiveService>;
 type Return = InstanceType<typeof import("../../src/trade-document/memo-return.service").MemoReturnService>;
-type Stock = InstanceType<typeof import("../../src/trade-document/memo-stock.service").MemoStockService>;
+type Stock = InstanceType<typeof import("../../src/trade-document/lot-stock.service").LotStockService>;
 type Vendor = { id: string; addressId: string };
 
 let prisma: Prisma;
@@ -100,12 +100,12 @@ describe.runIf(canRun)("IT-MRT memo return on PostgreSQL", () => {
     ({ prisma } = await import("../../src/database/prisma-client"));
     const { MemoReceiveService } = await import("../../src/trade-document/memo-receive.service");
     const { MemoReturnService } = await import("../../src/trade-document/memo-return.service");
-    const { MemoStockService } = await import("../../src/trade-document/memo-stock.service");
+    const { LotStockService } = await import("../../src/trade-document/lot-stock.service");
     ({ createMemoReturnSchema } = await import("../../src/trade-document/memo-schemas"));
     receive = new MemoReceiveService();
     receive.clock = () => new Date(`20${YEAR}-06-01T03:00:00Z`);
     memoReturn = new MemoReturnService();
-    stock = new MemoStockService();
+    stock = new LotStockService();
     for (const code of ["THB", "USD"]) {
       if (!(await prisma.currency.findUnique({ where: { code } }))) {
         await prisma.currency.create({ data: { code, name: code, createdBy: ACTOR, updatedBy: ACTOR } });
@@ -140,14 +140,14 @@ describe.runIf(canRun)("IT-MRT memo return on PostgreSQL", () => {
     const detail = await memoReturn.get(saved.id) as unknown as Record<string, unknown> & { lines: Record<string, unknown>[] };
     expect(detail).toMatchObject({ status: "DRAFT", approvedAt: null, vendorId: vendorA.id });
     expect(detail.lines[0]).toMatchObject({
-      memoStockId: item.id, stockId: item.stockId, stone: "Ruby", lot: "LOT-A", location: "Memo", cerNo: "C-1", itemNote: "back",
+      memoStockId: item.id, stockId: null, lotKey: null, allocated: false, stone: "Ruby", lot: "LOT-A", location: "Memo", cerNo: "C-1", itemNote: "back",
       pcs: 2, weightCt: "1.000", priceUnit: "PER_CT", unitPrice: "900.00", amount: "900.00", outstandingPcs: 3, outstandingWeightCt: "1.500",
     });
     expect(detail.lines[0]).not.toHaveProperty("stoneCodeId");
     expect(await pendingOf(item.id)).toEqual([3, "1.500"]);
     // The dialog still lists it (saving reserves nothing) and filters by currency.
-    expect((await stock.list({ vendorId: vendorA.id, currency: "THB", limit: 50 })).items.map((row) => row.id)).toContain(item.id);
-    expect((await stock.list({ vendorId: vendorA.id, currency: "USD", limit: 50 })).items).toEqual([]);
+    expect((await stock.memoStockLots({ vendorId: vendorA.id, currency: "THB", limit: 50 })).items.map((row) => row.lotKey)).toContain(item.lotKey);
+    expect((await stock.memoStockLots({ vendorId: vendorA.id, currency: "USD", limit: 50 })).items).toEqual([]);
   });
 
   it("IT-MRT-02 save rejects Return above pending, another vendor's or currency's item and the same item twice", async () => {
@@ -162,8 +162,8 @@ describe.runIf(canRun)("IT-MRT memo return on PostgreSQL", () => {
       .toMatchObject({ status: 422, code: "MEMO_RETURN_REFERENCE_INVALID" });
     expect(await failure(memoReturn.create(ACTOR, returnInput(vendorA, [returnLine(randomUUID(), 1, "0.5")]))))
       .toMatchObject({ status: 422, code: "MEMO_RETURN_REFERENCE_INVALID" });
-    expect(await failure(memoReturn.create(ACTOR, returnInput(vendorA, [returnLine(item.id, 1, "0.5"), returnLine(item.id, 1, "0.5")]))))
-      .toMatchObject({ status: 400, fieldErrors: [{ path: "lines.1.memoStockId", code: "duplicate" }] });
+    // ADR-0055: the input schema now refuses the same item (or lot) twice before the service runs.
+    expect(() => returnInput(vendorA, [returnLine(item.id, 1, "0.5"), returnLine(item.id, 1, "0.5")])).toThrow(/duplicate/);
   });
 
   it("IT-MRT-03 approve reduces pending; then the return is read-only and a fully returned item leaves the dialog", async () => {
@@ -185,9 +185,9 @@ describe.runIf(canRun)("IT-MRT memo return on PostgreSQL", () => {
     expect(await failure(memoReturn.approve(ACTOR, saved.id, 4))).toMatchObject({ status: 409, code: "MEMO_RETURN_STATUS_INVALID" });
     expect(await failure(memoReturn.update(ACTOR, saved.id, 4, returnInput(vendorA, [returnLine(part.id, 1, "0.5")])))).toMatchObject({ status: 409, code: "MEMO_RETURN_STATUS_INVALID" });
     expect(await failure(memoReturn.delete(ACTOR, saved.id, 4))).toMatchObject({ status: 409, code: "MEMO_RETURN_STATUS_INVALID" });
-    const listed = (await stock.list({ vendorId: vendorA.id, limit: 50 })).items;
-    expect(listed.find((row) => row.id === part.id)).toMatchObject({ pendingPcs: 1, pendingWeightCt: "0.500" });
-    expect(listed.map((row) => row.id)).not.toContain(whole.id);
+    const listed = (await stock.memoStockLots({ vendorId: vendorA.id, currency: "THB", limit: 50 })).items;
+    expect(listed.find((row) => row.lotKey === part.lotKey)).toMatchObject({ pendingPcs: 1, pendingWeightCt: "0.500" });
+    expect(listed.map((row) => row.lotKey)).not.toContain(whole.lotKey);
     expect((await memoReturn.list({ partyId: vendorA.id, status: "APPROVED", limit: 50, deleted: false })).items.map((row) => row.id)).toContain(saved.id);
   });
 

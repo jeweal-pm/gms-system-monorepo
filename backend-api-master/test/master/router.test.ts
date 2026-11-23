@@ -18,7 +18,7 @@ import type { MemoOutService } from "../../src/trade-document/memo-out.service";
 import type { MemoOutReturnService } from "../../src/trade-document/memo-out-return.service";
 import type { MemoReceiveService } from "../../src/trade-document/memo-receive.service";
 import type { MemoReturnService } from "../../src/trade-document/memo-return.service";
-import type { MemoStockService } from "../../src/trade-document/memo-stock.service";
+import type { LotStockService } from "../../src/trade-document/lot-stock.service";
 import type { MemoOutstandingService } from "../../src/trade-document/memo-outstanding.service";
 import type { ReserveService } from "../../src/trade-document/reserve.service";
 import type { PurchaseOrderService } from "../../src/purchase-order/purchase-order.service";
@@ -48,13 +48,13 @@ const quotation = {
 const memoOut = { submit: vi.fn(), reject: vi.fn(), requestRevision: vi.fn(), list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
 const memoOutReturn = { submit: vi.fn(), reject: vi.fn(), requestRevision: vi.fn(), list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), outstanding: vi.fn(), approve: vi.fn() };
 const memoReceive = { submit: vi.fn(), reject: vi.fn(), requestRevision: vi.fn(), list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
-const memoStock = { list: vi.fn() };
+const lotStock = { memoStockLots: vi.fn(), fromStockLots: vi.fn(), purchaseMemoStockLots: vi.fn() };
 const memoReturn = { submit: vi.fn(), reject: vi.fn(), requestRevision: vi.fn(), list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
 const memoOutstanding = { vendorSummary: vi.fn(), vendorList: vi.fn(), vendorItems: vi.fn(), vendorOptions: vi.fn(), customerSummary: vi.fn(), customerList: vi.fn(), customerItems: vi.fn(), customerOptions: vi.fn(), purchaseSummary: vi.fn(), purchaseList: vi.fn(), purchaseItems: vi.fn(), purchaseOptions: vi.fn() };
 const reserve = { submit: vi.fn(), reject: vi.fn(), requestRevision: vi.fn(), list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
 const purchaseOrder = { submit: vi.fn(), reject: vi.fn(), requestRevision: vi.fn(), list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn() };
 const purchase = {
-  list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), memoStock: vi.fn(), purchaseOrderLines: vi.fn(),
+  list: vi.fn(), get: vi.fn(), nextNumber: vi.fn(), options: vi.fn(), purchaseOrderLines: vi.fn(),
   create: vi.fn(), update: vi.fn(), delete: vi.fn(), restore: vi.fn(), approve: vi.fn(), submit: vi.fn(), reject: vi.fn(), requestRevision: vi.fn(),
 };
 const approval = { summary: vi.fn(), pending: vi.fn() };
@@ -72,7 +72,7 @@ const router = createMasterRouter({
   memoOut: memoOut as unknown as MemoOutService,
   memoOutReturn: memoOutReturn as unknown as MemoOutReturnService,
   memoReceive: memoReceive as unknown as MemoReceiveService,
-  memoStock: memoStock as unknown as MemoStockService,
+  lotStock: lotStock as unknown as LotStockService,
   memoReturn: memoReturn as unknown as MemoReturnService,
   memoOutstanding: memoOutstanding as unknown as MemoOutstandingService,
   reserve: reserve as unknown as ReserveService,
@@ -89,7 +89,7 @@ function context(grants: string[], overrides: Partial<MasterContext> = {}): Mast
 }
 
 beforeEach(() => {
-  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(decimalSetup), ...Object.values(approvalSetting), ...Object.values(currency), ...Object.values(quotation), ...Object.values(memoOut), ...Object.values(memoOutReturn), ...Object.values(memoReceive), ...Object.values(memoStock), ...Object.values(memoReturn), ...Object.values(memoOutstanding), ...Object.values(reserve), ...Object.values(purchaseOrder), ...Object.values(purchase), ...Object.values(approval)]) fn.mockReset().mockResolvedValue({ ok: true });
+  for (const fn of [...Object.values(customer), ...Object.values(vendor), ...Object.values(companyProfile), ...Object.values(stoneMaster), ...Object.values(documentSetup), ...Object.values(decimalSetup), ...Object.values(approvalSetting), ...Object.values(currency), ...Object.values(quotation), ...Object.values(memoOut), ...Object.values(memoOutReturn), ...Object.values(memoReceive), ...Object.values(lotStock), ...Object.values(memoReturn), ...Object.values(memoOutstanding), ...Object.values(reserve), ...Object.values(purchaseOrder), ...Object.values(purchase), ...Object.values(approval)]) fn.mockReset().mockResolvedValue({ ok: true });
 });
 
 describe("staged master domain tRPC boundary", () => {
@@ -448,20 +448,20 @@ describe("staged master domain tRPC boundary", () => {
     expect(currency.options).toHaveBeenCalledTimes(2);
   });
 
-  it("IT-SL-M12 (unit part) sale ADR-0054 D10: currency.options and memoStock.list accept sale:VIEW only; other sale actions or menus do not open them", async () => {
+  it("IT-SL-M12 (unit part) sale ADR-0054 D10: currency.options and fromStock.lots accept sale:VIEW only; other sale actions or menus do not open them", async () => {
     await router.createCaller(context(["sale:VIEW"])).currency.options();
-    await router.createCaller(context(["sale:VIEW"])).memoStock.list({ q: "ruby", limit: 10 });
+    await router.createCaller(context(["sale:VIEW"])).fromStock.lots({ q: "ruby", limit: 10 });
     expect(currency.options).toHaveBeenCalledTimes(1);
-    expect(memoStock.list).toHaveBeenCalledTimes(1);
+    expect(lotStock.fromStockLots).toHaveBeenCalledTimes(1);
     for (const grants of [["sale:ADD", "sale:EDIT", "sale:APPROVE"], ["vendor:VIEW"]]) {
       await expect(router.createCaller(context(grants)).currency.options()).rejects.toMatchObject({ code: "FORBIDDEN" });
-      await expect(router.createCaller(context(grants)).memoStock.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+      await expect(router.createCaller(context(grants)).fromStock.lots({})).rejects.toMatchObject({ code: "FORBIDDEN" });
     }
-    await expect(router.createCaller(context(["sale:VIEW"], { license: "DENIED" })).memoStock.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["sale:VIEW"], { license: "DENIED" })).fromStock.lots({})).rejects.toMatchObject({ code: "FORBIDDEN" });
     // sale:VIEW grants nothing else in master (no Reserve / Memo Out reads).
     await expect(router.createCaller(context(["sale:VIEW"])).reserve.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(currency.options).toHaveBeenCalledTimes(1);
-    expect(memoStock.list).toHaveBeenCalledTimes(1);
+    expect(lotStock.fromStockLots).toHaveBeenCalledTimes(1);
   });
 
   it("GP-MT-QT quotation: each procedure needs its own action; mutations need CSRF; 422 keeps its domain code", async () => {
@@ -602,23 +602,24 @@ describe("staged master domain tRPC boundary", () => {
     expect(memoReceive.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: "DRAFT" }));
     await expect(caller.memoReceive.list({ status: "CANCELLED" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
-    // memoStock.list: memo-return VIEW or memo-receive VIEW; bounded input.
-    await router.createCaller(context(["memo-return:VIEW"])).memoStock.list({ vendorId: ID });
-    await router.createCaller(context(["memo-receive:VIEW"])).memoStock.list({ vendorId: ID, q: "ruby", from: "2026-01-01", to: "2026-10-29", limit: 10 });
-    expect(memoStock.list).toHaveBeenCalledTimes(2);
-    // GP-MT-QT2 (quotation SA rev 2, SA-QT-19): Quotation From Stock reads Memo Stock with quotation:VIEW.
-    await router.createCaller(context(["quotation:VIEW"])).memoStock.list({ vendorId: ID, q: "ruby", from: "2026-01-01", to: "2026-10-29", limit: 10 });
-    expect(memoStock.list).toHaveBeenCalledTimes(3);
-    expect(memoStock.list).toHaveBeenLastCalledWith(expect.objectContaining({ vendorId: ID, q: "ruby", limit: 10 }));
-    await expect(router.createCaller(context(["memo-out-return:VIEW"])).memoStock.list({ vendorId: ID })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(router.createCaller(context(["memo-return:ADD"])).memoStock.list({ vendorId: ID })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    // memoStock.lots (ADR-0055): memo-return VIEW or memo-receive VIEW; bounded input. (memoStock.list was removed, FE-LOT-008.)
+    await router.createCaller(context(["memo-return:VIEW"])).memoStock.lots({ vendorId: ID, currency: "THB" });
+    await router.createCaller(context(["memo-receive:VIEW"])).memoStock.lots({ vendorId: ID, currency: "THB", q: "ruby", from: "2026-01-01", to: "2026-10-29", limit: 10 });
+    expect(lotStock.memoStockLots).toHaveBeenCalledTimes(2);
+    // GP-MT-QT2 (quotation SA rev 2, SA-QT-19): Quotation From Stock reads the lots with quotation:VIEW.
+    await router.createCaller(context(["quotation:VIEW"])).fromStock.lots({ q: "ruby", from: "2026-01-01", to: "2026-10-29", limit: 10 });
+    expect(lotStock.fromStockLots).toHaveBeenLastCalledWith(expect.objectContaining({ q: "ruby", limit: 10 }));
+    await expect(router.createCaller(context(["quotation:VIEW"])).memoStock.lots({ vendorId: ID, currency: "THB" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["memo-out-return:VIEW"])).memoStock.lots({ vendorId: ID, currency: "THB" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["memo-return:ADD"])).memoStock.lots({ vendorId: ID, currency: "THB" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     const viewer = router.createCaller(context(["memo-return:VIEW"]));
-    await expect(viewer.memoStock.list({ vendorId: ID, limit: 51 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await expect(viewer.memoStock.list({ vendorId: ID, q: "x".repeat(101) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await expect(viewer.memoStock.list({ vendorId: ID, from: "2026-10-29", to: "2026-01-01" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await expect(viewer.memoStock.list({ vendorId: ID, from: "2025-01-01", to: "2026-10-29" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    await expect(viewer.memoStock.list({ vendorId: "not-a-uuid" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
-    expect(memoStock.list).toHaveBeenCalledTimes(3);
+    await expect(viewer.memoStock.lots({ vendorId: ID, currency: "THB", limit: 51 })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(viewer.memoStock.lots({ vendorId: ID, currency: "THB", q: "x".repeat(101) })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(viewer.memoStock.lots({ vendorId: ID, currency: "THB", from: "2026-10-29", to: "2026-01-01" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(viewer.memoStock.lots({ vendorId: ID, currency: "THB", from: "2025-01-01", to: "2026-10-29" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(viewer.memoStock.lots({ vendorId: "not-a-uuid", currency: "THB" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect((viewer.memoStock.lots as unknown as (input: unknown) => Promise<unknown>)({ vendorId: ID })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(lotStock.memoStockLots).toHaveBeenCalledTimes(2);
 
     await router.createCaller(context(["memo-receive:VIEW"])).currency.options();
     expect(currency.options).toHaveBeenCalledTimes(1);
@@ -668,12 +669,12 @@ describe("staged master domain tRPC boundary", () => {
     await expect(caller.memoReturn.create({ ...body, lines: [{ ...line, pcs: 2 }] })).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     // The Add Memo Stock dialog passes the return's currency.
-    await router.createCaller(context(["memo-return:VIEW"])).memoStock.list({ vendorId: ID, currency: "THB" });
-    expect(memoStock.list).toHaveBeenLastCalledWith(expect.objectContaining({ vendorId: ID, currency: "THB" }));
+    await router.createCaller(context(["memo-return:VIEW"])).memoStock.lots({ vendorId: ID, currency: "THB" });
+    expect(lotStock.memoStockLots).toHaveBeenLastCalledWith(expect.objectContaining({ vendorId: ID, currency: "THB" }));
     // The dialog pages with a tRPC infinite query, which adds `direction`.
-    await router.createCaller(context(["memo-return:VIEW"])).memoStock.list({ vendorId: ID, currency: "THB", cursor: null, direction: "forward" });
-    expect(memoStock.list).toHaveBeenLastCalledWith(expect.objectContaining({ direction: "forward", cursor: null }));
-    await expect(router.createCaller(context(["memo-return:VIEW"])).memoStock.list({ vendorId: ID, currency: "thb" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await router.createCaller(context(["memo-return:VIEW"])).memoStock.lots({ vendorId: ID, currency: "THB", cursor: null, direction: "forward" });
+    expect(lotStock.memoStockLots).toHaveBeenLastCalledWith(expect.objectContaining({ direction: "forward", cursor: null }));
+    await expect(router.createCaller(context(["memo-return:VIEW"])).memoStock.lots({ vendorId: ID, currency: "thb" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     await router.createCaller(context(["memo-return:VIEW"])).currency.options();
     expect(currency.options).toHaveBeenCalledTimes(1);
@@ -810,10 +811,10 @@ describe("staged master domain tRPC boundary", () => {
     memoOut.approve.mockRejectedValueOnce(new HttpException({ error: { code: "MEMO_OUT_PENDING_SHORT", message: "x" } }, 409));
     await expect(caller.memoOut.approve(versioned)).rejects.toMatchObject({ code: "CONFLICT", message: "MEMO_OUT_PENDING_SHORT" });
 
-    await router.createCaller(context(["memo-out:VIEW"])).memoStock.list({ limit: 50 });
-    expect(memoStock.list).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 50 }));
-    expect(memoStock.list.mock.lastCall?.[0]).not.toHaveProperty("vendorId");
-    await expect(router.createCaller(context(["memo-out:ADD"])).memoStock.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await router.createCaller(context(["memo-out:VIEW"])).fromStock.lots({ limit: 50 });
+    expect(lotStock.fromStockLots).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 50 }));
+    expect(lotStock.fromStockLots.mock.lastCall?.[0]).not.toHaveProperty("vendorId");
+    await expect(router.createCaller(context(["memo-out:ADD"])).fromStock.lots({})).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("GP-MT-RS reserve: exact grants per procedure, CSRF on writes and approve, strict From Stock input, reads with reserve VIEW", async () => {
@@ -870,11 +871,11 @@ describe("staged master domain tRPC boundary", () => {
     await expect(caller.reserve.list({ status: "CANCELLED" } as never)).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     // From Stock and the currency list read with reserve VIEW.
-    await router.createCaller(context(["reserve:VIEW"])).memoStock.list({ limit: 50 });
-    expect(memoStock.list).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 50 }));
+    await router.createCaller(context(["reserve:VIEW"])).fromStock.lots({ limit: 50 });
+    expect(lotStock.fromStockLots).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 50 }));
     await router.createCaller(context(["reserve:VIEW"])).currency.options();
     expect(currency.options).toHaveBeenCalledTimes(1);
-    await expect(router.createCaller(context(["reserve:ADD"])).memoStock.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(router.createCaller(context(["reserve:ADD"])).fromStock.lots({})).rejects.toMatchObject({ code: "FORBIDDEN" });
 
     reserve.approve.mockRejectedValueOnce(new HttpException({ error: { code: "RESERVE_PENDING_SHORT", message: "x" } }, 409));
     await expect(caller.reserve.approve(versioned)).rejects.toMatchObject({ code: "CONFLICT", message: "RESERVE_PENDING_SHORT" });
@@ -959,7 +960,7 @@ describe("staged master domain tRPC boundary", () => {
     await caller.purchase.get({ id: ID });
     await caller.purchase.nextNumber({ docDate: "2026-11-04" });
     await caller.purchase.options({ vendorId: ID });
-    await caller.purchase.memoStock({ ...picker, status: "SOLD" });
+    await caller.purchase.memoStockLots({ ...picker, group: "SOLD" });
     await caller.purchase.purchaseOrderLines(picker);
     await caller.purchase.create(body);
     await caller.purchase.update({ ...body, lines: [{ ...manual, id: ID3 }, stock], ...versioned });
@@ -968,7 +969,7 @@ describe("staged master domain tRPC boundary", () => {
     expect(purchase.list).toHaveBeenCalledWith(expect.objectContaining({ status: "APPROVED", partyId: ID, limit: 50 }));
     expect(purchase.get).toHaveBeenCalledWith(ID, expect.objectContaining({ userId: "user-1" }));
     expect(purchase.options).toHaveBeenCalledWith(ID);
-    expect(purchase.memoStock).toHaveBeenCalledWith(expect.objectContaining({ vendorId: ID, currency: "THB", status: "SOLD", limit: 50 }));
+    expect(lotStock.purchaseMemoStockLots).toHaveBeenCalledWith(expect.objectContaining({ vendorId: ID, currency: "THB", group: "SOLD", limit: 50 }));
     expect(purchase.purchaseOrderLines).toHaveBeenCalledWith(expect.objectContaining({ status: "ALL", limit: 50 }));
     expect(purchase.create).toHaveBeenCalledWith("user-1", expect.objectContaining({ vendorId: ID, lines: [expect.objectContaining({ source: "MANUAL" }), expect.objectContaining({ memoStockId: ID2, memoGroup: "IN_STOCK" }), expect.objectContaining({ purchaseOrderLineId: ID3 })] }), expect.objectContaining({ userId: "user-1" }));
     expect(purchase.update).toHaveBeenCalledWith("user-1", ID, 1, expect.objectContaining({ lines: [expect.objectContaining({ id: ID3 }), expect.anything()] }), expect.objectContaining({ userId: "user-1" }));
@@ -982,7 +983,7 @@ describe("staged master domain tRPC boundary", () => {
     await expect(only("EDIT").purchase.delete(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(only("EDIT").purchase.approve(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(only("ADD").purchase.list({})).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await expect(only("ADD").purchase.memoStock(picker)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(only("ADD").purchase.memoStockLots(picker)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(router.createCaller(context(["purchase-order:VIEW", "memo-receive:VIEW"])).purchase.purchaseOrderLines(picker)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(router.createCaller(context(["purchase-order:APPROVE"])).purchase.approve(versioned)).rejects.toMatchObject({ code: "FORBIDDEN" });
     // CSRF on every mutation, checked before the service.
@@ -1005,7 +1006,7 @@ describe("staged master domain tRPC boundary", () => {
     expect(await fieldErrors(caller.purchase.create({ ...body, lines: [{ ...manual, memoStockId: ID2 }] }))).toEqual([{ path: "lines.0.memoStockId", code: "not_allowed" }]);
     expect(await fieldErrors(caller.purchase.create({ ...body, lines: [stock, { ...stock }] }))).toEqual([{ path: "lines.1.memoStockId", code: "duplicate" }]);
     expect(await fieldErrors(caller.purchase.create({ ...body, lines: [{ ...manual, id: ID3 }] } as never))).toEqual([{ path: "lines.0", code: "unrecognized_keys" }]);
-    expect(await fieldErrors(caller.purchase.memoStock({ ...picker, status: "RESERVED" } as never))).toEqual([{ path: "status", code: "invalid_value" }]);
+    expect(await fieldErrors(caller.purchase.memoStockLots({ ...picker, group: "RESERVED" } as never))).toEqual([{ path: "group", code: "invalid_value" }]);
     expect(await fieldErrors(caller.purchase.list({ from: "2026-02-01", to: "2026-01-01" }))).toEqual([{ path: "to", code: "before_from" }]);
     expect(purchase.create).toHaveBeenCalledTimes(1);
 
@@ -1015,11 +1016,11 @@ describe("staged master domain tRPC boundary", () => {
     purchase.create.mockRejectedValueOnce(new HttpException({ error: { code: "PURCHASE_REFERENCE_INVALID", message: "x" } }, 422));
     await expect(caller.purchase.create(body)).rejects.toMatchObject({ code: "UNPROCESSABLE_CONTENT", message: "PURCHASE_REFERENCE_INVALID" });
 
-    // currency.options with purchase:VIEW; memoStock.list still refuses purchase:VIEW (SA-PU-12).
+    // currency.options with purchase:VIEW; the Memo Return lot picker still refuses purchase:VIEW (SA-PU-12).
     await router.createCaller(context(["purchase:VIEW"])).currency.options();
     expect(currency.options).toHaveBeenCalledTimes(1);
-    await expect(router.createCaller(context(["purchase:VIEW"])).memoStock.list({ vendorId: ID })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(memoStock.list).not.toHaveBeenCalled();
+    await expect(router.createCaller(context(["purchase:VIEW"])).memoStock.lots({ vendorId: ID, currency: "THB" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(lotStock.memoStockLots).not.toHaveBeenCalled();
   });
   it("GP-SD-01 transaction-soft-delete: restore needs <menu> DELETE + CSRF on all 8 routers; list {deleted: true} needs VIEW only", async () => {
     const versioned = { id: ID, expectedVersion: 2 };

@@ -4,6 +4,8 @@ import { Prisma } from "../generated/prisma/client";
 import { lockSourceHeaders } from "../trade-document/source-lock";
 import { purchaseErrors } from "./purchase.errors";
 import type { LineMemoGroup, MemoGroup, PurchaseInput, PurchaseLineInput } from "./purchase.schemas";
+import { lotQuantityErrors, readPurchaseLots } from "./purchase-lots";
+import { stockLotUnavailable } from "../trade-document/lot-key";
 
 const Decimal = Prisma.Decimal;
 type Dec = Prisma.Decimal;
@@ -16,7 +18,7 @@ type CopiedFields = Pick<PurchaseLineInput, "stoneCodeId" | "stoneCode" | "stone
  * line `stoneCodeId` is null here (so the engine's active-stone-code check does not refuse a code that became inactive)
  * and the PO line's code travels in `copiedStoneCodeId` (architecture.md, "Create / update").
  */
-export type PreparedLine = PurchaseLineInput & { copiedStoneCodeId?: string | null; sourceStockId?: string };
+export type PreparedLine = PurchaseLineInput & { copiedStoneCodeId?: string | null; sourceStockId?: string; stockCount?: number };
 export type PreparedInput = Omit<PurchaseInput, "lines"> & { lines: PreparedLine[] };
 
 /** Current availability of a Memo Stock item per group (SA-PU-05/12): IN_STOCK = pending, SOLD = sold − purchased. */
@@ -61,13 +63,16 @@ export function purchaseOrderAvailable(line: { pcs: number; weightCt: Dec; purch
 export async function completeSourceLines(tx: Tx, input: PurchaseInput): Promise<PreparedInput> {
   const memoIds = [...new Set(input.lines.flatMap((line) => (line.source === "STOCK" && line.memoStockId ? [line.memoStockId] : [])))];
   const poLineIds = [...new Set(input.lines.flatMap((line) => (line.source === "PURCHASE_ORDER" && line.purchaseOrderLineId ? [line.purchaseOrderLineId] : [])))];
-  const [items, poLines] = await Promise.all([
+  const lotKeys = [...new Set(input.lines.flatMap((line) => (line.source === "STOCK" && !line.memoStockId && line.lotKey ? [line.lotKey] : [])))];
+  const [items, poLines, lots] = await Promise.all([
     memoIds.length === 0 ? [] : tx.memoStock.findMany({ where: { id: { in: memoIds } } }),
     poLineIds.length === 0 ? [] : tx.purchaseOrderLine.findMany({
       where: { id: { in: poLineIds } },
       include: { document: { select: { status: true, vendorId: true, currencyCode: true, deletedAt: true } } },
     }),
+    readPurchaseLots(tx, lotKeys),
   ]);
+  const unavailable: number[] = [];
   const itemById = new Map(items.map((item) => [item.id, item]));
   const poLineById = new Map(poLines.map((line) => [line.id, line]));
   const references: FieldError[] = [];
@@ -95,6 +100,23 @@ export async function completeSourceLines(tx: Tx, input: PurchaseInput): Promise
   };
 
   const lines = input.lines.map((line, index): PreparedLine => {
+    if (line.source === "STOCK" && !line.memoStockId && line.lotKey) {
+      // ADR-0055 D4 / ADR-0043 per lot: the lot's vendor / currency, Sold-open and pending totals at save (no lock).
+      const lot = lots.get(line.lotKey);
+      if (!lot) {
+        unavailable.push(index);
+        return line;
+      }
+      if (lot.vendorId !== input.vendorId) references.push({ path: `lines.${index}.reference`, code: "vendor_mismatch" });
+      else if (lot.currency !== input.currency) references.push({ path: `lines.${index}.reference`, code: "currency_mismatch" });
+      else if (!line.memoGroup) references.push({ path: `lines.${index}.memoGroup`, code: "required" });
+      else quantities.push(...lotQuantityErrors(index, line, lot, line.memoGroup));
+      const copied: CopiedFields = {
+        stoneCodeId: null, stoneCode: "", stone: lot.stone, shape: lot.shape, size: lot.size, color: lot.color, clarity: lot.clarity,
+        cutting: lot.cutting, quality: lot.quality, lot: lot.lot, location: lot.location, cerType: lot.cerType, cerNo: lot.cerNo, priceUnit: lot.priceUnit,
+      };
+      return { ...line, ...copied, copiedStoneCodeId: null, stockCount: lot.stockCount };
+    }
     if (line.source === "STOCK") {
       const item = line.memoStockId ? itemById.get(line.memoStockId) : undefined;
       if (!item || item.vendorId !== input.vendorId || item.currencyCode !== input.currency || !line.memoGroup) {
@@ -125,7 +147,9 @@ export async function completeSourceLines(tx: Tx, input: PurchaseInput): Promise
     }
     return line;
   });
-  if (references.length > 0) throw purchaseErrors.referenceInvalid(references);
+  if (references.some((error) => error.code === "invalid_reference")) throw purchaseErrors.referenceInvalid(references);
+  if (unavailable.length > 0) throw stockLotUnavailable(unavailable);
+  if (references.length > 0) throw validationException(references);
   if (quantities.length > 0) throw validationException(quantities);
   return { ...input, lines };
 }

@@ -9,8 +9,8 @@ import { isFilledLine, lineSchema, stockLineRules, tradeDocumentRules, tradeDocu
 import type { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError } from "@/lib/trpc-error";
 import { mapDocumentSaveError } from "./document-api";
-import type { MemoStockItem } from "./memo-stock-api";
-import { isOwnStockItem, ownPickKey, type FromStockItem } from "./from-stock-api";
+import type { FromStockItem } from "./from-stock-api";
+import { lotPendingShortText, lotTooLargeMessage, sentLotLines } from "./lot-stock";
 import { INVENTORY_UNAVAILABLE_TEXT, isStockBusyCode, onlyLeftText, STOCK_BUSY_TEXT, stockRowMessage } from "./stock-row-errors";
 import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
 
@@ -37,6 +37,8 @@ const customerStockLineSchema = lineSchema.extend({
   memoStockId: z.string().default(""),
   /** load-to-stock phase 2 (ADR-0052 D20): our stock's UUID instead of a Memo Stock item. */
   ownStockId: z.string().default(""),
+  /** lot-based-stock (ADR-0055 D4): the lot a From Stock row was picked from; saved as `lotKey` (no item id). */
+  lotKey: z.string().default(""),
   stockPendingPcs: z.string().default(""),
   stockPendingWeightCt: z.string().default(""),
 });
@@ -62,23 +64,19 @@ export type CustomerStockFormValues = z.infer<typeof customerStockSchema>;
 /** A new document: today, five empty rows, the company currency once options load. */
 export function emptyCustomerStock(): CustomerStockFormValues {
   const q = emptyQuotation();
-  return { ...q, status: "DRAFT", lines: q.lines.map((line) => ({ ...line, memoStockId: "", ownStockId: "", stockPendingPcs: "", stockPendingWeightCt: "" })) };
+  return { ...q, status: "DRAFT", lines: q.lines.map((line) => ({ ...line, memoStockId: "", ownStockId: "", lotKey: "", stockPendingPcs: "", stockPendingWeightCt: "" })) };
 }
 
 /**
- * A Memo Stock item → a From Stock row: its Stock ID, lot, location Memo, stone and certificate (read-only), the full
- * pending as the starting quantity (Q-MO-15), and an empty Sale Price (Q-MO-11). Memo Stock has no stone code.
+ * lot-based-stock round 1 (FE-LOT-002/007): a picked lot (`fromStock.lots`) becomes a From Stock row: its lot and
+ * details (read-only), location, the lot's pending / available as the starting quantity and cap, `lotKey` and no Stock ID
+ * (owner Q-LOT-10); Sale Price still starts empty (Q-MO-11). The server copies the details on save.
  */
-/**
- * Phase 2 (quotation ui-spec Revision 3): an our-stock item becomes the same kind of row with its Location name, its
- * available as the starting quantity and cap, and `ownStockId`; Sale Price still starts empty (Q-LS-P2-03).
- */
-export function memoStockToStockLine(item: MemoStockItem | FromStockItem): CustomerStockLine {
-  const own = isOwnStockItem(item);
+export function lotToStockLine(item: FromStockItem): CustomerStockLine {
   return {
     key: newKey(),
     source: "STOCK",
-    stockId: item.stockId,
+    stockId: "",
     lot: item.lot,
     stoneCodeId: "",
     stoneCode: "",
@@ -94,15 +92,17 @@ export function memoStockToStockLine(item: MemoStockItem | FromStockItem): Custo
     cerNo: item.cerNo,
     pcs: String(item.pendingPcs),
     weightCt: toFixed(dec(item.pendingWeightCt), 3),
-    priceUnit: item.priceUnit === "PCS" ? "PER_PCS" : "PER_CT",
+    priceUnit: item.priceUnit === "PER_PCS" ? "PER_PCS" : "PER_CT",
     unitPrice: "",
     discountType: "PERCENT",
     discountValue: "",
     stonePartOrder: [],
     photos: [],
+    // The vendor / load note stays on the lot (shown in the picker); the line starts without one (Q-MO-11 style).
     itemNote: "",
-    memoStockId: own ? "" : item.id,
-    ownStockId: own ? item.id : "",
+    memoStockId: "",
+    ownStockId: "",
+    lotKey: item.lotKey,
     stockPendingPcs: String(item.pendingPcs),
     stockPendingWeightCt: item.pendingWeightCt,
   };
@@ -115,9 +115,12 @@ export function toCustomerStockInput(values: CustomerStockFormValues) {
   return {
     ...shared,
     // ADR-0052 D20: exactly one of `memoStockId` / `ownStockId` per From Stock row.
+    // lot-based-stock: a lot pick sends `lotKey` alone (the old item ids stay for lines already stored).
     lines: shared.lines.map((line, index) => {
+      const lotKey = filled[index]?.lotKey || null;
+      if (lotKey) return { ...line, memoStockId: null, ownStockId: null, lotKey };
       const memoStockId = filled[index]?.memoStockId || null;
-      return { ...line, memoStockId, ownStockId: memoStockId ? null : filled[index]?.ownStockId || null };
+      return { ...line, memoStockId, ownStockId: memoStockId ? null : filled[index]?.ownStockId || null, lotKey: null };
     }),
     customerId: values.customerId,
     shippingAddressId: values.shippingAddressId,
@@ -136,7 +139,9 @@ export function fromCustomerStock(detail: CustomerStockDetail, photoUrl: (id: st
         ...line,
         // An our-stock line is a From Stock row in the form (`ownStockId` tells the source); the API names it OWN_STOCK.
         source: saved?.source === "OWN_STOCK" ? ("STOCK" as const) : (saved?.source ?? "MANUAL"),
-        stockId: saved?.stockId ?? "",
+        // Q-LOT-10: the Stock ID is never read; the line shows its Lot.
+        stockId: "",
+        lotKey: saved?.lotKey ?? "",
         memoStockId: saved?.memoStockId ?? "",
         ownStockId: saved?.ownStockId ?? "",
         stockPendingPcs: saved?.stockPendingPcs === null || saved?.stockPendingPcs === undefined ? "" : String(saved.stockPendingPcs),
@@ -150,30 +155,40 @@ export function fromCustomerStock(detail: CustomerStockDetail, photoUrl: (id: st
   };
 }
 
-/** Stock items already on the form (From Stock leaves them out), keyed by source + id (`pickKey`). */
+/** Lots already on the form (From Stock leaves them out), by `lotKey`. */
 export const pickedStockIds = (lines: QuotationLine[]) =>
   new Set(lines.flatMap((line) => {
-    const stock = line as Partial<CustomerStockLine>;
-    if (stock.memoStockId) return [stock.memoStockId];
-    return stock.ownStockId ? [ownPickKey(stock.ownStockId)] : [];
+    const lotKey = (line as Partial<CustomerStockLine>).lotKey;
+    return lotKey ? [lotKey] : [];
   }));
 
 /** Rows that came From Stock (the approval message counts them). */
 export const stockRowCount = (lines: readonly unknown[]) =>
-  lines.filter((line) => Boolean((line as Partial<CustomerStockLine>).memoStockId || (line as Partial<CustomerStockLine>).ownStockId)).length;
+  lines.filter((line) => {
+    const stock = line as Partial<CustomerStockLine>;
+    return Boolean(stock.lotKey || stock.memoStockId || stock.ownStockId);
+  }).length;
 
-/** `<CODE>_*` save errors; a short approval (another document took the stock first) has its own message. */
+/**
+ * `<CODE>_*` save errors; a short approval (another document took the stock first) has its own message. lot-based-stock
+ * (FE-LOT-007): with the form's `values` a short lot reads "Row n: only x pcs / y ct left in lot L", a refused lot
+ * reference ("unavailable", duplicate, …) and `STOCK_LOT_TOO_LARGE` have their own texts.
+ */
 export function customerStockSaveError(code: string, noun: string) {
-  return (error: unknown) => {
-    const { domainCode, fieldErrors } = readDomainError(error);
+  return (error: unknown, values?: { lines: readonly QuotationLine[] }) => {
+    const { domainCode, fieldErrors, details } = readDomainError(error);
+    const lines = sentLotLines(values);
     if (domainCode === `${code}_PENDING_SHORT`) {
-      return { fieldErrors: [], message: "Some stock items no longer have enough pending. Edit the row and save again. Nothing was saved." };
+      const row = lotPendingShortText(details, fieldErrors, lines);
+      return { fieldErrors: [], message: row ? `${row}. Nothing was saved.` : "Some stock items no longer have enough pending. Edit the row and save again. Nothing was saved." };
     }
+    if (domainCode === "STOCK_LOT_TOO_LARGE") return { fieldErrors: [], message: lotTooLargeMessage(details, lines) };
     // Phase 2 (reserve Revision 2, memo-out Revision 4): inventory down → nothing changes; a hold still syncing → retry.
     if (domainCode === "INVENTORY_UNAVAILABLE") return { fieldErrors: [], message: INVENTORY_UNAVAILABLE_TEXT };
     if (isStockBusyCode(domainCode, code)) return { fieldErrors: [], message: STOCK_BUSY_TEXT };
     const outcome = mapDocumentSaveError(error, code, noun, HEADER_FIELDS);
-    const row = domainCode === "VALIDATION_ERROR" || domainCode === `${code}_REFERENCE_INVALID` ? stockRowMessage(fieldErrors, noun, onlyLeftText) : undefined;
+    const lotRefused = domainCode === "STOCK_LOT_UNAVAILABLE";
+    const row = lotRefused || domainCode === "VALIDATION_ERROR" || domainCode === `${code}_REFERENCE_INVALID` ? stockRowMessage(fieldErrors, noun, onlyLeftText, lines) : undefined;
     return row ? { ...outcome, message: row } : outcome;
   };
 }

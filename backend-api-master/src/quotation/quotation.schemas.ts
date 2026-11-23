@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LOT_KEY_RE } from "../trade-document/lot-key";
 
 /**
  * quotation api-contract.md (SA quotation rev 1, SA-QT-06/07/08): strict inputs; the server re-checks
@@ -71,7 +72,8 @@ export const tradeDocumentFields = {
  * server copies the item fields and checks pending on save; nothing is held.
  */
 // ADR-0052 D17 (phase 2a): OWN_STOCK lines name our stock (`ownStockId`); copy only, nothing held.
-const quotationLineSchema = lineInputSchema.extend({ source: z.enum(["MANUAL", "STOCK", "OWN_STOCK"]), memoStockId: uuid.nullish(), ownStockId: uuid.nullish() });
+// lot-based-stock (ADR-0055 D4): a new pick names its lot (`lotKey`, prefix by source); item ids stay for stored lines.
+const quotationLineSchema = lineInputSchema.extend({ source: z.enum(["MANUAL", "STOCK", "OWN_STOCK"]), memoStockId: uuid.nullish(), ownStockId: uuid.nullish(), lotKey: z.string().regex(LOT_KEY_RE).nullish() });
 const quotationFields = { ...tradeDocumentFields, lines: z.array(quotationLineSchema).min(1).max(LINES_MAX), customerId: uuid, shippingAddressId: uuid, invoiceAddressId: uuid };
 
 type TradeDocumentValues = z.output<z.ZodObject<typeof tradeDocumentFields>>;
@@ -99,14 +101,19 @@ function quotationRules(value: QuotationValues, ctx: z.RefinementCtx) {
     if (line.source === "MANUAL") {
       if (line.memoStockId) issue(["lines", index, "memoStockId"], "invalid");
       if (line.ownStockId) issue(["lines", index, "ownStockId"], "invalid");
+      if (line.lotKey) issue(["lines", index, "reference"], "invalid");
       return;
     }
     const field = line.source === "STOCK" ? "memoStockId" : "ownStockId";
     const other = line.source === "STOCK" ? "ownStockId" : "memoStockId";
     if (line[other]) issue(["lines", index, other], "invalid");
-    const item = line[field];
+    if (line.lotKey) {
+      // The lot's prefix must match the source (M = Memo Stock, O = our stock), and no item id beside it.
+      if (line[field] || line.lotKey[0] !== (line.source === "STOCK" ? "M" : "O")) return issue(["lines", index, "reference"], "invalid");
+    }
+    const item = line[field] ?? line.lotKey;
     if (!item) return issue(["lines", index, field], "required");
-    if (seen.has(`${field}:${item}`)) issue(["lines", index, field], "duplicate");
+    if (seen.has(`${field}:${item}`)) issue(["lines", index, line.lotKey ? "reference" : field], "duplicate");
     seen.add(`${field}:${item}`);
     if (line.stoneCodeId) issue(["lines", index, "stoneCodeId"], "invalid");
     if (line.pcs <= 0 && Number(line.weightCt) <= 0) issue(["lines", index, "pcs"], "required");

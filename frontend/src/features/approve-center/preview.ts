@@ -1,3 +1,4 @@
+import { isLotDocumentType } from "@/features/trade-document/lot-stock";
 import type { AvailableMenu } from "./menus";
 import { DASH, PENDING_STATUS, shortDate, submittedTime, submitterText, type ApprovalRow } from "./model";
 
@@ -10,6 +11,8 @@ import { DASH, PENDING_STATUS, shortDate, submittedTime, submitterText, type App
 export type PreviewLine = {
   stoneCode?: string | null;
   stockId?: string | null;
+  /** lot-based-stock: the lot the Stock ID is replaced by on Quotation, Reserve and Memo Out. */
+  lot?: string | null;
   stone: string;
   shape: string;
   size: string;
@@ -97,8 +100,12 @@ export function lineValue(amount: string, rate: string | null, places: number): 
 
 export const stoneText = (line: Pick<PreviewLine, "stone" | "shape" | "size">) => [line.stone, line.shape, line.size].map((part) => part?.trim()).filter(Boolean).join(" ");
 
-/** Stone code; memo lines without one show their Stock ID. */
-export const stoneCodeText = (line: Pick<PreviewLine, "stoneCode" | "stockId">) => line.stoneCode?.trim() || line.stockId?.trim() || DASH;
+/**
+ * Stone code; lines without one show their Stock ID, or their Lot on the documents that hide the Stock ID (lot-based-stock
+ * round 1: Quotation, Reserve, Memo Out; owner Q-LOT-10 — "—" when there is no lot either).
+ */
+export const stoneCodeText = (line: Pick<PreviewLine, "stoneCode" | "stockId" | "lot">, hideStockId = false) =>
+  line.stoneCode?.trim() || (hideStockId ? line.lot?.trim() : line.stockId?.trim()) || DASH;
 
 export const currencyText = (detail: Pick<PreviewDetail, "currency" | "exchangeRate">, baseCurrency: string | null) =>
   converts(detail, baseCurrency) ? `${detail.currency} · rate ${detail.exchangeRate}` : detail.currency;
@@ -126,7 +133,7 @@ export function previewView(menu: AvailableMenu, detail: PreviewDetail, baseCurr
   const rows = detail.lines.map((line, index) => ({
     key: index,
     index: index + 1,
-    code: stoneCodeText(line),
+    code: stoneCodeText(line, isLotDocumentType(menu.type)),
     stone: stoneText(line) || DASH,
     orderedBy: customer ? partyName : null,
     pcs: line.pcs,

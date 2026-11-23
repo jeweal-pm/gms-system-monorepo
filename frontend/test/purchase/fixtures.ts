@@ -8,14 +8,16 @@ export const PO = "33333333-3333-4333-8333-333333333333";
 export const POL = "44444444-4444-4444-8444-444444444444";
 export const LINE = "55555555-5555-4555-8555-555555555555";
 
+/** A lot key (Memo Stock, merged group of one memo receive). */
+export const LOT = `ML${"1".repeat(32)}`;
 export const memoRow = (patch: Partial<PurchaseMemoStockRow> = {}): PurchaseMemoStockRow => ({
-  key: `${STOCK}:IN_STOCK`, memoStockId: STOCK, status: "IN_STOCK", stockId: "260003", lot: "L-2607-007", itemNote: "Silk",
-  memoReceive: { id: ID, docNo: "MR-1001", docDate: "2026-10-29", dueDate: "2026-11-29" }, ref: { type: "MEMO_RECEIVE", id: ID, docNo: "MR-1001", docDate: "2026-10-29" }, location: "Memo", locationType: null,
+  lotKey: LOT, source: "MEMO_STOCK", lot: "L-2607-007", merged: false, stoneCode: "", itemNote: "Silk", memoGroup: "IN_STOCK",
+  ref: { type: "MEMO_RECEIVE", id: ID, docNo: "MR-1001", docDate: "2026-10-29" }, refCount: 1, location: "Memo",
   stone: "Tourmaline", shape: "Oval", size: "7.2×5.4 mm", color: "Red", clarity: "VVS", cutting: "Excellent", quality: "AAA", cerType: "GIA", cerNo: "GRS2024-081233",
-  availablePcs: 2, availableWeightCt: "1.360", priceUnit: "CTS", unitPrice: "12500.00", netUnitPrice: "11250.5000", amount: "15300.68", sale: null,
+  pendingPcs: 2, pendingWeightCt: "1.360", priceUnit: "PER_CT", unitPrice: "12500.00", netUnitPrice: "11250.5000", amount: "15300.68", currency: "THB", vendor: { id: ID, code: "V001", name: "Aom" },
+  soldOpenPcs: 0, soldOpenWeightCt: "0.000",
   ...patch,
 });
-
 
 export const poRow = (patch: Partial<PurchaseOrderLineRow> = {}): PurchaseOrderLineRow => ({
   purchaseOrderLineId: POL, status: "PARTLY_PURCHASED", purchaseOrder: { id: PO, docNo: "PO2611001", docDate: "2026-11-01", dueDate: "2026-11-30", ref: "" }, position: 2,

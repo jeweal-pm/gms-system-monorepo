@@ -221,7 +221,7 @@ export const MEMO_OUTSTANDING_CUSTOMER_OPTIONS_MAX = 1_000;
  * SA-MOC-02: a From Stock line of a Memo Out; lines typed by hand can't be returned and are left out. ADR-0052 D20
  * (Q-LS-P2-04): lines of our stock (own_stock_id) are From Stock lines too; items carry `source` and `location`.
  */
-const STOCK_LINE = Prisma.sql`(l.memo_stock_id IS NOT NULL OR l.own_stock_id IS NOT NULL)`;
+const STOCK_LINE = Prisma.sql`(l.memo_stock_id IS NOT NULL OR l.own_stock_id IS NOT NULL OR l.lot_key IS NOT NULL)`;
 
 /**
  * SA-MOC-05: open value = amount × outstanding basis ÷ lent basis (weight for PER_CT, pcs for PER_PCS), 2 dp half-up, in
@@ -246,7 +246,7 @@ const CUSTOMER_NET_PRICE = Prisma.sql`round(CASE WHEN l.price_unit = 'PER_CT'
  */
 const CUSTOMER_LINE_OPEN = Prisma.sql`(l.returned_pcs < l.pcs OR l.returned_weight_ct < l.weight_ct)`;
 const HAS_OUT_LINE = Prisma.sql`EXISTS (SELECT 1 FROM "partner"."memo_out_line" x WHERE x.memo_out_id = o.id
-  AND (x.memo_stock_id IS NOT NULL OR x.own_stock_id IS NOT NULL) AND (x.returned_pcs < x.pcs OR x.returned_weight_ct < x.weight_ct))`;
+  AND (x.memo_stock_id IS NOT NULL OR x.own_stock_id IS NOT NULL OR x.lot_key IS NOT NULL) AND (x.returned_pcs < x.pcs OR x.returned_weight_ct < x.weight_ct))`;
 
 const CUSTOMER_DOC_SUMS = Prisma.sql`
   sum(l.pcs)::bigint AS memo_pcs, sum(l.weight_ct) AS memo_wt,
@@ -602,7 +602,7 @@ export class MemoOutstandingService {
     const ids = [...new Set(input.memoOutIds)].map((id) => Prisma.sql`${id}::uuid`);
     try {
       const rows = await prisma.$queryRaw<CustomerItemRow[]>(Prisma.sql`
-        SELECT l.id::text AS id, l.memo_out_id::text AS memo_out_id, l.position, l.stock_id, l.lot, l.location, (l.own_stock_id IS NOT NULL) AS own_stock,
+        SELECT l.id::text AS id, l.memo_out_id::text AS memo_out_id, l.position, l.stock_id, l.lot, l.location, (l.own_stock_id IS NOT NULL OR l.lot_key LIKE 'O%') AS own_stock,
           l.stone, l.shape, l.size, l.color, l.clarity, l.cutting, l.quality, l.cer_type, l.cer_no, l.item_note,
           l.pcs AS memo_pcs, l.weight_ct AS memo_wt, l.returned_pcs AS return_pcs, l.returned_weight_ct AS return_wt,
           0 AS sold_pcs, 0 AS sold_wt, (l.pcs - l.returned_pcs) AS outstanding_pcs, (l.weight_ct - l.returned_weight_ct) AS outstanding_wt,

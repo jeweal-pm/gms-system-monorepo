@@ -8,7 +8,8 @@ import { WRITE_TX, type Db } from "../platform/db";
 import { jsonBody, type AppEnv } from "../platform/http";
 import type { Logger } from "../platform/logger";
 import { applyHolds, HOLD_DOCUMENT_TYPES, HOLD_MAX_STOCKS, readHolds, type HoldDocumentType } from "../modules/stock/holds";
-import { availablePage, stockBatch } from "../modules/stock/picker";
+import { stockBatch } from "../modules/stock/picker";
+import { LOT_KEYS_MAX, lotCandidates, lotsAvailablePage, OWN_LOT_KEY } from "../modules/stock/lots";
 
 /**
  * api-master → inventory internal API (ADR-0052 D16–D18/D21, api-contract "Inventory internal"), mounted at
@@ -49,14 +50,17 @@ export function bearerMatches(header: string | undefined, expected: Buffer | nul
 export type InternalDeps = { db: Db; logger: Logger; tokenDigest: Buffer | null; otherTokenDigest?: Buffer | null };
 
 const isoDate = z.iso.date();
-const availableSchema = z.object({
+// lot-based-stock (ADR-0055 D3/D7): own-stock lot reads; the cursor is the opaque lot cursor master pages with.
+const lotsAvailableSchema = z.object({
   q: z.string().trim().max(100).optional(),
   from: isoDate.optional(),
   to: isoDate.optional(),
   location: z.string().trim().min(1).max(40).optional(),
-  after: z.object({ date: isoDate, stockId: z.string().regex(/^\d{1,10}$/) }).strict().optional(),
+  cursor: z.string().max(200).optional(),
   limit: z.number().int().min(1).max(51),
 }).strict();
+const lotsSchema = z.object({ lotKeys: z.array(z.string().regex(OWN_LOT_KEY)).min(1).max(LOT_KEYS_MAX) }).strict()
+  .refine((value) => new Set(value.lotKeys).size === value.lotKeys.length, { path: ["lotKeys"], params: { code: "duplicate" }, message: "duplicate" });
 const batchSchema = z.object({ ids: z.array(z.uuid()).min(1).max(HOLD_MAX_STOCKS) }).strict()
   .refine((value) => new Set(value.ids.map((id) => id.toLowerCase())).size === value.ids.length, { path: ["ids"], params: { code: "duplicate" }, message: "duplicate" });
 const weight = z.string().regex(/^\d{1,9}(\.\d{1,3})?$/);
@@ -89,13 +93,17 @@ export function createMasterRoutes(deps: InternalDeps) {
   routes.use("*", bodyLimit({ maxSize: INTERNAL_BODY_MAX, onError: () => { throw new AppError(413, "PAYLOAD_TOO_LARGE"); } }));
   const actorOf = (header: string | undefined) => (header && ACTOR.test(header) ? header : "api-master");
 
-  routes.post("/stock/available", async (c) => {
-    const input = await jsonBody(c, availableSchema);
-    return c.json({ items: await availablePage(deps.db, input) });
-  });
   routes.post("/stock/batch", async (c) => {
     const { ids } = await jsonBody(c, batchSchema);
     return c.json({ items: await stockBatch(deps.db, ids) });
+  });
+  routes.post("/stock/lots/available", async (c) => {
+    const input = await jsonBody(c, lotsAvailableSchema);
+    return c.json({ items: await lotsAvailablePage(deps.db, input) });
+  });
+  routes.post("/stock/lots", async (c) => {
+    const { lotKeys } = await jsonBody(c, lotsSchema);
+    return c.json(await lotCandidates(deps.db, lotKeys));
   });
   routes.put("/stock-holds/:type/:id", async (c) => {
     const { type, id } = documentParams(c.req.param("type"), c.req.param("id"));

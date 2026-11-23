@@ -115,11 +115,14 @@ export const saleReserveLineSearchSchema = z.object({
 });
 export type SaleReserveLineSearchInput = z.output<typeof saleReserveLineSearchSchema>;
 
+const memoLotKey = z.string().regex(/^ML[0-9a-f]{32}$|^MS[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 export const salePrepareSchema = z.object({
   party: z.object({ customerId: z.uuid(), shippingAddressId: z.uuid(), invoiceAddressId: z.uuid(), keepCustomerId: z.uuid().optional() }).strict().optional(),
   currency: currencyCode,
   reserveLineIds: z.array(z.uuid()).max(SALE_LINES_MAX),
   memoStockIds: z.array(z.uuid()).max(SALE_LINES_MAX),
+  /** lot-based-stock (ADR-0055 D7): Memo Stock lots of From Stock lines (group snapshot + available, no lock). */
+  lotKeys: z.array(memoLotKey).max(SALE_LINES_MAX).default([]),
   saleId: z.uuid().optional(),
 }).strict();
 export type SalePrepareInput = z.output<typeof salePrepareSchema>;
@@ -128,7 +131,10 @@ export const saleConsumptionLineSchema = z.object({
   lineId: z.uuid(),
   source: z.enum(["RESERVE", "STOCK"]),
   reserveLineId: z.uuid().nullish(),
-  memoStockId: z.uuid(),
+  /** v1: the line's Memo Stock item (RESERVE: the Reserve line's item). v2 (ADR-0055): optional for RESERVE lines. */
+  memoStockId: z.uuid().nullish(),
+  /** v2 (ADR-0055 D7): a From Stock lot line; master allocates FIFO and returns the allocation. */
+  lotKey: memoLotKey.nullish(),
   pcs: z.number().int().min(0).max(1_000_000_000),
   weightCt: weightString,
 }).strict();
@@ -152,10 +158,13 @@ export const saleConsumptionPutSchema = z.object({
       if (!line.reserveLineId) issue(["lines", index, "reserveLineId"], "required");
       else if (reserveLines.has(line.reserveLineId)) issue(["lines", index, "reserveLineId"], "duplicate");
       else reserveLines.add(line.reserveLineId);
+      if (line.lotKey) issue(["lines", index, "lotKey"], "invalid");
     } else {
       if (line.reserveLineId) issue(["lines", index, "reserveLineId"], "invalid");
-      if (stocks.has(line.memoStockId)) issue(["lines", index, "memoStockId"], "duplicate");
-      stocks.add(line.memoStockId);
+      if (Boolean(line.memoStockId) === Boolean(line.lotKey)) issue(["lines", index, "memoStockId"], "required");
+      const key = line.memoStockId ?? line.lotKey ?? "";
+      if (stocks.has(key)) issue(["lines", index, line.memoStockId ? "memoStockId" : "lotKey"], "duplicate");
+      stocks.add(key);
     }
     if (line.pcs === 0 && Number(line.weightCt) === 0) issue(["lines", index, "pcs"], "too_small");
   });

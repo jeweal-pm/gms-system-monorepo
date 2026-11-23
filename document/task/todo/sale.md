@@ -1,4 +1,4 @@
-**UI only, API pending** (owner 2026-11-18). **UI only, API pending** (owner 2026-11-18). **UI only, API pending** (owner 2026-11-18). **UI only, API pending** (owner 2026-11-18). # TODO: sale
+# TODO: sale
 
 - feature-id: `sale`
 - revision: 1 (UI rev 1); SA revision 1 (**approved** 2026-11-18)

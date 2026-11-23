@@ -81,6 +81,8 @@ export async function startMaster(token: string, storageRoot: string): Promise<M
 export type Harness = Awaited<ReturnType<typeof startHarness>>;
 
 export async function startHarness() {
+  // FE-LOT-008: the master modules under test keep accepting item references (Vitest-only seam, see master test/setup.ts).
+  process.env.LOT_TEST_ACCEPT_ITEM_REFS = "1";
   const dir = mkdtempSync(join(tmpdir(), "gms-inventory-it-"));
   const token = randomBytes(32).toString("base64url");
   const master = await startMaster(token, dir);

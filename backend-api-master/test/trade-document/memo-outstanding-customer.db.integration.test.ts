@@ -175,7 +175,7 @@ describe.runIf(canRun)("IT-MOC memo outstanding from customer on PostgreSQL", ()
     const [item] = await approvedStock([receiveLine()]);
     const out = await approvedMemoOut(beta, [stockLine(item.id, 4, "2")]);
     await approvedReturn(beta, out.id, 1, "0.5");
-    let [row] = (await outstanding.customerList({ customerIds: [beta.id], page: 1, pageSize: 10 })).items;
+    const [row] = (await outstanding.customerList({ customerIds: [beta.id], page: 1, pageSize: 10 })).items;
     expect(row).toMatchObject({ memoOutId: out.id, return: { pcs: 1, weightCt: "0.500" }, outstanding: { pcs: 3, weightCt: "1.500" }, openValue: "3000.00" });
     expect(await outstanding.customerSummary({ customerIds: [beta.id] })).toMatchObject({ documents: 1, grandTotal: "3000.00" });
 
@@ -183,8 +183,9 @@ describe.runIf(canRun)("IT-MOC memo outstanding from customer on PostgreSQL", ()
     expect((await outstanding.customerList({ customerIds: [beta.id], page: 1, pageSize: 10 })).items).toEqual([]);
     expect((await outstanding.customerItems({ memoOutIds: [out.id] })).items).toEqual([]);
     expect(await outstanding.customerSummary({ customerIds: [beta.id] })).toMatchObject({ documents: 0, grandTotal: "0.00" });
-    [row] = (await outstanding.customerList({ q: out.docNo, page: 1, pageSize: 10 })).items;
-    expect(row).toBeUndefined();
+    // The doc-no search may also match longer numbers of other documents (substring); this Memo Out is not among them.
+    const found = (await outstanding.customerList({ q: out.docNo, page: 1, pageSize: 50 })).items;
+    expect(found.map((item) => item.memoOutId)).not.toContain(out.id);
   });
 
   it("IT-MOC-03 KPIs, filters, sort, paging and options", async () => {

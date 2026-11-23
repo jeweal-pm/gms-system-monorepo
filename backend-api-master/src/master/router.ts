@@ -24,11 +24,10 @@ import { LOCATION_CURSOR_MAX } from "../location-master/location-master.service"
 import type { QuotationService } from "../quotation/quotation.service";
 import type { MemoOutService } from "../trade-document/memo-out.service";
 import type { ReserveService } from "../trade-document/reserve.service";
-import { FromStockService, fromStockListSchema } from "../trade-document/from-stock.service";
+import { fromStockLotsSchema, LotStockService, memoStockLotsSchema, purchaseMemoStockLotsSchema } from "../trade-document/lot-stock.service";
 import type { MemoOutReturnService } from "../trade-document/memo-out-return.service";
 import type { MemoReceiveService } from "../trade-document/memo-receive.service";
 import type { MemoReturnService } from "../trade-document/memo-return.service";
-import type { MemoStockService } from "../trade-document/memo-stock.service";
 import type { MemoOutstandingService } from "../trade-document/memo-outstanding.service";
 import type { PurchaseOrderService } from "../purchase-order/purchase-order.service";
 import { createPurchaseOrderSchema, purchaseOrderListSchema, updatePurchaseOrderSchema } from "../purchase-order/purchase-order.schemas";
@@ -36,7 +35,6 @@ import type { PurchaseService } from "../purchase/purchase.service";
 import {
   createPurchaseSchema,
   purchaseListSchema,
-  purchaseMemoStockSchema,
   purchaseNextNumberSchema,
   purchaseOptionsSchema,
   purchaseOrderLinesSchema,
@@ -65,7 +63,6 @@ import {
   reserveListSchema,
   memoReceiveListSchema,
   memoReturnListSchema,
-  memoStockListSchema,
   memoVersionedIdSchema,
   updateMemoOutReturnSchema,
   updateMemoOutSchema,
@@ -329,14 +326,13 @@ export type MasterServices = Pick<{
   memoOut: MemoOutService;
   memoOutReturn: MemoOutReturnService;
   memoReceive: MemoReceiveService;
-  memoStock: MemoStockService;
   memoReturn: MemoReturnService;
   memoOutstanding: MemoOutstandingService;
   reserve: ReserveService;
   purchaseOrder: PurchaseOrderService;
   purchase: PurchaseService;
   approval: ApprovalService;
-}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "decimalSetup" | "approvalSetting" | "currency" | "locationMaster" | "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoStock" | "memoReturn" | "memoOutstanding" | "reserve" | "purchaseOrder" | "purchase" | "approval">;
+}, "customer" | "vendor" | "companyProfile" | "stoneMaster" | "documentSetup" | "decimalSetup" | "approvalSetting" | "currency" | "locationMaster" | "quotation" | "memoOut" | "memoOutReturn" | "memoReceive" | "memoReturn" | "memoOutstanding" | "reserve" | "purchaseOrder" | "purchase" | "approval"> & { /** The lot pickers (default: the real service; tests inject a mock). */ lotStock?: LotStockService };
 
 function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
   const schemas = bodySchemasFor(kind);
@@ -353,9 +349,16 @@ function stoneProcedures(kind: StoneKind, service: StoneMasterService) {
 }
 
 /** Direct service calls preserve IDs, transaction behavior and existing partner/stone schemas. */
-export function createMasterRouter({ customer, vendor, companyProfile, stoneMaster, documentSetup, decimalSetup, approvalSetting, currency, locationMaster, quotation, memoOut, memoOutReturn, memoReceive, memoStock, memoReturn, memoOutstanding, reserve, purchaseOrder, purchase, approval }: MasterServices) {
+/**
+ * Owner 2026-11-21 (Q3, ADR-0055 D9): Purchase hides the Stock IDs its STOCK lines carry; the browser gets one null per
+ * line (compatibility step: null, then removed after FE-LOT-006). Memo Receive keeps returning them.
+ */
+export function hideStockIds<T extends { stockIds?: readonly (string | null)[] }>(result: T): Omit<T, "stockIds"> & { stockIds: null[] } {
+  return { ...result, stockIds: Array.isArray(result?.stockIds) ? result.stockIds.map(() => null) : [] };
+}
+
+export function createMasterRouter({ lotStock = new LotStockService(), customer, vendor, companyProfile, stoneMaster, documentSetup, decimalSetup, approvalSetting, currency, locationMaster, quotation, memoOut, memoOutReturn, memoReceive, memoReturn, memoOutstanding, reserve, purchaseOrder, purchase, approval }: MasterServices) {
   // ADR-0052 D16: one From Stock list (Memo Stock + our stock), merged here; it reuses the Memo Stock query.
-  const fromStock = new FromStockService(memoStock);
   return t.router({
     customer: t.router({
       list: permitted("customer", "VIEW").input(listInput).query(({ input }) => domainCall(() => customer.list(toListQuery(input)))),
@@ -550,14 +553,15 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       // The creator may approve (like quotation Q-QT-02); the server checks APPROVE on every call.
       ...approvalProcedures("memo-receive", memoReceive, memoVersionedIdSchema),
     }),
-    // Memo Stock list (SA-MR-11): Memo Return "Add Memo Stock" (its vendor) and Memo Out "From Stock" (every vendor, SA-MO-15);
-    // Sale "From Stock" phase 1 (sale ADR-0054 D10, SA-SL-05).
+    // lot-based-stock (ADR-0055 D3): Memo Return "Add Memo Stock" as one row per lot (the Stock ID pickers memoStock.list /
+    // fromStock.list / purchase.memoStock were removed with FE-LOT-008, INV-20261121-002 H2).
     memoStock: t.router({
-      list: permittedAny(["memo-return", "memo-receive", "memo-out", "reserve", "quotation", "sale"], "VIEW").input(memoStockListSchema).query(({ input }) => domainCall(() => memoStock.list(input))),
+      lots: permittedAny(["memo-return", "memo-receive"], "VIEW").input(memoStockLotsSchema).query(({ input }) => domainCall(() => lotStock.memoStockLots(input))),
     }),
-    // load-to-stock SA rev 2 (ADR-0052 D16, SA-LS-P2-01): the customer-side From Stock picker as one list of both stocks.
+    // ADR-0052 D16 / ADR-0055 D3: the customer-side From Stock picker as lots.
     fromStock: t.router({
-      list: permittedAny(["quotation", "reserve", "memo-out"], "VIEW").input(fromStockListSchema).query(({ input }) => domainCall(() => fromStock.list(input))),
+      // ADR-0055 D3: our stock lots first, then Memo Stock lots; Sale From Stock reads it too (sale:VIEW).
+      lots: permittedAny(["quotation", "reserve", "memo-out", "sale"], "VIEW").input(fromStockLotsSchema).query(({ input }) => domainCall(() => lotStock.fromStockLots(input))),
     }),
     // memo-return SA rev 2 (owner 2026-10-29): Memo Stock items back to their vendor; approval reduces pending (Q-MR-15).
     memoReturn: t.router({
@@ -601,14 +605,15 @@ export function createMasterRouter({ customer, vendor, companyProfile, stoneMast
       get: viewOrApprover("purchase").input(idInput).query(({ ctx, input }) => domainCall(() => readForViewer(ctx.approverOnly, () => purchase.get(input.id, ctx.principal)))),
       nextNumber: permitted("purchase", "VIEW").input(purchaseNextNumberSchema).query(({ input }) => domainCall(() => purchase.nextNumber(input.docDate))),
       options: permitted("purchase", "VIEW").input(purchaseOptionsSchema).query(({ input }) => domainCall(() => purchase.options(input.vendorId))),
-      // SA-PU-12/13 pickers (D9: purchase:VIEW alone; memoStock.list is not opened to purchase).
-      memoStock: permitted("purchase", "VIEW").use(withFieldErrors(purchaseMemoStockSchema)).input(purchaseMemoStockSchema).query(({ input }) => domainCall(() => purchase.memoStock(input))),
+      // SA-PU-12/13 pickers (D9: purchase:VIEW alone).
+      // ADR-0055 D3 / ADR-0043 per lot: Sold / In stock lot rows.
+      memoStockLots: permitted("purchase", "VIEW").use(withFieldErrors(purchaseMemoStockLotsSchema)).input(purchaseMemoStockLotsSchema).query(({ input }) => domainCall(() => lotStock.purchaseMemoStockLots(input))),
       purchaseOrderLines: permitted("purchase", "VIEW").use(withFieldErrors(purchaseOrderLinesSchema)).input(purchaseOrderLinesSchema)
         .query(({ input }) => domainCall(() => purchase.purchaseOrderLines(input))),
-      create: permitted("purchase", "ADD", true).use(withFieldErrors(createPurchaseSchema)).input(createPurchaseSchema).mutation(({ ctx, input }) => domainCall(() => purchase.create(ctx.userId, input, ctx.principal))),
+      create: permitted("purchase", "ADD", true).use(withFieldErrors(createPurchaseSchema)).input(createPurchaseSchema).mutation(({ ctx, input }) => domainCall(() => purchase.create(ctx.userId, input, ctx.principal).then(hideStockIds))),
       update: permitted("purchase", "EDIT", true).use(withFieldErrors(updatePurchaseSchema)).input(updatePurchaseSchema).mutation(({ ctx, input }) => {
         const { id, expectedVersion, ...body } = input;
-        return domainCall(() => purchase.update(ctx.userId, id, expectedVersion, body, ctx.principal));
+        return domainCall(() => purchase.update(ctx.userId, id, expectedVersion, body, ctx.principal).then(hideStockIds));
       }),
       delete: permitted("purchase", "DELETE", true).input(purchaseVersionedIdSchema).mutation(({ ctx, input }) => domainCall(() => purchase.delete(ctx.userId, input.id, input.expectedVersion))),
       // transaction-soft-delete D6/D7: restore a soft-deleted document; DELETE + CSRF (no new action).

@@ -15,7 +15,7 @@ import type { DocFlow, DocumentApprovalType } from "@/features/trade-document/fl
 import {
   clearReserveRows,
   emptySale,
-  memoStockToSaleLine,
+  lotToSaleLine,
   pickedReserveLineIds,
   pickedStockIds,
   reserveLineToSaleLine,
@@ -165,15 +165,17 @@ export const SALE_BINDING: SaleBinding = {
       onConfirm={(rows) => onAdd(rows.map(reserveLineToSaleLine))}
     />
   ),
-  // P-02 phase 1 (Q-SL-01): the Reserve / Memo Out "Add From Stock" dialog over Memo Stock of every vendor, no prices.
+  // P-02 (Q-SL-01, lot-based-stock): the shared "Add From Stock" lot dialog, Memo Stock lots only (inventory takes no own stock in Sale), no prices.
   fromStock: ({ values, onClose, onAdd }) => (
     <MemoStockModal
       title="Add From Stock"
+      fromStock
+      memoOnly
       showPrice={false}
       emptyText="No stock with anything pending."
       pickedIds={pickedStockIds(values.lines)}
       onCancel={onClose}
-      onConfirm={(items) => onAdd(items.map(memoStockToSaleLine))}
+      onConfirm={(items) => onAdd(items.map(lotToSaleLine))}
     />
   ),
 };

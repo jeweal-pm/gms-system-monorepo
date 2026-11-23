@@ -1,4 +1,5 @@
 import type { ServerFieldError } from "@/lib/trpc-error";
+import { lotReferenceText, lotShortText, type LotLineRef } from "./lot-stock";
 
 /**
  * load-to-stock phase 2 (quotation ui-spec Revision 3, reserve Revision 2, memo-out Revision 4, memo-out-return
@@ -16,12 +17,25 @@ export const isStockBusyCode = (code: string | null, prefix: string) => code ===
  * A From Stock row the server refused, as "Row N: …" (first one wins). `exceeds_pending` with `params.availablePcs`
  * comes from our stock (SA-LS-P2-09); without params it is a Memo Stock row. `shortText` words our-stock shortage:
  * Quotation "More than available", Reserve / Memo Out "only x pcs left".
+ * lot-based-stock (FE-LOT-007): `lines` (the filled rows sent, in order) tells lot rows apart. A short lot row reads
+ * "only x pcs / y ct left in lot L" (any `exceeds_*` code with params), and `lines.N.reference` codes have their own text.
  */
-export function stockRowMessage(fieldErrors: readonly ServerFieldError[], noun: string, shortText: (available: { pcs: string; weightCt: string }) => string): string | undefined {
+export function stockRowMessage(
+  fieldErrors: readonly ServerFieldError[],
+  noun: string,
+  shortText: (available: { pcs: string; weightCt: string }) => string,
+  lines?: readonly LotLineRef[],
+): string | undefined {
   for (const entry of fieldErrors) {
-    const match = /^lines\.(\d+)\.(memoStockId|ownStockId|pcs|weightCt)$/.exec(entry.path);
+    const match = /^lines\.(\d+)\.(memoStockId|ownStockId|reference|pcs|weightCt)$/.exec(entry.path);
     if (!match) continue;
-    const row = `Row ${Number(match[1]) + 1}`;
+    const index = Number(match[1]);
+    const row = `Row ${index + 1}`;
+    if (match[2] === "reference") return lotReferenceText(index + 1, entry.code, noun);
+    const lot = lines?.[index];
+    if (lot?.lotKey && entry.code.startsWith("exceeds_") && entry.params?.availablePcs !== undefined) {
+      return lotShortText(index + 1, { pcs: entry.params.availablePcs, weightCt: entry.params.availableWeightCt ?? "0" }, lot.lot ?? undefined);
+    }
     if (entry.code === "exceeds_pending") {
       const pcs = entry.params?.availablePcs;
       if (pcs === undefined) return `${row}: More than pending`;

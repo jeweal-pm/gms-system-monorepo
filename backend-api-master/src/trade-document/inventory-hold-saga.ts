@@ -10,6 +10,7 @@ import { inventoryClient, InventoryRefusal, InventoryUnavailable, type HoldDocTy
 import type { DocumentErrors } from "./document-errors";
 import type { EngineWriteAction } from "./document-engine";
 import { inventoryUnavailable, type Qty } from "./own-stock-lines";
+import { settleOldestFirst } from "./lot-allocation";
 
 /**
  * ADR-0052 D19 / SA-LS-P2-05/06/09: master saga "acquire → local → release" that keeps inventory's holds of a Reserve,
@@ -46,26 +47,82 @@ const applied = (appliedOnly: boolean, alias: string) => (appliedOnly ? Prisma.s
 
 /** Fixed identifiers per document type (never input). */
 export const DOC_SPECS: Record<HoldDocType, DocSpec> = {
+  // ADR-0055 D7: legacy own lines by their stock + own-lot lines by their stored allocation rows.
   reserve: {
     table: Prisma.raw(`"partner"."reserve"`), code: "RESERVE", acquireUp: true,
     lines: (client, id, appliedOnly) => sums(client, Prisma.sql`
-      SELECT l.own_stock_id::text AS stock, sum(l.pcs) AS pcs, sum(l.weight_ct) AS weight FROM "partner"."reserve_line" l JOIN "partner"."reserve" h ON h.id = l.reserve_id
-      WHERE h.id = ${id}::uuid AND l.own_stock_id IS NOT NULL ${applied(appliedOnly, "h")} GROUP BY l.own_stock_id`),
+      SELECT x.stock, sum(x.pcs) AS pcs, sum(x.weight) AS weight FROM (
+        SELECT l.own_stock_id::text AS stock, l.pcs, l.weight_ct AS weight FROM "partner"."reserve_line" l JOIN "partner"."reserve" h ON h.id = l.reserve_id
+        WHERE h.id = ${id}::uuid AND l.own_stock_id IS NOT NULL ${applied(appliedOnly, "h")}
+        UNION ALL
+        SELECT a.own_stock_id::text, a.pcs, a.weight_ct FROM "partner"."reserve_line_alloc" a JOIN "partner"."reserve_line" l ON l.id = a.line_id JOIN "partner"."reserve" h ON h.id = l.reserve_id
+        WHERE h.id = ${id}::uuid AND l.lot_key LIKE 'O%' AND a.own_stock_id IS NOT NULL ${applied(appliedOnly, "h")}
+      ) x GROUP BY x.stock`),
   },
   "memo-out": {
     table: Prisma.raw(`"partner"."memo_out"`), code: "MEMO_OUT", acquireUp: true,
     lines: (client, id, appliedOnly) => sums(client, Prisma.sql`
-      SELECT l.own_stock_id::text AS stock, sum(l.pcs) AS pcs, sum(l.weight_ct) AS weight FROM "partner"."memo_out_line" l JOIN "partner"."memo_out" h ON h.id = l.memo_out_id
-      WHERE h.id = ${id}::uuid AND l.own_stock_id IS NOT NULL ${applied(appliedOnly, "h")} GROUP BY l.own_stock_id`),
+      SELECT x.stock, sum(x.pcs) AS pcs, sum(x.weight) AS weight FROM (
+        SELECT l.own_stock_id::text AS stock, l.pcs, l.weight_ct AS weight FROM "partner"."memo_out_line" l JOIN "partner"."memo_out" h ON h.id = l.memo_out_id
+        WHERE h.id = ${id}::uuid AND l.own_stock_id IS NOT NULL ${applied(appliedOnly, "h")}
+        UNION ALL
+        SELECT a.own_stock_id::text, a.pcs, a.weight_ct FROM "partner"."memo_out_line_alloc" a JOIN "partner"."memo_out_line" l ON l.id = a.line_id JOIN "partner"."memo_out" h ON h.id = l.memo_out_id
+        WHERE h.id = ${id}::uuid AND l.lot_key LIKE 'O%' AND a.own_stock_id IS NOT NULL ${applied(appliedOnly, "h")}
+      ) x GROUP BY x.stock`),
   },
   "memo-out-return": {
+    // Applied: what the return recorded per own stock; not applied: the oldest-first settlement it would make now.
     table: Prisma.raw(`"partner"."memo_out_return"`), code: "MEMO_OUT_RETURN", acquireUp: false,
-    lines: (client, id, appliedOnly) => sums(client, Prisma.sql`
-      SELECT o.own_stock_id::text AS stock, sum(l.pcs) AS pcs, sum(l.weight_ct) AS weight FROM "partner"."memo_out_return_line" l
-      JOIN "partner"."memo_out_line" o ON o.id = l.memo_out_line_id JOIN "partner"."memo_out_return" h ON h.id = l.memo_out_return_id
-      WHERE h.id = ${id}::uuid AND o.own_stock_id IS NOT NULL ${applied(appliedOnly, "h")} GROUP BY o.own_stock_id`),
+    lines: (client, id, appliedOnly) => (appliedOnly
+      ? sums(client, Prisma.sql`
+        SELECT a.own_stock_id::text AS stock, sum(r.pcs) AS pcs, sum(r.weight_ct) AS weight FROM "partner"."memo_out_return_line" l
+        JOIN "partner"."memo_out_return_line_alloc" r ON r.line_id = l.id JOIN "partner"."memo_out_line_alloc" a ON a.id = r.memo_out_line_alloc_id
+        JOIN "partner"."memo_out_return" h ON h.id = l.memo_out_return_id
+        WHERE h.id = ${id}::uuid AND a.own_stock_id IS NOT NULL ${applied(true, "h")} GROUP BY a.own_stock_id`)
+      : predictedReturnHolds(client, id)),
   },
 };
+
+/** The own-stock holds a Memo Out Return would settle now (oldest seq first over its Memo Out lines' own allocation). */
+export async function predictedReturnHolds(client: Tx | typeof prisma, id: string): Promise<HoldSet> {
+  const lines = await client.$queryRaw<{ memo_out_line_id: string; pcs: number; weight_ct: string }[]>(Prisma.sql`
+    SELECT memo_out_line_id::text AS memo_out_line_id, pcs, weight_ct::text AS weight_ct FROM "partner"."memo_out_return_line" WHERE memo_out_return_id = ${id}::uuid ORDER BY position`);
+  return returnHoldsOf(client, lines.map((line) => ({ memoOutLineId: line.memo_out_line_id, pcs: line.pcs, weightCt: line.weight_ct })));
+}
+
+/** Simulated settlement of return lines over the Memo Out lines' unsettled own-stock allocation rows (one read). */
+export async function returnHoldsOf(client: Tx | typeof prisma, lines: readonly { memoOutLineId: string; pcs: number; weightCt: string | Prisma.Decimal }[]): Promise<HoldSet> {
+  const set: HoldSet = new Map();
+  if (lines.length === 0) return set;
+  const rows = await client.$queryRaw<{ id: string; line_id: string; seq: number; own_stock_id: string; pcs: number; weight_ct: string; settled_pcs: number; settled_weight_ct: string }[]>(Prisma.sql`
+    SELECT id::text AS id, line_id::text AS line_id, seq, own_stock_id::text AS own_stock_id, pcs, weight_ct::text AS weight_ct, settled_pcs, settled_weight_ct::text AS settled_weight_ct
+    FROM "partner"."memo_out_line_alloc" WHERE line_id = ANY(${lines.map((line) => line.memoOutLineId)}::uuid[]) AND own_stock_id IS NOT NULL`);
+  for (const line of lines) {
+    const own = rows.filter((row) => row.line_id === line.memoOutLineId).map((row) => ({
+      id: row.id, seq: row.seq, pcs: row.pcs, weight: new Decimal(row.weight_ct), settledPcs: row.settled_pcs, settledWeight: new Decimal(row.settled_weight_ct), stock: row.own_stock_id,
+    }));
+    if (own.length === 0) continue;
+    const parts = settleOldestFirst(own, { pcs: line.pcs, weight: new Decimal(line.weightCt.toString()) }) ?? [];
+    for (const part of parts) {
+      const stock = own.find((row) => row.id === part.id)!.stock;
+      const qty = set.get(stock) ?? zero();
+      set.set(stock, { pcs: qty.pcs + part.pcs, weight: qty.weight.plus(part.weight) });
+    }
+  }
+  return set;
+}
+
+/** Own stocks per Memo Out line (its own allocation rows), for row errors and the fast-path decision. */
+export async function ownStocksOfOutLines(client: Tx | typeof prisma, outLineIds: readonly string[]): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+  if (outLineIds.length === 0) return map;
+  const rows = await client.$queryRaw<{ line_id: string; stock: string }[]>(Prisma.sql`
+    SELECT line_id::text AS line_id, own_stock_id::text AS stock FROM "partner"."memo_out_line_alloc" WHERE line_id = ANY(${[...outLineIds]}::uuid[]) AND own_stock_id IS NOT NULL
+    UNION
+    SELECT id::text, own_stock_id::text FROM "partner"."memo_out_line" WHERE id = ANY(${[...outLineIds]}::uuid[]) AND own_stock_id IS NOT NULL`);
+  for (const row of rows) map.set(row.line_id, [...(map.get(row.line_id) ?? []), row.stock]);
+  return map;
+}
 
 // ---------- pure set helpers (UT-LS-P2-02) ----------
 

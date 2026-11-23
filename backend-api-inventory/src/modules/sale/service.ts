@@ -12,7 +12,7 @@ import { recordNotification, type NotificationSignal } from "../../platform/noti
 import { SyncDriver, LEASE_MS, type BaseOp, type DriveOutcome, type MasterPort, type OpKind } from "../../platform/sync/saga";
 import { consumptionLines, normalizeSale, prepareRequest, type NormalizedSale } from "./prepare";
 import { readHeader, readLines, isEditable, type HeaderRow } from "./read";
-import { APPROVED_AUTO, checkPhotos, explainMiss, formatDocNo, headerFields, insertParts, nextRunningNo, replaceParts } from "./repository";
+import { APPROVED_AUTO, checkPhotos, explainMiss, formatDocNo, headerFields, insertParts, nextRunningNo, replaceParts, writeSaleAllocations } from "./repository";
 import type { SaleInput } from "./schemas";
 
 /**
@@ -45,7 +45,7 @@ export function salePort(master: MasterApi): MasterPort<SaleOpRow, SaleConsumpti
     put: (op, options) => master.putSaleConsumption(op.sale_id, op.revision, op.payload.consumption, options),
     recover: async (op, options) => {
       const current = await master.getSaleConsumption(op.sale_id, options);
-      return current.revision === op.revision ? { revision: current.revision, replayed: true, lines: current.lines } : null;
+      return current.revision === op.revision ? { revision: current.revision, replayed: true, lines: current.lines, allocations: current.allocations } : null;
     },
     isRefusal: isSaleRefusal,
     staleCode: "SALE_CONSUMPTION_STALE",
@@ -88,7 +88,8 @@ function storedInput(header: HeaderRow, lines: Awaited<ReturnType<typeof readLin
     labor: header.labor_work === null ? null : { work: header.labor_work, basis: header.labor_basis as "PCS", qty: header.labor_qty ?? "0", rate: header.labor_rate ?? "0" },
     serviceCharges: charges.map((charge) => ({ type: charge.charge_type as "SHIPPING", amount: charge.amount })),
     lines: lines.map((line) => ({
-      id: line.id, source: line.source, ...(line.reserve_line_id ? { reserveLineId: line.reserve_line_id } : {}), memoStockId: line.memo_stock_id,
+      id: line.id, source: line.source, ...(line.reserve_line_id ? { reserveLineId: line.reserve_line_id } : {}),
+      ...(line.source === "STOCK" ? (line.memo_stock_id ? { memoStockId: line.memo_stock_id } : line.lot_key ? { lotKey: line.lot_key } : {}) : {}),
       pcs: line.pcs, weightCt: line.weight_ct, unitPrice: line.unit_price, discount: { type: line.discount_type as "NONE", value: line.discount_value },
       itemNote: line.item_note, photoIds: line.photo_ids,
     })),
@@ -101,7 +102,7 @@ export class SaleService {
 
   constructor(private readonly deps: SaleServiceDeps) {
     this.sync = new SyncDriver<SaleWriteResult, SaleOpRow, SaleConsumptionResponse>(deps.db, deps.master, deps.logger, {
-      apply: (tx, op) => this.applyOp(tx, op),
+      apply: (tx, op, response) => this.applyOp(tx, op, response),
       refuse: (tx, op) => this.refuseOp(tx, op),
       mapRefusal: (op, refusal) => this.mapRefusal(op, refusal),
       afterCommit: (result) => this.flushSignals(result),
@@ -151,7 +152,14 @@ export class SaleService {
 
   // ---------- saga handlers ----------
 
-  private async applyOp(tx: Tx, op: SaleOpRow): Promise<SaleWriteResult> {
+  private async applyOp(tx: Tx, op: SaleOpRow, response?: SaleConsumptionResponse): Promise<SaleWriteResult> {
+    const result = await this.applyStatus(tx, op);
+    // ADR-0055 D7: tx1 copies master's allocation of the applied revision (empty for a release).
+    await writeSaleAllocations(tx, op.sale_id, op.kind === "DELETE" ? [] : (response?.allocations ?? []));
+    return result;
+  }
+
+  private async applyStatus(tx: Tx, op: SaleOpRow): Promise<SaleWriteResult> {
     const header = (await readHeader(tx, op.sale_id))!;
     const actor = op.payload.actor;
     if (op.kind === "DELETE") {
@@ -316,7 +324,7 @@ export class SaleService {
       if (locked === 0) await explainMiss(tx, id, ["PENDING_APPROVAL"]);
       const header = (await readHeader(tx, id))!;
       const lines = await readLines(tx, id);
-      const consumption = { saleDocNo: header.doc_no, customerId: header.customer_id, currency: header.currency_code, lines: consumptionLines(lines.map((line) => ({ id: line.id, source: line.source, reserveLineId: line.reserve_line_id, memoStockId: line.memo_stock_id, pcs: line.pcs, weightCt: line.weight_ct }))) };
+      const consumption = { saleDocNo: header.doc_no, customerId: header.customer_id, currency: header.currency_code, lines: consumptionLines(lines.map((line) => ({ id: line.id, source: line.source, reserveLineId: line.reserve_line_id, memoStockId: line.memo_stock_id, lotKey: line.lot_key, pcs: line.pcs, weightCt: line.weight_ct }))) };
       op = await this.insertOp(tx, id, header.applied_revision, "APPROVE", consumption, principal);
     }, WRITE_TX);
     await this.driveOrThrow(op!, requestId);

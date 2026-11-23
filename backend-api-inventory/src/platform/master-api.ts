@@ -33,7 +33,8 @@ export type SaleStoneAttrs = {
 };
 export type ReserveLineRef = SaleStoneAttrs & {
   reserveLineId: string; reserveId: string; reserveNo: string; reserveDate: string; dueDate: string;
-  memoStockId: string; stockId: string; priceUnit: PriceUnit;
+  /** Legacy Reserve line: its item; a lot Reserve line (ADR-0055): null with `lotKey`. `stockId` is "" on a lot line. */
+  memoStockId: string | null; lotKey?: string | null; stockId: string; priceUnit: PriceUnit;
   netUnitPrice: string; openPcs: number; openWeightCt: string; openAmount: string;
 };
 export type SaleReference = {
@@ -43,7 +44,7 @@ export type SaleReference = {
 export type SaleReserveLineSearch = { customerId: string; currency: string; q?: string; from?: string; to?: string; exclude: string[]; cursor?: string | null; limit: number };
 export type SalePrepareRequest = {
   party?: { customerId: string; shippingAddressId: string; invoiceAddressId: string; keepCustomerId?: string };
-  currency: string; reserveLineIds: string[]; memoStockIds: string[]; saleId?: string;
+  currency: string; reserveLineIds: string[]; memoStockIds: string[]; lotKeys?: string[]; saleId?: string;
 };
 export type PreparedReserveLine = ReserveLineRef & { status: "OPEN" | "CLOSED" | "UNAVAILABLE"; customerId: string; currency: string };
 export type PreparedStock = {
@@ -55,11 +56,17 @@ export type SalePrepared = {
   partyErrors: { path: string; code: string }[];
   currencyActive: boolean; companyCurrency: string | null;
   reserveLines: PreparedReserveLine[]; memoStocks: PreparedStock[];
+  /** ADR-0055 D7: Memo Stock lots of From Stock lot lines (group snapshot, available incl. this Sale's own). */
+  memoLots?: PreparedLot[];
 };
-export type SaleConsumptionLine = { lineId: string; source: "RESERVE" | "STOCK"; reserveLineId?: string; memoStockId: string; pcs: number; weightCt: string };
+export type PreparedLot = { lotKey: string; status: "OK" | "UNAVAILABLE"; stockCount?: number; priceUnit?: PriceUnit; attrs?: SaleStoneAttrs; pendingPcs?: number; pendingWeightCt?: string };
+/** v2 (ADR-0055 D7): a STOCK line names `memoStockId` (legacy) or `lotKey`; a RESERVE line may omit `memoStockId`. */
+export type SaleConsumptionLine = { lineId: string; source: "RESERVE" | "STOCK"; reserveLineId?: string; memoStockId?: string; lotKey?: string; pcs: number; weightCt: string };
+/** Master's per-stock allocation of a line (server-to-server only, copied into sale_line_alloc; never returned publicly). */
+export type SaleLineAllocation = { lineId: string; rows: { seq: number; stockUuid: string; stockId: string; pcs: number; weightCt: string }[] };
 export type SaleConsumptionRequest = { saleDocNo: string; customerId: string; currency: string; lines: SaleConsumptionLine[] };
 export type SaleCapLine = { lineId: string; capPcs: number; capWeightCt: string };
-export type SaleConsumptionResponse = { revision: number; replayed: boolean; lines: SaleCapLine[] };
+export type SaleConsumptionResponse = { revision: number; replayed: boolean; lines: SaleCapLine[]; allocations?: SaleLineAllocation[] };
 
 /** Reads wrap failures as 503 MASTER_UNAVAILABLE; the allocation PUT/GET keep the raw outcome for the saga. */
 export class MasterApi {
@@ -136,7 +143,7 @@ export class MasterApi {
   }
 
   getSaleConsumption(saleId: string, options?: CallOptions) {
-    return this.transport.json<{ revision: number; lines: SaleCapLine[] }>("GET", `/sale-consumptions/${saleId}`, undefined, options);
+    return this.transport.json<{ revision: number; lines: SaleCapLine[]; allocations?: SaleLineAllocation[] }>("GET", `/sale-consumptions/${saleId}`, undefined, options);
   }
 
   /** Raw outcome (MasterRefusal / MasterUnavailable propagate) — the saga decides. */

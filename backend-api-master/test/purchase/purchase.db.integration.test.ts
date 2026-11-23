@@ -357,7 +357,8 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     expect(updated.stockIds).toEqual([null, null, item.stockId, null]);
     const reloaded = await purchase.get(saved.id);
     expect(reloaded.lines.slice(0, 2).map((line) => line.id)).toEqual([manualId, poLineId]);
-    expect(reloaded.lines.map((line) => [line.source, line.stockId])).toEqual([["MANUAL", null], ["PURCHASE_ORDER", null], ["STOCK", item.stockId], ["MANUAL", null]]);
+    // Owner Q-LOT-10: the detail never carries the Stock ID (the service result keeps it server-side; tRPC nulls it).
+    expect(reloaded.lines.map((line) => [line.source, line.stockId])).toEqual([["MANUAL", null], ["PURCHASE_ORDER", null], ["STOCK", null], ["MANUAL", null]]);
     expect(await failure(purchase.update(ACTOR, saved.id, 1, purchaseInput(vendorA, [manualLine()])))).toMatchObject({ status: 409, code: "PURCHASE_CHANGED" });
 
     const listed = await purchase.list({ partyId: vendorA.id, status: "DRAFT", q: saved.docNo, limit: 50, deleted: false });
@@ -389,7 +390,9 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     expect(await purchase.approve(ACTOR, plain.id, 2)).toMatchObject({ status: "APPROVED", lineCount: 1 });
   });
 
-  it("IT-PU-B05 purchase.memoStock: vendor + currency scope, SOLD first across pages, counts with q and dates, reserved never listed, q escaping", async () => {
+  it("IT-PU-B05 purchase.memoStockLots: vendor + currency scope, SOLD first across pages, counts with q and dates, reserved never listed, q escaping", async () => {
+    const { LotStockService } = await import("../../src/trade-document/lot-stock.service");
+    const lots = new LotStockService();
     const vendorC = await vendorFixture("PU IT Vendor C");
     const { items: [a, b, c, d] } = await approvedStock(vendorC, [
       receiveLine({ lot: "50%_\\" }), receiveLine({ lot: "500" }), receiveLine({ lot: "RES" }), receiveLine({ lot: "PART" }),
@@ -400,43 +403,42 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     await sell(older.id, 5, "2.500"); // fully sold: SOLD row only
     // Fully reserved (out on Memo Out / Reserve): never listed (D5).
     await prisma.$executeRawUnsafe(`UPDATE "partner"."memo_stock" SET reserved_pcs = pending_pcs, reserved_weight_ct = pending_weight_ct, pending_pcs = 0, pending_weight_ct = 0 WHERE id = '${c.id}'`);
-    const base = { vendorId: vendorC.id, currency: "THB", status: "ALL" as const, limit: 50 };
+    const base = { vendorId: vendorC.id, currency: "THB", group: "ALL" as const, limit: 50 };
+    const key = (row: { lot: string; memoGroup: string }) => `${row.lot}:${row.memoGroup}`;
 
-    const all = await purchase.memoStock(base);
-    expect(all.items.map((row) => [row.lot, row.status])).toEqual([
-      ["PART", "SOLD"], ["OLD", "SOLD"], ["PART", "IN_STOCK"], ["500", "IN_STOCK"], ["50%_\\", "IN_STOCK"],
-    ]);
+    const all = await lots.purchaseMemoStockLots(base);
+    // SOLD lots first, then In stock lots (one row per lot and group).
+    expect(all.items.map((row) => row.memoGroup)).toEqual(["SOLD", "SOLD", "IN_STOCK", "IN_STOCK", "IN_STOCK"]);
+    expect(all.items.map(key).sort()).toEqual(["500:IN_STOCK", "50%_\\:IN_STOCK", "OLD:SOLD", "PART:IN_STOCK", "PART:SOLD"].sort());
     expect(all.counts).toEqual({ all: 5, sold: 2, inStock: 3 });
-    // From Stock Ref. (owner 2026-11-04): every row names its source Memo Receive.
-    expect(all.items.map((row) => row.ref)).toEqual(all.items.map((row) => ({ type: "MEMO_RECEIVE", id: row.memoReceive.id, docNo: row.memoReceive.docNo, docDate: row.memoReceive.docDate })));
-    expect(all.items[0]).toMatchObject({ key: `${d.id}:SOLD`, availablePcs: 2, availableWeightCt: "1.000", amount: "1000.00", sale: null, locationType: null, location: "Memo", priceUnit: "CTS" });
-    expect(all.items[2]).toMatchObject({ key: `${d.id}:IN_STOCK`, availablePcs: 3, availableWeightCt: "1.500", amount: "1500.00" });
+    const part = (group: string) => all.items.find((row) => key(row) === `PART:${group}`)!;
+    expect(part("SOLD")).toMatchObject({ lotKey: d.lotKey, pendingPcs: 2, pendingWeightCt: "1.000", amount: "1000.00", location: "Memo", priceUnit: "PER_CT", soldOpenPcs: 2 });
+    expect(part("IN_STOCK")).toMatchObject({ pendingPcs: 3, pendingWeightCt: "1.500", amount: "1500.00", soldOpenPcs: 2 });
+    expect(all.items.some((row) => "stockId" in row)).toBe(false);
 
     // Pages of 2 keep the SOLD-first order across the group boundary.
     const seen: string[] = [];
     let cursor: string | null = null;
     do {
-      const page: Awaited<ReturnType<Purchase["memoStock"]>> = await purchase.memoStock({ ...base, limit: 2, cursor });
-      seen.push(...page.items.map((row) => row.key));
+      const page: Awaited<ReturnType<typeof lots.purchaseMemoStockLots>> = await lots.purchaseMemoStockLots({ ...base, limit: 2, ...(cursor ? { cursor } : {}) });
+      seen.push(...page.items.map(key));
       cursor = page.nextCursor;
     } while (cursor);
-    expect(seen).toEqual(all.items.map((row) => row.key));
+    expect(seen).toEqual(all.items.map(key));
 
-    expect((await purchase.memoStock({ ...base, status: "SOLD" })).items.map((row) => row.lot)).toEqual(["PART", "OLD"]);
-    const escaped = await purchase.memoStock({ ...base, q: "50%" });
+    expect((await lots.purchaseMemoStockLots({ ...base, group: "SOLD" })).items.map((row) => row.lot).sort()).toEqual(["OLD", "PART"]);
+    const escaped = await lots.purchaseMemoStockLots({ ...base, q: "50%" });
     expect(escaped.items.map((row) => row.lot)).toEqual(["50%_\\"]);
-    expect(escaped.counts).toEqual({ all: 1, sold: 0, inStock: 1 });
-    const dated = await purchase.memoStock({ ...base, from: "2026-01-01", to: "2026-01-31" });
+    const dated = await lots.purchaseMemoStockLots({ ...base, from: "2026-01-01", to: "2026-01-31" });
     expect(dated.items.map((row) => row.lot)).toEqual(["OLD"]);
-    expect(dated.counts).toEqual({ all: 1, sold: 1, inStock: 0 });
-    expect((await purchase.memoStock({ ...base, currency: "USD" })).items.map((row) => row.lot)).toEqual(["USD"]);
-    expect((await purchase.memoStock({ ...base, vendorId: vendorB.id })).items.every((row) => row.memoStockId !== a.id && row.memoStockId !== b.id)).toBe(true);
+    expect((await lots.purchaseMemoStockLots({ ...base, currency: "USD" })).items.map((row) => row.lot)).toEqual(["USD"]);
+    expect((await lots.purchaseMemoStockLots({ ...base, vendorId: vendorB.id })).items.every((row) => row.lotKey !== a.lotKey && row.lotKey !== b.lotKey)).toBe(true);
 
     // The SOLD group is bought too: purchased += q only, and the row leaves the SOLD group once fully bought.
     const bought = await purchase.create(ACTOR, purchaseInput(vendorC, [stockLine(older.id, "SOLD", 5, "2.5")]));
     await sendAndApprove(purchase, ACTOR, bought.id, 1);
     expect(await buckets(older.id)).toMatchObject({ pending: [0, "0.000"], sold: [5, "2.500"], purchased: [5, "2.500"], balanced: true });
-    expect((await purchase.memoStock({ ...base, status: "SOLD" })).items.map((row) => row.lot)).toEqual(["PART"]);
+    expect((await lots.purchaseMemoStockLots({ ...base, group: "SOLD" })).items.map((row) => row.lot)).toEqual(["PART"]);
   });
 
   it("IT-PU-B06 approve with 200 STOCK lines on distinct items: one UPDATE per table, latency recorded", async () => {
@@ -460,7 +462,8 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     spy.mockRestore();
 
     expect(approved).toMatchObject({ status: "APPROVED", lineCount: 200 });
-    expect(updates).toBe(1);
+    // 1 bucket UPDATE + the allocation DELETE + one bulk INSERT (ADR-0055 D5): still independent of the line count.
+    expect(updates).toBe(3);
     const moved = await prisma.memoStock.aggregate({ where: { vendorId: vendorD.id }, _sum: { pendingPcs: true, soldPcs: true, purchasedPcs: true } });
     expect(moved._sum).toEqual({ pendingPcs: 200, soldPcs: 200, purchasedPcs: 200 });
     console.info(`IT-PU-B06 approve 200 STOCK lines: ${elapsed.toFixed(0)} ms (target < 500 ms)`);
@@ -622,7 +625,9 @@ describe.runIf(canRun)("IT-PU purchase on PostgreSQL", () => {
     const withStock = await submitted(purchase, ACTOR, await purchase.create(ACTOR, purchaseInput(vendorA, [stockLine(item.id, "IN_STOCK", 1, "0.5")])));
     const manualOnly = await submitted(purchase, ACTOR, await purchase.create(ACTOR, purchaseInput(vendorA, [manualLine({ stone: "ZirconADR51" })])));
     const ids = async (q: string) => (await approval.pending(approvalPendingInputSchema.parse({ type: "purchase", q, limit: 50 }))).items.map((row) => row.id);
-    expect(await ids(item.stockId)).toEqual([withStock.id]);
+    // Owner Q-LOT-10a: no Stock ID search; the lot finds the STOCK line.
+    expect(await ids(item.stockId)).toEqual([]);
+    expect(await ids("APS")).toContain(withStock.id);
     expect(await ids("ZirconADR51")).toEqual([manualOnly.id]);
   });
 });

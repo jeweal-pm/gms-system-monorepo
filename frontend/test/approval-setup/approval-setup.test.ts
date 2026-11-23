@@ -4,7 +4,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { SettingRow } from "@/features/approval-setup/components/ApprovalSetupPage";
+import { SaveFlowInfo, SettingRow } from "@/features/approval-setup/components/ApprovalSetupPage";
+import { SAVE_FLOW_BLOCKED_TEXT, SAVE_FLOW_OFF_TEXT, SAVE_FLOW_ON_TEXT } from "@/features/approval-setup/model";
 import {
   blockedText,
   documentsLabel,
@@ -137,10 +138,32 @@ describe("UT-AS-07 turning off (owner answer 3, ADR-0050 D5)", () => {
   });
 });
 
+describe("UT-AS-14 ⓘ When a document is saved (owner 2026-11-20)", () => {
+  it("a focusable button described by a tooltip with the On and Off chains and the turn-off rule", () => {
+    const html = renderToStaticMarkup(createElement(SaveFlowInfo));
+    expect(html).toMatch(/<button[^>]*type="button"[^>]*aria-label="What happens when a document is saved"[^>]*aria-describedby="approval-save-flow"/);
+    expect(html).toContain('id="approval-save-flow" role="tooltip"');
+    // Shown on hover and on keyboard focus / tap, not hover only.
+    expect(html).toContain("group-focus-within:block group-hover:block");
+    expect(html.match(/aria-label="Status after Save"/g)).toHaveLength(2);
+    for (const label of [">On<", ">Off<", ">Save<", ">Pending approval<", ">Approved<", ">Revise<", ">Rejected<"]) expect(html).toContain(label);
+    expect(html).toContain(SAVE_FLOW_ON_TEXT.replace("can't", "can&#x27;t"));
+    expect(html).toContain(SAVE_FLOW_OFF_TEXT.replace("can't", "can&#x27;t"));
+    expect(html).toContain(SAVE_FLOW_BLOCKED_TEXT.replace("can't", "can&#x27;t"));
+  });
+
+  it("the page header carries the ⓘ and no longer shows a chain above the table", () => {
+    const page = readFileSync("src/features/approval-setup/components/ApprovalSetupPage.tsx", "utf8").replace(/\r\n/g, "\n");
+    expect(page).toContain("Require approval\n                      <SaveFlowInfo />");
+    expect(page).not.toContain("<StatusChainView on={true} />");
+    expect(page).not.toContain("When a document is saved</th>");
+  });
+});
+
 describe("UT-AS-09 row render", () => {
-  it("an On row shows the waiting link to Approve and an enabled switch (the status chain moved above the table, owner 2026-11-20)", () => {
+  it("an On row shows the waiting link to Approve and an enabled switch (no per-row status chain, owner 2026-11-20)", () => {
     const markup = row("reserve", { setting: settingItem("reserve", { waiting: 2 }) });
-    // The per-row "When a document is saved" column is commented out; one StatusChainView sits above the table.
+    // "When a document is saved" moved into the ⓘ next to "Require approval" (UT-AS-14).
     expect(markup).not.toContain(">Pending approval<");
     expect(markup).toContain('href="/approve/reserve"');
     expect(markup).toContain("2 documents");
