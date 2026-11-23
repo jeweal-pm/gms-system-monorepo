@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { escapeLike, READ_TX, type Tx } from "../common/persistence";
+import { escapeLike, type Tx } from "../common/persistence";
 import { prisma } from "../database/prisma-client";
 import { fromDbDate, toDbDate } from "../document-setup/document-setup.service";
 import { Prisma } from "../generated/prisma/client";
@@ -54,18 +54,24 @@ const HAS_OPEN_ITEM = Prisma.sql`EXISTS (SELECT 1 FROM "partner"."memo_stock" o 
   AND (o.pending_pcs > 0 OR o.pending_weight_ct > 0 OR o.reserved_pcs > 0 OR o.reserved_weight_ct > 0))`;
 
 /**
- * INV-20261029-004: every report statement runs in one READ_TX (one pooled connection, 2.5 s) with a 2 s
- * `statement_timeout`, so a slow report fails fast (DEPENDENCY_UNAVAILABLE) instead of holding a pool connection.
+ * INV-20261029-004: report aggregations read all qualifying item history. Keep a finite report-specific budget
+ * separate from the ordinary 2.5 s READ_TX used by interactive list queries.
  */
-export const REPORT_STATEMENT_TIMEOUT_MS = 2_000;
+export const REPORT_STATEMENT_TIMEOUT_MS = 15_000;
+const REPORT_READ_TX = {
+  timeout: 16_000,
+  maxWait: 2_000,
+  isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
+} as const;
 /** Keep report sorts/aggregates in memory without changing PostgreSQL's database-wide work_mem default. */
 export const REPORT_WORK_MEM_MB = 16;
-function reportRead<T>(run: (tx: Tx) => Promise<T>): Promise<T> {
+function reportRead<T>(run: (tx: Tx) => Promise<T>, options: { disableNestedLoop?: boolean } = {}): Promise<T> {
   return prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${REPORT_STATEMENT_TIMEOUT_MS}`);
     await tx.$executeRawUnsafe(`SET LOCAL work_mem = '${REPORT_WORK_MEM_MB}MB'`);
+    if (options.disableNestedLoop) await tx.$executeRawUnsafe("SET LOCAL enable_nestloop = off");
     return run(tx);
-  }, READ_TX);
+  }, REPORT_READ_TX);
 }
 
 /**
@@ -238,6 +244,7 @@ const CUSTOMER_NET_PRICE = Prisma.sql`round(CASE WHEN l.price_unit = 'PER_CT'
  * SA-MOC-03: a document is listed while any stock line still has something out. INV-20261029-004: an `EXISTS` before
  * grouping through the partial index `memo_out_line_open_idx` (same predicate), not `HAVING` after it.
  */
+const CUSTOMER_LINE_OPEN = Prisma.sql`(l.returned_pcs < l.pcs OR l.returned_weight_ct < l.weight_ct)`;
 const HAS_OUT_LINE = Prisma.sql`EXISTS (SELECT 1 FROM "partner"."memo_out_line" x WHERE x.memo_out_id = o.id
   AND (x.memo_stock_id IS NOT NULL OR x.own_stock_id IS NOT NULL OR x.lot_key IS NOT NULL) AND (x.returned_pcs < x.pcs OR x.returned_weight_ct < x.weight_ct))`;
 
@@ -305,23 +312,47 @@ export class MemoOutstandingService {
 
   async vendorSummary(input: MemoOutstandingFilters) {
     const today = toDbDate(bangkokToday(this.clock()));
+    // The default report scans broad history. A hash join/seq scan measured far faster than 62k per-document index probes;
+    // keep filtered requests on the original plan, where the selective filters can make those probes cheaper.
+    const broadUnfiltered = !input.q && !input.vendorIds?.length && !input.from && !input.to;
     try {
-      const [row] = await reportRead((tx) => tx.$queryRaw<SummaryRow[]>(Prisma.sql`
-        WITH company AS (SELECT currency_code FROM "partner"."company_profile" WHERE id = 1),
-        docs AS (
-          SELECT r.id, r.due_date, r.currency_code, r.exchange_rate, sum(${OPEN_VALUE}) AS open_value
-          FROM "partner"."memo_receive" r
-          JOIN "partner"."memo_stock" s ON s.memo_receive_id = r.id
-          WHERE ${receiveFilters(input)} AND ${HAS_OPEN_ITEM}
-          GROUP BY r.id
-        )
-        SELECT count(*)::bigint AS documents,
-          count(*) FILTER (WHERE d.due_date < ${today}::date)::bigint AS overdue,
-          count(*) FILTER (WHERE d.due_date >= ${today}::date AND d.due_date <= ${today}::date + 7)::bigint AS due_in_7_days,
-          round(sum(d.open_value * CASE WHEN d.currency_code = (SELECT currency_code FROM company) THEN 1
-            ELSE COALESCE(d.exchange_rate, 1) END), 2) AS grand_total,
-          (SELECT currency_code FROM company) AS company_currency
-        FROM docs d`));
+      const [row] = await reportRead((tx) => broadUnfiltered
+        ? tx.$queryRaw<SummaryRow[]>(Prisma.sql`
+          WITH company AS MATERIALIZED (
+            SELECT currency_code FROM "partner"."company_profile" WHERE id = 1
+          ), docs AS MATERIALIZED (
+            SELECT r.id, r.due_date, r.currency_code, r.exchange_rate
+            FROM "partner"."memo_receive" r
+            WHERE ${receiveFilters(input)} AND ${HAS_OPEN_ITEM}
+          ), amounts AS (
+            SELECT round(sum(${OPEN_VALUE} * CASE WHEN d.currency_code = c.currency_code THEN 1
+              ELSE COALESCE(d.exchange_rate, 1) END), 2) AS grand_total
+            FROM "partner"."memo_stock" s
+            JOIN docs d ON d.id = s.memo_receive_id
+            CROSS JOIN company c
+          )
+          SELECT count(*)::bigint AS documents,
+            count(*) FILTER (WHERE d.due_date < ${today}::date)::bigint AS overdue,
+            count(*) FILTER (WHERE d.due_date >= ${today}::date AND d.due_date <= ${today}::date + 7)::bigint AS due_in_7_days,
+            (SELECT grand_total FROM amounts) AS grand_total,
+            (SELECT currency_code FROM company) AS company_currency
+          FROM docs d`)
+        : tx.$queryRaw<SummaryRow[]>(Prisma.sql`
+          WITH company AS (SELECT currency_code FROM "partner"."company_profile" WHERE id = 1),
+          docs AS (
+            SELECT r.id, r.due_date, r.currency_code, r.exchange_rate, sum(${OPEN_VALUE}) AS open_value
+            FROM "partner"."memo_receive" r
+            JOIN "partner"."memo_stock" s ON s.memo_receive_id = r.id
+            WHERE ${receiveFilters(input)} AND ${HAS_OPEN_ITEM}
+            GROUP BY r.id
+          )
+          SELECT count(*)::bigint AS documents,
+            count(*) FILTER (WHERE d.due_date < ${today}::date)::bigint AS overdue,
+            count(*) FILTER (WHERE d.due_date >= ${today}::date AND d.due_date <= ${today}::date + 7)::bigint AS due_in_7_days,
+            round(sum(d.open_value * CASE WHEN d.currency_code = (SELECT currency_code FROM company) THEN 1
+              ELSE COALESCE(d.exchange_rate, 1) END), 2) AS grand_total,
+            (SELECT currency_code FROM company) AS company_currency
+          FROM docs d`), { disableNestedLoop: broadUnfiltered });
       return {
         documents: Number(row?.documents ?? 0),
         overdue: Number(row?.overdue ?? 0),
@@ -341,6 +372,8 @@ export class MemoOutstandingService {
     const orderBy = sort === "dueDate"
       ? Prisma.sql`due_date ${dir}, doc_no ASC, id ASC`
       : Prisma.sql`${SORT_COLUMNS[sort]} ${dir}, id ASC`;
+    // Due Date is the entry-page default. Select that page before reading every item for each document;
+    // aggregate-based sorts keep the full docs query below because they must compare all documents.
     const docs = Prisma.sql`
       SELECT r.id, r.doc_no, r.doc_date, r.due_date, r.vendor_id, r.vendor_code_snapshot, r.vendor_name_snapshot, r.currency_code,
         ${DOC_SUMS}
@@ -348,17 +381,41 @@ export class MemoOutstandingService {
       JOIN "partner"."memo_stock" s ON s.memo_receive_id = r.id
       WHERE ${receiveFilters(input)} AND ${HAS_OPEN_ITEM}
       GROUP BY r.id`;
+    const openDocs = Prisma.sql`
+      SELECT r.id, r.doc_no, r.doc_date, r.due_date, r.vendor_id, r.vendor_code_snapshot, r.vendor_name_snapshot, r.currency_code
+      FROM "partner"."memo_receive" r
+      WHERE ${receiveFilters(input)} AND ${HAS_OPEN_ITEM}`;
     try {
       const { rows, total } = await reportRead(async (tx) => {
-        const rows = await tx.$queryRaw<(DocRow & Counted)[]>(Prisma.sql`
-          WITH docs AS (${docs})
-          SELECT id::text AS id, doc_no, doc_date, due_date, (due_date - ${today}::date)::int AS due_in_days,
-            vendor_id::text AS vendor_id, vendor_code_snapshot, vendor_name_snapshot, currency_code,
-            memo_pcs, memo_wt, return_pcs, return_wt, sold_pcs, sold_wt, reserve_pcs, reserve_wt, outstanding_pcs, outstanding_wt, open_value,
-            count(*) OVER ()::bigint AS total
-          FROM docs
-          ORDER BY ${orderBy}
-          LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}`);
+        const rows = sort === "dueDate"
+          ? await tx.$queryRaw<(DocRow & Counted)[]>(Prisma.sql`
+            WITH open_docs AS MATERIALIZED (${openDocs}),
+            page AS MATERIALIZED (
+              SELECT *, count(*) OVER ()::bigint AS total
+              FROM open_docs
+              ORDER BY due_date ${dir}, doc_no ASC, id ASC
+              LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}
+            ), sums AS (
+              SELECT s.memo_receive_id AS id, ${DOC_SUMS}
+              FROM page p
+              JOIN "partner"."memo_stock" s ON s.memo_receive_id = p.id
+              GROUP BY s.memo_receive_id
+            )
+            SELECT p.id::text AS id, p.doc_no, p.doc_date, p.due_date, (p.due_date - ${today}::date)::int AS due_in_days,
+              p.vendor_id::text AS vendor_id, p.vendor_code_snapshot, p.vendor_name_snapshot, p.currency_code,
+              sums.memo_pcs, sums.memo_wt, sums.return_pcs, sums.return_wt, sums.sold_pcs, sums.sold_wt,
+              sums.reserve_pcs, sums.reserve_wt, sums.outstanding_pcs, sums.outstanding_wt, sums.open_value, p.total
+            FROM page p JOIN sums ON sums.id = p.id
+            ORDER BY p.due_date ${dir}, p.doc_no ASC, p.id ASC`)
+          : await tx.$queryRaw<(DocRow & Counted)[]>(Prisma.sql`
+            WITH docs AS (${docs})
+            SELECT id::text AS id, doc_no, doc_date, due_date, (due_date - ${today}::date)::int AS due_in_days,
+              vendor_id::text AS vendor_id, vendor_code_snapshot, vendor_name_snapshot, currency_code,
+              memo_pcs, memo_wt, return_pcs, return_wt, sold_pcs, sold_wt, reserve_pcs, reserve_wt, outstanding_pcs, outstanding_wt, open_value,
+              count(*) OVER ()::bigint AS total
+            FROM docs
+            ORDER BY ${orderBy}
+            LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}`);
         return { rows, total: await pagedTotal(tx, rows, docs, input.page) };
       });
       return {
@@ -438,22 +495,19 @@ export class MemoOutstandingService {
   async customerSummary(input: MemoOutstandingCustomerFilters) {
     const today = toDbDate(bangkokToday(this.clock()));
     try {
+      // Fully returned lines contribute zero open value. Read only open stock lines so PostgreSQL can use
+      // memo_out_line_open_idx instead of probing all historical/manual lines for every eligible document.
       const [row] = await reportRead((tx) => tx.$queryRaw<SummaryRow[]>(Prisma.sql`
-        WITH company AS (SELECT currency_code FROM "partner"."company_profile" WHERE id = 1),
-        docs AS (
-          SELECT o.id, o.due_date, o.currency_code, o.exchange_rate, sum(${CUSTOMER_OPEN_VALUE}) AS open_value
-          FROM "partner"."memo_out" o
-          JOIN "partner"."memo_out_line" l ON l.memo_out_id = o.id AND ${STOCK_LINE}
-          WHERE ${memoOutFilters(input)} AND ${HAS_OUT_LINE}
-          GROUP BY o.id
-        )
-        SELECT count(*)::bigint AS documents,
-          count(*) FILTER (WHERE d.due_date < ${today}::date)::bigint AS overdue,
-          count(*) FILTER (WHERE d.due_date >= ${today}::date AND d.due_date <= ${today}::date + 7)::bigint AS due_in_7_days,
-          round(sum(d.open_value * CASE WHEN d.currency_code = (SELECT currency_code FROM company) THEN 1
-            ELSE COALESCE(d.exchange_rate, 1) END), 2) AS grand_total,
+        WITH company AS (SELECT currency_code FROM "partner"."company_profile" WHERE id = 1)
+        SELECT count(DISTINCT o.id)::bigint AS documents,
+          count(DISTINCT o.id) FILTER (WHERE o.due_date < ${today}::date)::bigint AS overdue,
+          count(DISTINCT o.id) FILTER (WHERE o.due_date >= ${today}::date AND o.due_date <= ${today}::date + 7)::bigint AS due_in_7_days,
+          round(sum(${CUSTOMER_OPEN_VALUE} * CASE WHEN o.currency_code = (SELECT currency_code FROM company) THEN 1
+            ELSE COALESCE(o.exchange_rate, 1) END), 2) AS grand_total,
           (SELECT currency_code FROM company) AS company_currency
-        FROM docs d`));
+        FROM "partner"."memo_out" o
+        JOIN "partner"."memo_out_line" l ON l.memo_out_id = o.id AND ${STOCK_LINE} AND ${CUSTOMER_LINE_OPEN}
+        WHERE ${memoOutFilters(input)}`));
       return {
         documents: Number(row?.documents ?? 0),
         overdue: Number(row?.overdue ?? 0),
@@ -474,6 +528,7 @@ export class MemoOutstandingService {
     const orderBy = sort === "dueDate"
       ? Prisma.sql`due_date ${dir}, doc_no ASC, id ASC`
       : Prisma.sql`${CUSTOMER_SORT_COLUMNS[sort]} ${dir}, id ASC`;
+    // The entry-page default sorts by Due Date. Select those headers first, then sum all stock lines only for that page.
     const docs = Prisma.sql`
       SELECT o.id, o.doc_no, o.doc_date, o.due_date, o.customer_id, o.customer_code_snapshot, o.customer_name_snapshot, o.currency_code,
         ${CUSTOMER_DOC_SUMS}
@@ -481,17 +536,41 @@ export class MemoOutstandingService {
       JOIN "partner"."memo_out_line" l ON l.memo_out_id = o.id AND ${STOCK_LINE}
       WHERE ${memoOutFilters(input)} AND ${HAS_OUT_LINE}
       GROUP BY o.id`;
+    const openDocs = Prisma.sql`
+      SELECT o.id, o.doc_no, o.doc_date, o.due_date, o.customer_id, o.customer_code_snapshot, o.customer_name_snapshot, o.currency_code
+      FROM "partner"."memo_out" o
+      WHERE ${memoOutFilters(input)} AND ${HAS_OUT_LINE}`;
     try {
       const { rows, total } = await reportRead(async (tx) => {
-        const rows = await tx.$queryRaw<(CustomerDocRow & Counted)[]>(Prisma.sql`
-          WITH docs AS (${docs})
-          SELECT id::text AS id, doc_no, doc_date, due_date, (due_date - ${today}::date)::int AS due_in_days,
-            customer_id::text AS customer_id, customer_code_snapshot, customer_name_snapshot, currency_code,
-            memo_pcs, memo_wt, return_pcs, return_wt, sold_pcs, sold_wt, outstanding_pcs, outstanding_wt, open_value,
-            count(*) OVER ()::bigint AS total
-          FROM docs
-          ORDER BY ${orderBy}
-          LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}`);
+        const rows = sort === "dueDate"
+          ? await tx.$queryRaw<(CustomerDocRow & Counted)[]>(Prisma.sql`
+            WITH open_docs AS MATERIALIZED (${openDocs}),
+            page AS MATERIALIZED (
+              SELECT *, count(*) OVER ()::bigint AS total
+              FROM open_docs
+              ORDER BY due_date ${dir}, doc_no ASC, id ASC
+              LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}
+            ), sums AS (
+              SELECT l.memo_out_id AS id, ${CUSTOMER_DOC_SUMS}
+              FROM page p
+              JOIN "partner"."memo_out_line" l ON l.memo_out_id = p.id AND ${STOCK_LINE}
+              GROUP BY l.memo_out_id
+            )
+            SELECT p.id::text AS id, p.doc_no, p.doc_date, p.due_date, (p.due_date - ${today}::date)::int AS due_in_days,
+              p.customer_id::text AS customer_id, p.customer_code_snapshot, p.customer_name_snapshot, p.currency_code,
+              sums.memo_pcs, sums.memo_wt, sums.return_pcs, sums.return_wt, sums.sold_pcs, sums.sold_wt,
+              sums.outstanding_pcs, sums.outstanding_wt, sums.open_value, p.total
+            FROM page p JOIN sums ON sums.id = p.id
+            ORDER BY p.due_date ${dir}, p.doc_no ASC, p.id ASC`)
+          : await tx.$queryRaw<(CustomerDocRow & Counted)[]>(Prisma.sql`
+            WITH docs AS (${docs})
+            SELECT id::text AS id, doc_no, doc_date, due_date, (due_date - ${today}::date)::int AS due_in_days,
+              customer_id::text AS customer_id, customer_code_snapshot, customer_name_snapshot, currency_code,
+              memo_pcs, memo_wt, return_pcs, return_wt, sold_pcs, sold_wt, outstanding_pcs, outstanding_wt, open_value,
+              count(*) OVER ()::bigint AS total
+            FROM docs
+            ORDER BY ${orderBy}
+            LIMIT ${input.pageSize} OFFSET ${(input.page - 1) * input.pageSize}`);
         return { rows, total: await pagedTotal(tx, rows, docs, input.page) };
       });
       return {
