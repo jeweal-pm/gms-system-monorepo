@@ -19,7 +19,7 @@ import {
   memoReturnHref,
   memoReturnLoadError,
   memoReturnSchema,
-  memoStockToLine,
+  lotToLine,
   pickedStockIds,
   toMemoReturnInput,
   useMemoReturnApi,
@@ -34,8 +34,8 @@ import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 export { MEMO_RETURN_HREF };
 
-/** memo-return design: checkbox, remove, Add row; Return Pcs fills Return Weight in proportion; STOCK ID first (Memo Stock has no stone code). */
-export const MemoReturnItemTable = returnItemTable({ rowControls: true, addRow: true, autoWeight: true, viewStoneCode: false });
+/** memo-return design: checkbox, remove, Add row; Return Pcs fills Return Weight in proportion; the Lot leads (lot-based-stock, no Stock ID). */
+export const MemoReturnItemTable = returnItemTable({ rowControls: true, addRow: true, autoWeight: true, viewStoneCode: false, lotView: true });
 
 /** Header (design 01): a new vendor empties rows picked from the previous vendor's Memo Stock. */
 function MemoReturnInfoForm({ options }: { options: MemoReturnOptions | undefined }) {
@@ -97,7 +97,7 @@ const CONFIG: DocumentFormConfig<MemoReturnFormValues, MemoReturnInput, MemoRetu
         emptyText={`No memo stock from this vendor in ${values.currency}.`}
         pickedIds={pickedStockIds(values.lines)}
         onCancel={onClose}
-        onConfirm={(items) => onAdd(items.map(memoStockToLine))}
+        onConfirm={(items) => onAdd(items.map(lotToLine))}
       />
     ),
     addedToast: (count) => `Added ${count} item${count === 1 ? "" : "s"} from Memo Stock`,

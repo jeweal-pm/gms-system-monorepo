@@ -51,8 +51,14 @@ describe("UT-AP-01 menu registry", () => {
     expect(APPROVE_PERMISSIONS).toContain("stock-transfer-location:APPROVE");
     expect(APPROVE_MENUS.filter((menu) => menu.party === "vendor").map((menu) => menu.slug)).toEqual(["memo-receive", "memo-return", "purchase-order", "purchase", "load-to-stock"]);
     expect(approveMenuFor("sale")).toMatchObject({ party: "customer", leaf: "sale", type: "sale", proc: "sale" });
-    expect(searchPlaceholder(approveMenuFor("reserve")!)).toBe("Search no., customer, stone, Stock ID");
-    expect(searchPlaceholder(approveMenuFor("purchase")!)).toBe("Search no., vendor, stone, Stock ID");
+    // lot-based-stock (UT-LOT-FE-09, owner Q3): Quotation, Reserve, Memo Out, Purchase, Memo Return search by Lot; the rest keep the Stock ID.
+    expect(searchPlaceholder(approveMenuFor("reserve")!)).toBe("Search no., customer, stone, Lot");
+    expect(searchPlaceholder(approveMenuFor("quotation")!)).toBe("Search no., customer, stone, Lot");
+    expect(searchPlaceholder(approveMenuFor("memo-out")!)).toBe("Search no., customer, stone, Lot");
+    expect(searchPlaceholder(approveMenuFor("memo-return")!)).toBe("Search no., vendor, stone, Lot");
+    expect(searchPlaceholder(approveMenuFor("sale")!)).toBe("Search no., customer, stone, Stock ID");
+    expect(searchPlaceholder(approveMenuFor("purchase")!)).toBe("Search no., vendor, stone, Lot");
+    expect(searchPlaceholder(approveMenuFor("memo-receive")!)).toBe("Search no., vendor, stone, Stock ID");
     expect(searchPlaceholder(approveMenuFor("merge-split")!)).toBe("Search no., stone, Stock ID");
   });
 

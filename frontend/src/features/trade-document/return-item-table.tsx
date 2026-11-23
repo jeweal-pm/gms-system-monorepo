@@ -28,6 +28,8 @@ export type ReturnTableOptions = {
   autoWeight: boolean;
   /** A saved document in view mode leads with "Stone Code · Stock ID · Lot" (memo return design, view). */
   viewStoneCode: boolean;
+  /** lot-based-stock (owner Q3, Memo Return): the Lot replaces the Stock ID in the first column. */
+  lotView?: boolean;
 };
  
 type Column = { title: string; sub?: string; className: string };
@@ -56,7 +58,8 @@ export function returnItemTable(options: ReturnTableOptions) {
     const outstandingWeight = add(ZERO, ...filledLines.map((line) => dec(line.outstandingWeightCt)));
     const controls = options.rowControls && !readOnly;
     const stoneCodeFirst = options.viewStoneCode && readOnly;
-    const first: Column = stoneCodeFirst ? { title: "Stone Code", sub: "Stock ID · Lot", className: "w-[200px]" } : { title: "Stock ID", sub: "Lot", className: "w-[180px]" };
+    const lotView = options.lotView === true;
+    const first: Column = lotView ? { title: "Lot / Stone Code", className: "w-[200px]" } : stoneCodeFirst ? { title: "Stone Code", sub: "Stock ID · Lot", className: "w-[200px]" } : { title: "Stock ID", sub: "Lot", className: "w-[180px]" };
     const left = [first, ...REST];
     const allChecked = returnLines.length > 0 && returnLines.every((line) => checkedKeys.has(line.key));
     const lead = controls ? 3 : 1;
@@ -159,7 +162,7 @@ export function returnItemTable(options: ReturnTableOptions) {
                     )}
                     <td className="px-3 py-4 text-center text-[#6B7480]">{index + 1}</td>
                     {filled ? (
-                      <FilledCells line={line} stoneCodeFirst={stoneCodeFirst} />
+                      <FilledCells line={line} stoneCodeFirst={stoneCodeFirst} lotView={lotView} />
                     ) : (
                       <td colSpan={left.length} className="px-3 py-4 text-[#A9B1B9]">
                         {emptyRowText}
@@ -275,11 +278,16 @@ function ReturnInput({ index, field, label, line, autoWeight }: { index: number;
   );
 }
 
-function FilledCells({ line, stoneCodeFirst }: { line: QuotationLine; stoneCodeFirst: boolean }) {
+function FilledCells({ line, stoneCodeFirst, lotView }: { line: QuotationLine; stoneCodeFirst: boolean; lotView: boolean }) {
   return (
     <>
       <td className="px-3 py-4">
-        {stoneCodeFirst ? (
+        {lotView ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {line.lot ? <Badge variant="lot">{line.lot}</Badge> : <span className="text-[#A9B1B9]">—</span>}
+            <span className="font-medium">{line.stoneCode || "—"}</span>
+          </div>
+        ) : stoneCodeFirst ? (
           <>
             <div className="font-medium">{line.stoneCode || "—"}</div>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[#6B7480]">

@@ -24,7 +24,7 @@ describe("UT-AP-06 states", () => {
     expect(markup).toContain("Nothing waiting");
     expect(markup).toContain("Every document in this menu has been reviewed.");
     expect(EMPTY_SEARCH_TITLE).toBe("No matching documents");
-    expect(emptySearchText(reserve)).toBe("Try another document no., customer, stone or Stock ID.");
+    expect(emptySearchText(reserve)).toBe("Try another document no., customer, stone or Lot.");
     expect(emptySearchText(approveMenuFor("merge-split")!)).toBe("Try another document no., stone or Stock ID.");
   });
 

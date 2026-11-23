@@ -245,3 +245,25 @@ export function PickerNote({ text }: { text: string | null | undefined }) {
     </div>
   );
 }
+
+/**
+ * lot-based-stock FE-LOT-001 (UI notes § Lot cell): the identity cell of a lot row. Line 1 the Lot chip then the Stone
+ * Code in bold; without a lot "—" and the Stone Code. `detail` (a second line, e.g. the vendor) and the item note
+ * follow. No Stock ID is ever shown (owner Q-LOT-10).
+ */
+export function LotCell({ lot, stoneCode, note, detail }: { lot: string | null | undefined; stoneCode: string | null | undefined; note?: string | null; detail?: ReactNode }) {
+  return (
+    <td className={pickerCell}>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {lot ? <PickerLot>{lot}</PickerLot> : <span className="text-gms-text-muted">—</span>}
+        <span className="font-medium">{stoneCode || "—"}</span>
+      </div>
+      {detail && <div className={pickerSub}>{detail}</div>}
+      <PickerNote text={note} />
+    </td>
+  );
+}
+
+/** Checkbox label of a lot row (UI notes § Lot cell). */
+export const lotSelectLabel = (lot: string | null | undefined, stoneCode: string | null | undefined, refDocNo: string) =>
+  lot ? `Select lot ${lot} ${stoneCode ?? ""}`.trim() : `Select ${stoneCode || "item"} from ${refDocNo}`.trim();

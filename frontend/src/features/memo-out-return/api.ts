@@ -243,8 +243,8 @@ export function useMemoOutReturnApi(customerId: string | undefined, docDate: str
         utils.memoOutReturn.get.invalidate(),
         utils.memoOutReturn.nextNumber.invalidate(),
         utils.memoOutReturn.outstanding.invalidate(),
-        utils.memoStock.list.invalidate(),
-        utils.fromStock.list.invalidate(),
+        utils.memoStock.lots.invalidate(),
+        utils.fromStock.lots.invalidate(),
       ]),
     busy: create.isPending || update.isPending || remove.isPending || submit.isPending || restore.isPending,
   };

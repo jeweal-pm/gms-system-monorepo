@@ -30,18 +30,18 @@ import { DocumentKindContext } from "@/features/quotation/document-kind";
 import { emptyQuotation } from "@/features/quotation/lib/defaults";
 import type { QuotationLine } from "@/features/quotation/schema";
 import { gatewayError } from "../partner/helpers";
-import { ID, memoRow, savedLine, savedPurchase, STOCK } from "./fixtures";
+import { ID, LOT, memoRow, savedLine, savedPurchase } from "./fixtures";
 
 /**
  * UT-PU-12…16: purchase UI rev 3 + SA rev 2 (owner 2026-11-05/06, ADR-0043): the Sold and In-stock parts of one Memo
  * Stock item merge into one row (Sold part first), and a Sold row edits only its Price.
  */
 
-const OTHER = "99999999-9999-4999-8999-999999999999";
+const OTHER = `ML${"9".repeat(32)}`;
 const noop = () => undefined;
-// Owner example: Sold 1 pc / 0.76 ct + In stock 1 pc / 0.76 ct of one Stock ID.
-const sold = (memoStockId = STOCK) => memoStockToPurchaseLine(memoRow({ key: `${memoStockId}:SOLD`, memoStockId, status: "SOLD", availablePcs: 1, availableWeightCt: "0.760", netUnitPrice: "1450.0000" }));
-const inStock = (memoStockId = STOCK) => memoStockToPurchaseLine(memoRow({ key: `${memoStockId}:IN_STOCK`, memoStockId, status: "IN_STOCK", availablePcs: 1, availableWeightCt: "0.760", netUnitPrice: "1450.0000" }));
+// Owner example: Sold 1 pc / 0.76 ct + In stock 1 pc / 0.76 ct of one lot.
+const sold = (lotKey = LOT) => memoStockToPurchaseLine(memoRow({ lotKey, memoGroup: "SOLD", pendingPcs: 1, pendingWeightCt: "0.760", netUnitPrice: "1450.0000" }));
+const inStock = (lotKey = LOT) => memoStockToPurchaseLine(memoRow({ lotKey, memoGroup: "IN_STOCK", pendingPcs: 1, pendingWeightCt: "0.760", netUnitPrice: "1450.0000" }));
 
 const valid = (lines: PurchaseLine[]): PurchaseFormValues => ({ ...emptyPurchase(), docDate: "2026-11-06", dueDate: "2026-12-06", vendorId: ID, addressId: ID, currency: "USD", lines });
 const issues = (values: PurchaseFormValues) => {
@@ -60,25 +60,25 @@ function panel(line: QuotationLine) {
 const input = (html: string, field: string) => new RegExp(`<input[^>]*name="lines\\.0\\.${field}"[^>]*>`).exec(html)?.[0] ?? "";
 
 describe("UT-PU-12 finding pairs (R3-01, Q-PU-24/27)", () => {
-  it("a pair is the SOLD and the IN_STOCK row of one Memo Stock item, ticked together", () => {
+  it("a pair is the SOLD and the IN_STOCK row of one lot, ticked together", () => {
     const picked = [inStock(), sold(), inStock(OTHER)];
     const pairs = findMergePairs(picked, []);
     expect(pairs).toHaveLength(1);
-    expect(pairs[0]).toMatchObject({ memoStockId: STOCK, stockId: "260003", sold: { line: picked[1], existingIndex: null }, inStock: { line: picked[0], existingIndex: null } });
+    expect(pairs[0]).toMatchObject({ itemKey: LOT, lot: "L-2607-007", sold: { line: picked[1], existingIndex: null }, inStock: { line: picked[0], existingIndex: null } });
     expect(findMergePairs([sold(), inStock(OTHER)], [])).toEqual([]);
     expect(findMergePairs([sold()], [])).toEqual([]);
   });
 
   it("a ticked row pairs with the other part already on the form (Q-PU-27), not with a merged row", () => {
     const onForm = [emptyPurchase().lines[0]!, inStock()];
-    expect(findMergePairs([sold()], onForm)).toMatchObject([{ memoStockId: STOCK, inStock: { existingIndex: 1 }, sold: { existingIndex: null } }]);
+    expect(findMergePairs([sold()], onForm)).toMatchObject([{ itemKey: LOT, inStock: { existingIndex: 1 }, sold: { existingIndex: null } }]);
     const mergedOnForm = [mergedPurchaseLine(sold(), inStock())];
     expect(findMergePairs([sold()], mergedOnForm)).toEqual([]);
   });
 
   it("the merged row leaves both picker rows out; a single row leaves only its own", () => {
-    expect([...pickedSourceKeys([mergedPurchaseLine(sold(), inStock())])]).toEqual([`${STOCK}:SOLD`, `${STOCK}:IN_STOCK`]);
-    expect([...pickedSourceKeys([sold()])]).toEqual([`${STOCK}:SOLD`]);
+    expect([...pickedSourceKeys([mergedPurchaseLine(sold(), inStock())])]).toEqual([`${LOT}:SOLD`, `${LOT}:IN_STOCK`]);
+    expect([...pickedSourceKeys([sold()])]).toEqual([`${LOT}:SOLD`]);
   });
 });
 
@@ -90,8 +90,8 @@ describe("UT-PU-13 merge and don't merge (R3-01/02)", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toBe(picked[0]);
     expect(rows[1]).toMatchObject({
-      memoStockId: STOCK, memoGroup: "MERGED", pcs: "2", weightCt: "1.520", stockPendingPcs: "2", stockPendingWeightCt: "1.520",
-      stockMinPcs: "1", stockMinWeightCt: "0.760", unitPrice: "1450.00", stockId: "260003", source: "STOCK",
+      lotKey: LOT, memoGroup: "MERGED", pcs: "2", weightCt: "1.520", stockPendingPcs: "2", stockPendingWeightCt: "1.520",
+      stockMinPcs: "1", stockMinWeightCt: "0.760", unitPrice: "1450.00", stockId: "", source: "STOCK",
     });
   });
 
@@ -106,14 +106,15 @@ describe("UT-PU-13 merge and don't merge (R3-01/02)", () => {
   it("the question (design 09/10): title, both parts with amounts, total to buy, Merge preselected, Back to list", () => {
     const pairs = findMergePairs([sold(), inStock()], []);
     const html = renderToStaticMarkup(createElement(MergeDialog, { pairs, currency: "USD", separateCount: 2, onMerge: noop, onSplit: noop, onBack: noop }));
-    expect(mergeTitle(pairs)).toBe("260003 is both sold and in stock");
-    expect(html).toContain(">260003 is both sold and in stock</h2>");
+    expect(mergeTitle(pairs)).toBe("Lot L-2607-007 is both sold and in stock");
+    expect(html).toContain(">Lot L-2607-007 is both sold and in stock</h2>");
     expect(html).toContain(MERGE_BODY);
     expect(mergePartAmount(sold())).toBe("1102.00");
     expect(html).toContain("1,102.00 USD");
     expect(html).toContain("Total to buy");
     expect(html).toContain("2,204.00 USD");
-    expect(html).toContain("MR-1001 · L-2607-007");
+    expect(html).toContain("MR-1001");
+    expect(html).not.toContain("260003");
     expect(html).toMatch(/<input type="radio"[^>]*checked=""[^>]*>[\s\S]*Merge into one row/);
     expect(html).toContain("Recommended if you buy it all");
     expect(html).toContain("Don&#x27;t merge · keep separate rows");
@@ -152,7 +153,7 @@ describe("UT-PU-14 merged-row limits (R3-02, Q-PU-31)", () => {
   });
 
   it("the table tags it and the row panel explains the parts; Pcs / Weight stay editable", () => {
-    expect(purchaseTableLine(merged()).stockId).toBe(`260003 · ${MERGED_TAG}`);
+    expect(purchaseTableLine(merged()).stockId).toBe(MERGED_TAG);
     expect(purchaseStockNote(merged())).toBe("Sold 1 pcs / 0.760 cts must be purchased. Up to 1 pcs / 0.760 cts more from stock.");
     const html = panel(merged());
     expect(input(html, "pcs")).not.toMatch(/ readOnly=""/);
@@ -171,7 +172,7 @@ describe("UT-PU-15 Sold rows edit only Price (R3-03, Q-PU-29/30)", () => {
     expect(html).toContain("Sold to customers: 1 pcs / 0.760 cts must be purchased whole.");
     const stockHtml = panel(inStock());
     expect(input(stockHtml, "pcs")).not.toMatch(/ readOnly=""/);
-    expect(stockHtml).toContain("Pending 1 pcs");
+    expect(stockHtml).toMatch(/Max 1 pcs \/ [\d.]+ ct in lot L-2607-007/);
     expect(issues(valid([{ ...sold(), pcs: "0", weightCt: "0" }]))).toContain("lines.0.pcs: At least 1 pcs (already sold to customers)");
   });
 });
@@ -179,9 +180,9 @@ describe("UT-PU-15 Sold rows edit only Price (R3-03, Q-PU-29/30)", () => {
 describe("UT-PU-16 contract mapping and errors (SA-PU-26)", () => {
   it("a merged row is sent as memoGroup MERGED; a saved one comes back with its min and cap", () => {
     const sent = toPurchaseInput(valid([mergedPurchaseLine(sold(), inStock())]));
-    expect(sent.lines[0]).toMatchObject({ source: "STOCK", memoStockId: STOCK, memoGroup: "MERGED", pcs: 2, weightCt: "1.520", discount: { type: "NONE" } });
+    expect(sent.lines[0]).toMatchObject({ source: "STOCK", lotKey: LOT, memoStockId: null, memoGroup: "MERGED", pcs: 2, weightCt: "1.520", discount: { type: "NONE" } });
     const detail = savedPurchase({
-      lines: [savedLine({ source: "STOCK", memoStockId: STOCK, memoGroup: "MERGED", stockId: "260003", stoneCodeId: null, discount: { type: "NONE", value: "0" }, memoReceive: { docNo: "MR-1001" }, pcs: 2, weightCt: "1.520", limitPcs: 2, limitWeightCt: "1.520", minPcs: 1, minWeightCt: "0.760", soldPartPcs: null, soldPartWeightCt: null })],
+      lines: [savedLine({ source: "STOCK", lotKey: LOT, memoStockId: null, memoGroup: "MERGED", stockId: null, stoneCodeId: null, discount: { type: "NONE", value: "0" }, memoReceive: { docNo: "MR-1001" }, pcs: 2, weightCt: "1.520", limitPcs: 2, limitWeightCt: "1.520", minPcs: 1, minWeightCt: "0.760", soldPartPcs: null, soldPartWeightCt: null })],
     });
     // ADR-0048 (owner 2026-11-11): saved photos load back in order, read from this document's own photo route.
     expect(fromPurchase({ ...detail, lines: detail.lines.map((line) => ({ ...line, photoIds: ["p1", "p2"] })) } as typeof detail).lines[0]?.photos).toEqual([
@@ -220,10 +221,10 @@ describe("INV-20261107-002/003 vendor change and row tags", () => {
     expect(vendorChangeConfirm(1, "AED").body).toBe("This removes the 1 row taken from Memo Stock and Purchase Orders. Rows you keyed in stay. The currency changes to AED.");
   });
 
-  it("separate Sold and In-stock rows of one Stock ID show their part in the table", () => {
-    expect(purchaseTableLine(sold()).stockId).toBe("260003 · Sold");
-    expect(purchaseTableLine(inStock()).stockId).toBe("260003 · In stock");
-    expect(purchaseTableLine(mergedPurchaseLine(sold(), inStock())).stockId).toBe(`260003 · ${MERGED_TAG}`);
+  it("separate Sold and In-stock rows of one lot show their part in the table", () => {
+    expect(purchaseTableLine(sold()).stockId).toBe("Sold");
+    expect(purchaseTableLine(inStock()).stockId).toBe("In stock");
+    expect(purchaseTableLine(mergedPurchaseLine(sold(), inStock())).stockId).toBe(MERGED_TAG);
   });
 });
 

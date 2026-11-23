@@ -3,11 +3,12 @@
 import { skipToken } from "@tanstack/react-query";
 import type { InferQueryLikeData } from "@trpc/react-query/shared";
 import { fromTradeDocument, toTradeDocumentInput, type TradeDocumentDetail } from "@/features/quotation/api";
-import { isFilledLine } from "@/features/quotation/schema";
+import { isFilledLine, type QuotationLine } from "@/features/quotation/schema";
 import { documentLoadError, mapDocumentSaveError, daybookInput, daybookQueryOptions, mapDocumentRestoreError } from "@/features/trade-document/document-api";
 import type { DocumentApi, SaveOutcome } from "@/features/trade-document/document-form";
 import { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError, retryTransient } from "@/lib/trpc-error";
+import { lotPendingShortText, lotReferenceText, lotTooLargeMessage, sentLotLines } from "@/features/trade-document/lot-stock";
 import { purchaseLineSource, type PurchaseFormValues } from "./form";
 import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
@@ -30,7 +31,7 @@ const NO_DISCOUNT = { type: "NONE" as const, value: "0" };
 
 /**
  * Form values → `PurchaseInput` (api-contract): empty rows dropped; each row names its source. A picked row sends
- * `memoStockId` + `memoGroup` (STOCK) or `purchaseOrderLineId` (PURCHASE_ORDER), no line discount (D8) and no stone code
+ * `lotKey` (a lot) or `memoStockId` (a legacy line) + `memoGroup` (STOCK) or `purchaseOrderLineId` (PURCHASE_ORDER), no line discount (D8) and no stone code
  * id (the server copies every source field, SA-PU-14). On update a saved row sends its line `id`, so it keeps its Stock
  * ID. No photos (Q-PU-11).
  */
@@ -46,12 +47,14 @@ export function toPurchaseInput(values: PurchaseFormValues) {
       const base = { ...line, ...id };
       const source = purchaseLineSource(row);
       if (source === "STOCK") {
-        return { ...base, source, stoneCodeId: null, discount: NO_DISCOUNT, memoStockId: row.memoStockId, memoGroup: row.memoGroup || null, purchaseOrderLineId: null };
+        // lot-based-stock: a lot pick sends `lotKey` alone; a legacy line keeps its item id.
+        const item = row.lotKey ? { memoStockId: null, lotKey: row.lotKey } : { memoStockId: row.memoStockId || null, lotKey: null };
+        return { ...base, source, stoneCodeId: null, discount: NO_DISCOUNT, ...item, memoGroup: row.memoGroup || null, purchaseOrderLineId: null };
       }
       if (source === "PURCHASE_ORDER") {
-        return { ...base, source, stoneCodeId: null, discount: NO_DISCOUNT, memoStockId: null, memoGroup: null, purchaseOrderLineId: row.purchaseOrderLineId };
+        return { ...base, source, stoneCodeId: null, discount: NO_DISCOUNT, memoStockId: null, lotKey: null, memoGroup: null, purchaseOrderLineId: row.purchaseOrderLineId };
       }
-      return { ...base, source, memoStockId: null, memoGroup: null, purchaseOrderLineId: null };
+      return { ...base, source, memoStockId: null, lotKey: null, memoGroup: null, purchaseOrderLineId: null };
     }),
     vendorId: values.vendorId,
     addressId: values.addressId,
@@ -73,7 +76,10 @@ export function fromPurchase(detail: PurchaseDetail): PurchaseFormValues {
       return {
         ...line,
         source: picked ? ("STOCK" as const) : ("MANUAL" as const),
-        stockId: saved.stockId ?? "",
+        // Q-LOT-10: the Stock ID is never read; the row shows its Lot.
+        stockId: "",
+        // `lotKey` is returned at run time (api-contract); the backend line type does not declare it yet.
+        lotKey: (saved as { lotKey?: string | null }).lotKey ?? "",
         stoneCodeId: picked ? "" : line.stoneCodeId,
         memoStockId: saved.memoStockId ?? "",
         memoGroup: saved.memoGroup ?? "",
@@ -104,13 +110,15 @@ const rowsText = (errors: readonly FieldError[]) => {
   const rows = [...new Set(errors.map((entry) => rowOf(entry.path)))].sort((a, b) => a - b);
   return rows.length === 1 ? `Row ${rows[0]}` : `Rows ${rows.join(", ")}`;
 };
-const isQuantityShort = (entry: FieldError) => /^lines\.\d+\.(pcs|weightCt)$/.test(entry.path) && entry.code === "exceeds_available";
+const isQuantityShort = (entry: FieldError) => /^lines\.\d+\.(pcs|weightCt)$/.test(entry.path) && (entry.code === "exceeds_available" || entry.code === "exceeds_pending");
 /** rev 3 (ADR-0043): a row below the Sold part, a Sold row not bought whole, or an item with nothing left to merge. */
 const isSoldRule = (entry: FieldError) => ["below_sold", "must_equal_sold", "not_mergeable"].includes(entry.code);
 export const PURCHASE_BELOW_SOLD = "At least the quantity already sold to customers";
 /** location-master SA-LM-05 (ADR-0053). */
 export const PURCHASE_LOCATION_UNKNOWN = "Choose a location from Location Master";
 export const PURCHASE_MUST_EQUAL_SOLD = "A sold item is purchased whole";
+/** lot-based-stock: a refused lot (`lines.N.reference`). */
+const isLotReference = (entry: FieldError) => entry.path.endsWith(".reference");
 const isRowReference = (entry: FieldError) => /^lines\.\d+\.(memoStockId|purchaseOrderLineId|stoneCodeId)$/.test(entry.path);
 
 /**
@@ -118,8 +126,11 @@ const isRowReference = (entry: FieldError) => /^lines\.\d+\.(memoStockId|purchas
  * Save `VALIDATION_ERROR exceeds_available` (nothing saved), at Approve `PURCHASE_PENDING_SHORT` (nothing approved, every
  * short row listed). The conflict code is `PURCHASE_CHANGED`. Entered data is always kept.
  */
-export function mapPurchaseSaveError(error: unknown): SaveOutcome {
-  const { domainCode, fieldErrors } = readDomainError(error);
+export function mapPurchaseSaveError(error: unknown, values?: { lines: readonly QuotationLine[] }): SaveOutcome {
+  const { domainCode, fieldErrors, details } = readDomainError(error);
+  const sent = sentLotLines(values);
+  const lotRefs = fieldErrors.filter(isLotReference);
+  const lotRefRows = lotRefs.map((entry) => ({ name: `lines.${rowOf(entry.path) - 1}.pcs`, message: lotReferenceText(rowOf(entry.path), entry.code, "purchase").replace(`Row ${rowOf(entry.path)}: `, "") }));
   const short = fieldErrors.filter(isQuantityShort);
   const references = fieldErrors.filter(isRowReference);
   const soldRules = fieldErrors.filter(isSoldRule);
@@ -129,15 +140,22 @@ export function mapPurchaseSaveError(error: unknown): SaveOutcome {
   }));
   const onRows = (entries: readonly FieldError[], message: string) => entries.map((entry) => ({ name: entry.path, message }));
   switch (domainCode) {
+    case "STOCK_LOT_UNAVAILABLE":
+      return { fieldErrors: lotRefRows, message: lotRefs[0] ? lotReferenceText(rowOf(lotRefs[0].path), lotRefs[0].code, "purchase") : "A lot on this purchase has nothing left. Remove the row." };
+    case "STOCK_LOT_TOO_LARGE":
+      return { fieldErrors: [], message: lotTooLargeMessage(details, sent) };
     case "PURCHASE_PENDING_SHORT": {
       const lost = fieldErrors.filter((entry) => entry.path.endsWith(".purchaseOrderLineId"));
       const all = [...short, ...lost, ...soldRules];
+      const lotRow = lotPendingShortText(details, fieldErrors, sent);
+      if (lotRow) return { fieldErrors: [...onRows(short, PURCHASE_AVAILABLE_SHORT), ...onRows(lost, "No longer available"), ...soldRuleRows], message: `${lotRow}. Lower the quantity or remove the row, then save again. Nothing was saved.` };
       return {
         fieldErrors: [...onRows(short, PURCHASE_AVAILABLE_SHORT), ...onRows(lost, "No longer available"), ...soldRuleRows],
         message: `${all.length > 0 ? rowsText(all) : "Some rows"}: not enough is available any more. Lower the quantity or remove the row, then save again. Nothing was saved.`,
       };
     }
     case "VALIDATION_ERROR": {
+      if (lotRefs.length > 0) return { fieldErrors: lotRefRows, message: lotReferenceText(rowOf(lotRefs[0]!.path), lotRefs[0]!.code, "purchase") };
       // location-master SA-LM-05: a typed name that isn't an active Location Master name.
       const locations = fieldErrors.filter((entry) => entry.code === "unknown_location");
       // The server names `lines.i.location`; the row form field is `lines.i.locationId`.

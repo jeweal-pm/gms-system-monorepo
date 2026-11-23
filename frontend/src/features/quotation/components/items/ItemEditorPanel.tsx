@@ -265,7 +265,7 @@ export function ItemEditorPanel({
   const locked = readOnly || fromStock;
   // memo-out rev 2: a From Stock row takes part or all of its item, up to the pending it was picked with.
   const stockQuantity = fromStock && Boolean(kind.stockQuantity);
-  const stockPending = line as typeof line & { ownStockId?: string; stockPendingPcs?: string; stockPendingWeightCt?: string; stockMinPcs?: string; stockMinWeightCt?: string };
+  const stockPending = line as typeof line & { ownStockId?: string; lotKey?: string; stockPendingPcs?: string; stockPendingWeightCt?: string; stockMinPcs?: string; stockMinWeightCt?: string };
   // Purchase rev 3 (Q-PU-29): a row whose minimum equals its cap is bought whole, so its quantity is fixed; Price stays editable.
   const fixedQuantity = stockQuantity && Boolean(stockPending.stockMinPcs)
     && stockPending.stockMinPcs === stockPending.stockPendingPcs && stockPending.stockMinWeightCt === stockPending.stockPendingWeightCt;
@@ -361,7 +361,7 @@ export function ItemEditorPanel({
           </div>
         </div>
         <h2 className="mt-2 flex items-center gap-2 text-lg font-medium text-[#1C252E]">
-          {!isFilledLine(line) ? "New item" : kind.stoneCode ? line.stoneCode || line.stockId || "Item" : line.stockId ? `Stock ID ${line.stockId}` : "Item"}
+          {!isFilledLine(line) ? "New item" : kind.stockId === "lot" ? line.stoneCode || line.lot || "Item" : kind.stoneCode ? line.stoneCode || line.stockId || "Item" : line.stockId ? `Stock ID ${line.stockId}` : "Item"}
           {fromStock && (
             <span className="inline-flex items-center gap-1 rounded bg-[#EEF0F2] px-2 py-0.5 text-xs font-normal text-[#6B7480]">
               <Lock className="size-3" /> From stock
@@ -388,7 +388,7 @@ export function ItemEditorPanel({
               </Field>
               {!line.stockId && <p className="mt-1 pl-3 text-xs text-[#6B7480]">Assigned when you save</p>}
             </div>
-          ) : kind.stockId === "from-stock" ? (
+          ) : kind.stockId === "lot" ? null : kind.stockId === "from-stock" ? (
             <Field label="Stock ID">
               <ReadonlyBox compact value={line.stockId} placeholder={kind.stockIdEmpty ?? "From stock only"} />
             </Field>
@@ -462,7 +462,7 @@ export function ItemEditorPanel({
           </Field>
           {stockQuantity && (
             <p className="col-span-full -mt-2 text-xs text-[#6B7480]">
-              {kind.stockNote?.(line) ?? `${stockPending.ownStockId ? "Available" : "Pending"} ${stockPending.stockPendingPcs || "0"} pcs / ${nf.weight(stockPending.stockPendingWeightCt || "0")} ct`}
+              {kind.stockNote?.(line) ?? (stockPending.lotKey && kind.stockId === "lot" ? `Max ${stockPending.stockPendingPcs || "0"} pcs / ${nf.weight(stockPending.stockPendingWeightCt || "0")} ct${line.lot ? ` in lot ${line.lot}` : " in this lot"}` : `${stockPending.ownStockId ? "Available" : "Pending"} ${stockPending.stockPendingPcs || "0"} pcs / ${nf.weight(stockPending.stockPendingWeightCt || "0")} ct`)}
             </p>
           )}
           <Field label="Price Unit">

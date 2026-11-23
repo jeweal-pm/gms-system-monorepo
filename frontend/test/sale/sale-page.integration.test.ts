@@ -27,7 +27,7 @@ import { SALE_PHOTOS, saleKeys } from "@/features/sale/api";
 import { inventoryApprovalKeys } from "@/features/inventory/approval";
 import { todayIso } from "@/features/quotation/lib/format";
 import { MemoStockModal } from "@/features/trade-document/memo-stock-modal";
-import { emptySale, memoStockToSaleLine, reserveLineToSaleLine, type SaleFormValues } from "@/features/sale/form";
+import { emptySale, lotToSaleLine, reserveLineToSaleLine, type SaleFormValues } from "@/features/sale/form";
 import type { ConfirmRequest } from "@/features/quotation/components/use-confirm";
 import { authTrpc, createAuthTrpcClient } from "@/lib/auth-trpc";
 import { createMasterTrpcClient, masterTrpc } from "@/lib/master-trpc";
@@ -168,8 +168,9 @@ describe("IT-SL-02 live Sale page (FE-SL-006, owner 2026-11-20 \"ทำหน้
     const html = render(queryClient, createElement(SaleDetailRoutePage, { params }));
     expect(html).toContain("SL-1001");
     expect(html).toContain("Draft");
+    // Sale keeps the Stock ID of a Reserve line (owner Q3); a lot line has none and shows its caption alone.
     expect(html.indexOf("260014 · from RS-1001")).toBeGreaterThan(-1);
-    expect(html.indexOf("260009 · from MR-26100012")).toBeGreaterThan(html.indexOf("260014 · from RS-1001"));
+    expect(html.indexOf("from MR-26100012")).toBeGreaterThan(html.indexOf("260014 · from RS-1001"));
     expect(button(html, "Edit")).not.toContain('disabled=""');
   });
 
@@ -177,17 +178,18 @@ describe("IT-SL-02 live Sale page (FE-SL-006, owner 2026-11-20 \"ทำหน้
     expect(SALE_BINDING.approvalType).toBe("sale");
     expect(SALE_BINDING.photos).toBe(SALE_PHOTOS);
     expect(SALE_CONFIG.photos?.route).toBe("/api/inventory/v1/sale/photos");
-    const values: SaleFormValues = { ...emptySale(), customerId: ID, currency: "USD", lines: [reserveLineToSaleLine(reserveLine()), memoStockToSaleLine(stockItem())] };
+    const values: SaleFormValues = { ...emptySale(), customerId: ID, currency: "USD", lines: [reserveLineToSaleLine(reserveLine()), lotToSaleLine(stockItem())] };
     const reserve = SALE_BINDING.fromReserve({ values, onClose: () => undefined, onAdd: () => undefined }) as ReactElement<{ customerId: string; currency: string; excluded: Set<string> }>;
     expect(reserve.type).toBe(ReserveLinePicker);
     expect(reserve.props.customerId).toBe(ID);
     expect(reserve.props.currency).toBe("USD");
     expect([...reserve.props.excluded]).toEqual([reserveLine().reserveLineId]);
-    const stock = SALE_BINDING.fromStock({ values, onClose: () => undefined, onAdd: () => undefined }) as ReactElement<{ title: string; showPrice: boolean; pickedIds: Set<string>; vendorId?: string }>;
+    const stock = SALE_BINDING.fromStock({ values, onClose: () => undefined, onAdd: () => undefined }) as ReactElement<{ title: string; showPrice: boolean; pickedIds: Set<string>; vendorId?: string; fromStock?: boolean; memoOnly?: boolean }>;
     expect(stock.type).toBe(MemoStockModal);
     expect(stock.props).toMatchObject({ title: "Add From Stock", showPrice: false });
+    expect(stock.props).toMatchObject({ fromStock: true, memoOnly: true });
     expect(stock.props.vendorId).toBeUndefined();
-    expect([...stock.props.pickedIds]).toEqual([stockItem().id]);
+    expect([...stock.props.pickedIds]).toEqual([stockItem().lotKey]);
   });
 });
 
@@ -300,7 +302,7 @@ describe("IT-SL-05 customer / currency change guard (TC-SL-07)", () => {
   }
   const start = (): SaleFormValues => ({
     ...emptySale(), customerId: ID, shippingAddressId: ID, invoiceAddressId: ID, currency: "THB", exchangeRate: "",
-    lines: [reserveLineToSaleLine(reserveLine()), memoStockToSaleLine(stockItem()), ...emptySale().lines.slice(2)],
+    lines: [reserveLineToSaleLine(reserveLine()), lotToSaleLine(stockItem()), ...emptySale().lines.slice(2)],
   });
 
   it("OK clears only the From Reserve rows and keeps the new customer", async () => {

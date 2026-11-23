@@ -19,9 +19,10 @@ import {
   useQuotationOptions,
   type QuotationAccess,
 } from "../api";
+import { DocumentKindContext, QUOTATION_LOT_KIND } from "../document-kind";
 import { QuotationOptionsContext } from "../options-context";
 import { calculateTotals } from "../lib/calculate";
-import { memoStockToStockLine, pickedStockIds } from "@/features/trade-document/customer-stock";
+import { lotToStockLine, pickedStockIds } from "@/features/trade-document/customer-stock";
 import { invalidSaveMessage, lineErrorMessages } from "@/features/trade-document/document-form";
 import { MemoStockModal } from "@/features/trade-document/memo-stock-modal";
 import type { FromStockItem } from "@/features/trade-document/from-stock-api";
@@ -98,7 +99,7 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, flow = 
   /* ---------- document actions ---------- */
 
   function showError(error: unknown) {
-    const outcome = mapSaveError(error);
+    const outcome = mapSaveError(error, getValues());
     for (const field of outcome.fieldErrors) setError(field.name, { type: "server", message: field.message });
     setToast(outcome.message);
     // FE-SD-003: deleted in another tab; reload it (the page remounts read-only with the banner) and keep the message.
@@ -167,8 +168,6 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, flow = 
       setToast(invalidSaveMessage(rowMessages));
     },
   );
-
-
 
   const onCancel = async () => {
     if (formState.isDirty && !(await confirm(DISCARD_CHANGES_CONFIRM))) return;
@@ -258,7 +257,7 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, flow = 
     if (action === "duplicate") {
       const source = getValues(`lines.${index}`);
       // ห้าม stock ซ้ำ → สำเนาเป็น manual line ไม่มี stockId
-      lineArray.insert(index + 1, { ...source, key: newKey(), source: "MANUAL", stockId: "", memoStockId: undefined, ownStockId: undefined, stockPendingPcs: undefined, stockPendingWeightCt: undefined, photos: [] });
+      lineArray.insert(index + 1, { ...source, key: newKey(), source: "MANUAL", stockId: "", memoStockId: undefined, ownStockId: undefined, lotKey: undefined, stockPendingPcs: undefined, stockPendingWeightCt: undefined, photos: [] });
     }
   };
 
@@ -279,8 +278,8 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, flow = 
     let cursor = 0;
     for (const item of items) {
       while (cursor < next.length && isFilledLine(next[cursor])) cursor++;
-      if (cursor < next.length) next[cursor] = memoStockToStockLine(item);
-      else next.push(memoStockToStockLine(item));
+      if (cursor < next.length) next[cursor] = lotToStockLine(item);
+      else next.push(lotToStockLine(item));
     }
     lineArray.replace(next);
     setFromStockOpen(false);
@@ -290,6 +289,7 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, flow = 
   const editorIndex = editorOpen && selectedIndex !== null && selectedIndex < lines.length ? selectedIndex : null;
 
   return (
+    <DocumentKindContext.Provider value={QUOTATION_LOT_KIND}>
     <QuotationOptionsContext.Provider value={options.data}>
     <FormProvider {...form}>
       {/* AppShell <main> เป็นตัว scroll: ฝั่งซ้าย scroll เอง, editor panel สูงเต็มจอไม่ถูกตัด */}
@@ -430,5 +430,6 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, flow = 
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
     </FormProvider>
     </QuotationOptionsContext.Provider>
+    </DocumentKindContext.Provider>
   );
 }

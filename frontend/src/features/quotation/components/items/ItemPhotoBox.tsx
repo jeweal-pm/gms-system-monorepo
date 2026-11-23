@@ -27,7 +27,7 @@ export function ItemPhotoBox({ index }: { index: number | null }) {
   const current = view.key === line?.key ? view.index : 0;
   const shown = Math.min(current, Math.max(0, photos.length - 1));
   const photo = photos[shown];
-  const title = line?.stoneCode || line?.stockId || "New item";
+  const title = line?.stoneCode || line?.stockId || line?.lot || "New item";
   const go = (step: number) => setView({ key: line?.key ?? "", index: (shown + step + photos.length) % photos.length });
 
   return (

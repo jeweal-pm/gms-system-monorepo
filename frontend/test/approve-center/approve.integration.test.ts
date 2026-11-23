@@ -175,7 +175,7 @@ describe("IT-AP-03 pending table from approval.pending", () => {
   it("lists the rows in server order with the enriched cells and 'Showing n of N' from the summary", () => {
     const html = render(seeded(ALL_GRANTS), createElement(ApproveMenuPage, { slug: "reserve" }));
     expect(html).toMatch(/<h1[^>]*>Reserve<\/h1>/);
-    expect(html).toContain('placeholder="Search no., customer, stone, Stock ID"');
+    expect(html).toContain('placeholder="Search no., customer, stone, Lot"');
     expect(html.indexOf("RS2611002")).toBeLessThan(html.indexOf("RS2611003"));
     expect(html).toContain("Showing 2 of 2");
     expect(html).toContain("Hold until 05/11/26 · 2 lines · Sapphire");

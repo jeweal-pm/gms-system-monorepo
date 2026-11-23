@@ -2,12 +2,12 @@
 
 import type { ReactNode } from "react";
 import { QuotationInfoForm } from "@/features/quotation/components/info/QuotationInfoForm";
-import { QUOTATION_KIND, type DocumentKind } from "@/features/quotation/document-kind";
+import { QUOTATION_KIND, QUOTATION_LOT_KIND, type DocumentKind } from "@/features/quotation/document-kind";
 import { QuotationOptionsContext } from "@/features/quotation/options-context";
 import {
   customerStockSchema,
   emptyCustomerStock,
-  memoStockToStockLine,
+  lotToStockLine,
   pickedStockIds,
   toCustomerStockInput,
   type CustomerStockFormValues,
@@ -54,7 +54,7 @@ export function customerStockConfig(options: CustomerStockPageOptions): Document
   // Every row comes From Stock (memo-out rev 3 owner 2026-10-31; reserve owner 2026-11-02): no Add row, and an empty row
   // opens From Stock instead of the row panel. Picked rows still open it to set the quantity and Sale Price.
   const kind: DocumentKind = {
-    ...QUOTATION_KIND,
+    ...QUOTATION_LOT_KIND,
     stockQuantity: true,
     pickOnly: true,
     emptyRowText: "Empty row · click to pick From Stock",
@@ -92,7 +92,7 @@ export function customerStockConfig(options: CustomerStockPageOptions): Document
           emptyText="No stock with anything pending."
           pickedIds={pickedStockIds(values.lines)}
           onCancel={onClose}
-          onConfirm={(items) => onAdd(items.map(memoStockToStockLine))}
+          onConfirm={(items) => onAdd(items.map(lotToStockLine))}
         />
       ),
       addedToast: (count) => `Added ${count} item${count === 1 ? "" : "s"} from Stock`,

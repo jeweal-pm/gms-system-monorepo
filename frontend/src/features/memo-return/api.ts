@@ -9,7 +9,9 @@ import { emptyQuotation, newKey } from "@/features/quotation/lib/defaults";
 import { isFilledLine, lineSchema, tradeDocumentRules, tradeDocumentShape, type QuotationLine } from "@/features/quotation/schema";
 import { documentLoadError, mapDocumentSaveError, daybookInput, daybookQueryOptions, mapDocumentRestoreError } from "@/features/trade-document/document-api";
 import type { DocumentApi } from "@/features/trade-document/document-form";
+import { lotPendingShortText, lotTooLargeMessage, sentLotLines } from "@/features/trade-document/lot-stock";
 import type { MemoStockItem } from "@/features/trade-document/memo-stock-api";
+import { stockRowMessage } from "@/features/trade-document/stock-row-errors";
 import { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError, retryTransient } from "@/lib/trpc-error";
 import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
@@ -17,8 +19,8 @@ import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 /**
  * Memo Return data access (memo-return SA rev 2, owner 2026-10-29): `memoReturn.*` with a vendor and one address,
- * numbers from Document Setup `memo-return`, rows picked from the vendor's Memo Stock (`memoStock.list`, items of
- * approved memo receives with something still pending). Saving waits for approval; approval reduces pending.
+ * numbers from Document Setup `memo-return`, rows picked from the vendor's Memo Stock lots (`memoStock.lots`, lot-based-stock round 2: one row per lot,
+ * no Stock ID). Saving waits for approval; approval reduces pending.
  */
 export type MemoReturnDetail = InferQueryLikeData<typeof masterTrpc.memoReturn.get>;
 export type MemoReturnOptions = InferQueryLikeData<typeof masterTrpc.memoReturn.options>;
@@ -36,7 +38,9 @@ const HEADER_FIELDS = ["docDate", "dueDate", "vendorId", "addressId", "currency"
  * weightCt are the Return quantity (the only part keyed in), > 0 and ≤ Outstanding. Empty rows have none of these yet.
  */
 const memoReturnLineSchema = lineSchema.extend({
+  /** Legacy lines (saved before lots, Q-LOT-09) keep their item id; a new pick names its lot. */
   memoStockId: z.string().default(""),
+  lotKey: z.string().default(""),
   outstandingPcs: z.string().default(""),
   outstandingWeightCt: z.string().default(""),
 });
@@ -82,7 +86,7 @@ export function emptyMemoReturn(): MemoReturnFormValues {
     currency: q.currency,
     exchangeRate: q.exchangeRate,
     ref: q.ref,
-    lines: q.lines.map((line) => ({ ...line, memoStockId: "", outstandingPcs: "", outstandingWeightCt: "" })),
+    lines: q.lines.map((line) => ({ ...line, memoStockId: "", lotKey: "", outstandingPcs: "", outstandingWeightCt: "" })),
     discount: q.discount,
     tax: q.tax,
     serviceCharges: q.serviceCharges,
@@ -92,14 +96,15 @@ export function emptyMemoReturn(): MemoReturnFormValues {
 }
 
 /**
- * A Memo Stock row → a return row with an empty Return (placeholder 0 / 0.00, owner 2026-10-29). The price is the item's price after the line
- * discount (Q-MR-13) at 2 dp, as the server stores it; Memo Stock has no stone code.
+ * A Memo Stock lot → a return row with an empty Return (placeholder 0 / 0.00, owner 2026-10-29). The price is the lot's
+ * net unit price (the weighted average of its open items, owner 2026-11-21) at 2 dp; Memo Stock has no stone code and a
+ * row never carries a Stock ID (owner Q-LOT-10).
  */
-export function memoStockToLine(item: MemoStockItem): MemoReturnLine {
+export function lotToLine(item: MemoStockItem): MemoReturnLine {
   return {
     key: newKey(),
     source: "MANUAL",
-    stockId: item.stockId,
+    stockId: "",
     lot: item.lot,
     stoneCodeId: "",
     stoneCode: "",
@@ -115,20 +120,21 @@ export function memoStockToLine(item: MemoStockItem): MemoReturnLine {
     cerNo: item.cerNo,
     pcs: "",
     weightCt: "",
-    priceUnit: item.priceUnit === "PCS" ? "PER_PCS" : "PER_CT",
-    unitPrice: toFixed(dec(item.netUnitPrice), 2),
+    priceUnit: item.priceUnit === "PER_PCS" ? "PER_PCS" : "PER_CT",
+    unitPrice: toFixed(dec(item.netUnitPrice ?? "0"), 2),
     discountType: "PERCENT",
     discountValue: "",
     stonePartOrder: [],
     photos: [],
     itemNote: item.itemNote,
-    memoStockId: item.id,
+    memoStockId: "",
+    lotKey: item.lotKey,
     outstandingPcs: String(item.pendingPcs),
     outstandingWeightCt: item.pendingWeightCt,
   };
 }
 
-/** Form values → contract input: each filled row names its Memo Stock item; photos in order (ADR-0048). */
+/** Form values → contract input: each filled row names its Memo Stock lot; photos in order (ADR-0048). */
 export function toMemoReturnInput(values: MemoReturnFormValues) {
   const shared = toTradeDocumentInput(values);
   const filled = values.lines.filter(isFilledLine);
@@ -138,7 +144,9 @@ export function toMemoReturnInput(values: MemoReturnFormValues) {
     dueDate: values.docDate,
     lines: shared.lines.map((line, index) => ({
       ...line,
-      memoStockId: filled[index]?.memoStockId ?? "",
+      // A lot pick sends `lotKey` alone; a legacy line (stored before lots) keeps its item id.
+      memoStockId: filled[index]?.lotKey ? null : filled[index]?.memoStockId || null,
+      lotKey: filled[index]?.lotKey || null,
       outstandingPcs: Number.parseInt(filled[index]?.outstandingPcs || "0", 10),
       outstandingWeightCt: filled[index]?.outstandingWeightCt || "0",
     })),
@@ -154,8 +162,10 @@ export function fromMemoReturn(detail: MemoReturnDetail): MemoReturnFormValues {
     ...shared,
     lines: shared.lines.map((line, index) => ({
       ...line,
-      stockId: detail.lines[index]?.stockId ?? "",
+      // Q-LOT-10: the Stock ID is never read; the row shows its Lot.
+      stockId: "",
       memoStockId: detail.lines[index]?.memoStockId ?? "",
+      lotKey: detail.lines[index]?.lotKey ?? "",
       outstandingPcs: String(detail.lines[index]?.outstandingPcs ?? 0),
       outstandingWeightCt: detail.lines[index]?.outstandingWeightCt ?? "0",
     })),
@@ -165,15 +175,22 @@ export function fromMemoReturn(detail: MemoReturnDetail): MemoReturnFormValues {
   };
 }
 
-/** Memo Stock items already on the form (the picker leaves them out). */
-export const pickedStockIds = (lines: QuotationLine[]) => new Set(lines.flatMap((line) => ((line as Partial<MemoReturnLine>).memoStockId ? [(line as MemoReturnLine).memoStockId] : [])));
+/** Lots already on the form (the picker leaves them out), by `lotKey`. */
+export const pickedStockIds = (lines: QuotationLine[]) => new Set(lines.flatMap((line) => ((line as Partial<MemoReturnLine>).lotKey ? [(line as MemoReturnLine).lotKey] : [])));
 
-export function mapMemoReturnSaveError(error: unknown) {
+export function mapMemoReturnSaveError(error: unknown, values?: { lines: readonly QuotationLine[] }) {
+  const { domainCode, fieldErrors, details } = readDomainError(error);
+  const lines = sentLotLines(values);
   // Approval found less pending than a row returns: another memo return took it first.
-  if (readDomainError(error).domainCode === "MEMO_RETURN_PENDING_SHORT") {
-    return { fieldErrors: [], message: "Some items no longer have enough pending. Edit the Return quantity and save again. Nothing was saved." };
+  if (domainCode === "MEMO_RETURN_PENDING_SHORT") {
+    const row = lotPendingShortText(details, fieldErrors, lines);
+    return { fieldErrors: [], message: row ? `${row}. Nothing was saved.` : "Some items no longer have enough pending. Edit the Return quantity and save again. Nothing was saved." };
   }
-  return mapDocumentSaveError(error, "MEMO_RETURN", "memo return", HEADER_FIELDS);
+  if (domainCode === "STOCK_LOT_TOO_LARGE") return { fieldErrors: [], message: lotTooLargeMessage(details, lines) };
+  const outcome = mapDocumentSaveError(error, "MEMO_RETURN", "memo return", HEADER_FIELDS);
+  const lotRefused = domainCode === "STOCK_LOT_UNAVAILABLE" || domainCode === "VALIDATION_ERROR" || domainCode === "MEMO_RETURN_REFERENCE_INVALID";
+  const row = lotRefused ? stockRowMessage(fieldErrors, "memo return", () => "More than pending", lines) : undefined;
+  return row ? { ...outcome, message: row } : outcome;
 }
 export const memoReturnLoadError = (error: unknown) => documentLoadError(error, "MEMO_RETURN", "memo return", "memo returns");
 
@@ -209,7 +226,7 @@ export function useMemoReturnApi(vendorId: string | undefined, docDate: string, 
     submit: (args) => submit.mutateAsync(args),
     restore: (args) => restore.mutateAsync(args),
     invalidate: () =>
-      Promise.all([utils.memoReturn.list.invalidate(), utils.memoReturn.get.invalidate(), utils.memoReturn.nextNumber.invalidate(), utils.memoStock.list.invalidate()]),
+      Promise.all([utils.memoReturn.list.invalidate(), utils.memoReturn.get.invalidate(), utils.memoReturn.nextNumber.invalidate(), utils.memoStock.lots.invalidate()]),
     busy: create.isPending || update.isPending || remove.isPending || submit.isPending || restore.isPending,
   };
 }

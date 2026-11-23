@@ -17,7 +17,7 @@ export type DocumentKind = {
    * Stock ID: filled by From Stock only, a running number assigned on save, or none at all (Purchase Order rev 1: Stock
    * IDs come later, at Purchase).
    */
-  stockId: "from-stock" | "auto" | "none";
+  stockId: "from-stock" | "auto" | "none" | "lot";
   /** Read-only Stock ID text when a `from-stock` row has none (default "From stock only"; Purchase "—", ADR-0051). */
   stockIdEmpty?: string;
   /** Stone Code field and column; without it the Stock ID leads the row (Memo Receive, owner 2026-10-28). */
@@ -77,6 +77,12 @@ export const QUOTATION_KIND: DocumentKind = {
     return { id, name: file.name, url: photoUrl(id) };
   },
 };
+
+/**
+ * lot-based-stock round 1 (FE-LOT-006, owner Q3): Quotation, Reserve and Memo Out show the Lot instead of a Stock ID in
+ * the item table and row panel. Sale, Purchase, Memo Return and Memo Out Return keep `QUOTATION_KIND` until their round.
+ */
+export const QUOTATION_LOT_KIND: DocumentKind = { ...QUOTATION_KIND, stockId: "lot" };
 
 export const DocumentKindContext = createContext<DocumentKind>(QUOTATION_KIND);
 

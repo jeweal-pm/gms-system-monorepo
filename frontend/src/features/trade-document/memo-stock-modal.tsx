@@ -15,10 +15,9 @@ import {
   PickerFrame,
   PickerGroupSubTh,
   PickerGroupTh,
+  LotCell,
   PickerLoadMore,
-  PickerLot,
   PickerMessage,
-  PickerNote,
   PickerTh,
   PickerToolbar,
   pickerCell,
@@ -29,6 +28,7 @@ import {
   pickerIndexCell,
   pickerRowClass,
   pickerSub,
+  lotSelectLabel,
 } from "./picker-ui";
 
 /**
@@ -56,7 +56,8 @@ export function RefCell({ item }: { item: StockRefSource }) {
  *   and amount.
  * - Quotation / Sale / Memo Out "Add From Stock" (look: designs 135 / 137 / 138): Memo Stock and our stock without
  *   prices; Pcs and Weight (ct) are plain columns.
- * Each row shows Stone Code over Stock ID · lot and the note, Location, Ref. Search + Start → Due (memo receive Doc
+ * Every row is a lot (lot-based-stock): Memo Return reads `memoStock.lots`, From Stock `fromStock.lots`; one row per lot,
+ * key `lotKey`, Lot chip over Stone Code and the note, no Stock ID anywhere. Location, Ref. Search + Start → Due (memo receive Doc
  * Date, Q-MR-10) filter; rows already on the document are left out; 50 a page with Load more. OK adds the checked rows.
  */
 type PickerItem = MemoStockItem | FromStockItem;
@@ -64,23 +65,26 @@ type MemoStockModalProps = {
   title: string;
   showPrice: boolean;
   emptyText: string;
-  /** Keys of rows already on the document (`pickKey`: Memo Stock id, or `own:<uuid>` for our stock). */
+  /** `lotKey`s of the lots already on the document. */
   pickedIds: Set<string>;
   onCancel: () => void;
 } & (
   | {
-      /** Memo Stock only (Memo Return: the vendor's items in its currency). Leave `vendorId` out to list every vendor. */
+      /** Memo Return: the vendor's Memo Stock lots in its currency (`memoStock.lots`). */
       fromStock?: false;
-      vendorId?: string;
-      currency?: string;
+      memoOnly?: undefined;
+      vendorId: string;
+      currency: string;
       onConfirm: (items: MemoStockItem[]) => void;
     }
   | {
       /**
        * load-to-stock phase 2 (quotation ui-spec Revision 3): the customer-side "Add From Stock" list of Memo Stock and
-       * our stock (`fromStock.list`); Location tells the source.
+       * our stock (`fromStock.lots`, one row per lot); Location tells the source.
        */
       fromStock: true;
+      /** Sale (inventory accepts Memo Stock lots only): our stock's rows are left out and its notice is not shown. */
+      memoOnly?: boolean;
       vendorId?: undefined;
       currency?: undefined;
       onConfirm: (items: FromStockItem[]) => void;
@@ -110,13 +114,15 @@ export function MemoStockModal(props: MemoStockModalProps) {
   }, [onCancel]);
 
   const memoStock = useMemoStock(fromStock ? { vendorId: "", currency: "", q, from, to } : { vendorId, currency, q, from, to });
+  const memoOnly = props.memoOnly === true;
   const ownAndMemo = useFromStock({ q, from, to }, fromStock);
   const stock = fromStock ? ownAndMemo : memoStock;
   const pages = (stock.data?.pages ?? []) as { items: PickerItem[]; ownStock?: "OK" | "UNAVAILABLE" }[];
-  const items = pages.flatMap((page) => page.items).filter((item) => !pickedIds.has(pickKey(item)));
+  const keyOf = (item: PickerItem) => pickKey(item);
+  const items = pages.flatMap((page) => page.items).filter((item) => !pickedIds.has(keyOf(item)) && !(memoOnly && item.source === "OWN_STOCK"));
   // FE-LS-P2-03: our stock down → Memo Stock rows stay listed and pickable under a notice (also instead of the empty text).
-  const ownDown = fromStock && ownStockUnavailable(pages as { ownStock: "OK" | "UNAVAILABLE" }[]);
-  const allChecked = items.length > 0 && items.every((item) => checked.has(pickKey(item)));
+  const ownDown = fromStock && !memoOnly && ownStockUnavailable(pages as { ownStock: "OK" | "UNAVAILABLE" }[]);
+  const allChecked = items.length > 0 && items.every((item) => checked.has(keyOf(item)));
   const columns = showPrice ? 12 : 10;
   const pending = pickerGroupTone.orange;
   const toggle = (id: string) =>
@@ -127,9 +133,9 @@ export function MemoStockModal(props: MemoStockModalProps) {
       return next;
     });
   const confirm = () => {
-    const picked = items.filter((item) => checked.has(pickKey(item)));
-    if (props.fromStock) props.onConfirm(picked as FromStockItem[]);
-    else props.onConfirm(picked as MemoStockItem[]);
+    const picked = items.filter((item) => checked.has(keyOf(item)));
+    if (props.fromStock) props.onConfirm(picked);
+    else props.onConfirm(picked);
   };
   // Memo Return has the PENDING group row (2-row header); From Stock has a single 56 px header row.
   const rows = showPrice ? 2 : undefined;
@@ -137,7 +143,7 @@ export function MemoStockModal(props: MemoStockModalProps) {
   return (
     <PickerDialog titleId={titleId} title={title} onClose={onCancel}>
       <PickerToolbar
-        search={{ value: search, onChange: setSearch, placeholder: "Search Stock ID, Lot, Stone, Cer No.", label: "Search memo stock" }}
+        search={{ value: search, onChange: setSearch, placeholder: "Search Lot, Stone, Stone Code, Cer No., Doc No.", label: "Search memo stock" }}
         dates={{ from, to, onFrom: setFrom, onTo: setTo, fromLabel: "Received from", toLabel: "Received to" }}
       />
       <PickerFrame footer={<PickerFooter count={checked.size} onCancel={onCancel} onOk={confirm} />}>
@@ -150,11 +156,11 @@ export function MemoStockModal(props: MemoStockModalProps) {
                 className={pickerCheckbox}
                 checked={allChecked}
                 disabled={items.length === 0}
-                onChange={() => setChecked(allChecked ? new Set() : new Set(items.map(pickKey)))}
+                onChange={() => setChecked(allChecked ? new Set() : new Set(items.map(keyOf)))}
               />
             </th>
             <th scope="col" rowSpan={rows} className="w-8 text-sm font-medium">#</th>
-            <PickerTh rowSpan={rows} title="Stone Code" sub="Stock ID · Lot" />
+            <PickerTh rowSpan={rows} title="Lot / Stone Code" />
             <PickerTh rowSpan={rows} title="Location" upper />
             <PickerTh rowSpan={rows} title="Ref." sub="Doc Date" plainSub />
             <PickerTh rowSpan={rows} title="Stone" sub="Shape · Size" upper />
@@ -198,14 +204,14 @@ export function MemoStockModal(props: MemoStockModalProps) {
           )}
           {stock.isSuccess && items.length === 0 && !ownDown && <PickerMessage span={columns}>{emptyText}</PickerMessage>}
           {items.map((item, index) => {
-            const key = pickKey(item);
+            const key = keyOf(item);
             const ticked = checked.has(key);
             return (
               <tr key={key} onClick={() => toggle(key)} className={pickerRowClass(ticked)}>
                 <td className={pickerCheckCell}>
                   <input
                     type="checkbox"
-                    aria-label={`Select ${item.stockId} from ${stockRefLabel(item)}`}
+                    aria-label={lotSelectLabel(item.lot, item.stoneCode, stockRefLabel(item))}
                     className={pickerCheckbox}
                     checked={ticked}
                     onChange={() => toggle(key)}
@@ -213,17 +219,7 @@ export function MemoStockModal(props: MemoStockModalProps) {
                   />
                 </td>
                 <td className={pickerIndexCell}>{index + 1}</td>
-                <td className={pickerCell}>
-                  {/* Owner 2026-11-05: Stone Code first (bold), then Stock ID with the lot chip. */}
-                  <div className="font-medium">{item.stoneCode || "—"}</div>
-                  <div className={cx(pickerSub, "flex flex-wrap items-center gap-1.5")}>
-                    <span>{item.stockId}</span>
-                    {item.lot && <span aria-hidden>·</span>}
-                    {item.lot && <PickerLot>{item.lot}</PickerLot>}
-                    {vendorId === undefined && item.vendor?.code && <span>{item.vendor.code}</span>}
-                  </div>
-                  <PickerNote text={item.itemNote} />
-                </td>
+                <LotCell lot={item.lot} stoneCode={item.stoneCode} note={item.itemNote} detail={fromStock ? item.vendor?.code : undefined} />
                 <td className={pickerCell}>{item.location}</td>
                 <RefCell item={item} />
                 <td className={pickerCell}>
@@ -243,7 +239,7 @@ export function MemoStockModal(props: MemoStockModalProps) {
                 {showPrice && (
                   <td className={cx(pickerCell, "text-right tabular-nums")}>
                     {formatUnitPrice(item.netUnitPrice ?? "0", nf.pricePlaces)} {item.currency}
-                    <div className={pickerSub}>{item.priceUnit === "PCS" ? "pcs" : "cts"}</div>
+                    <div className={pickerSub}>{item.priceUnit === "PER_PCS" ? "pcs" : "cts"}</div>
                   </td>
                 )}
                 {showPrice && <td className={cx(pickerCell, "text-right tabular-nums")}>{formatMoneyText(item.amount ?? "0", nf.pricePlaces)}</td>}

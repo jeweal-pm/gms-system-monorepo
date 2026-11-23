@@ -1,3 +1,4 @@
+import { isLotDocumentType } from "@/features/trade-document/lot-stock";
 import type { DocumentApprovalType } from "@/features/trade-document/flow-status";
 import { isCallerLicenseCode, readDomainError } from "@/lib/trpc-error";
 import { INVENTORY_UNAVAILABLE_TEXT, STOCK_BUSY_TEXT } from "@/features/trade-document/stock-row-errors";
@@ -432,7 +433,7 @@ export const EMPTY_TITLE = "Nothing waiting";
 export const EMPTY_TEXT = "Every document in this menu has been reviewed.";
 export const EMPTY_SEARCH_TITLE = "No matching documents";
 export const emptySearchText = (menu: ApproveMenu) =>
-  menu.party === "none" ? "Try another document no., stone or Stock ID." : `Try another document no., ${menu.party}, stone or Stock ID.`;
+  isLotDocumentType(menu.slug) ? `Try another document no., ${menu.party === "none" ? "" : `${menu.party}, `}stone or Lot.` : menu.party === "none" ? "Try another document no., stone or Stock ID." : `Try another document no., ${menu.party}, stone or Stock ID.`;
 export const NOT_AVAILABLE_TITLE = "Not available yet";
 export const notAvailableText = (menu: ApproveMenu) => `${menu.label} approvals will appear here once its page is built.`;
 

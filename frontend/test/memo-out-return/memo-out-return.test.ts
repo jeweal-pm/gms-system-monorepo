@@ -124,7 +124,7 @@ describe("form and mapping (UT-MOR-04)", () => {
         id: ID, source: "STOCK", stoneCode: "", stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "",
         location: "Memo", cerType: "", cerNo: "", pcs: 1, weightCt: "1.000", priceUnit: "PER_CT", unitPrice: "100.00", discount: { type: "NONE", value: "0" },
         discountAmount: "0.00", amount: "100.00", itemNote: "", photoIds: [], outstandingPcs: 2, outstandingWeightCt: "1.500",
-        memoOutLineId: ID, memoOut: { id: ID, docNo: "MO-1" }, memoStockId: ID, stockId: "260002",
+        memoOutLineId: ID, memoOut: { id: ID, docNo: "MO-1" }, memoStockId: ID, stockId: "260002" as never, lotKey: null,
       }],
       discount: { type: "NONE", value: "0" },
       tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
@@ -146,7 +146,7 @@ describe("form and mapping (UT-MOR-04)", () => {
 describe("Memo Outstanding picker (UT-MOR-21/22, rev 4)", () => {
   const item: MemoOutstandingItem = {
     memoOutLineId: ID, memoOut: { id: ID, docNo: "MO-7", docDate: "2026-10-31", dueDate: "2026-11-30" },
-    memoStockId: ID, ownStockId: null, source: "MEMO_STOCK", stockId: "260003", lot: "LOT-R", location: "Memo", stone: "Sapphire", shape: "Cushion", size: "", color: "Blue", clarity: "", cutting: "", quality: "",
+    memoStockId: ID, ownStockId: null, source: "MEMO_STOCK", lotKey: `ML${"c".repeat(32)}`, stockId: "260003", lot: "LOT-R", location: "Memo", stone: "Sapphire", shape: "Cushion", size: "", color: "Blue", clarity: "", cutting: "", quality: "",
     cerType: "GIA", cerNo: "C-9", itemNote: "viewing", outPcs: 4, outWeightCt: "2.000", returnedPcs: 1, returnedWeightCt: "0.500",
     outstandingPcs: 3, outstandingWeightCt: "1.500", priceUnit: "PER_CT", unitPrice: "2700.00", amount: "4050.00", currency: "THB",
   };

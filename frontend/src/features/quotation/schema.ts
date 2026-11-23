@@ -56,6 +56,8 @@ export const lineSchema = z.object({
   memoStockId: z.string().optional(),
   /** load-to-stock phase 2 (ADR-0052 D17/D20): our stock's UUID; its row keeps the available it was picked with as the cap. */
   ownStockId: z.string().optional(),
+  /** lot-based-stock (ADR-0055 D4): the lot a From Stock row was picked from (new picks send this alone). */
+  lotKey: z.string().optional(),
   stockPendingPcs: z.string().optional(),
   stockPendingWeightCt: z.string().optional(),
 });
@@ -131,9 +133,9 @@ export function tradeDocumentRules(value: TradeDocumentValues, ctx: z.Refinement
  */
 export function stockLineRules(lines: readonly QuotationLine[], ctx: z.RefinementCtx) {
   lines.forEach((line, index) => {
-    if (!isFilledLine(line) || !(line.memoStockId || line.ownStockId)) return;
+    if (!isFilledLine(line) || !(line.memoStockId || line.ownStockId || line.lotKey)) return;
     // quotation ui-spec Revision 3: our-stock rows are capped at the available they were picked with.
-    const above = line.ownStockId ? "More than available" : "More than pending";
+    const above = line.ownStockId || line.lotKey?.startsWith("O") ? "More than available" : "More than pending";
     const issue = (field: "pcs" | "weightCt" | "unitPrice", message: string) => ctx.addIssue({ code: "custom", path: ["lines", index, field], message });
     const pcs = Number(line.pcs || 0);
     const weight = Number(line.weightCt || 0);

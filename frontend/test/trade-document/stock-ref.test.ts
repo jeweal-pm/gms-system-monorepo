@@ -55,12 +55,12 @@ describe("UT-SR-03 From Stock column order", () => {
 });
 
 describe("UT-SR-04 From Stock first column", () => {
-  it("is Stone Code (bold) over Stock ID · Lot (owner 2026-11-05)", async () => {
+  it("is the Lot chip then Stone Code (bold), no Stock ID (lot-based-stock, owner Q-LOT-10)", async () => {
     const { readFileSync } = await import("node:fs");
     const source = readFileSync("src/features/trade-document/memo-stock-modal.tsx", "utf8");
-    expect(source).toContain('title="Stone Code" sub="Stock ID · Lot" />');
-    expect(source).not.toContain('title="Stock ID" sub="Lot"');
-    expect(source).toContain('<div className="font-medium">{item.stoneCode || "—"}</div>');
-    expect(source).toContain("{item.lot && <PickerLot>{item.lot}</PickerLot>}");
+    expect(source).toContain('title="Lot / Stone Code" />');
+    expect(source).not.toContain("{item.stockId}");
+    expect(source).not.toContain("Stock ID ·");
+    expect(source).toContain("<LotCell lot={item.lot} stoneCode={item.stoneCode}");
   });
 });

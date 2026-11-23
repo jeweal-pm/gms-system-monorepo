@@ -18,7 +18,7 @@ import {
   customerStockSaveError,
   emptyCustomerStock,
   fromCustomerStock,
-  memoStockToStockLine,
+  lotToStockLine,
   pickedStockIds,
   stockRowCount,
   toCustomerStockInput,
@@ -27,6 +27,7 @@ import {
 } from "@/features/trade-document/customer-stock";
 import { fromStockInput, isOwnStockItem, ownStockUnavailable, pickKey, type FromStockItem } from "@/features/trade-document/from-stock-api";
 import { MemoStockModal } from "@/features/trade-document/memo-stock-modal";
+import { MEMO_LOT, OWN_LOT, memoLot, ownLot } from "./lot-fixture";
 import { INVENTORY_UNAVAILABLE_TEXT, STOCK_BUSY_TEXT, SYNCING_HINT, syncRefetchInterval, withSyncingHint } from "@/features/trade-document/stock-row-errors";
 import { InventoryApiError } from "@/lib/inventory-client";
 import { authTrpc, createAuthTrpcClient } from "@/lib/auth-trpc";
@@ -85,20 +86,9 @@ const newClient = () => new QueryClient({ defaultOptions: { queries: { retry: fa
 const ID = "11111111-1111-4111-8111-111111111111";
 const MEMO = "22222222-2222-4222-8222-222222222222";
 const OWN = "33333333-3333-4333-8333-333333333333";
-const LOAD = { id: ID, docNo: "LS-0001", docDate: "2026-11-17" };
 
-const memoItem: FromStockItem = {
-  id: MEMO, stockId: "260003", stoneCode: "", lot: "L-7", location: "Memo", itemNote: "", stone: "Tourmaline", shape: "Oval", size: "", color: "Red", clarity: "", cutting: "",
-  quality: "", cerType: "GIA", cerNo: "C-1", receivedPcs: 2, receivedWeightCt: "1.360", pendingPcs: 2, pendingWeightCt: "1.360", priceUnit: "CTS", unitPrice: "12500.00",
-  netUnitPrice: "12500.0000", currency: "THB", amount: "17000.00", vendor: { id: ID, code: "V001", name: "Aom" },
-  memoReceive: { id: ID, docNo: "MR-1", docDate: "2026-10-29", dueDate: "2026-11-29" }, ref: { type: "MEMO_RECEIVE", id: ID, docNo: "MR-1", docDate: "2026-10-29" },
-  source: "MEMO_STOCK", load: null, ownStock: null,
-};
-const ownItem: FromStockItem = {
-  ...memoItem, id: OWN, stockId: "260010", stoneCode: "RU-OV", lot: "", location: "BKK-01", stone: "Ruby", pendingPcs: 3, pendingWeightCt: "2.100", receivedPcs: 4,
-  receivedWeightCt: "2.800", priceUnit: "PCS", unitPrice: null, netUnitPrice: null, amount: null, memoReceive: null, ref: { type: "LOAD", ...LOAD }, source: "OWN_STOCK", load: LOAD,
-  ownStock: { stockPrice: "999.00", salePrice: "1500.00", priceUnit: "PER_PCS" },
-};
+const memoItem: FromStockItem = memoLot;
+const ownItem: FromStockItem = ownLot;
 const customerValues = (lines: CustomerStockFormValues["lines"]): CustomerStockFormValues => ({
   ...emptyCustomerStock(), docDate: "2026-11-18", dueDate: "2026-12-18", customerId: ID, shippingAddressId: ID, invoiceAddressId: ID, currency: "THB", lines,
 });
@@ -107,13 +97,13 @@ const quotationValues = (lines: QuotationFormValues["lines"]): QuotationFormValu
 });
 const exceeds = (path: string) => ({ path, code: "exceeds_pending", params: { availablePcs: 1, availableWeightCt: "0.700" } });
 
-describe("UT-LS-P2-FE-01 fromStock.list input and keys (FE-LS-P2-01)", () => {
-  it("sends only the set filters with limit 50; our stock is keyed by source + id; UNAVAILABLE on any page shows the notice", () => {
+describe("UT-LS-P2-FE-01 fromStock.lots input and keys (FE-LS-P2-01, FE-LOT-002)", () => {
+  it("sends only the set filters with limit 50; a row is keyed by its lotKey; UNAVAILABLE on any page shows the notice", () => {
     expect(fromStockInput({ q: " ru ", from: "", to: "2026-11-30" })).toEqual({ limit: 50, q: "ru", to: "2026-11-30" });
-    expect(pickKey(memoItem)).toBe(MEMO);
-    expect(pickKey(ownItem)).toBe(`own:${OWN}`);
+    expect(pickKey(memoItem)).toBe(MEMO_LOT);
+    expect(pickKey(ownItem)).toBe(OWN_LOT);
     expect(isOwnStockItem(ownItem)).toBe(true);
-    expect(isOwnStockItem({ id: MEMO })).toBe(false);
+    expect(isOwnStockItem(memoItem)).toBe(false);
     expect(ownStockUnavailable([{ ownStock: "OK" }, { ownStock: "UNAVAILABLE" }])).toBe(true);
     expect(ownStockUnavailable([{ ownStock: "OK" }])).toBe(false);
     expect(ownStockUnavailable(undefined)).toBe(false);
@@ -121,52 +111,58 @@ describe("UT-LS-P2-FE-01 fromStock.list input and keys (FE-LS-P2-01)", () => {
 });
 
 describe("UT-LS-P2-FE-02 our-stock rows (FE-LS-P2-04)", () => {
-  it("an our-stock item becomes a From Stock row: Location name, full available as cap, empty Sale Price, ownStockId only (no cost read)", () => {
-    const row = memoStockToStockLine(ownItem);
-    expect(row).toMatchObject({ source: "STOCK", stockId: "260010", locationId: "BKK-01", stone: "Ruby", pcs: "3", weightCt: "2.100", priceUnit: "PER_PCS", unitPrice: "",
-      memoStockId: "", ownStockId: OWN, stockPendingPcs: "3", stockPendingWeightCt: "2.100" });
+  it("an our-stock lot becomes a From Stock row: Location name, full available as cap, empty Sale Price, lotKey only, no Stock ID (no cost read)", () => {
+    const row = lotToStockLine(ownItem);
+    expect(row).toMatchObject({ source: "STOCK", stockId: "", lotKey: OWN_LOT, locationId: "BKK-01", stone: "Ruby", pcs: "3", weightCt: "2.100", priceUnit: "PER_PCS", unitPrice: "",
+      memoStockId: "", ownStockId: "", stockPendingPcs: "3", stockPendingWeightCt: "2.100" });
     expect(JSON.stringify(row)).not.toContain("999.00");
-    const memoRow = memoStockToStockLine(memoItem);
-    expect(memoRow).toMatchObject({ memoStockId: MEMO, ownStockId: "", locationId: "Memo" });
-    expect(pickedStockIds([row, memoRow, emptyLine()])).toEqual(new Set([`own:${OWN}`, MEMO]));
+    const memoRow = lotToStockLine(memoItem);
+    expect(memoRow).toMatchObject({ lotKey: MEMO_LOT, memoStockId: "", ownStockId: "", locationId: "Memo" });
+    expect(pickedStockIds([row, memoRow, emptyLine()])).toEqual(new Set([OWN_LOT, MEMO_LOT]));
     expect(stockRowCount([row, memoRow, emptyLine()])).toBe(2);
   });
 
-  it("Reserve / Memo Out input names exactly one of memoStockId / ownStockId; a saved our-stock line loads back with its cap", () => {
-    const input = toCustomerStockInput(customerValues([{ ...memoStockToStockLine(ownItem), pcs: "2", unitPrice: "1500" }, { ...memoStockToStockLine(memoItem), unitPrice: "100" }]));
-    expect(input.lines.map((line) => [line.memoStockId, line.ownStockId])).toEqual([[null, OWN], [MEMO, null]]);
+  it("Reserve / Memo Out input names the lotKey alone; a saved lot line (and a legacy item line) loads back with its cap and no Stock ID", () => {
+    const input = toCustomerStockInput(customerValues([{ ...lotToStockLine(ownItem), pcs: "2", unitPrice: "1500" }, { ...lotToStockLine(memoItem), unitPrice: "100" }]));
+    expect(input.lines.map((line) => [line.lotKey, line.memoStockId, line.ownStockId])).toEqual([[OWN_LOT, null, null], [MEMO_LOT, null, null]]);
     const base = { id: ID, stoneCodeId: null, stoneCode: "RU-OV", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "", cerType: "", cerNo: "",
       priceUnit: "PER_PCS" as const, discount: { type: "NONE" as const, value: "0" }, discountAmount: "0.00", itemNote: "", photoIds: [], outstandingPcs: null, outstandingWeightCt: null };
     const detail = {
       id: ID, docNo: "RS-1", status: "APPROVED", version: 2, docDate: "2026-11-18", dueDate: "2026-12-18",
       customerId: ID, customer: { code: "C001", name: "Aom" }, shippingAddressId: ID, shippingAddressText: "S", invoiceAddressId: ID, invoiceAddressText: "I",
       currency: "THB", exchangeRate: null, ref: "", documentNote: "",
-      lines: [{ ...base, source: "OWN_STOCK" as const, stone: "Ruby", location: "BKK-01", pcs: 2, weightCt: "1.400", unitPrice: "1500.00", amount: "3000.00", memoStockId: null, ownStockId: OWN, stockId: "260010", stockPendingPcs: 3, stockPendingWeightCt: "2.100" }],
+      lines: [
+        { ...base, source: "OWN_STOCK" as const, stone: "Ruby", location: "BKK-01", pcs: 2, weightCt: "1.400", unitPrice: "1500.00", amount: "3000.00", memoStockId: null, ownStockId: null, stockId: null, lotKey: OWN_LOT, allocated: true, stockPendingPcs: 3, stockPendingWeightCt: "2.100" },
+        { ...base, id: MEMO, source: "OWN_STOCK" as const, stone: "Ruby", location: "BKK-01", pcs: 1, weightCt: "0.700", unitPrice: "1500.00", amount: "1500.00", memoStockId: null, ownStockId: OWN, stockId: null, lotKey: null, allocated: true, stockPendingPcs: 3, stockPendingWeightCt: "2.100" },
+      ],
       discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null,
       totals: { subtotal: "3000.00", discountAmount: "0.00", priceBeforeTax: "3000.00", taxAmount: "0.00", chargesAmount: "0.00", laborAmount: "0.00", grandTotal: "3000.00" },
       approvedAt: null, approvedBy: null, createdAt: "", createdBy: "", updatedAt: "", deletedAt: null, deletedBy: null, syncState: "IDLE" as const, ...FLOW_DETAIL,
     } satisfies CustomerStockDetail;
-    expect(fromCustomerStock(detail, (id) => id).lines[0]).toMatchObject({ source: "STOCK", stockId: "260010", locationId: "BKK-01", memoStockId: "", ownStockId: OWN, stockPendingPcs: "3", pcs: "2" });
+    const loaded = fromCustomerStock(detail, (id) => id).lines;
+    expect(loaded[0]).toMatchObject({ source: "STOCK", stockId: "", lotKey: OWN_LOT, locationId: "BKK-01", memoStockId: "", ownStockId: "", stockPendingPcs: "3", pcs: "2" });
+    // A legacy line (saved before lots, Q-LOT-09) keeps its item id for the server but still shows no Stock ID.
+    expect(loaded[1]).toMatchObject({ stockId: "", lotKey: "", ownStockId: OWN });
   });
 });
 
 describe("UT-LS-P2-FE-03 Quotation 2a (FE-LS-P2-05)", () => {
   it("our-stock rows send OWN_STOCK + ownStockId without stone code, are capped with 'More than available', and load back", () => {
-    const own = { ...memoStockToStockLine(ownItem), unitPrice: "1500" };
-    const input = toQuotationInput(quotationValues([own, { ...memoStockToStockLine(memoItem), unitPrice: "100" }]));
-    expect(input.lines[0]).toMatchObject({ source: "OWN_STOCK", ownStockId: OWN, memoStockId: null, stoneCodeId: null, stoneCode: "" });
-    expect(input.lines[1]).toMatchObject({ source: "STOCK", memoStockId: MEMO, ownStockId: null });
+    const own = { ...lotToStockLine(ownItem), unitPrice: "1500" };
+    const input = toQuotationInput(quotationValues([own, { ...lotToStockLine(memoItem), unitPrice: "100" }]));
+    expect(input.lines[0]).toMatchObject({ source: "OWN_STOCK", lotKey: OWN_LOT, ownStockId: null, memoStockId: null, stoneCodeId: null, stoneCode: "" });
+    expect(input.lines[1]).toMatchObject({ source: "STOCK", lotKey: MEMO_LOT, memoStockId: null, ownStockId: null });
     expect(issuesByPath(quotationSchema, quotationValues([{ ...own, pcs: "4", weightCt: "3" }]))).toEqual({ "lines.0.pcs": "More than available", "lines.0.weightCt": "More than available" });
     expect(issuesByPath(quotationSchema, quotationValues([{ ...own, unitPrice: "" }]))).toEqual({ "lines.0.unitPrice": "Enter the sale price" });
     const saved: QuotationDetail["lines"][number] = {
-      id: "l1", source: "OWN_STOCK", memoStockId: null, ownStockId: OWN, stockId: "260010", stockPendingPcs: 3, stockPendingWeightCt: "2.100", stoneCodeId: null, stoneCode: "RU-OV",
+      id: "l1", source: "OWN_STOCK", memoStockId: null, ownStockId: null, stockId: null, lotKey: OWN_LOT, allocated: true, stockPendingPcs: 3, stockPendingWeightCt: "2.100", stoneCodeId: null, stoneCode: "RU-OV",
       stone: "Ruby", shape: "", size: "", color: "", clarity: "", cutting: "", quality: "", lot: "", location: "BKK-01", cerType: "", cerNo: "", pcs: 1, weightCt: "0.700",
       priceUnit: "PER_PCS", unitPrice: "1500.00", discount: { type: "NONE", value: "0" }, discountAmount: "0.00", amount: "1500.00", itemNote: "", photoIds: [],
     };
     const detail = { ...({} as QuotationDetail), id: ID, docNo: "QT-1", version: 1, docDate: "2026-11-18", dueDate: "2026-12-18", currency: "THB", exchangeRate: null, ref: "", documentNote: "",
       lines: [saved], discount: { type: "NONE", value: "0" }, tax: { enabled: false, rate: "7", includeInPrice: false }, serviceCharges: [], labor: null, status: "DRAFT",
       statusReason: null, customerId: ID, shippingAddressId: ID, invoiceAddressId: ID } as QuotationDetail;
-    expect(fromQuotation(detail).lines[0]).toMatchObject({ source: "STOCK", ownStockId: OWN, memoStockId: "", locationId: "BKK-01", stockPendingPcs: "3" });
+    expect(fromQuotation(detail).lines[0]).toMatchObject({ source: "STOCK", lotKey: OWN_LOT, ownStockId: "", memoStockId: "", stockId: "", locationId: "BKK-01", stockPendingPcs: "3" });
   });
 
   it("Save errors: above available, gone, duplicate, INVENTORY_UNAVAILABLE (nothing saved); Memo rows keep 'More than pending'", () => {
@@ -222,38 +218,50 @@ describe("UT-LS-P2-FE-05 Load in use names its holders (SA rev 2)", () => {
   });
 });
 
-describe("IT-LS-P2-FE-01 shared From Stock picker (FE-LS-P2-03)", () => {
+describe("IT-LS-P2-FE-01 shared From Stock picker (FE-LS-P2-03, FE-LOT-001/002)", () => {
   const seed = (pages: unknown[]) => {
     const queryClient = newClient();
-    queryClient.setQueryData(getQueryKey(masterTrpc.fromStock.list, fromStockInput({ q: "", from: "", to: "" }), "infinite"), { pages, pageParams: pages.map(() => null) });
+    queryClient.setQueryData(getQueryKey(masterTrpc.fromStock.lots, fromStockInput({ q: "", from: "", to: "" }), "infinite"), { pages, pageParams: pages.map(() => null) });
     return queryClient;
   };
   const picker = (pickedIds = new Set<string>()) => createElement(MemoStockModal, { title: "Add From Stock", fromStock: true, showPrice: false, emptyText: "No stock with anything pending.", pickedIds, onCancel: () => undefined, onConfirm: () => undefined });
 
-  it("one list: Memo rows show Memo, our rows their Location and the Load ref; no cost, no tabs", () => {
+  it("one list of lots: Memo rows show Memo, our rows their Location and the Load ref; no Stock ID anywhere, no cost, no tabs", () => {
     const html = render(seed([{ items: [ownItem, memoItem], nextCursor: null, ownStock: "OK" }]), picker());
     expect(html).toContain('<td class="px-3 py-2 align-top">BKK-01</td>');
     expect(html).toContain('<td class="px-3 py-2 align-top">Memo</td>');
     expect(html).toContain('LS-0001<span class="ml-1.5 text-[11px] font-normal text-gms-text-secondary">Load</span>');
-    expect(html).toContain('aria-label="Select 260010 from LS-0001"');
+    expect(html).toContain('aria-label="Select RU-OV from LS-0001"');
+    expect(html).toContain('aria-label="Select lot L-7"');
+    expect(html).toContain("Lot / Stone Code");
+    expect(html).toContain("Search Lot, Stone, Stone Code, Cer No., Doc No.");
+    expect(html).not.toMatch(/Stock ID/);
+    expect(html).not.toContain("260010");
     expect(html).not.toContain("999.00");
     expect(html).not.toContain("Our stock is unavailable");
     expect(html).not.toContain('role="tablist"');
   });
 
+  it("Sale (memoOnly): our stock rows and the our-stock notice are left out; only Memo Stock lots are pickable", () => {
+    const sale = (ownStock: "OK" | "UNAVAILABLE") => render(seed([{ items: [ownItem, memoItem], nextCursor: null, ownStock }]), createElement(MemoStockModal, { title: "Add From Stock", fromStock: true, memoOnly: true, showPrice: false, emptyText: "none", pickedIds: new Set<string>(), onCancel: () => undefined, onConfirm: () => undefined }));
+    expect(sale("OK")).toContain("L-7");
+    expect(sale("OK")).not.toContain("RU-OV");
+    expect(sale("UNAVAILABLE")).not.toContain("Our stock is unavailable");
+  });
+
   it("our stock down: notice with Retry above the Memo rows; an empty list shows the notice, not the empty text", () => {
     const down = render(seed([{ items: [memoItem], nextCursor: null, ownStock: "UNAVAILABLE" }]), picker());
     expect(down).toContain('<span role="status">Our stock is unavailable</span> — <button type="button" class="font-medium underline">Retry</button>');
-    expect(down).toContain("260003");
+    expect(down).toContain("L-7");
     const empty = render(seed([{ items: [], nextCursor: null, ownStock: "UNAVAILABLE" }]), picker());
     expect(empty).toContain("Our stock is unavailable");
     expect(empty).not.toContain("No stock with anything pending.");
   });
 
-  it("rows already on the document are left out by source + id", () => {
-    const html = render(seed([{ items: [ownItem, memoItem], nextCursor: null, ownStock: "OK" }]), picker(new Set([`own:${OWN}`])));
-    expect(html).not.toContain("260010");
-    expect(html).toContain("260003");
+  it("rows already on the document are left out by lotKey", () => {
+    const html = render(seed([{ items: [ownItem, memoItem], nextCursor: null, ownStock: "OK" }]), picker(new Set([OWN_LOT])));
+    expect(html).not.toContain("RU-OV");
+    expect(html).toContain("L-7");
   });
 
   it("Reserve / Memo Out config opens the From Stock list, leaves picked rows out and maps both sources", () => {
@@ -261,11 +269,11 @@ describe("IT-LS-P2-FE-01 shared From Stock picker (FE-LS-P2-03)", () => {
       mapRestoreError: () => ({ message: "", refetch: false }), pickerTitle: "Add From Stock", approvalType: "reserve", notePlaceholder: "", noteHint: "", daybook: null, photos: { upload: null, url: (id: string) => id } as never });
     expect(config.pickHint).toBe("Pick stones from stock (Memo Stock and our stock)");
     const onAdd = vi.fn();
-    const element = config.picker!.render({ values: customerValues([memoStockToStockLine(ownItem)]), onClose: () => undefined, onAdd }) as ReactElement<{ fromStock: boolean; pickedIds: Set<string>; onConfirm: (items: FromStockItem[]) => void }>;
+    const element = config.picker!.render({ values: customerValues([lotToStockLine(ownItem)]), onClose: () => undefined, onAdd }) as ReactElement<{ fromStock: boolean; pickedIds: Set<string>; onConfirm: (items: FromStockItem[]) => void }>;
     expect(element.props.fromStock).toBe(true);
-    expect([...element.props.pickedIds]).toEqual([`own:${OWN}`]);
+    expect([...element.props.pickedIds]).toEqual([OWN_LOT]);
     element.props.onConfirm([memoItem, ownItem]);
-    expect(onAdd.mock.calls[0]![0]).toMatchObject([{ memoStockId: MEMO, ownStockId: "" }, { memoStockId: "", ownStockId: OWN, locationId: "BKK-01" }]);
+    expect(onAdd.mock.calls[0]![0]).toMatchObject([{ lotKey: MEMO_LOT, memoStockId: "", ownStockId: "" }, { lotKey: OWN_LOT, memoStockId: "", ownStockId: "", locationId: "BKK-01" }]);
   });
 
   it("Memo Return's vendor picker still reads memoStock.list (unchanged)", () => {
@@ -276,8 +284,8 @@ describe("IT-LS-P2-FE-01 shared From Stock picker (FE-LS-P2-03)", () => {
   });
 });
 
-describe("IT-LS-P2-FE-02 fromStock.list through the real link", () => {
-  it("GETs fromStock.list with the filter and the next page's cursor", async () => {
+describe("IT-LS-P2-FE-02 fromStock.lots through the real link", () => {
+  it("GETs fromStock.lots with the filter and the next page's cursor", async () => {
     respond = (_path, input) => ({ items: [], nextCursor: (input as { cursor?: string }).cursor ? null : "c1", ownStock: "OK" });
     const queryClient = newClient();
     let utils: ReturnType<typeof masterTrpc.useUtils> | undefined;
@@ -286,8 +294,8 @@ describe("IT-LS-P2-FE-02 fromStock.list through the real link", () => {
       return null;
     }
     renderToStaticMarkup(withProviders(queryClient, createElement(Probe)));
-    await utils!.fromStock.list.fetchInfinite(fromStockInput({ q: "ru", from: "2026-11-01", to: "" }), { pages: 2, getNextPageParam: (page) => page.nextCursor ?? undefined });
-    expect(calls.map((call) => [call.path, call.method])).toEqual([["fromStock.list", "GET"], ["fromStock.list", "GET"]]);
+    await utils!.fromStock.lots.fetchInfinite(fromStockInput({ q: "ru", from: "2026-11-01", to: "" }), { pages: 2, getNextPageParam: (page) => page.nextCursor ?? undefined });
+    expect(calls.map((call) => [call.path, call.method])).toEqual([["fromStock.lots", "GET"], ["fromStock.lots", "GET"]]);
     expect(calls[0]!.input).toMatchObject({ q: "ru", from: "2026-11-01", limit: 50 });
     expect(calls[1]!.input).toMatchObject({ cursor: "c1" });
   });

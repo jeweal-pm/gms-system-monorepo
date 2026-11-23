@@ -21,6 +21,7 @@ import {
 import {
   IN_STOCK_GROUP_LABEL,
   MEMO_STOCK_COLUMNS,
+  lotPickerInput,
   memoStockEmptyText,
   memoStockGroups,
   memoStockPickerProps,
@@ -34,23 +35,25 @@ import {
   SOLD_GROUP_LABEL,
 } from "@/features/purchase/components/purchase-pickers";
 import { gatewayError } from "../partner/helpers";
-import { memoRow, poRow, STOCK } from "./fixtures";
+import { memoStockKey } from "@/features/purchase/api";
+import { memoRow, poRow } from "./fixtures";
 
 /** UT-PU-07 (picker shell) and UT-PU-08 (Memo Stock view model), purchase UI rev 2 (FE-PU-004/008/009). */
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const lot = (n: number) => `ML${String(n).padStart(32, "0")}`;
 /** The design's five rows (source 05): 2 sold, 3 in stock, with its amounts. */
 const sold = [
-  memoRow({ key: `${id(1)}:SOLD`, memoStockId: id(1), status: "SOLD", stockId: "STK-000231", availablePcs: 1, availableWeightCt: "0.760", netUnitPrice: "1450.0000", amount: "1102.00", itemNote: "" }),
-  memoRow({ key: `${id(2)}:SOLD`, memoStockId: id(2), status: "SOLD", stockId: "STK-000232", availablePcs: 3, availableWeightCt: "3.600", netUnitPrice: "980.0000", amount: "3528.00" }),
+  memoRow({ lotKey: lot(1), memoGroup: "SOLD", lot: "LT-231", pendingPcs: 1, pendingWeightCt: "0.760", netUnitPrice: "1450.0000", amount: "1102.00", itemNote: "" }),
+  memoRow({ lotKey: lot(2), memoGroup: "SOLD", lot: "LT-232", pendingPcs: 3, pendingWeightCt: "3.600", netUnitPrice: "980.0000", amount: "3528.00" }),
 ];
 const inStock = [
-  memoRow({ key: `${id(3)}:IN_STOCK`, memoStockId: id(3), stockId: "STK-000331", availablePcs: 2, availableWeightCt: "1.450", netUnitPrice: "2100.0000", amount: "3045.00" }),
-  memoRow({ key: `${id(4)}:IN_STOCK`, memoStockId: id(4), stockId: "STK-000332", availablePcs: 4, availableWeightCt: "2.940", netUnitPrice: "320.0000", amount: "940.80" }),
-  memoRow({ key: `${id(5)}:IN_STOCK`, memoStockId: id(5), stockId: "STK-000333", priceUnit: "PCS", availablePcs: 1, availableWeightCt: "0.500", netUnitPrice: "900.0000", amount: "900.00" }),
+  memoRow({ lotKey: lot(3), memoGroup: "IN_STOCK", lot: "LT-331", pendingPcs: 2, pendingWeightCt: "1.450", netUnitPrice: "2100.0000", amount: "3045.00" }),
+  memoRow({ lotKey: lot(4), memoGroup: "IN_STOCK", lot: "LT-332", pendingPcs: 4, pendingWeightCt: "2.940", netUnitPrice: "320.0000", amount: "940.80" }),
+  memoRow({ lotKey: lot(5), memoGroup: "IN_STOCK", lot: "LT-333", priceUnit: "PER_PCS", pendingPcs: 1, pendingWeightCt: "0.500", netUnitPrice: "900.0000", amount: "900.00" }),
 ];
 const counts = { all: 5, sold: 2, inStock: 3 };
-const key = (row: PurchaseMemoStockRow) => row.key;
+const key = (row: PurchaseMemoStockRow) => memoStockKey(row.lotKey, row.memoGroup);
 
 const data = <R,>(rows: R[], patch: Partial<PickerData<R>> = {}): PickerData<R> => ({
   rows, isPending: false, isError: false, error: null, hasNextPage: false, isFetchingNextPage: false, fetchNextPage: () => undefined, ...patch,
@@ -78,20 +81,20 @@ describe("UT-PU-07 picker shell helpers", () => {
   it("select all covers only the expanded groups; rows checked under another filter stay checked", () => {
     const collapsedSold = new Set(["SOLD"]);
     expect(expandedRows(groups, collapsedSold)).toEqual(inStock);
-    const before = new Map([[sold[0]!.key, sold[0]!]]);
+    const before = new Map([[key(sold[0]!), sold[0]!]]);
     expect(selectAllState(expandedRows(groups, collapsedSold), before, key)).toEqual({ disabled: false, checked: false });
     const all = toggleAll(expandedRows(groups, collapsedSold), before, key);
-    expect([...all.keys()]).toEqual([sold[0]!.key, ...inStock.map(key)]);
+    expect([...all.keys()]).toEqual([key(sold[0]!), ...inStock.map(key)]);
     expect(selectAllState(inStock, all, key).checked).toBe(true);
     const none = toggleAll(inStock, all, key);
-    expect([...none.keys()]).toEqual([sold[0]!.key]);
+    expect([...none.keys()]).toEqual([key(sold[0]!)]);
     expect(selectAllState([], none, key)).toEqual({ disabled: true, checked: false });
   });
 
   it("row and group toggles", () => {
-    const one = toggleRow(new Map(), sold[1]!.key, sold[1]!);
-    expect(one.get(sold[1]!.key)).toBe(sold[1]);
-    expect(toggleRow(one, sold[1]!.key, sold[1]!).size).toBe(0);
+    const one = toggleRow(new Map(), key(sold[1]!), sold[1]!);
+    expect(one.get(key(sold[1]!))).toBe(sold[1]);
+    expect(toggleRow(one, key(sold[1]!), sold[1]!).size).toBe(0);
     expect([...toggleGroup(new Set(), "SOLD")]).toEqual(["SOLD"]);
     expect([...toggleGroup(new Set(["SOLD"]), "SOLD")]).toEqual([]);
   });
@@ -121,7 +124,7 @@ describe("UT-PU-07 picker shell view (R2-MS layout and states)", () => {
     expect(html).toMatch(/role="tab" aria-selected="true" aria-label="All, 5" tabindex="0"/);
     expect(html).toMatch(/role="tab" aria-selected="false" aria-label="Sold, 2" tabindex="-1"/);
     expect(html).toMatch(/role="tab" aria-selected="false" aria-label="In stock, 3"/);
-    expect(html).toContain('placeholder="Search Stock ID, lot, memo, invoice"');
+    expect(html).toContain('placeholder="Search Lot, Stone, Stone Code, Cer No., Doc No."');
     expect(html).toContain('aria-label="Received from"');
     expect(html).toContain('aria-label="Received to"');
     expect(html.match(/<thead/g)).toHaveLength(1);
@@ -133,8 +136,8 @@ describe("UT-PU-07 picker shell view (R2-MS layout and states)", () => {
     expect(html.match(/lucide-chevrons-up-down/g)).toHaveLength(MEMO_STOCK_COLUMNS.length);
     expect(button(html, "OK")).toContain("disabled:bg-gms-surface-sunken");
     expect(html.match(/<th /g)).toHaveLength(MEMO_STOCK_COLUMNS.length + 2);
-    expect(MEMO_STOCK_COLUMNS.map((column) => column.title)).toEqual(["Stock ID", "Location", "Stone", "Color · Clarity", "Cer Type", "Status", "Pcs", "Memo Price", "Amount"]);
-    expect(MEMO_STOCK_COLUMNS[0]!.sub).toBe("Lot · Memo No.");
+    expect(MEMO_STOCK_COLUMNS.map((column) => column.title)).toEqual(["Lot / Stone Code", "Location", "Stone", "Color · Clarity", "Cer Type", "Status", "Pcs", "Memo Price", "Amount"]);
+    expect(MEMO_STOCK_COLUMNS[0]!.sub).toBe("Memo No.");
     const soldHeader = button(html, SOLD_GROUP_LABEL);
     expect(soldHeader).toContain('aria-expanded="true"');
     const controls = /aria-controls="([^"]+)"/.exec(soldHeader)![1];
@@ -147,7 +150,7 @@ describe("UT-PU-07 picker shell view (R2-MS layout and states)", () => {
     // Group bands (design 144): red 18 % for Sold, neutral for In stock.
     expect(html.match(/bg-gms-group-red-sub/g)).toHaveLength(1);
     expect(html.match(/bg-gms-group-band/g)).toHaveLength(1);
-    expect(html).toContain('aria-label="Select STK-000231 from MR-1001"');
+    expect(html).toContain('aria-label="Select lot LT-231"');
     expect(button(html, "OK")).toContain('disabled=""');
     expect(html).toContain('aria-live="polite"');
     expect(html).not.toContain("selected</span>");
@@ -162,7 +165,7 @@ describe("UT-PU-07 picker shell view (R2-MS layout and states)", () => {
   });
 
   it("checked rows: N selected (also rows not shown), OK enabled, select all checked over the expanded groups", () => {
-    const checked = new Map(inStock.map((row) => [row.key, row]));
+    const checked = new Map(inStock.map((row) => [key(row), row]));
     checked.set("hidden-under-another-filter", sold[0]!);
     const html = view(memoProps(), state("IN_STOCK", data(inStock), { checked }));
     expect(html).toContain(">4 selected</span>");
@@ -172,8 +175,8 @@ describe("UT-PU-07 picker shell view (R2-MS layout and states)", () => {
   });
 
   it("rows already on the document are left out; Load more while the server has more", () => {
-    const html = view(memoProps({ excluded: new Set([inStock[0]!.key]) }), state("ALL", data([...sold, ...inStock], { hasNextPage: true })));
-    expect(html).not.toContain("STK-000331");
+    const html = view(memoProps({ excluded: new Set([key(inStock[0]!)]) }), state("ALL", data([...sold, ...inStock], { hasNextPage: true })));
+    expect(html).not.toContain("LT-331");
     expect(numbers(html)).toEqual([1, 2, 3, 4]);
     expect(button(html, "Load more")).not.toContain('disabled=""');
     expect(view(memoProps(), state("ALL", data(inStock, { hasNextPage: true, isFetchingNextPage: true })))).toMatch(/disabled="">Loading…<\/button>/);
@@ -205,12 +208,13 @@ describe("UT-PU-08 Memo Stock view model", () => {
     expect(html).toContain('aria-label="Sold, 0"');
   });
 
-  it("cells (design 144): Stock ID on top with Lot · Memo No. and the note under it, Location, badges with AA text colours, Pcs over cts, price per unit, amount", () => {
+  it("cells (design 144, lot-based-stock): Lot chip then Stone Code, Memo No. and the note under it, Location, badges with AA text colours, Pcs over cts, price per unit, amount; no Stock ID", () => {
     const html = view(memoProps(), state("ALL", data([...sold, ...inStock])));
-    expect(html).toContain('<div class="font-medium">STK-000232</div>');
-    expect(html.match(/>L-2607-007 · MR-1001<\/div>/g)).toHaveLength(5);
-    expect(html).not.toContain('<div class="font-medium">MR-1001</div>');
-    expect(html.indexOf(">STK-000231</div>")).toBeLessThan(html.indexOf("L-2607-007 · MR-1001"));
+    expect(html).toContain(">LT-232</span>");
+    expect(html.match(/>MR-1001<\/div>/g)).toHaveLength(5);
+    expect(html.indexOf(">LT-231</span>")).toBeLessThan(html.indexOf(">MR-1001</div>"));
+    expect(html).toContain('<span class="font-medium">—</span>');
+    expect(html).not.toMatch(/Stock ID/);
     expect(html.match(/lucide-message-square/g)).toHaveLength(4);
     expect(html).toContain(">Memo</td>");
     expect(html).not.toMatch(/Pair|Parcel|Single/);
@@ -224,17 +228,22 @@ describe("UT-PU-08 Memo Stock view model", () => {
     for (const amount of ["1,102.00", "3,528.00", "3,045.00", "940.80"]) expect(html).toContain(`>${amount}</td>`);
   });
 
-  it("a sold row shows its invoice and customer only when the API gives them (always null in SA rev 1)", () => {
-    const withSale = memoRow({ key: `${STOCK}:SOLD`, status: "SOLD", sale: { invoiceNo: "INV2610-021", invoiceDate: "2026-10-28", customerName: "Siam Gems" } as never });
-    const html = view(memoProps(), state("ALL", data([withSale])));
-    expect(html).toContain("INV2610-021 · 28/10/26");
-    expect(html).toContain("Siam Gems");
-    expect(view(memoProps(), state("ALL", data([sold[0]!])))).not.toContain("INV");
+  it("a sold row shows no invoice or customer, and a missing price reads 0.00", () => {
+    const html = view(memoProps(), state("ALL", data([sold[0]!, memoRow({ lotKey: lot(9), memoGroup: "SOLD", netUnitPrice: null, amount: null })])));
+    expect(html).not.toContain("INV");
+    expect(html).toContain(">0.00</div>");
+  });
+
+  it("rows are keyed by lot and part (the same lot's Sold and In-stock rows are distinct); lot columns and search text", () => {
+    expect(key(memoRow({ lotKey: lot(1), memoGroup: "SOLD" }))).not.toBe(key(memoRow({ lotKey: lot(1), memoGroup: "IN_STOCK" })));
+    expect(memoProps().columns[0]).toMatchObject({ title: "Lot / Stone Code", sub: "Memo No." });
+    expect(memoProps().searchPlaceholder).toBe("Search Lot, Stone, Stone Code, Cer No., Doc No.");
   });
 
   it("empty texts and the picker input (status, filters only when set, 50 a page)", () => {
     expect(memoStockEmptyText("THB")("ALL", false)).toBe("No memo stock from this vendor in THB.");
     expect(pickerInput("v", "THB", { status: "SOLD", q: "", from: "", to: "" })).toEqual({ vendorId: "v", currency: "THB", status: "SOLD", limit: PICKER_PAGE_SIZE });
+    expect(lotPickerInput("v", "THB", { status: "SOLD", q: "LT", from: "", to: "" })).toEqual({ vendorId: "v", currency: "THB", group: "SOLD", limit: 50, q: "LT" });
     expect(pickerInput("v", "THB", { status: "ALL", q: "STK", from: "2026-10-01", to: "2026-10-31" })).toEqual({ vendorId: "v", currency: "THB", status: "ALL", limit: 50, q: "STK", from: "2026-10-01", to: "2026-10-31" });
   });
 });

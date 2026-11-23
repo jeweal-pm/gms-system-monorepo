@@ -1,3 +1,4 @@
+import { isLotDocumentType } from "@/features/trade-document/lot-stock";
 import {
   BoxClockIcon,
   MemoOutIcon,
@@ -224,7 +225,11 @@ export function approveMenuFor(slug: string): ApproveMenu | undefined {
 export const APPROVE_PERMISSIONS: readonly string[] = APPROVE_MENUS.map((menu) => `${menu.leaf}:APPROVE`);
 
 /** Search placeholder by party (ui-spec "Per-menu variants"). */
+/** Documents that hide the Stock ID (lot-based-stock, owner Q3): their search names the Lot instead (owner Q-LOT-10a). */
+const hidesStockId = (menu: ApproveMenu) => isLotDocumentType(menu.slug);
+
 export function searchPlaceholder(menu: ApproveMenu): string {
+  if (hidesStockId(menu)) return menu.party === "customer" ? "Search no., customer, stone, Lot" : menu.party === "vendor" ? "Search no., vendor, stone, Lot" : "Search no., stone, Lot";
   if (menu.party === "customer") return "Search no., customer, stone, Stock ID";
   if (menu.party === "vendor") return "Search no., vendor, stone, Stock ID";
   return "Search no., stone, Stock ID";

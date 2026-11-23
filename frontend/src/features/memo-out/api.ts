@@ -9,7 +9,7 @@ import {
   customerStockSchema,
   emptyCustomerStock,
   fromCustomerStock,
-  memoStockToStockLine,
+  lotToStockLine,
   toCustomerStockInput,
   type CustomerStockFormValues,
   type CustomerStockLine,
@@ -39,7 +39,7 @@ export const MEMO_OUT_STATUSES = CUSTOMER_STOCK_STATUSES;
 
 export const memoOutSchema = customerStockSchema;
 export const emptyMemoOut = emptyCustomerStock;
-export const memoStockToOutLine = memoStockToStockLine;
+export const lotToOutLine = lotToStockLine;
 export const toMemoOutInput = toCustomerStockInput;
 export const fromMemoOut = (detail: MemoOutDetail) => fromCustomerStock(detail, DOCUMENT_PHOTOS.memoOut.url);
 
@@ -79,7 +79,7 @@ export function useMemoOutApi(customerId: string | undefined, docDate: string, i
     submit: (args) => submit.mutateAsync(args),
     restore: (args) => restore.mutateAsync(args),
     invalidate: () =>
-      Promise.all([utils.memoOut.list.invalidate(), utils.memoOut.get.invalidate(), utils.memoOut.nextNumber.invalidate(), utils.memoStock.list.invalidate(), utils.fromStock.list.invalidate()]),
+      Promise.all([utils.memoOut.list.invalidate(), utils.memoOut.get.invalidate(), utils.memoOut.nextNumber.invalidate(), utils.memoStock.lots.invalidate(), utils.fromStock.lots.invalidate()]),
     busy: create.isPending || update.isPending || remove.isPending || submit.isPending || restore.isPending,
   };
 }

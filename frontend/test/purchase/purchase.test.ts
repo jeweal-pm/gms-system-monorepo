@@ -30,7 +30,7 @@ import { DocumentKindContext, QUOTATION_KIND, type DocumentKind } from "@/featur
 import { emptyQuotation } from "@/features/quotation/lib/defaults";
 import { DUE_BEFORE_DOC_MESSAGE, type QuotationLine } from "@/features/quotation/schema";
 import { gatewayError } from "../partner/helpers";
-import { ID, LINE, memoRow, POL, poRow, savedLine, savedPurchase, STOCK } from "./fixtures";
+import { ID, LINE, LOT, memoRow, POL, poRow, savedLine, savedPurchase, STOCK } from "./fixtures";
 
 /** UT-PU-03…06, UT-PU-09…11: purchase UI rev 1 + rev 2 on SA rev 1 (FE-PU-002…005, FE-PU-009/010). */
 
@@ -68,7 +68,7 @@ describe("UT-PU-03 routes, page settings and access", () => {
 
   it("number label, kind and note", () => {
     expect(PURCHASE_CONFIG.noLabel).toBe("Purchase No.:");
-    expect(PURCHASE_KIND).toMatchObject({ stockId: "from-stock", stockIdEmpty: "—", stoneCode: true, location: true, locations: "text", stockQuantity: true, lockStockDiscount: true, priceTitle: "Price", documentNote: { max: 250, hint: "Printed on the purchase for the vendor" } });
+    expect(PURCHASE_KIND).toMatchObject({ stockId: "lot", stoneCode: true, location: true, locations: "text", stockQuantity: true, lockStockDiscount: true, priceTitle: "Price", documentNote: { max: 250, hint: "Printed on the purchase for the vendor" } });
     expect(PURCHASE_CONFIG.noteMax).toBe(250);
     expect(PURCHASE_CONFIG.notePlaceholder).toBe("e.g. Paid by transfer on delivery.");
     expect(PURCHASE_CONFIG.partyId(valid())).toBe(ID);
@@ -142,21 +142,21 @@ describe("UT-PU-04 schema (form-guidelines, R2-03)", () => {
 });
 
 describe("UT-PU-05 Memo Stock rows (R2-MS → page rows)", () => {
-  it("copies the item, location, the available quantity as the cap and the net price at 2 dp", () => {
+  it("copies the lot, location, the part's quantity as the cap and the net price at 2 dp; no Stock ID (lot-based-stock)", () => {
     const row = memoStockToPurchaseLine(memoRow());
     expect(row).toMatchObject({
-      source: "STOCK", stockId: "260003", lot: "L-2607-007", stoneCode: "", stoneCodeId: "", locationId: "Memo", stone: "Tourmaline", shape: "Oval", size: "7.2×5.4 mm",
+      source: "STOCK", stockId: "", lot: "L-2607-007", stoneCode: "", stoneCodeId: "", locationId: "Memo", stone: "Tourmaline", shape: "Oval", size: "7.2×5.4 mm",
       color: "Red", clarity: "VVS", cutting: "Excellent", quality: "AAA", cerType: "GIA", cerNo: "GRS2024-081233", itemNote: "Silk",
       pcs: "2", weightCt: "1.360", priceUnit: "PER_CT", unitPrice: "11250.50", discountValue: "", photos: [],
-      memoStockId: STOCK, memoGroup: "IN_STOCK", purchaseOrderLineId: "", sourceDocNo: "MR-1001", stockPendingPcs: "2", stockPendingWeightCt: "1.360",
+      lotKey: LOT, memoStockId: "", memoGroup: "IN_STOCK", purchaseOrderLineId: "", sourceDocNo: "MR-1001", stockPendingPcs: "2", stockPendingWeightCt: "1.360",
     });
     expect(row.key).toMatch(/^line-/);
     expect(purchaseLineSource(row)).toBe("STOCK");
   });
 
   it("a per-pcs item and a sold row (the cap is its sold, not yet purchased quantity; owner Q-PU-16: none on dev yet)", () => {
-    expect(memoStockToPurchaseLine(memoRow({ priceUnit: "PCS", availablePcs: 1, availableWeightCt: "0.680", netUnitPrice: "900" }))).toMatchObject({ priceUnit: "PER_PCS", pcs: "1", weightCt: "0.680", unitPrice: "900.00", stockPendingPcs: "1" });
-    const sold = memoStockToPurchaseLine(memoRow({ key: `${STOCK}:SOLD`, status: "SOLD", availablePcs: 1, availableWeightCt: "0.500" }));
+    expect(memoStockToPurchaseLine(memoRow({ priceUnit: "PER_PCS", pendingPcs: 1, pendingWeightCt: "0.680", netUnitPrice: "900" }))).toMatchObject({ priceUnit: "PER_PCS", pcs: "1", weightCt: "0.680", unitPrice: "900.00", stockPendingPcs: "1" });
+    const sold = memoStockToPurchaseLine(memoRow({ memoGroup: "SOLD", pendingPcs: 1, pendingWeightCt: "0.500" }));
     expect(sold).toMatchObject({ memoGroup: "SOLD", pcs: "1", weightCt: "0.500", stockPendingPcs: "1", stockPendingWeightCt: "0.500" });
   });
 
@@ -186,11 +186,11 @@ describe("UT-PU-09 Purchase Order rows (R2-PO, R2-05)", () => {
       .toMatchObject({ pcs: "10", weightCt: "5.000", priceUnit: "PER_PCS", unitPrice: "120.00" });
   });
 
-  it("FE-PU-014 the page table shows — · from {PO No.}; a manual row — (Q-PU-37) and — for a blank location; Memo Stock rows keep their Stock ID", () => {
-    expect(purchaseTableLine(purchaseOrderLineToPurchaseLine(poRow()))).toMatchObject({ stockId: "— · from PO2611001", locationId: "Safe A" });
-    expect(purchaseTableLine(manualLine())).toMatchObject({ stockId: "—", locationId: "—" });
+  it("the page table tags a PO row \"from {PO No.}\" and a Memo Stock row with its part, never a Stock ID; — for a blank location", () => {
+    expect(purchaseTableLine(purchaseOrderLineToPurchaseLine(poRow()))).toMatchObject({ stockId: "from PO2611001", locationId: "Safe A" });
+    expect(purchaseTableLine(manualLine())).toMatchObject({ stockId: "", locationId: "—" });
     for (const line of [purchaseOrderLineToPurchaseLine(poRow()), manualLine()]) expect(purchaseTableLine(line).stockId).not.toContain("Auto");
-    expect(purchaseTableLine(memoStockToPurchaseLine(memoRow()))).toMatchObject({ stockId: "260003 · In stock", locationId: "Memo" });
+    expect(purchaseTableLine(memoStockToPurchaseLine(memoRow()))).toMatchObject({ stockId: "In stock", locationId: "Memo" });
     const empty = emptyPurchaseLine();
     expect(purchaseTableLine(empty)).toBe(empty);
   });
@@ -232,12 +232,10 @@ describe("UT-PU-10 picked-row edit rule (R2-03, owner 2026-11-04)", () => {
     expect(input(manual, 'aria-label="Discount \\(%\\)"')).not.toContain("disabled=\"\"");
     expect(input(manual, 'name="lines.0.lot"')).not.toMatch(/ readOnly=""/);
     expect(input(manual, 'name="lines.0.locationId"')).not.toMatch(/ readOnly=""/);
-    // FE-PU-014 (ADR-0051 / Q-PU-37): a manual / PO row has no Stock ID and shows "—", not "Auto"; a Memo Stock row shows its own.
+    // lot-based-stock (owner Q3): the Purchase row panel has no Stock ID field at all, for manual, PO and Memo Stock rows.
     expect(manual).not.toContain("Assigned when you save");
     expect(manual).not.toContain(">Auto<");
-    expect(manual).toMatch(/>Stock ID<\/span><div aria-readonly="true"[^>]*><span class="truncate">—</);
-    expect(panel(PURCHASE_KIND, purchaseOrderLineToPurchaseLine(poRow()))).toMatch(/>Stock ID<\/span><div aria-readonly="true"[^>]*><span class="truncate">—</);
-    expect(panel(PURCHASE_KIND, memoStockToPurchaseLine(memoRow()))).toMatch(/>Stock ID<\/span><div aria-readonly="true"[^>]*><span class="truncate">260003</);
+    for (const html of [manual, panel(PURCHASE_KIND, purchaseOrderLineToPurchaseLine(poRow())), panel(PURCHASE_KIND, memoStockToPurchaseLine(memoRow()))]) expect(html).not.toContain(">Stock ID<");
     const quotationStock = panel(QUOTATION_KIND, { ...manualLine(), source: "STOCK", memoStockId: STOCK, stockPendingPcs: "5", stockPendingWeightCt: "9" });
     expect(QUOTATION_KIND.lockStockDiscount).toBeUndefined();
     expect(input(quotationStock, 'aria-label="Discount \\(%\\)"')).not.toContain("disabled=\"\"");
@@ -256,10 +254,10 @@ describe("UT-PU-10 picked-row edit rule (R2-03, owner 2026-11-04)", () => {
     const po = purchaseOrderLineToPurchaseLine(poRow());
     const manual = manualLine();
     const empty = emptyPurchaseLine();
-    expect([...pickedSourceKeys([memo, po, manual, empty])]).toEqual([memoStockKey(STOCK, "IN_STOCK"), POL]);
+    expect([...pickedSourceKeys([memo, po, manual, empty])]).toEqual([memoStockKey(LOT, "IN_STOCK"), POL]);
     const cleared = clearPickedRows([memo, po, manual, empty])!;
     expect(cleared).toHaveLength(4);
-    expect(cleared[0]).toMatchObject({ stockId: "", stone: "", memoStockId: "", source: "MANUAL" });
+    expect(cleared[0]).toMatchObject({ stockId: "", stone: "", memoStockId: "", lotKey: "", source: "MANUAL" });
     expect(cleared[1]).toMatchObject({ stoneCode: "", purchaseOrderLineId: "", source: "MANUAL" });
     expect(cleared[2]).toBe(manual);
     expect(cleared[3]).toBe(empty);
@@ -275,16 +273,16 @@ describe("UT-PU-06 contract mapping, errors and the approve text (FE-PU-003/005)
     expect(input.vendorId).toBe(ID);
     expect(input.addressId).toBe(ID);
     expect(input.lines).toHaveLength(3);
-    expect(input.lines[0]).toMatchObject({ source: "STOCK", memoStockId: STOCK, memoGroup: "IN_STOCK", purchaseOrderLineId: null, stoneCodeId: null, discount: { type: "NONE", value: "0" }, photoIds: [], pcs: 2, weightCt: "1.360", unitPrice: "11250.50", priceUnit: "PER_CT", itemNote: "Silk" });
+    expect(input.lines[0]).toMatchObject({ source: "STOCK", lotKey: LOT, memoStockId: null, memoGroup: "IN_STOCK", purchaseOrderLineId: null, stoneCodeId: null, discount: { type: "NONE", value: "0" }, photoIds: [], pcs: 2, weightCt: "1.360", unitPrice: "11250.50", priceUnit: "PER_CT", itemNote: "Silk" });
     expect(input.lines[1]).toMatchObject({ source: "PURCHASE_ORDER", purchaseOrderLineId: POL, memoStockId: null, memoGroup: null, stoneCodeId: null, discount: { type: "NONE", value: "0" }, pcs: 6, weightCt: "3.000", unitPrice: "950.00" });
     expect(input.lines[2]).toMatchObject({ source: "MANUAL", memoStockId: null, memoGroup: null, purchaseOrderLineId: null, discount: { type: "PERCENT", value: "10" }, location: "Safe B" });
     for (const line of input.lines) expect(line).not.toHaveProperty("id");
   });
 
-  it("fromPurchase keeps sources, the Memo Stock row's Stock ID (PO / manual rows null → \"\", ADR-0051), Memo / PO numbers and the caps; a saved row sends its id on update", () => {
+  it("fromPurchase keeps sources, lots (a legacy line its item id), never a Stock ID, Memo / PO numbers and the caps; a saved row sends its id on update", () => {
     const values = fromPurchase(savedPurchase());
     expect(values).toMatchObject({ id: ID, docNo: "PU-7", version: 3, status: "PENDING_APPROVAL", vendorId: ID, addressId: ID, ref: "R-1", documentNote: "Paid by transfer" });
-    expect(values.lines[0]).toMatchObject({ key: "66666666-6666-4666-8666-666666666666", source: "STOCK", stockId: "260003", memoStockId: STOCK, memoGroup: "IN_STOCK", sourceDocNo: "MR-1001", stockPendingPcs: "2", stockPendingWeightCt: "1.360", pcs: "1" });
+    expect(values.lines[0]).toMatchObject({ key: "66666666-6666-4666-8666-666666666666", source: "STOCK", stockId: "", lotKey: "", memoStockId: STOCK, memoGroup: "IN_STOCK", sourceDocNo: "MR-1001", stockPendingPcs: "2", stockPendingWeightCt: "1.360", pcs: "1" });
     expect(values.lines[1]).toMatchObject({ source: "STOCK", stockId: "", purchaseOrderLineId: POL, sourceDocNo: "PO2611001", stockPendingPcs: "6", stoneCodeId: "" });
     expect(values.lines[2]).toMatchObject({ source: "MANUAL", stockId: "", stoneCodeId: ID, discountType: "PERCENT", discountValue: "10", memoStockId: "", purchaseOrderLineId: "" });
     expect(issues(values)).toEqual([]);

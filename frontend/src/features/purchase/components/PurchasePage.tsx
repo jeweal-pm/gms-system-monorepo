@@ -64,8 +64,8 @@ export const PURCHASE_NOTE_HINT = "Printed on the purchase for the vendor";
  */
 export const PURCHASE_KIND: DocumentKind = {
   ...QUOTATION_KIND,
-  stockId: "from-stock",
-  stockIdEmpty: "—",
+  // lot-based-stock (owner Q3): the Lot leads the row, the Stock ID is not shown.
+  stockId: "lot",
   stoneCode: true,
   location: true,
   locations: "text",

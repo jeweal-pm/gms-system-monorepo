@@ -10,7 +10,7 @@ import { mergePartAmount, type MergePair } from "../form";
 export const MERGE_BODY = "Part of this stone was sold to a customer and the rest is still with us on memo. Both parts must go on this purchase. Choose how they appear.";
 export const MERGE_BODY_MANY = "Part of these stones was sold to customers and the rest is still with us on memo. Both parts must go on this purchase. Choose how they appear.";
 export const mergeTitle = (pairs: readonly MergePair[]) =>
-  pairs.length === 1 ? `${pairs[0]!.stockId} is both sold and in stock` : `${pairs.length} items are both sold and in stock`;
+  pairs.length === 1 ? `${pairs[0]!.lot ? `Lot ${pairs[0]!.lot}` : "This item"} is both sold and in stock` : `${pairs.length} items are both sold and in stock`;
 
 export type MergeChoice = "merge" | "separate";
 
@@ -37,9 +37,9 @@ function PairCard({ pair, currency }: { pair: MergePair; currency: string }) {
     <div className="overflow-hidden rounded-lg border border-[#E3E6EA] bg-[#F6F7F8]">
       <div className="px-4 py-3">
         <div className="text-sm font-semibold text-[#1C252E]">
-          {pair.stockId} <span className="font-medium">{title}{sold.color ? ` · ${sold.color}` : ""}</span>
+          {pair.lot ? `Lot ${pair.lot}` : "Lot —"} <span className="font-medium">{title}{sold.color ? ` · ${sold.color}` : ""}</span>
         </div>
-        <div className="mt-0.5 text-xs text-[#6B7480]">{[sold.sourceDocNo, sold.lot].filter(Boolean).join(" · ")}</div>
+        <div className="mt-0.5 text-xs text-[#6B7480]">{sold.sourceDocNo}</div>
       </div>
       <table className="w-full bg-white text-sm">
         <thead>
@@ -145,7 +145,7 @@ export function MergeDialog({ pairs, currency, separateCount, onMerge, onSplit, 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto border-b border-[#EDEDED] px-6 py-5">
         <p id={bodyId} className="text-sm leading-[22px] text-[#1C252E]">{one ? MERGE_BODY : MERGE_BODY_MANY}</p>
         {pairs.map((pair) => (
-          <Fragment key={pair.memoStockId}>
+          <Fragment key={pair.itemKey}>
             <PairCard pair={pair} currency={currency} />
           </Fragment>
         ))}
