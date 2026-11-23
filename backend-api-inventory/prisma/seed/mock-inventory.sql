@@ -65,8 +65,8 @@ CREATE TEMP TABLE seed_cfg AS
 SELECT cp.currency_code::text AS cc, (extract(year FROM now() AT TIME ZONE 'Asia/Bangkok')::int % 100) AS y,
        coalesce((SELECT last_no FROM partner.memo_stock_id_counter WHERE year = (extract(year FROM now() AT TIME ZONE 'Asia/Bangkok')::int % 100)), 0) AS ctr0,
        n.id AS numbering_id, coalesce(n.prefix, '') AS prefix, coalesce(n.separator, '') AS sep,
-       CASE WHEN n.id IS NULL THEN coalesce((SELECT max(running_no) FROM inventory.load_to_stock WHERE numbering_id IS NULL), 0)
-            ELSE greatest(coalesce((SELECT max(running_no) FROM inventory.load_to_stock WHERE numbering_id = n.id), 0), n.start_no - 1) END AS base
+       CASE WHEN n.id IS NULL THEN coalesce((SELECT max(running_no) FROM inventory.load_to_stock), 0)
+            ELSE greatest(coalesce((SELECT max(running_no) FROM inventory.load_to_stock), 0), n.start_no - 1) END AS base  -- whole table: doc_no is unique across numbering rows (2026-11-20)
 FROM partner.company_profile cp
 LEFT JOIN LATERAL (SELECT id, prefix, separator, start_no FROM partner.document_numbering
                    WHERE transaction_key = 'load-to-stock' ORDER BY effective_date LIMIT 1) n ON true

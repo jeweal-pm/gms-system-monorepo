@@ -290,17 +290,19 @@ SELECT n.transaction_key, n.id, n.prefix, n.separator, 0
 FROM partner.document_numbering n
 WHERE n.effective_date = DATE '2024-01-01'
   AND n.transaction_key IN ('quotation','reserve','memo-receive','memo-return','memo-out','memo-out-return','purchase-order','purchase');
--- Running numbers continue after anything already issued from that row.
+-- Running numbers continue after the highest number already issued in that table, from ANY numbering row: doc_no is
+-- unique per table and a real numbering row usually has the same prefix (MR-1 from a 2026 row collided with the
+-- seed's 2024 row, 2026-11-20). Skipping numbers is harmless; reusing one is not.
 UPDATE seed_num s SET base = greatest(x.m, (SELECT start_no - 1 FROM partner.document_numbering WHERE id = s.id))
 FROM (
-  SELECT 'quotation' t, (SELECT coalesce(max(running_no), 0) FROM partner.quotation q JOIN seed_num n ON n.dtype = 'quotation' AND q.numbering_id = n.id) m
-  UNION ALL SELECT 'reserve', (SELECT coalesce(max(running_no), 0) FROM partner.reserve q JOIN seed_num n ON n.dtype = 'reserve' AND q.numbering_id = n.id)
-  UNION ALL SELECT 'memo-receive', (SELECT coalesce(max(running_no), 0) FROM partner.memo_receive q JOIN seed_num n ON n.dtype = 'memo-receive' AND q.numbering_id = n.id)
-  UNION ALL SELECT 'memo-return', (SELECT coalesce(max(running_no), 0) FROM partner.memo_return q JOIN seed_num n ON n.dtype = 'memo-return' AND q.numbering_id = n.id)
-  UNION ALL SELECT 'memo-out', (SELECT coalesce(max(running_no), 0) FROM partner.memo_out q JOIN seed_num n ON n.dtype = 'memo-out' AND q.numbering_id = n.id)
-  UNION ALL SELECT 'memo-out-return', (SELECT coalesce(max(running_no), 0) FROM partner.memo_out_return q JOIN seed_num n ON n.dtype = 'memo-out-return' AND q.numbering_id = n.id)
-  UNION ALL SELECT 'purchase-order', (SELECT coalesce(max(running_no), 0) FROM partner.purchase_order q JOIN seed_num n ON n.dtype = 'purchase-order' AND q.numbering_id = n.id)
-  UNION ALL SELECT 'purchase', (SELECT coalesce(max(running_no), 0) FROM partner.purchase q JOIN seed_num n ON n.dtype = 'purchase' AND q.numbering_id = n.id)
+  SELECT 'quotation' t, (SELECT coalesce(max(running_no), 0) FROM partner.quotation q) m
+  UNION ALL SELECT 'reserve', (SELECT coalesce(max(running_no), 0) FROM partner.reserve q)
+  UNION ALL SELECT 'memo-receive', (SELECT coalesce(max(running_no), 0) FROM partner.memo_receive q)
+  UNION ALL SELECT 'memo-return', (SELECT coalesce(max(running_no), 0) FROM partner.memo_return q)
+  UNION ALL SELECT 'memo-out', (SELECT coalesce(max(running_no), 0) FROM partner.memo_out q)
+  UNION ALL SELECT 'memo-out-return', (SELECT coalesce(max(running_no), 0) FROM partner.memo_out_return q)
+  UNION ALL SELECT 'purchase-order', (SELECT coalesce(max(running_no), 0) FROM partner.purchase_order q)
+  UNION ALL SELECT 'purchase', (SELECT coalesce(max(running_no), 0) FROM partner.purchase q)
 ) x WHERE x.t = s.dtype;
 
 -- ---------------------------------------------------------------- staging tables
