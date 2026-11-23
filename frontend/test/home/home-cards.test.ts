@@ -17,7 +17,7 @@ describe("UT-HOME-04 card order and contents follow the design", () => {
       ["Purchase Order", [["", ["Purchase Order (PO)", "Purchase", "Purchase Outstanding"]]]],
       ["Inventory", [["", ["Load to Stock", "Merge/Split", "Stock Transfer Location", "Stock Adjustment", "Barcode Printing"]]]],
       ["Account", [["", ["Payable", "Receivable"]], ["Account Outstanding", ["O/S Payable", "O/S Receivable"]]]],
-      ["Report", [["Stock Movement", ["Primary Stock", "Consignment Stock"]], ["Closing Stock", ["Primary Stock", "Consignment Stock"]], ["Sale Report", ["Compare With Costing", "Shareholder Report", "Commission Report"]]]],
+      ["Report", [["Stock Movement", ["Stock Card", "Stock Value"]], ["Closing Stock", ["Primary Stock", "Consignment Stock"]], ["Sale Report", ["Compare With Costing", "Shareholder Report", "Commission Report"]]]],
     ]);
     expect(shortcutCount(all)).toBe(31);
   });

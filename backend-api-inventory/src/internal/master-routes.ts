@@ -7,7 +7,8 @@ import { AppError } from "../platform/errors";
 import { WRITE_TX, type Db } from "../platform/db";
 import { jsonBody, type AppEnv } from "../platform/http";
 import type { Logger } from "../platform/logger";
-import { applyHolds, HOLD_DOCUMENT_TYPES, HOLD_MAX_STOCKS, readHolds, type HoldDocumentType } from "../modules/stock/holds";
+import { applyHolds, HOLD_DOCUMENT_TYPES, HOLD_MAX_STOCKS, readHolds, setHoldMetadata, type HoldDocumentType } from "../modules/stock/holds";
+import { holdMetadataFields, holdMetadataSchema } from "../modules/reports/stock-card/schemas";
 import { stockBatch } from "../modules/stock/picker";
 import { LOT_KEYS_MAX, lotCandidates, lotsAvailablePage, OWN_LOT_KEY } from "../modules/stock/lots";
 
@@ -68,6 +69,8 @@ const holdsSchema = z.object({
   revision: z.number().int().min(1).max(2_000_000_000),
   documentNo: z.string().trim().min(1).max(40).nullable(),
   holds: z.array(z.object({ stockUuid: z.uuid(), pcs: z.number().int().min(0).max(999_999), weightCt: weight }).strict()).max(HOLD_MAX_STOCKS),
+  // stock-card ADR-0056 D7: optional document date and account; absent leaves the stored value, null clears it.
+  ...holdMetadataFields,
 }).strict().refine((value) => new Set(value.holds.map((hold) => hold.stockUuid.toLowerCase())).size === value.holds.length, { path: ["holds"], params: { code: "duplicate" }, message: "duplicate" });
 
 function documentParams(type: string, id: string): { type: HoldDocumentType; id: string } {
@@ -107,10 +110,24 @@ export function createMasterRoutes(deps: InternalDeps) {
   });
   routes.put("/stock-holds/:type/:id", async (c) => {
     const { type, id } = documentParams(c.req.param("type"), c.req.param("id"));
-    const input = await jsonBody(c, holdsSchema);
-    const result = await deps.db.$transaction((tx) => applyHolds(tx, { documentType: type, documentId: id, ...input, actorId: actorOf(c.req.header("x-actor-user-id")) }), WRITE_TX);
+    const { docDate, party, ...input } = await jsonBody(c, holdsSchema);
+    // The metadata is written in the same transaction as the hold (also on a replay of the same revision); a refusal rolls both back.
+    const result = await deps.db.$transaction(async (tx) => {
+      const applied = await applyHolds(tx, { documentType: type, documentId: id, ...input, actorId: actorOf(c.req.header("x-actor-user-id")) });
+      if (docDate !== undefined || party !== undefined) await setHoldMetadata(tx, type, id, { docDate, party });
+      return applied;
+    }, WRITE_TX);
     deps.logger.info({ event: "inventory.holds_applied", requestId: c.get("requestId"), documentType: type, documentId: id, revision: result.revision, replayed: result.replayed, stockCount: result.holds.length });
     return c.json(result);
+  });
+  // stock-card ADR-0056 D7: date / customer edited without a hold change, and the one-off backfill. Idempotent; 404 when the
+  // document holds no own stock yet.
+  routes.patch("/stock-holds/:type/:id/metadata", async (c) => {
+    const { type, id } = documentParams(c.req.param("type"), c.req.param("id"));
+    const metadata = await jsonBody(c, holdMetadataSchema);
+    if (!(await setHoldMetadata(deps.db, type, id, metadata))) throw new AppError(404, "NOT_FOUND");
+    deps.logger.info({ event: "inventory.hold_metadata_set", requestId: c.get("requestId"), documentType: type, documentId: id });
+    return c.json({ updated: true });
   });
   routes.get("/stock-holds/:type/:id", async (c) => {
     const { type, id } = documentParams(c.req.param("type"), c.req.param("id"));

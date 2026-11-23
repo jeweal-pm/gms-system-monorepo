@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { exportJWK, generateKeyPair, SignJWT, type JWK } from "jose";
 import { createApp } from "../../src/app";
+import type { ReportGuard } from "../../src/modules/reports/stock-card/guard";
 import { createDb, type Db } from "../../src/platform/db";
 import { createLogger } from "../../src/platform/logger";
 import { MasterApi } from "../../src/platform/master-api";
@@ -80,7 +81,7 @@ export async function startMaster(token: string, storageRoot: string): Promise<M
 
 export type Harness = Awaited<ReturnType<typeof startHarness>>;
 
-export async function startHarness() {
+export async function startHarness(options: { stockCard?: { guard?: ReportGuard; statementTimeoutMs?: number } } = {}) {
   // FE-LOT-008: the master modules under test keep accepting item references (Vitest-only seam, see master test/setup.ts).
   process.env.LOT_TEST_ACCEPT_ITEM_REFS = "1";
   const dir = mkdtempSync(join(tmpdir(), "gms-inventory-it-"));
@@ -104,7 +105,7 @@ export async function startHarness() {
   const approverIds: string[] = [];
   const { app, service, hub, photos, saleService, salePhotos } = createApp({
     db, master: masterApi, logger, storageRoot: join(dir, "inventory"), trustedOrigins: new Set([ORIGIN]),
-    approvers: async () => approverIds,
+    approvers: async () => approverIds, stockCard: options.stockCard,
     auth: {
       issuer: ISSUER, jwks,
       readAuthorization: async (userId, sessionId) => {
@@ -137,7 +138,7 @@ export async function startHarness() {
     counting = true;
     try {
       const result = await run();
-      return { result, queries: queries.filter((sql) => !/^\s*(BEGIN|COMMIT|ROLLBACK|SET TRANSACTION|SELECT 1)\b/i.test(sql)).length, master: [...masterRequests] };
+      return { result, queries: queries.filter((sql) => !/^\s*(BEGIN|COMMIT|ROLLBACK|SET TRANSACTION|SELECT 1|SELECT set_config)\b/i.test(sql)).length, master: [...masterRequests] };
     } finally {
       counting = false;
     }

@@ -10,6 +10,7 @@ import {
   PickerLot,
   PickerNote,
   PickerTh,
+  pickerGroupHover,
   pickerGroupTone,
   pickerRowClass,
 } from "@/features/trade-document/picker-ui";
@@ -62,6 +63,26 @@ describe("UT-PK-03 column groups (design 136 §2)", () => {
     expect(head).toContain('uppercase bg-gms-group-orange-head">Pending</th>');
     const sub = inRow(createElement(PickerGroupSubTh, { title: "Pcs", tone: "green" }));
     expect(sub).toContain('text-right text-sm font-medium bg-gms-group-green-sub">Pcs</th>');
+  });
+});
+
+describe("UT-SC-10 purple BALANCE group (stock-card FE-SC-001)", () => {
+  it("the purple tone maps to the 30 / 18 / 8 % tokens and existing tones are unchanged", () => {
+    expect(pickerGroupTone.purple).toEqual({ head: "bg-gms-group-purple-head", sub: "bg-gms-group-purple-sub", cell: "bg-gms-group-purple-cell" });
+    expect(Object.keys(pickerGroupTone).sort()).toEqual(["green", "orange", "purple", "red"]);
+    expect(pickerGroupTone.orange).toEqual({ head: "bg-gms-group-orange-head", sub: "bg-gms-group-orange-sub", cell: "bg-gms-group-orange-cell" });
+    expect(inRow(createElement(PickerGroupTh, { title: "Balance", span: 2, tone: "purple" }))).toContain('uppercase bg-gms-group-purple-head">Balance</th>');
+    expect(inRow(createElement(PickerGroupSubTh, { title: "Cts", tone: "purple" }))).toContain('bg-gms-group-purple-sub">Cts</th>');
+  });
+
+  it("hover tints exist for the IN / OUT / BALANCE cells only and need the row to carry group/row; the row class itself is unchanged", () => {
+    expect(pickerGroupHover).toEqual({
+      green: "group-hover/row:bg-gms-group-green-hover",
+      orange: "group-hover/row:bg-gms-group-orange-hover",
+      purple: "group-hover/row:bg-gms-group-purple-hover",
+    });
+    expect(pickerGroupHover.red).toBeUndefined();
+    expect(pickerRowClass(false)).not.toContain("group/row");
   });
 });
 

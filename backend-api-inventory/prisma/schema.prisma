@@ -290,6 +290,8 @@ model stock {
   /// lot-based-stock ADR-0055 D2: STORED GENERATED group key; owner change 2026-11-21 (Q4): OS+id for every stock (own stock
   /// is not merged this round). Written by PostgreSQL only.
   lot_key              String?            @db.VarChar(40)
+  /// stock-card ADR-0056 D3: STORED GENERATED identity of a Stock Card (stone code or attributes, location, lot; trimmed, case-insensitive). Written by PostgreSQL only.
+  card_key             String?            @db.VarChar(34)
   version              Int                @default(1)
   created_at           DateTime           @default(now()) @db.Timestamptz(3)
   updated_at           DateTime           @default(now()) @db.Timestamptz(3)
@@ -301,6 +303,7 @@ model stock {
   @@index([ref_doc_date(sort: Desc), stock_id(sort: Desc)], map: "stock_picker_idx", where: raw("(((status)::text = 'ACTIVE'::text) AND ((on_hand_pcs > 0) OR (on_hand_weight_ct > (0)::numeric)))"))
   @@index([load_id], map: "stock_in_use_idx", where: raw("((on_hand_pcs <> pcs) OR (on_hand_weight_ct <> weight_ct))"))
   @@index([load_id], map: "stock_load_idx")
+  @@index([card_key], map: "stock_card_key_idx")
   @@index([lot_key, ref_doc_date, stock_id], map: "stock_lot_open_idx", where: raw("(((status)::text = 'ACTIVE'::text) AND ((on_hand_pcs > 0) OR (on_hand_weight_ct > (0)::numeric)))"))
   @@schema("inventory")
 }
@@ -337,6 +340,10 @@ model stock_hold_document {
   document_no      String?      @db.VarChar(40)
   result           Json         @default("{}")
   updated_at       DateTime     @default(now()) @db.Timestamptz(3)
+  /// stock-card ADR-0056 D7: document date and account (customer) snapshot sent by api-master; NULL / '' until filled.
+  doc_date         DateTime?    @db.Date
+  party_id         String?      @db.Uuid
+  party_name       String       @default("") @db.VarChar(200)
   stock_hold       stock_hold[]
 
   @@id([document_type, document_id])

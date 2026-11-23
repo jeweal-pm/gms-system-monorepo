@@ -12,7 +12,8 @@
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
     "go-live:approve-pending": "node dist/scripts/approve-pending.js",
-    "inventory-sync:redrive": "node dist/scripts/inventory-sync-redrive.js"
+    "inventory-sync:redrive": "node dist/scripts/inventory-sync-redrive.js",
+    "stock-card:backfill": "node dist/scripts/stock-card-backfill.js"
   },
   "dependencies": {
     "@gms/storage": "workspace:*",

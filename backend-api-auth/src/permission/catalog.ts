@@ -2,8 +2,9 @@
  * Permission catalog v2 (ADR-0020 §3, user-permission SA revision 2).
  * 43 grantable leaves: Dashboard has VIEW/APPROVE/PRICE/PRINT/EXCEL, Document Setup has VIEW/EDIT
  * (document-setup SA rev 1, 2026-10-23), Decimal Setup has VIEW/EDIT (decimal-setup SA rev 1 / ADR-0040,
- * 2026-11-03), Approval has VIEW/EDIT (owner 2026-11-10), every other leaf has all nine actions, so
- * 5 + 2 + 2 + 2 + 39 x 9 = 362 applicable cells (Currency added by currency SA rev 1, 2026-10-26).
+ * 2026-11-03), Approval has VIEW/EDIT (owner 2026-11-10), Stock Card has VIEW/PRINT/EXCEL (stock-card SA rev 1 /
+ * ADR-0056, 2026-11-23), every other leaf has all nine actions, so
+ * 5 + 2 + 2 + 2 + 3 + 38 x 9 = 356 applicable cells (Currency added by currency SA rev 1, 2026-10-26).
  * Owner 2026-11-10: menus follow the current modules — Setup rows in the Setup tile order, Approval added, and
  * labels renamed to what the app shows (keys, and so stored grants, unchanged). Sections and groups are UI structure only
  * and are never stored as grants. Changing the catalog is a code change; stored grants for
@@ -85,9 +86,12 @@ export const PERMISSION_CATALOG: readonly CatalogNode[] = [
     ]),
   ]),
   section("report", "REPORT", [
+    // stock-card ADR-0056 D9: replace the two Stock Movement leaves; grants copied once by migration
+    // 20261123100000_stock_card_grants (old primary VIEW/PRINT/EXCEL -> stock-card, old consignment -> stock-value). Stock Value has
+    // no page or API yet (menu placeholder).
     group("stock-movement", "Stock Movement", [
-      leaf("stock-movement-primary", "Primary Stock"),
-      leaf("stock-movement-consignment", "Consignment Stock"),
+      leaf("stock-card", "Stock Card", ["VIEW", "PRINT", "EXCEL"]),
+      leaf("stock-value", "Stock Value"),
     ]),
     group("closing-stock", "Closing Stock", [
       leaf("closing-stock-primary", "Primary Stock"),

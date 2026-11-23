@@ -61,6 +61,11 @@ export const MESSAGES: Record<string, string> = {
   STOCK_HOLD_UNAVAILABLE: "Some stocks are no longer in stock",
   // lot-based-stock SA rev 1 error-handling.md (ADR-0055)
   STOCK_LOT_TOO_LARGE: "A lot has too many stocks to pick in one document",
+  // stock-card SA rev 1 error-handling.md (ADR-0056)
+  STOCK_CARD_NOT_FOUND: "This stock card no longer exists",
+  STOCK_CARD_TOO_LARGE: "The stock card has too many transactions; narrow the date range",
+  STOCK_CARD_BUSY: "The report is busy; retry shortly",
+  STOCK_CARD_TIMEOUT: "The report took too long; narrow the date range or search",
 };
 
 export class AppError extends Error {

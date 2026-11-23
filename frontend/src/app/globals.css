@@ -117,6 +117,14 @@
   --color-gms-group-red-head: #f4cbce;
   --color-gms-group-red-sub: #f8e0e2;
   --color-gms-group-red-cell: #fcf1f2;
+  /* stock-card FE-SC-001: the purple trio of design 136 §2, and the hover tints of the IN / OUT / BALANCE cells (design S4) */
+  --color-gms-group-purple-head: #ddceee;
+  --color-gms-group-purple-sub: #ebe1f5;
+  --color-gms-group-purple-cell: #f6f2fb;
+  --color-gms-group-green-hover: #dbe7e7;
+  --color-gms-group-orange-hover: #ebe6de;
+  --color-gms-group-purple-hover: #ddd7e4;
+  --color-gms-table-total: #f9f9f9;
 
   --shadow-gms-overlay: 0 12px 32px rgb(0 0 0 / 0.08);
   --shadow-gms-tile: 0 1px 3px rgb(0 0 0 / 0.12);
