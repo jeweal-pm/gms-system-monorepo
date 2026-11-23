@@ -102,6 +102,15 @@ describe("auth-owned tRPC compatibility router", () => {
     ]);
   });
 
+  it("UT-SC-C1 (stock-card ADR-0056 D9) the Report shortcuts are Stock Card and Stock Value, gated by their own VIEW; the old Stock Movement keys no longer show", () => {
+    expect(titlesAndSlugs(["stock-card:VIEW"])).toEqual([["Report", ["stock-card"]]]);
+    expect(titlesAndSlugs(["stock-value:VIEW", "stock-card:PRINT"])).toEqual([["Report", ["stock-value"]]]);
+    expect(titlesAndSlugs(["stock-movement-primary:VIEW", "stock-movement-consignment:VIEW"])).toEqual([]);
+    const report = shortcutGroupsFor({ isSuperAdmin: true, permissions: [] }).find((group) => group.title === "Report");
+    expect(report?.items.slice(0, 2)).toEqual([{ label: "Stock Card", slug: "stock-card" }, { label: "Stock Value", slug: "stock-value" }]);
+    expect(report?.items.map((item) => item.slug)).not.toContain("stock-movement-primary");
+  });
+
   it("UT-UP-HS-03 Super Admin sees every shortcut", () => {
     expect(shortcutGroupsFor({ isSuperAdmin: true, permissions: [] }).flatMap((group) => group.items)).toHaveLength(38);
   });

@@ -15,7 +15,7 @@ type PanelProps = {
   returnFocus: RefObject<HTMLButtonElement | null>;
 };
 
-function ColumnSwitch({ id, label, checked, locked = false, onToggle }: { id: string; label: string; checked: boolean; locked?: boolean; onToggle?: () => void }) {
+export function ColumnSwitch({ id, label, checked, locked = false, onToggle }: { id: string; label: string; checked: boolean; locked?: boolean; onToggle?: () => void }) {
   return (
     <li className="flex items-center justify-between gap-4 py-1.5">
       <span id={`${id}-label`} className={cx("text-gms-body", locked ? "text-gms-text-placeholder" : "text-gms-text")}>{label}</span>

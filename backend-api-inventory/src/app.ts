@@ -17,6 +17,8 @@ import { approvalPending as salePending, approvalSummary as saleSummary } from "
 import { SaleService } from "./modules/sale/service";
 import { SalePhotoService } from "./modules/sale/photos";
 import { registerSaleRoutes } from "./modules/sale/routes";
+import { registerStockCardRoutes } from "./modules/reports/stock-card/routes";
+import type { ReportGuard } from "./modules/reports/stock-card/guard";
 import { pendingQuerySchema as salePendingQuerySchema } from "./modules/sale/schemas";
 import { LoadToStockService } from "./modules/load-to-stock/service";
 import { PhotoService, PHOTO_MAX_BYTES } from "./modules/load-to-stock/photos";
@@ -53,6 +55,8 @@ export type AppDeps = {
   internal?: { tokenDigest: Buffer | null; otherTokenDigest: Buffer | null };
   /** Readiness probe (own DB `SELECT 1` ≤ 1 s); master is not part of readiness. */
   ready?: () => Promise<boolean>;
+  /** Stock Card report limits (tests lower the statement timeout / share a guard); production uses the defaults. */
+  stockCard?: { guard?: ReportGuard; statementTimeoutMs?: number };
 };
 
 const uuidParam = (value: string) => {
@@ -292,6 +296,8 @@ export function createApp(deps: AppDeps) {
   });
 
   registerSaleRoutes(api, { db: deps.db, master: deps.master, service: saleService, photos: salePhotos });
+  // stock-card ADR-0056 (BE-SC-003): read-only report over the own-stock ledger; limits are the module's, overridable in tests.
+  registerStockCardRoutes(api, { db: deps.db, ...deps.stockCard });
 
   app.route("/api/inventory/v1", api);
   // api-master → inventory (not routed by nginx).

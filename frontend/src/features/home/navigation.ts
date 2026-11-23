@@ -71,6 +71,8 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   "load-to-stock": "/inventory/load-to-stock",
   // sale UI rev 1 (FE-SL-008, owner 2026-11-18 "ทำแค่ ui พอ ยังไม่ต้องต่อ api"): Sale › Sale, linked before the API exists.
   sale: "/sale/sale",
+  // stock-card UI rev 1 (FE-SC-010, ADR-0056): Report › Stock Movement › Stock Card.
+  "stock-card": "/report/stock-movement/stock-card",
   // approve-center UI rev 1 (FE-AP-001): the Approve page.
   approve: APPROVE_HREF,
 };
@@ -171,7 +173,7 @@ const CATALOG_LEAF_KEYS: ReadonlySet<string> = new Set([
   "dashboard", ...SETUP_MENU_KEYS, "quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return",
   "memo-outstanding-vendor", "memo-outstanding-customer", "purchase-order", "purchase", "purchase-outstanding", "load-to-stock",
   "merge-split", "stock-transfer-location", "stock-adjustment", "barcode", "sale", "payable", "receivable", "outstanding-payable",
-  "outstanding-receivable", "stock-movement-primary", "stock-movement-consignment", "closing-stock-primary", "closing-stock-consignment",
+  "outstanding-receivable", "stock-card", "stock-value", "closing-stock-primary", "closing-stock-consignment",
   "sale-report-costing", "sale-report-shareholder", "sale-report-commission",
 ]);
 
@@ -277,8 +279,10 @@ export const sidebarSections: NavSection[] = [
     title: "Report",
     items: [
       disclosure("stock-movement", "Stock Movement", FileOutstandingIcon, [
-        link("stock-movement-primary", "Primary Stock"),
-        link("stock-movement-consignment", "Consignment Stock"),
+        // stock-card UI rev 1: stays active on /report/stock-movement/stock-card/[cardKey].
+        { ...link("stock-card", "Stock Card", undefined, REAL_PAGE_HREFS["stock-card"]), activePrefix: REAL_PAGE_HREFS["stock-card"] },
+        // Stock Value has no design yet: its placeholder page opens from /modules/stock-value.
+        link("stock-value", "Stock Value"),
       ]),
       disclosure("closing-stock", "Closing Stock", ClosingStockIcon, [link("closing-stock-primary", "Primary Stock"), link("closing-stock-consignment", "Consignment Stock")]),
       disclosure("sale-report", "Sale Report", SaleReportIcon, [

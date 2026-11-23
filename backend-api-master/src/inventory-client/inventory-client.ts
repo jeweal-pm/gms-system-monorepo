@@ -16,6 +16,8 @@ import { Logger } from "@nestjs/common";
  */
 export const PICKER_TIMEOUT_MS = 2_000;
 export const WRITE_TIMEOUT_MS = 5_000;
+/** Stock Card metadata PATCH (ADR-0056 D7) is best effort and must not hold a saved document's response for long. */
+export const METADATA_TIMEOUT_MS = 2_000;
 export const INVENTORY_MAX_SOCKETS = 4;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
 const TOKEN = /^[A-Za-z0-9_-]{43,512}$/;
@@ -42,6 +44,8 @@ export type OwnStockRow = {
   vendor: { id: string; code: string; name: string }; load: { id: string; docNo: string; docDate: string }; itemNote: string;
 };
 export type OwnStockBatchRow = OwnStockRow & { status: "ACTIVE" | "REVERSED"; stoneCodeId: string | null };
+/** stock-card ADR-0056 D7: document date and account sent with a hold; absent leaves the stored value, null clears it. */
+export type HoldMetadata = { docDate?: string | null; party?: { id: string; name: string } | null };
 export type HoldResult = { revision: number; replayed: boolean; holds: HoldEntry[]; stocks: { stockUuid: string; stockId: string; availablePcs: number; availableWeightCt: string }[] };
 export type CallOptions = { requestId?: string; actorId?: string };
 /** lot-based-stock (ADR-0055 D3/D7): an own-stock lot row (no cost / price / vendor) and the FIFO candidates of a lot. */
@@ -56,7 +60,9 @@ export type OwnLotGroup = { lotKey: string; rows: OwnLotCandidate[] };
 
 export interface InventoryClient {
   batch(ids: readonly string[], options?: CallOptions): Promise<OwnStockBatchRow[]>;
-  putHolds(type: HoldDocType, id: string, body: { revision: number; documentNo: string | null; holds: HoldEntry[] }, options?: CallOptions): Promise<HoldResult>;
+  putHolds(type: HoldDocType, id: string, body: { revision: number; documentNo: string | null; holds: HoldEntry[] } & HoldMetadata, options?: CallOptions): Promise<HoldResult>;
+  /** Stock Card date / customer of an existing hold document without a revision (2 s); 404 (no hold document) → InventoryRefusal. */
+  patchMetadata(type: HoldDocType, id: string, body: HoldMetadata, options?: CallOptions): Promise<void>;
   /** fromStock.lots: own lots page (2 s). */
   lotsAvailable(input: LotsAvailableInput, options?: CallOptions): Promise<OwnLotRow[]>;
   /** Own-stock lot candidates FIFO for allocation (≤ 200 keys, 5 s); > 500 per lot → InventoryRefusal 422 STOCK_LOT_TOO_LARGE. */
@@ -96,7 +102,7 @@ export function createInventoryClient(base: URL | null, token: string | null, lo
     ? new https.Agent({ keepAlive: true, maxSockets: INVENTORY_MAX_SOCKETS, maxFreeSockets: 2 })
     : new http.Agent({ keepAlive: true, maxSockets: INVENTORY_MAX_SOCKETS, maxFreeSockets: 2 });
 
-  const once = (method: "POST" | "PUT", path: string, body: unknown, timeoutMs: number, options: CallOptions): Promise<{ status: number; json: unknown; retryAfter: boolean }> =>
+  const once = (method: "POST" | "PUT" | "PATCH", path: string, body: unknown, timeoutMs: number, options: CallOptions): Promise<{ status: number; json: unknown; retryAfter: boolean }> =>
     new Promise((resolve, reject) => {
       if (!base) return reject(new InventoryUnavailable("disabled"));
       if (!token) {
@@ -131,7 +137,7 @@ export function createInventoryClient(base: URL | null, token: string | null, lo
       req.end(payload);
     });
 
-  const call = async <T>(method: "POST" | "PUT", path: string, body: unknown, timeoutMs: number, options: CallOptions = {}): Promise<T> => {
+  const call = async <T>(method: "POST" | "PUT" | "PATCH", path: string, body: unknown, timeoutMs: number, options: CallOptions = {}): Promise<T> => {
     for (let attempt = 0; ; attempt += 1) {
       const res = await once(method, path, body, timeoutMs, options);
       if (res.status >= 200 && res.status < 300) return res.json as T;
@@ -150,6 +156,7 @@ export function createInventoryClient(base: URL | null, token: string | null, lo
   return {
     batch: async (ids, options) => (ids.length === 0 ? [] : (await call<{ items: OwnStockBatchRow[] }>("POST", "/stock/batch", { ids: [...ids] }, WRITE_TIMEOUT_MS, options)).items),
     putHolds: (type, id, body, options) => call<HoldResult>("PUT", `/stock-holds/${type}/${id}`, body, WRITE_TIMEOUT_MS, options),
+    patchMetadata: async (type, id, body, options) => { await call("PATCH", `/stock-holds/${type}/${id}/metadata`, body, METADATA_TIMEOUT_MS, options); },
     lotsAvailable: async (input, options) => (await call<{ items: OwnLotRow[] }>("POST", "/stock/lots/available", input, PICKER_TIMEOUT_MS, options)).items,
     stockLots: async (lotKeys, options) => (lotKeys.length === 0 ? [] : (await call<{ groups: OwnLotGroup[] }>("POST", "/stock/lots", { lotKeys: [...lotKeys] }, WRITE_TIMEOUT_MS, options)).groups),
   };

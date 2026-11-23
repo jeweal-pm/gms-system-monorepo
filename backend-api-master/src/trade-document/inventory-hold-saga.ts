@@ -6,7 +6,7 @@ import { partnerException, type FieldError } from "../common/errors";
 import { WRITE_TX, type Tx } from "../common/persistence";
 import { prisma } from "../database/prisma-client";
 import { Prisma } from "../generated/prisma/client";
-import { inventoryClient, InventoryRefusal, InventoryUnavailable, type HoldDocType, type HoldEntry } from "../inventory-client/inventory-client";
+import { inventoryClient, InventoryRefusal, InventoryUnavailable, type HoldDocType, type HoldEntry, type HoldMetadata } from "../inventory-client/inventory-client";
 import type { DocumentErrors } from "./document-errors";
 import type { EngineWriteAction } from "./document-engine";
 import { inventoryUnavailable, type Qty } from "./own-stock-lines";
@@ -29,6 +29,11 @@ import { settleOldestFirst } from "./lot-allocation";
  *   4. Release after commit: `PUT r' = F`; success → DONE, IDLE; unknown → re-driven forward (same revision) on access, at
  *      start and every 60 s (≤ 20 ops, 15 s lease, backoff ≤ 60 s, STUCK after 10 attempts).
  * No HTTP call runs inside a database transaction. STALE / EXCEEDS_MEMO_OUT → STUCK + `master.inventory_sync_stuck`.
+ *
+ * Stock Card metadata (ADR-0056 D7, additive): the document date and customer travel with the RELEASE PUT (read in tx1, stored in
+ * the op payload so a re-driven op sends them too). When the run needs no release (acquire-only, or no quantity change at all,
+ * e.g. a date or customer edit) a best-effort `PATCH …/metadata` follows the commit for documents that hold or held our stock.
+ * A metadata failure is logged and never fails the saved document. Queued payloads without `meta` keep working.
  */
 const Decimal = Prisma.Decimal;
 export type HoldSet = Map<string, Qty>;
@@ -186,7 +191,18 @@ const hashOf = (docNo: string | null, holds: HoldEntry[]) => createHash("sha256"
 
 // ---------- saga ----------
 
-type OpPayload = { holds: HoldEntry[]; old: HoldEntry[]; docNo: string | null };
+type OpPayload = { holds: HoldEntry[]; old: HoldEntry[]; docNo: string | null; meta?: HoldMetadata };
+type MetaRow = { doc_date: string | null; customer_id: string | null; customer_name_snapshot: string | null };
+
+/** The Stock Card date and account of a document row (customer snapshot name, 1…200 chars); null parts are left out. */
+export function metadataOf(row: MetaRow | undefined | null): HoldMetadata | undefined {
+  if (!row) return undefined;
+  const name = (row.customer_name_snapshot ?? "").trim().slice(0, 200);
+  const meta: HoldMetadata = {};
+  if (row.doc_date) meta.docDate = row.doc_date.slice(0, 10);
+  if (row.customer_id && name) meta.party = { id: row.customer_id, name };
+  return Object.keys(meta).length > 0 ? meta : undefined;
+}
 type OpRow = { id: string; document_type: HoldDocType; document_id: string; stage: "ACQUIRE" | "RELEASE" | "COMPENSATE"; state: string; revision: number; payload: OpPayload; attempts: number };
 type Ctx = {
   type: HoldDocType; id: string; actorId: string; old: HoldSet; mid: HoldSet;
@@ -290,7 +306,27 @@ export class InventoryHoldSaga {
     }
     // The document is saved: a release that fails here is re-driven later and never fails the request.
     if (ctx.release) await this.driveRelease(ctx.release.opId).catch(() => this.logger.warn({ event: "master.inventory_release_deferred", documentType: ctx.type, documentId: ctx.id }));
+    else await this.syncMetadata(ctx, spec.requestId);
     return result;
+  }
+
+  /**
+   * Stock Card date / customer after a save that sent no release PUT (ADR-0056 D7). Only documents that hold or held our stock
+   * (`hold_revision > 0`, or an applied set before the call) have a hold document in inventory; others make no call. Best effort.
+   */
+  private async syncMetadata(ctx: Ctx, requestId: string | undefined): Promise<void> {
+    try {
+      const [row] = await prisma.$queryRaw<(MetaRow & { hold_revision: number })[]>(Prisma.sql`
+        SELECT hold_revision, doc_date::text AS doc_date, customer_id::text AS customer_id, customer_name_snapshot FROM ${DOC_SPECS[ctx.type].table} WHERE id = ${ctx.id}::uuid`);
+      if (!row || (row.hold_revision <= 0 && ctx.old.size === 0 && ctx.mid.size === 0)) return;
+      const meta = metadataOf(row);
+      if (!meta) return;
+      await inventoryClient().patchMetadata(ctx.type, ctx.id, meta, { requestId, actorId: ctx.actorId });
+    } catch (error) {
+      // 404: the document holds no own stock in inventory (nothing to show). Anything else: the card shows the older value.
+      if (error instanceof InventoryRefusal && error.status === 404) return;
+      this.logger.warn({ event: "master.stock_card_metadata_failed", documentType: ctx.type, documentId: ctx.id, reason: error instanceof Error ? error.name : "unknown" });
+    }
   }
 
   /**
@@ -314,8 +350,8 @@ export class InventoryHoldSaga {
   async inTx(type: HoldDocType, tx: Tx, id: string, action: EngineWriteAction): Promise<void> {
     const ctx = storage.getStore();
     const doc = DOC_SPECS[type];
-    const [header] = await tx.$queryRaw<{ sync_state: string; hold_revision: number; doc_no: string }[]>(Prisma.sql`
-      SELECT sync_state, hold_revision, doc_no FROM ${doc.table} WHERE id = ${id}::uuid FOR UPDATE`);
+    const [header] = await tx.$queryRaw<({ sync_state: string; hold_revision: number; doc_no: string } & MetaRow)[]>(Prisma.sql`
+      SELECT sync_state, hold_revision, doc_no, doc_date::text AS doc_date, customer_id::text AS customer_id, customer_name_snapshot FROM ${doc.table} WHERE id = ${id}::uuid FOR UPDATE`);
     if (!header) return;
     if (!ctx || ctx.type !== type || ctx.id !== id) {
       if (action === "submit" || action === "review") {
@@ -347,7 +383,7 @@ export class InventoryHoldSaga {
     }
     const revision = base + 1;
     const holds = toEntries(final);
-    const payload: OpPayload = { holds, old: toEntries(ctx.old), docNo };
+    const payload: OpPayload = { holds, old: toEntries(ctx.old), docNo, ...(metadataOf(header) ? { meta: metadataOf(header) } : {}) };
     let opId: string;
     if (ctx.op) {
       opId = ctx.op.id;
@@ -448,7 +484,7 @@ export class InventoryHoldSaga {
       current = { ...current, stage: "COMPENSATE", revision, payload };
     }
     try {
-      await inventoryClient().putHolds(current.document_type, current.document_id, { revision: current.revision, documentNo: current.payload.docNo, holds: current.payload.holds });
+      await inventoryClient().putHolds(current.document_type, current.document_id, { revision: current.revision, documentNo: current.payload.docNo, holds: current.payload.holds, ...(current.payload.meta ?? {}) });
     } catch (error) {
       if (error instanceof InventoryRefusal) {
         this.logger.error({ event: "master.inventory_sync_stuck", documentType: current.document_type, documentId: current.document_id, revision: current.revision, code: error.code.slice(0, 64) });
