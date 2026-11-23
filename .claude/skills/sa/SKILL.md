@@ -76,11 +76,8 @@ the required design changes; discovering an issue does not authorize fixing it. 
 revision/approval back to the ticket before backend implementation. Investigation records
 remain separate from the frontend UI latest pointer.
 
-Read `document/workflow/remediation.md` for corrective design handoffs. Retain the selected
-root-cause ledger/pass across roles. Reuse accepted contracts unless evidence establishes
-a necessary change; an unchanged failure is not grounds to redesign the flow repeatedly.
-Return the specific design delta or missing fact and durable pending-review handoff;
-do not reset corrective history through a new document revision.
+Shared corrective-work limits and handoff rules are supplied by `AGENTS.md`. Reuse accepted contracts;
+revise them only when evidence shows a material change is needed.
 
 ## Owner-selected inventory and operations service boundary
 
@@ -128,6 +125,4 @@ The active Nest package set includes `@nestjs/common` and `rxjs`; Hono remains p
 its approved service is implemented. Design/sequence bundles must include frontend, backend,
 Nginx/infra, and DevOps implications.
 
-## Single-approval delivery
-
-Keep one canonical design bundle and one ADR for each decision; search before creating a file and append a revision to the existing record when appropriate. Approval of the complete bundle is the only design gate: hand the exact approved revision to backend immediately in the same active workflow. Do not request a second SA review or write a duplicate handoff/review document. Reopen design only when new evidence requires a material contract, schema, flow, dependency, or topology change.
+Shared approval and duplicate-record rules are supplied by `AGENTS.md`.

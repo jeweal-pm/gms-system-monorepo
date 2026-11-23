@@ -196,18 +196,14 @@ are design guidance, not proof that those services or checks currently exist.
 Audit target-code execution retains sec-auditor sandbox restrictions; operational service
 checks are distinct and need their own scope/authorization. Never print resolved secrets.
 
-Use `document/workflow/remediation.md`: inherit the shared root-cause/pass ledger across
-infra/frontend/backend, default three corrective passes including the first fix. Verify
-affected boundaries, stop at success/no-progress/unavailable checks/exhaustion, and return
-evidence and the missing fact. New independent issues return to investigation. Update the
-service index with exact ADR/config hashes, research date, evidence and status; mark verified
-only when required checks actually ran and passed. Reuse unchanged evidence only while its
-inputs and research remain valid. Return the infra handoff for backend/frontend continuation.
+Shared corrective-work limits and role handoffs are supplied by `AGENTS.md`. Update the service index
+with exact ADR/config hashes, research date, evidence and status; mark verified only when
+required checks actually ran and passed. Reuse evidence only while its inputs remain valid.
+Return the infra handoff for backend/frontend continuation.
 When image/build/runtime configuration changes, hand devops the exact approved bundle,
 platform, build-context/secret interface and readiness requirements through the parent.
 Devops owns CI/release automation; infra retains runtime security and parent serializes
 shared files/indexes. Use `document/workflow/devops-delivery.md`.
 
-## Single-approval delivery
-
-Use one canonical infra bundle/ticket per profile or root cause; search and update it before creating documents. Approval of its exact config/rollout scope authorizes implementation immediately through the parent, without another review of the same research or ADR. A user request to reconcile local development containers authorizes safe local Compose `up --remove-orphans` work; never remove or prune data volumes. If an issue appears, add evidence to the existing ticket and fix it when the user has authorized that scope. Reserve new investigations for independent causes and reuse unchanged validation evidence.
+Approval, local Compose authorization, shared-file ownership, and duplicate-record rules are
+supplied by `AGENTS.md`.
