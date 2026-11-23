@@ -129,55 +129,9 @@ report; do not declare it resolved without the required evidence.
    process. Bound bundles, SSR, pagination, caches, and concurrent work for the shared
    production budget of **4 GB RAM / 2 vCPU**.
 
-## Verify and record
+## Shared delivery rules
 
-When selected work changes a container/image/network/storage requirement, route it through
-SA and parent -> infra using `document/workflow/infra-delivery.md`. Infra prepares secure
-configuration/research; frontend supplies actual server/browser routes, secret reader and
-cache/write requirements. Reuse unchanged infra evidence; do not alter shared Docker files
-concurrently or apply unapproved service/topology changes.
-Changed build/runtime variable, service Dockerfile or workspace dependencies also go to
-devops via the parent under `document/workflow/devops-delivery.md`; app adapters stay here.
-
-For corrective work read `document/workflow/remediation.md` before editing or re-handing
-off. Inherit the parent root-cause ledger and active pass; default three passes total
-across frontend/backend, initial fix included. Diagnose before each retry, use authorized
-targeted checks, and stop on success/no-progress/unavailable verification/exhausted passes.
-Do not expand accepted criteria or restart a full audit. New independent findings enter
-investigation. Return durable evidence and the next needed fact when the item stops.
-
-For every added or changed page, component, module, function, and API, inventory affected
-behavior and add or update both unit and integration coverage in the same change. If the
-target lacked tests, write them as part of the fix. Map each target to unit and integration
-case IDs in the feature testing document; a shared integration scenario may cover several
-targets only when it actually exercises and asserts them. Follow
-`document/workflow/automated-testing.md` for real boundaries, fixtures, and runner setup.
-Run affected suites after edits and the full relevant frontend suite before handoff; all
-required tests must pass. Discover scripts from manifests: typecheck/lint/build are not
-substitutes for tests. If a runner is absent, follow the approved dependency process and
-leave delivery incomplete until coverage can be executed. Inspect UI behavior with a
-browser when the task requires it. Run manual-tester after changed user journeys according
-to its skill; its report does not replace automated unit or integration tests.
-
-After tests pass, route the final changed code once to both `sec-auditor` and
-`security-auditor` on the same source revision. Follow `document/workflow/security-review.md`
-and record both results in the existing feature verification document. Do not review approved
-ADR/TODO documents again or resend unchanged code. Stage findings once; a direct user fix
-instruction starts remediation without another selection gate.
-
-For an integration data-connection failure, use the existing shared root-cause ledger.
-After three diagnosed corrective passes without success, or earlier on no-progress or an
-unavailable prerequisite, stop. Create/update one `integration-blocker` ticket under
-`document/task/investigation/`, link the failed checks and attempt evidence, and mark the
-dependent TODO blocked or needs-validation. Do not claim a passing handoff or reset the
-counter by switching roles.
-
-Update the central TODO at `document/task/todo/<feature-id>.md`, verification evidence, handoffs, `document/task/index.md`, and the latest
-pointer as appropriate. Completion reports go to `document/task/done/`; small change logs
-go to `document/changelog/`. Mark done only when approved criteria and required checks are
-complete. For materially changed flow/design/contracts, send affected items back for review
-and preserve completed unaffected work.
-
-## Single-approval delivery
-
-Use the existing feature TODO/spec/SA bundle as the canonical record; search before adding documents and update its revision instead of creating duplicates. Once the exact UI/SA revision is approved, start frontend implementation immediately in the same workflow and continue with backend/SA handoffs only for dependencies the approved design requires. Do not request a second approval of the same documents or duplicate security-review reports. Open investigation only for an independently evidenced issue; if the user has authorized its fix, record it once and implement it without another ticket-selection question.
+Project-wide approval, ownership, corrective-work, testing, security-review, infra/DevOps,
+and handoff policies are supplied by `AGENTS.md`; this skill adds frontend-specific guidance.
+Apply only relevant checks. Use browser verification when the UI task requires it; manual
+testing does not replace automated coverage.

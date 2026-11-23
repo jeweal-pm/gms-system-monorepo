@@ -66,7 +66,5 @@ On approval, record the user's instruction, date, approved revision, and exact d
 If source/flow changes later, update the revision and invalidate affected approval as
 described in the shared workflow.
 
-For findings during implementation/review, follow `document/workflow/remediation.md`.
-Keep accepted criteria stable; new preferences or independent hardening go to review
-rather than repeatedly rewriting a completed spec. Revisions preserve corrective history
-and do not grant another implementation budget or automatic approval.
+Shared corrective-work, approval, and handoff rules are supplied by `AGENTS.md`. Keep accepted
+criteria stable; revise the bundle only for material new evidence or requirements.

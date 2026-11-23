@@ -180,63 +180,11 @@ Design replay after reconnect, duplicate handling, bounded queues/connections, h
 graceful disconnect. Do not add Redis/broker/worker without an approved contract and capacity
 review. Never trust client-supplied recipient IDs or expose record details in the SSE payload.
 
-## Verification and frontend continuation
+## Verification and handoff
 
-For new/changed container/image/network/storage requirements, have the parent invoke infra
-per `document/workflow/infra-delivery.md` and include its bundle in required SA review.
-Provide actual listener/egress, secret-reader, Prisma init/migration, DB-role and writable
-path requirements. Backend owns application/DB adaptations; infra's shared Docker edits
-are parent-serialized and enabled after required adapters. Reuse valid unchanged research.
-Hand changed build/runtime variables, service Dockerfiles, migration/check requirements
-and workspace dependencies to devops through the parent per `document/workflow/devops-delivery.md`.
-Backend retains application adapters and DB migrations; no pipeline invokes a live migration
-or deployment without an actual authorized target and rollout plan.
-
-Read `document/workflow/remediation.md` for corrective work. Inherit the parent root-cause
-ledger and active pass; three passes total by default across frontend/backend, including
-the first fix. Retries require a diagnosed remaining failure and new evidence/hypothesis.
-Use authorized affected-contract checks; no-progress, unavailable verification, success,
-or exhaustion ends that corrective cycle. Do not bounce unchanged requests back to SA or
-frontend, broaden scope, or reset the count on a handoff/revision/session.
-
-For every added or changed backend module, function, and API,
-inventory behavior and add or update both unit and integration tests in the same change.
-If the target lacked tests, add them as part of the fix. Map each changed target to unit
-and integration case IDs in the service testing document; shared integration scenarios
-must exercise and assert every mapped target through the relevant HTTP/tRPC, authorization,
-service, and persistence boundary. Follow `document/workflow/automated-testing.md` for
-isolated fixtures and runner setup. Run affected tests after edits and the full relevant
-active auth/master service suites before handoff; all required tests must pass. Discover
-commands from scripts and also run applicable typecheck/lint/build, contract, and migration
-checks. If a runner is absent, follow the approved dependency process and leave delivery
-incomplete until coverage can be executed. Never report planned checks as passed.
-For approved GMS platform work, include focused stock concurrency/idempotency cases,
-PostgreSQL 16/18 and transaction-pooler portability checks, storage driver contract and
-path-traversal checks, streaming/Thai output checks, and measured load evidence where
-applicable (spec section 13). These expand the required unit/integration coverage; a
-planned CI matrix or nightly managed-DB check is not a local passing result.
-
-After tests pass, route the final changed code once to both `sec-auditor` and
-`security-auditor` on the same source revision. Follow `document/workflow/security-review.md`
-and record both results in the existing feature verification document. Do not review approved
-ADR/TODO documents again or resend unchanged code. Stage findings once; a direct user fix
-instruction starts remediation without another selection gate.
-
-For integration data-connection failures, use the existing shared root-cause ledger.
-After three diagnosed corrective passes without success, or earlier on no-progress or an
-unavailable prerequisite, stop. Create/update one `integration-blocker` ticket in
-`document/task/investigation/`, link the failed checks and attempt evidence, and mark the
-dependent TODO blocked or needs-validation. Do not hand an unverified API to frontend or
-reset the counter through another role.
-
-Update the central backend TODO at `document/task/todo/<feature-id>.md` with status/evidence
-and update the dependency ledger with actual installed versions.
-Return a handoff to parent/frontend with operation names, contract revision, actual changed
-files/migrations, error behavior, checks/results, and unresolved items. The parent resumes
-frontend integration automatically when prerequisites are satisfied. Save task claims and
-handoffs under `document/coordination/`, completion reports under `document/task/done/`,
-and small change logs under `document/changelog/`.
-
-## Single-approval delivery
-
-Use the existing approved SA bundle and central TODO as the implementation contract. Once that exact revision is approved, start code and tests immediately; do not wait for another SA review, duplicate ADR, or approval summary. For an investigation, reuse the canonical root-cause ticket and record the user's direct fix instruction as approval; do not ask for another ticket selection. Update an existing investigation when new evidence is part of the same cause. Create a new one only for an independent root cause. Reuse both security-review results for unchanged code; when code changes, follow `document/workflow/security-review.md` and review only the changed source revision once per required role.
+Project-wide approval, ownership, testing, security-review, corrective-work, and infra/DevOps
+policies are supplied by `AGENTS.md`; apply only checks relevant to the selected feature. For each
+database-querying endpoint, retain the N+1 query-count evidence described above in the
+feature's testing record. Include platform-specific checks from GMS platform spec section 13
+only when the selected feature exercises those behaviors. Return the contract revision,
+changed files/migrations, observed checks, and unresolved items to the parent/frontend.

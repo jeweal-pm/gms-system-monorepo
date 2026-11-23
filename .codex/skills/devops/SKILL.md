@@ -90,8 +90,4 @@ dependencies, build images, start services or trigger remote Actions merely to i
 these files. Static validation/forward simulation is not a successful GitHub run.
 Record commands performed, remote settings still needed and checks not run.
 
-Use `document/workflow/remediation.md`: one persistent root-cause ledger across devops,
-infra/frontend/backend; three corrective passes total by default including the first fix.
-Retries require diagnosed failures and new evidence; stop on success, no-progress, missing
-verification or exhaustion. Reviews stage independent findings with owner devops; never
-automatically drain investigations or restart full audits after each CI correction.
+Shared corrective-work limits, finding ownership, and handoff rules are supplied by `AGENTS.md`.

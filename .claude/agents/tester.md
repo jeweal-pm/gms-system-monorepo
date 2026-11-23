@@ -30,6 +30,3 @@ Create or update one `integration-blocker` ticket under `document/task/investiga
 keep the dependent TODO unresolved; do not present unrun or failing tests as passed.
 
 Report coverage gaps with risk and evidence. `security-auditor` and `compliance-auditor` own their deep audits; report security or privacy concerns you encounter without claiming to have completed those audits. Read the approved ui-spec and sa documents for expected behavior; call out unresolved ambiguity. Save requested test reports under document/testing/automated/.
-
-## Corrective-work stop conditions
-Read document/workflow/remediation.md. Inherit the parent's persistent root-cause ledger and active pass across roles/revisions/sessions: three corrective passes total by default, initial fix included. Retry only with diagnosed failure and new evidence/hypothesis. Stop on success, no-progress, unavailable verification, exhausted passes, or cyclic unchanged handoffs. Return evidence and next required fact; new independent issues return to review. Only explicit user authorization extends the existing limit. Do not automatically restart a full audit or weaken its safeguards.
