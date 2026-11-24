@@ -22,6 +22,8 @@ export type ReserveLineRef = {
   reserveLineId: string; reserveId: string; reserveNo: string; reserveDate: string; dueDate: string;
   /** Legacy Reserve line: its item; a lot Reserve line (ADR-0055): null and `lotKey` set. */
   memoStockId: string | null; lotKey: string | null;
+  /** ADR-0058 phase B: where the Reserve line's stock comes from. */
+  source: "MEMO_STOCK" | "OWN_STOCK";
   /** The Reserve line's Stock ID ("" on a lot line). Owner 2026-11-21 (Q3): Sale keeps showing it. */
   stockId: string; priceUnit: "PER_CT" | "PER_PCS";
   stoneCode: string; stone: string; shape: string; size: string; color: string; clarity: string; cutting: string; quality: string;
@@ -30,14 +32,14 @@ export type ReserveLineRef = {
 };
 
 type ReserveLineRow = {
-  id: string; reserve_id: string; doc_no: string; doc_date: Date; due_date: Date; memo_stock_id: string | null; lot_key: string | null; stock_id: string | null; position: number;
+  id: string; reserve_id: string; doc_no: string; doc_date: Date; due_date: Date; memo_stock_id: string | null; own_stock_id: string | null; lot_key: string | null; stock_id: string | null; position: number;
   price_unit: string; stone_code_snapshot: string; stone: string; shape: string; size: string; color: string; clarity: string; cutting: string; quality: string;
   lot: string; location: string; cer_type: string; cer_no: string;
   pcs: number; weight_ct: string; sold_pcs: number; sold_weight_ct: string; unit_price: string; amount: string; discount_type: string; discount_value: string;
 };
 
 const LINE_COLUMNS = Prisma.sql`
-  l."id"::text AS "id", l."reserve_id"::text AS "reserve_id", r."doc_no", r."doc_date", r."due_date", l."memo_stock_id"::text AS "memo_stock_id", l."lot_key", l."stock_id", l."position",
+  l."id"::text AS "id", l."reserve_id"::text AS "reserve_id", r."doc_no", r."doc_date", r."due_date", l."memo_stock_id"::text AS "memo_stock_id", l."own_stock_id"::text AS "own_stock_id", l."lot_key", l."stock_id", l."position",
   l."price_unit", l."stone_code_snapshot", l."stone", l."shape", l."size", l."color", l."clarity", l."cutting", l."quality", l."lot", l."location", l."cer_type", l."cer_no",
   l."pcs", l."weight_ct"::text AS "weight_ct", l."sold_pcs", l."sold_weight_ct"::text AS "sold_weight_ct", l."unit_price"::text AS "unit_price", l."amount"::text AS "amount",
   l."discount_type", l."discount_value"::text AS "discount_value"`;
@@ -50,7 +52,7 @@ function toRef(row: ReserveLineRow, extraPcs = 0, extraWeight: Dec = new Decimal
   const basis = row.price_unit === "PER_CT" ? openWeight : new Decimal(openPcs);
   return {
     reserveLineId: row.id, reserveId: row.reserve_id, reserveNo: row.doc_no, reserveDate: fromDbDate(row.doc_date), dueDate: fromDbDate(row.due_date),
-    memoStockId: row.memo_stock_id, lotKey: row.memo_stock_id ? null : row.lot_key, stockId: row.stock_id ?? "", priceUnit: row.price_unit === "PER_PCS" ? "PER_PCS" : "PER_CT",
+    memoStockId: row.memo_stock_id, lotKey: row.memo_stock_id ? null : row.lot_key, source: row.own_stock_id || row.lot_key?.startsWith("O") ? "OWN_STOCK" : "MEMO_STOCK", stockId: row.stock_id ?? "", priceUnit: row.price_unit === "PER_PCS" ? "PER_PCS" : "PER_CT",
     stoneCode: row.stone_code_snapshot, stone: row.stone, shape: row.shape, size: row.size, color: row.color, clarity: row.clarity, cutting: row.cutting, quality: row.quality,
     lot: row.lot, location: row.location, cerType: row.cer_type, cerNo: row.cer_no,
     netUnitPrice: net.toFixed(4), openPcs, openWeightCt: openWeight.toFixed(3), openAmount: net.times(basis).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2),
@@ -75,7 +77,7 @@ export async function searchSaleReserveLines(input: SaleReserveLineSearchInput) 
   const filters: Prisma.Sql[] = [
     Prisma.sql`r."customer_id" = ${input.customerId}::uuid`, Prisma.sql`r."currency_code" = ${input.currency}::char(3)`,
     Prisma.sql`r."status" = 'APPROVED'`, Prisma.sql`r."deleted_at" IS NULL`,
-    Prisma.sql`(l."memo_stock_id" IS NOT NULL OR l."lot_key" LIKE 'M%')`, Prisma.sql`(l."sold_pcs" < l."pcs" OR l."sold_weight_ct" < l."weight_ct")`,
+    Prisma.sql`(l."memo_stock_id" IS NOT NULL OR l."lot_key" LIKE 'M%' OR l."own_stock_id" IS NOT NULL OR l."lot_key" LIKE 'O%')`, Prisma.sql`(l."sold_pcs" < l."pcs" OR l."sold_weight_ct" < l."weight_ct")`,
   ];
   if (input.q) {
     const pattern = `%${escapeLike(input.q)}%`;
@@ -136,8 +138,10 @@ export async function prepareSale(input: SalePrepareInput) {
       SELECT ${LINE_COLUMNS}, r."status", (r."deleted_at" IS NOT NULL) AS "deleted", r."customer_id"::text AS "customer_id", r."currency_code",
         COALESCE(own."pcs", 0)::int AS "own_pcs", COALESCE(own."weight_ct", 0)::text AS "own_weight_ct"
       FROM "partner"."reserve_line" l JOIN "partner"."reserve" r ON r."id" = l."reserve_id"
-      LEFT JOIN (SELECT c."reserve_line_id", sum(c."pcs") AS "pcs", sum(c."weight_ct") AS "weight_ct" FROM "partner"."sale_consumption_line" c
-        WHERE c."sale_id" = ${saleId}::uuid AND c."reserve_line_id" IS NOT NULL GROUP BY c."reserve_line_id") own ON own."reserve_line_id" = l."id"
+      LEFT JOIN (SELECT u."reserve_line_id", sum(u."pcs") AS "pcs", sum(u."weight_ct") AS "weight_ct" FROM (
+          SELECT c."reserve_line_id", c."pcs", c."weight_ct" FROM "partner"."sale_consumption_line" c WHERE c."sale_id" = ${saleId}::uuid AND c."reserve_line_id" IS NOT NULL
+          UNION ALL SELECT o."reserve_line_id", o."pcs", o."weight_ct" FROM "partner"."sale_consumption_own_line" o WHERE o."sale_id" = ${saleId}::uuid) u
+        GROUP BY u."reserve_line_id") own ON own."reserve_line_id" = l."id"
       WHERE l."id" = ANY(${reserveLineIds}::uuid[])`),
     memoStockIds.length === 0 ? Promise.resolve([]) : prisma.$queryRaw<{
       id: string; stock_id: string; price_unit: string; stone: string; shape: string; size: string; color: string; clarity: string; cutting: string; quality: string;
@@ -169,7 +173,7 @@ export async function prepareSale(input: SalePrepareInput) {
 
   const reserveLines: PreparedReserveLine[] = reserveRows.map((row) => {
     const ref = toRef(row, row.own_pcs, new Decimal(row.own_weight_ct));
-    const live = row.status === "APPROVED" && !row.deleted && (row.memo_stock_id !== null || Boolean(row.lot_key?.startsWith("M")));
+    const live = row.status === "APPROVED" && !row.deleted && (row.memo_stock_id !== null || Boolean(row.lot_key?.startsWith("M")) || row.own_stock_id !== null || Boolean(row.lot_key?.startsWith("O")));
     const open = ref.openPcs > 0 || new Decimal(ref.openWeightCt).greaterThan(0);
     return { ...ref, status: !live ? "UNAVAILABLE" : open ? "OPEN" : "CLOSED", customerId: row.customer_id, currency: row.currency_code };
   });

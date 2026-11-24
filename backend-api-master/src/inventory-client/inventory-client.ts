@@ -54,6 +54,7 @@ export type OwnLotRow = {
   cutting: string; quality: string; cerType: string; cerNo: string; location: string; itemNote: string; ref: { type: "LOAD"; id: string; docNo: string; docDate: string };
   refCount: number; pendingPcs: number; pendingWeightCt: string; priceUnit: "PER_CT" | "PER_PCS"; unitPrice: null; netUnitPrice: null; amount: null; currency: null; vendor: null;
   salePrice?: string | null;
+  saleAmount?: string | null;
 };
 export type LotsAvailableInput = { q?: string; from?: string; to?: string; location?: string; cursor?: string; limit: number };
 export type OwnLotCandidate = { stockUuid: string; stockId: string; refDocDate: string; onHandPcs: number; onHandWeightCt: string; loadSyncing: boolean };

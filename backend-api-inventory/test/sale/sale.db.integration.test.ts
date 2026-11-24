@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { MasterUnavailable } from "../../src/platform/master-client";
 import { sweepAll } from "../../src/platform/sync/saga";
 import { canRun, masterFixtures, masterModule, startHarness, type Harness } from "../support/harness";
+import { cleanupLoads, seedLoad } from "../stock-card/support";
 
 /**
  * Sale end to end on PostgreSQL with the REAL master internal API (sale SA rev 1 testing.md, BE-SL-003…007):
@@ -18,6 +19,7 @@ import { canRun, masterFixtures, masterModule, startHarness, type Harness } from
 const TAG = `sl-it-${randomUUID().slice(0, 8)}`;
 const YEAR = 85;
 const SALES: string[] = [];
+const OWN_LOADS: string[] = [];
 const MAKER = ["sale:VIEW", "sale:ADD", "sale:EDIT", "sale:DELETE", "approval-setup:VIEW", "approval-setup:EDIT"];
 const APPROVER = ["sale:VIEW", "sale:APPROVE", "approval-setup:VIEW"];
 
@@ -131,6 +133,7 @@ describe.runIf(canRun)("IT-SL sale on PostgreSQL", () => {
     if (!h) return;
     await setting(true);
     await h.ownerDb.sale.deleteMany({ where: { customer_id: { in: [customer.id, other.id] } } });
+    await cleanupLoads(h, OWN_LOADS);
     await prisma.saleConsumption.deleteMany({ where: { saleId: { in: SALES } } });
     await prisma.reserve.deleteMany({ where: { customerId: { in: [customer.id, other.id] } } });
     await prisma.memoOut.deleteMany({ where: { customerId: { in: [customer.id, other.id] } } });
@@ -530,5 +533,27 @@ describe.runIf(canRun)("IT-SL sale on PostgreSQL", () => {
     expect(readApproved.master).toEqual([]); // read-only documents need no master call
     const pending = await h.measured(() => approver.call("GET", "/approval/pending?type=sale&limit=50"));
     expect(pending.queries).toBe(1);
+  });
+
+  it("IT-SO-M01 a Sale mixing an own-stock lot and a Memo Stock lot: both consumed (own locally, Memo Stock by master) and both returned by delete", async () => {
+    await setting(false);
+    const [item] = await memoStock([receiveLine({ pcs: 5, weightCt: "2.5" })]);
+    const own = await seedLoad(h, { pcs: 4, weightCt: "2.000", lot: `MX-${TAG.slice(-4)}` });
+    OWN_LOADS.push(own.loadId);
+    const key = (await h.ownerDb.stock.findUniqueOrThrow({ where: { id: own.id } })).lot_key!;
+    const ownLine = { source: "OWN_STOCK", lotKey: key, pcs: 3, weightCt: "1.500", unitPrice: "200", discount: { type: "NONE", value: "0" }, photoIds: [] };
+    const saved = await created(body([ownLine, sLine(item.id, 2, "1")]));
+    expect(saved.status).toBe(201);
+    expect(saved.body).toMatchObject({ status: "APPROVED" });
+    expect(await buckets(item.id)).toMatchObject({ pending: 3, sold: 2 });
+    const stock = await h.ownerDb.stock.findUniqueOrThrow({ where: { id: own.id } });
+    expect([stock.on_hand_pcs, stock.sold_pcs]).toEqual([1, 3]);
+    const detail = (await maker.call("GET", `/sale/${saved.body.id}`)).body;
+    expect(detail.lines.map((line: { source: string }) => line.source)).toEqual(["OWN_STOCK", "STOCK"]);
+    const removed = await maker.call("POST", `/sale/${saved.body.id}/delete`, { expectedVersion: detail.version });
+    expect(removed.status).toBe(200);
+    expect(await buckets(item.id)).toMatchObject({ pending: 5, sold: 0 });
+    const back = await h.ownerDb.stock.findUniqueOrThrow({ where: { id: own.id } });
+    expect([back.on_hand_pcs, back.sold_pcs]).toEqual([4, 0]);
   });
 });
