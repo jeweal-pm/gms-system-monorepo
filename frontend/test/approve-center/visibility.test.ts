@@ -10,8 +10,8 @@ const approveLink = sidebarSections[0].items.find((item) => item.id === "approve
 
 describe("UT-AP-02 Approve menu visibility", () => {
   it("Super Admin and ALL see every item", () => {
-    expect(visibleMenus(SUPER, APPROVE_MENUS)).toHaveLength(12);
-    expect(visibleMenus({ isSuperAdmin: false, permissions: "ALL" }, APPROVE_MENUS)).toHaveLength(12);
+    expect(visibleMenus(SUPER, APPROVE_MENUS)).toHaveLength(13);
+    expect(visibleMenus({ isSuperAdmin: false, permissions: "ALL" }, APPROVE_MENUS)).toHaveLength(13);
   });
 
   it("an item needs <leaf>:APPROVE; VIEW alone does not show it", () => {

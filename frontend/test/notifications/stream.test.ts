@@ -391,4 +391,12 @@ describe("notification hint (owner 2026-11-16: the open pages of that document t
     await invalidateForNotification(client as never, undefined);
     expect(keys).toEqual([[["approval"]]]);
   });
+
+  it("FE-SAJ-007 an inventory Stock Adjustment notification refreshes inventory-owned reads", async () => {
+    const { invalidateForNotification } = await import("@/features/notifications/api");
+    const keys: unknown[] = [];
+    const client = { invalidateQueries: vi.fn(async ({ queryKey }: { queryKey: unknown }) => void keys.push(queryKey)) };
+    await invalidateForNotification(client as never, { type: "document.approved", documentType: "stock-adjustment" });
+    expect(keys).toEqual([["inventory"]]);
+  });
 });

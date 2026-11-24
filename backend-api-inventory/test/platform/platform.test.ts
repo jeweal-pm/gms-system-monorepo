@@ -256,6 +256,9 @@ describe("config, errors, hub, notifications", () => {
   });
   it("error envelope has a fixed message and request id; DB connection errors map to unavailable", () => {
     expect(errorBody("LOAD_TO_STOCK_BUSY", "r1", { retryAfterSeconds: 5 })).toEqual({ error: { code: "LOAD_TO_STOCK_BUSY", message: "Saving in progress", requestId: "r1", details: { retryAfterSeconds: 5 } } });
+    for (const code of ["STOCK_ADJUSTMENT_NOT_FOUND", "STOCK_ADJUSTMENT_STOCK_CHANGED", "STOCK_ADJUSTMENT_IN_USE", "STOCK_ADJUSTMENT_STATUS", "STOCK_ADJUSTMENT_LINE_UNAVAILABLE", "STOCK_ADJUSTMENT_REVISE_LIMIT", "LOCATION_INVALID", "NUMBERING_NOT_CONFIGURED", "VERSION_CONFLICT"]) {
+      expect(errorBody(code, "r2").error.message).not.toBe("The request could not be completed");
+    }
     expect(isDbUnavailable({ code: "P1001" })).toBe(true);
     expect(isDbUnavailable({ cause: { code: "ECONNREFUSED" } })).toBe(true);
     expect(isDbUnavailable({ code: "P2002" })).toBe(false);

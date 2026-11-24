@@ -59,7 +59,7 @@ type StockLot = { stockUuid: string; stockId: string; lotKey: string; refDocNo: 
 |---|---|
 | `GET/PUT /approval-settings[/{type}]` | type `stock-adjustment` |
 | `GET /approval/summary` | `{type: "stock-adjustment", count}` for APPROVE + VIEW |
-| `GET /approval/pending?type=stock-adjustment` | `{id, docNo, docDate, partyName /* location */, submittedAt, submittedByName, lineCount, totalDiffPcs, totalDiffWeightCt}` |
+| `GET /approval/pending?type=stock-adjustment` | `{id, docNo, docDate, partyName /* location */, submittedAt, submittedByName, revisionCount, lineCount, totalDiffPcs, totalDiffWeightCt}` |
 | Stock Card / Stock Value | `ADJUST`, `ADJUST_REVERSAL` rows; DOC NO opens `/inventory/stock-adjustment/{id}` |
 
 ## Master internal change

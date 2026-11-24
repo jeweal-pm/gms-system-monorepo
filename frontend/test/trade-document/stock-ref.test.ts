@@ -58,9 +58,10 @@ describe("UT-SR-04 From Stock first column", () => {
   it("is the Lot chip then Stone Code (bold), no Stock ID (lot-based-stock, owner Q-LOT-10)", async () => {
     const { readFileSync } = await import("node:fs");
     const source = readFileSync("src/features/trade-document/memo-stock-modal.tsx", "utf8");
-    expect(source).toContain('title="Lot / Stone Code" />');
-    expect(source).not.toContain("{item.stockId}");
-    expect(source).not.toContain("Stock ID ·");
-    expect(source).toContain("<LotCell lot={item.lot} stoneCode={item.stoneCode}");
+    const fromStockPicker = source.split("function StockAdjustmentStockPicker")[0];
+    expect(fromStockPicker).toContain('title="Lot / Stone Code" />');
+    expect(fromStockPicker).not.toContain("{item.stockId}");
+    expect(fromStockPicker).not.toContain("Stock ID ·");
+    expect(fromStockPicker).toContain("<LotCell lot={item.lot} stoneCode={item.stoneCode}");
   });
 });

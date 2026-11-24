@@ -30,7 +30,7 @@ export const inventoryApprovalKeys = {
   pending: (input: InventoryPendingInput) => [...INVENTORY_QUERY_KEY, "approval", "pending", input] as const,
 };
 
-export type InventoryPendingInput = { type: InventoryApprovalType; q?: string; sort: string; dir: "asc" | "desc"; limit: number };
+export type InventoryPendingInput = { type: InventoryApprovalType; q?: string; sort?: string; dir?: "asc" | "desc"; limit: number };
 
 export function inventoryApprovalCalls(deps: InventoryClientDeps = {}) {
   return {
@@ -38,8 +38,12 @@ export function inventoryApprovalCalls(deps: InventoryClientDeps = {}) {
     updateSetting: (type: InventoryApprovalType, requireApproval: boolean, expectedVersion: number) =>
       inventoryRequest(`/approval-settings/${encodeURIComponent(type)}`, { method: "PUT", body: { requireApproval, expectedVersion }, schema: approvalSettingUpdateSchema }, deps),
     summary: () => inventoryRequest("/approval/summary", { schema: approvalSummarySchema }, deps),
-    pending: (input: InventoryPendingInput, cursor?: string | null) =>
-      inventoryRequest("/approval/pending", { query: { type: input.type, q: input.q, sort: input.sort, dir: input.dir, limit: input.limit, cursor }, schema: pendingPageSchema }, deps),
+    pending: (input: InventoryPendingInput, cursor?: string | null) => {
+      const query = input.type === "stock-adjustment"
+        ? { type: input.type, q: input.q, limit: input.limit, cursor }
+        : { type: input.type, q: input.q, sort: input.sort, dir: input.dir, limit: input.limit, cursor };
+      return inventoryRequest("/approval/pending", { query, schema: pendingPageSchema }, deps);
+    },
   };
 }
 

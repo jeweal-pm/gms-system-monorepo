@@ -16,3 +16,10 @@ These tests follow [automated-testing](../../../workflow/automated-testing.md). 
 | UT-SAJ-04 | unit | navigation | Inventory › Stock Adjustment links to the real page |
 
 Manual checks (manual-tester), TC-SAJ-01…: count a lot down to 0 and confirm it disappears from From Stock; count up and confirm Stock Card shows an ADJUST IN line; change Physical Price and confirm Stock Value.
+
+## Automated verification (2026-11-24)
+
+- `pnpm exec vitest run --maxWorkers=1 --no-file-parallelism` from `frontend/` — **153 files, 1,400 tests passed**.
+- `pnpm exec eslint .` from `frontend/` — **0 errors**; two existing warnings in `src/features/auth/login-form.tsx` about `lockoutSeconds` hook dependencies.
+- `pnpm exec tsc --noEmit --pretty false` from `frontend/` — **blocked by existing workspace errors**: generated Prisma client missing under `backend-api-auth`, resulting implicit-any errors there, and five implicit-any bindings in `features/user-permission/api.ts`. No Stock Adjustment or shared integration file reported a type error.
+- Manual user checks could not run because the GMS frontend and nginx containers were stopped and port 3000 was occupied; see the [customer report](../../../testing/user-check/2026-11-24-stock-adjustment.md).

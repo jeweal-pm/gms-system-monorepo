@@ -1,6 +1,6 @@
 import { AppError } from "../../platform/errors";
 import { Decimal, Prisma, type Client, type Dec } from "../../platform/db";
-import { HIDDEN_STOCK_ID_TYPES, MOVEMENT_KINDS, STOCK_SOURCED_TYPES, documentTypeLabel } from "./card-kinds";
+import { ADJUSTMENT_SOURCED_TYPES, HIDDEN_STOCK_ID_TYPES, MOVEMENT_KINDS, STOCK_SOURCED_TYPES, documentTypeLabel } from "./card-kinds";
 
 /**
  * Stock Card read functions (stock-card SA rev 1, ADR-0056 D1-D8; architecture.md "Read paths" and "Entry computation").
@@ -140,11 +140,17 @@ export function entriesSql(cardFilter: Prisma.Sql, pattern: string | null): Pris
   dated AS (
     SELECT d."card_key", d."document_type", d."document_id", d."pcs", d."weight", d."first_at", d."stock_id", d."stock_count", d."stock_match",
       CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN COALESCE(d."stock_date", (d."first_at" AT TIME ZONE 'Asia/Bangkok')::date)
+        WHEN d."document_type" = ANY(${[...ADJUSTMENT_SOURCED_TYPES]}::text[]) THEN COALESCE(a."doc_date", (d."first_at" AT TIME ZONE 'Asia/Bangkok')::date)
         ELSE COALESCE(h."doc_date", (d."first_at" AT TIME ZONE 'Asia/Bangkok')::date) END AS "doc_date",
-      CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN COALESCE(d."stock_no", '') ELSE COALESCE(h."document_no", '') END AS "doc_no",
-      CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN d."vendor_id" ELSE h."party_id" END AS "account_id",
-      CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN COALESCE(d."vendor_name", '') ELSE COALESCE(h."party_name", '') END AS "account_name"
-    FROM doc d LEFT JOIN "inventory"."stock_hold_document" h ON h."document_type" = d."document_type" AND h."document_id" = d."document_id"
+      CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN COALESCE(d."stock_no", '')
+        WHEN d."document_type" = ANY(${[...ADJUSTMENT_SOURCED_TYPES]}::text[]) THEN COALESCE(a."doc_no", '') ELSE COALESCE(h."document_no", '') END AS "doc_no",
+      CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN d."vendor_id"
+        WHEN d."document_type" = ANY(${[...ADJUSTMENT_SOURCED_TYPES]}::text[]) THEN NULL ELSE h."party_id" END AS "account_id",
+      CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN COALESCE(d."vendor_name", '')
+        WHEN d."document_type" = ANY(${[...ADJUSTMENT_SOURCED_TYPES]}::text[]) THEN COALESCE(a."location", '') ELSE COALESCE(h."party_name", '') END AS "account_name"
+    FROM doc d
+    LEFT JOIN "inventory"."stock_hold_document" h ON h."document_type" = d."document_type" AND h."document_id" = d."document_id"
+    LEFT JOIN "inventory"."stock_adjustment" a ON d."document_type" = ANY(${[...ADJUSTMENT_SOURCED_TYPES]}::text[]) AND a."id" = d."document_id"
   )`;
 }
 

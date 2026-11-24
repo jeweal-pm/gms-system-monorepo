@@ -38,7 +38,7 @@ export function mergeSettings(master: readonly ApprovalSettingItem[] | undefined
   const fromInventory = (inventory ?? []).map((item) => ({
     type: item.type,
     requireApproval: item.requireApproval,
-    available: item.type === "load-to-stock" || item.type === "sale",
+    available: item.type === "load-to-stock" || item.type === "sale" || item.type === "stock-adjustment",
     version: item.version,
     updatedAt: "",
     updatedByName: null,
@@ -47,7 +47,7 @@ export function mergeSettings(master: readonly ApprovalSettingItem[] | undefined
   return [...own, ...fromInventory];
 }
 
-const INVENTORY_TYPES = new Set(["load-to-stock", "merge-split", "stock-transfer-location", "sale"]);
+const INVENTORY_TYPES = new Set(["load-to-stock", "merge-split", "stock-transfer-location", "sale", "stock-adjustment"]);
 
 export const settingOf = (items: readonly ApprovalSettingItem[] | undefined, type: ApprovalSettingType) => items?.find((item) => item.type === type);
 

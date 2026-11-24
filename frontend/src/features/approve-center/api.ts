@@ -18,7 +18,7 @@ import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
 import { APPROVE_MENUS, type ApprovalProc, type ApproveMenu, type AvailableMenu } from "./menus";
 import type { PreviewDetail } from "./preview";
-import { loadToStockDocumentClient, saleDocumentClient, toPendingItem } from "./inventory";
+import { loadToStockDocumentClient, saleDocumentClient, stockAdjustmentDocumentClient, toPendingItem } from "./inventory";
 import { approvalTotal, pendingInput, summaryCount, visibleMenus, type ApprovalSummary, type CountState, type Mine, type PendingInput, type ReviewAction, type SortState } from "./model";
 
 /**
@@ -54,6 +54,8 @@ export function documentClients(client: MasterClient): Record<ApprovalProc, Docu
     loadToStock: loadToStockDocumentClient(),
     // sale FE-SL-009: also served by backend-api-inventory.
     sale: saleDocumentClient(),
+    // Stock Adjustment FE-SAJ-007: served by backend-api-inventory.
+    stockAdjustment: stockAdjustmentDocumentClient(),
   };
 }
 
@@ -152,6 +154,7 @@ export function invalidateAfterReview(queryClient: QueryClient, proc: ApprovalPr
   if (proc === "loadToStock") return Promise.all([queryClient.invalidateQueries({ queryKey: INVENTORY_QUERY_KEY }), queryClient.invalidateQueries({ queryKey: [["purchase"]] })]);
   // sale FE-SL-009: an approved sale moves Reserve lines and Memo Stock (master).
   if (proc === "sale") return Promise.all([INVENTORY_QUERY_KEY, [["memoStock"]], [["reserve"]]].map((queryKey) => queryClient.invalidateQueries({ queryKey })));
+  if (proc === "stockAdjustment") return queryClient.invalidateQueries({ queryKey: INVENTORY_QUERY_KEY });
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: [["approval"]] }),
     queryClient.invalidateQueries({ queryKey: [[proc]] }),
@@ -190,6 +193,7 @@ export function useReviewCalls(menu: AvailableMenu) {
 export function detailQueryKey(proc: ApprovalProc, id: string) {
   if (proc === "loadToStock") return [...INVENTORY_QUERY_KEY, "load-to-stock", "preview", id] as const;
   if (proc === "sale") return [...INVENTORY_QUERY_KEY, "sale", "preview", id] as const;
+  if (proc === "stockAdjustment") return [...INVENTORY_QUERY_KEY, "stock-adjustment", "detail", id] as const;
   return [[proc, "get"], { input: { id }, type: "query" }] as const;
 }
 
