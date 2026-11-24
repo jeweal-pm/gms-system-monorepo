@@ -242,11 +242,24 @@ describe("IT-LS-P2-FE-01 shared From Stock picker (FE-LS-P2-03, FE-LOT-001/002)"
     expect(html).not.toContain('role="tablist"');
   });
 
-  it("Sale (memoOnly): our stock rows and the our-stock notice are left out; only Memo Stock lots are pickable", () => {
-    const sale = (ownStock: "OK" | "UNAVAILABLE") => render(seed([{ items: [ownItem, memoItem], nextCursor: null, ownStock }]), createElement(MemoStockModal, { title: "Add From Stock", fromStock: true, memoOnly: true, showPrice: false, emptyText: "none", pickedIds: new Set<string>(), onCancel: () => undefined, onConfirm: () => undefined }));
+  it("Sale Price and Amount columns follow Weight: own rows show the price with currency and unit and the server amount, Memo Stock rows show a dash", () => {
+    const priced = { ...ownItem, salePrice: "1250.50", saleAmount: "2501.00", saleCurrency: "THB" } as FromStockItem;
+    const html = render(seed([{ items: [priced, memoItem], nextCursor: null, ownStock: "OK" }]), picker());
+    expect(html).toContain("Sale Price");
+    expect(html).toContain("Amount");
+    expect(html.indexOf("Weight (ct)")).toBeLessThan(html.indexOf("Sale Price"));
+    expect(html).toContain("1,250.50 THB");
+    expect(html).toContain("2,501.00");
+    expect(html).toContain("<td class=\"px-3 py-2 align-top text-right tabular-nums\">—");
+    expect(html).not.toMatch(/Stock ID/);
+  });
+
+  it("Sale (ADR-0058): our stock rows come first with their real Location, then Memo Stock lots; the notice shows when our stock is down", () => {
+    const sale = (ownStock: "OK" | "UNAVAILABLE") => render(seed([{ items: [ownItem, memoItem], nextCursor: null, ownStock }]), createElement(MemoStockModal, { title: "Add From Stock", fromStock: true, showPrice: false, emptyText: "none", pickedIds: new Set<string>(), onCancel: () => undefined, onConfirm: () => undefined }));
     expect(sale("OK")).toContain("L-7");
-    expect(sale("OK")).not.toContain("RU-OV");
-    expect(sale("UNAVAILABLE")).not.toContain("Our stock is unavailable");
+    expect(sale("OK")).toContain("RU-OV");
+    expect(sale("OK").indexOf("RU-OV")).toBeLessThan(sale("OK").indexOf("L-7"));
+    expect(sale("UNAVAILABLE")).toContain("Our stock is unavailable");
   });
 
   it("our stock down: notice with Retry above the Memo rows; an empty list shows the notice, not the empty text", () => {

@@ -65,6 +65,8 @@ export function lotGroupRow(row: GroupRow) {
     currency: null, vendor: null,
     // ADR-0058 D7: the lot's Sale Price (company currency per price unit) so Sale From Stock can prefill its editable unit price; no cost, no vendor.
     salePrice: new Prisma.Decimal(row.sale_price).toFixed(2),
+    // Amount = Sale Price x the available quantity in the price unit (weight for PER_CT, pcs for PER_PCS), 2 dp half-up; a merged lot shares one price by key.
+    saleAmount: new Prisma.Decimal(row.sale_price).times(row.price_unit === "PER_CT" ? row.on_hand_weight_ct : row.on_hand_pcs).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP).toFixed(2),
   };
 }
 export type OwnLotGroupRow = ReturnType<typeof lotGroupRow>;

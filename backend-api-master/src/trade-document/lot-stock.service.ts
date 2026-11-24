@@ -45,6 +45,15 @@ export type MemoStockLotsInput = z.output<typeof memoStockLotsSchema>;
 export type FromStockLotsInput = z.output<typeof fromStockLotsSchema>;
 export type PurchaseMemoStockLotsInput = z.output<typeof purchaseMemoStockLotsSchema>;
 
+/** Company currency (the unit of own stock's Sale Price), cached 60 s. */
+let companyCurrencyCache: { value: string | null; at: number } | null = null;
+async function companyCurrency(): Promise<string | null> {
+  if (companyCurrencyCache && Date.now() - companyCurrencyCache.at < 60_000) return companyCurrencyCache.value;
+  const row = await prisma.companyProfile.findUnique({ where: { id: 1 }, select: { currencyCode: true } });
+  companyCurrencyCache = { value: row?.currencyCode ?? null, at: Date.now() };
+  return companyCurrencyCache.value;
+}
+
 /** api-contract `LotGroupRow`. */
 export type LotGroupRow = {
   lotKey: LotKey;
@@ -63,6 +72,9 @@ export type LotGroupRow = {
   currency: string | null; vendor: { id: string; code: string; name: string } | null;
   /** Own stock only (sale-own-stock ADR-0058 D7): the lot's Sale Price per price unit, to prefill the Sale unit price; absent for Memo Stock. */
   salePrice?: string | null;
+  /** Own stock only: Sale Price x the available quantity (server-computed), and the company currency of both. */
+  saleAmount?: string | null;
+  saleCurrency?: string | null;
 };
 
 /** Memo Stock bucket a picker lists (fixed SQL, never input). */
@@ -241,6 +253,10 @@ export class LotStockService {
           return null;
         });
       const status = own === null ? ("UNAVAILABLE" as const) : ("OK" as const);
+      if (own && own.length > 0) {
+        const saleCurrency = await companyCurrency();
+        for (const row of own) (row as LotGroupRow).saleCurrency = saleCurrency;
+      }
       if (ownOnly) return { ...ownFirstLotPage(own, { items: [], nextCursor: null }, input.limit), ownStock: status };
       const ownCount = own?.length ?? 0;
       const memo = ownCount > input.limit ? null : await readMemo(undefined, Math.max(1, input.limit - ownCount));

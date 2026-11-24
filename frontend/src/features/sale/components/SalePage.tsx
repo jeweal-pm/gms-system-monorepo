@@ -15,9 +15,7 @@ import type { DocFlow, DocumentApprovalType } from "@/features/trade-document/fl
 import {
   clearReserveRows,
   emptySale,
-  lotToSaleLine,
   pickedReserveLineIds,
-  pickedStockIds,
   reserveLineToSaleLine,
   reserveRowCount,
   SALE_HREF,
@@ -32,7 +30,6 @@ import {
   type SaleFormValues,
   type SaleInput,
 } from "../form";
-import { MemoStockModal } from "@/features/trade-document/memo-stock-modal";
 import {
   fromSale,
   mapSaleSaveError,
@@ -46,7 +43,7 @@ import {
   useSaleDetail,
   type SaleOptions,
 } from "../api";
-import { ReserveLinePicker } from "./sale-pickers";
+import { ReserveLinePicker, SaleStockPicker } from "./sale-pickers";
 
 export { SALE_HREF };
 
@@ -104,7 +101,7 @@ export type SaleBinding = {
   daybook: ReactNode;
   /** P-01 "Add From Reserve" (FE-SL-004). */
   fromReserve: PickerRender<SaleFormValues>;
-  /** P-02 "Add From Stock" (FE-SL-005, `MemoStockModal` in phase 1). */
+  /** P-02 "Add From Stock" (FE-SL-005, `SaleStockPicker`). */
   fromStock: PickerRender<SaleFormValues>;
 };
 
@@ -165,19 +162,8 @@ export const SALE_BINDING: SaleBinding = {
       onConfirm={(rows) => onAdd(rows.map(reserveLineToSaleLine))}
     />
   ),
-  // P-02 (Q-SL-01, lot-based-stock): the shared "Add From Stock" lot dialog, Memo Stock lots only (inventory takes no own stock in Sale), no prices.
-  fromStock: ({ values, onClose, onAdd }) => (
-    <MemoStockModal
-      title="Add From Stock"
-      fromStock
-      memoOnly
-      showPrice={false}
-      emptyText="No stock with anything pending."
-      pickedIds={pickedStockIds(values.lines)}
-      onCancel={onClose}
-      onConfirm={(items) => onAdd(items.map(lotToSaleLine))}
-    />
-  ),
+  // P-02 (ADR-0058): the shared "Add From Stock" lot dialog, own stock (Load to Stock) first, then Memo Stock lots, no prices.
+  fromStock: ({ values, onClose, onAdd }) => <SaleStockPicker values={values} onClose={onClose} onAdd={onAdd} />,
 };
 
 type HeaderField = "customerId" | "shippingAddressId" | "invoiceAddressId" | "currency" | "exchangeRate";

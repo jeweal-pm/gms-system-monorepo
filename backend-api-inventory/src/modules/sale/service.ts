@@ -11,7 +11,7 @@ import type { NotificationHub } from "../../platform/notification/hub";
 import { recordNotification, type NotificationSignal } from "../../platform/notification/store";
 import { SyncDriver, SyncHold, LEASE_MS, type BaseOp, type DriveOutcome, type MasterPort, type OpKind } from "../../platform/sync/saga";
 import { consumptionLines, normalizeSale, prepareRequest, type NormalizedSale } from "./prepare";
-import { consumeOwn, releaseOwn, resolveOwnLots, writeSaleCardHeader, type OwnConsumeLine } from "./own-stock";
+import { consumeOwn, releaseOwn, resolveOwnLots, settleReserveOwn, writeSaleCardHeader, type OwnConsumeLine } from "./own-stock";
 import { readHeader, readLines, isEditable, type HeaderRow } from "./read";
 import { APPROVED_AUTO, checkPhotos, explainMiss, formatDocNo, headerFields, insertParts, nextRunningNo, replaceParts, writeSaleAllocations } from "./repository";
 import type { SaleInput } from "./schemas";
@@ -161,7 +161,15 @@ export class SaleService {
     try {
       const result = await this.applyStatus(tx, op);
       // ADR-0055 D7: tx1 copies master's allocation of the applied revision (empty for a release).
-      await writeSaleAllocations(tx, op.sale_id, op.kind === "DELETE" ? [] : (response?.allocations ?? []));
+      const allocations = op.kind === "DELETE" ? [] : (response?.allocations ?? []);
+      await writeSaleAllocations(tx, op.sale_id, allocations);
+      // ADR-0058 phase B: own-stock rows master settled on Reserve lines → reserved -> sold in inventory, Reserve hold shrinks.
+      const reserveOwn = allocations.flatMap((entry) => entry.rows.filter((row) => row.source === "OWN_STOCK").map((row) => ({ lineId: entry.lineId, seq: row.seq, stockUuid: row.stockUuid, stockId: row.stockId, pcs: row.pcs, weightCt: row.weightCt })));
+      if (reserveOwn.length > 0) {
+        await settleReserveOwn(tx, { saleId: op.sale_id, revision: op.revision, actorId: op.payload.actor.id }, reserveOwn);
+        const header = (await readHeader(tx, op.sale_id))!;
+        await writeSaleCardHeader(tx, { saleId: op.sale_id, revision: op.revision, docNo: header.doc_no, docDate: header.doc_date, customerId: header.customer_id, customerName: header.customer_name_snapshot });
+      }
       return result;
     } catch (error) {
       // An own-stock refusal after master applied (mixed Sale only; Approve / Save pre-check it): park the op, never half-apply.

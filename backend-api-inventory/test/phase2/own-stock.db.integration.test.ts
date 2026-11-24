@@ -608,7 +608,12 @@ describe.runIf(canRun)("IT-LS-P2 own stock in master documents on PostgreSQL", (
       source: "OWN_STOCK", lot, pendingPcs: 2, pendingWeightCt: "1.000", ref: expect.objectContaining({ type: "LOAD", docNo: older.docNo, docDate: "2081-02-01" }),
       unitPrice: null, netUnitPrice: null, amount: null, vendor: null, currency: null,
     });
-    expect(JSON.stringify(measured.result)).not.toMatch(/unitCost|stockPrice|salePrice|stockId/);
+    // ADR-0058 D7: the lot carries its Sale Price (prefill of the Sale unit price) and nothing else priced: no cost, Stock Price or Stock ID.
+    expect(measured.result.every((row: any) => row.salePrice === "200.00")).toBe(true);
+    // Amount is computed here: Sale Price x the available weight (PER_CT): 1.000 ct x 200 = 200.00, 1.500 ct = 300.00.
+    expect(measured.result.find((row: any) => row.lotKey === key).saleAmount).toBe("200.00");
+    expect(measured.result.map((row: any) => row.saleAmount).sort()).toEqual(["100.00", "200.00", "300.00"]);
+    expect(JSON.stringify(measured.result)).not.toMatch(/unitCost|stockPrice|stockId/);
     // Search never matches a Stock ID (Q-LOT-10a).
     expect(await real.lotsAvailable({ q: older.stocks[0].stock_id, limit: 51 })).toEqual([]);
     const groups = await real.stockLots([key]);

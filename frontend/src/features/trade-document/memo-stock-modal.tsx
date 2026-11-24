@@ -72,7 +72,6 @@ type MemoStockModalProps = {
   | {
       /** Memo Return: the vendor's Memo Stock lots in its currency (`memoStock.lots`). */
       fromStock?: false;
-      memoOnly?: undefined;
       vendorId: string;
       currency: string;
       onConfirm: (items: MemoStockItem[]) => void;
@@ -83,8 +82,6 @@ type MemoStockModalProps = {
        * our stock (`fromStock.lots`, one row per lot); Location tells the source.
        */
       fromStock: true;
-      /** Sale (inventory accepts Memo Stock lots only): our stock's rows are left out and its notice is not shown. */
-      memoOnly?: boolean;
       vendorId?: undefined;
       currency?: undefined;
       onConfirm: (items: FromStockItem[]) => void;
@@ -114,16 +111,16 @@ export function MemoStockModal(props: MemoStockModalProps) {
   }, [onCancel]);
 
   const memoStock = useMemoStock(fromStock ? { vendorId: "", currency: "", q, from, to } : { vendorId, currency, q, from, to });
-  const memoOnly = props.memoOnly === true;
   const ownAndMemo = useFromStock({ q, from, to }, fromStock);
   const stock = fromStock ? ownAndMemo : memoStock;
   const pages = (stock.data?.pages ?? []) as { items: PickerItem[]; ownStock?: "OK" | "UNAVAILABLE" }[];
   const keyOf = (item: PickerItem) => pickKey(item);
-  const items = pages.flatMap((page) => page.items).filter((item) => !pickedIds.has(keyOf(item)) && !(memoOnly && item.source === "OWN_STOCK"));
+  const items = pages.flatMap((page) => page.items).filter((item) => !pickedIds.has(keyOf(item)));
   // FE-LS-P2-03: our stock down → Memo Stock rows stay listed and pickable under a notice (also instead of the empty text).
-  const ownDown = fromStock && !memoOnly && ownStockUnavailable(pages as { ownStock: "OK" | "UNAVAILABLE" }[]);
+  const ownDown = fromStock && ownStockUnavailable(pages as { ownStock: "OK" | "UNAVAILABLE" }[]);
   const allChecked = items.length > 0 && items.every((item) => checked.has(keyOf(item)));
-  const columns = showPrice ? 12 : 10;
+  // From Stock (Quotation, Reserve, Memo Out, Sale) adds Sale Price + Amount after Weight (ct).
+  const columns = showPrice ? 12 : fromStock ? 12 : 10;
   const pending = pickerGroupTone.orange;
   const toggle = (id: string) =>
     setChecked((prev) => {
@@ -172,6 +169,8 @@ export function MemoStockModal(props: MemoStockModalProps) {
               <>
                 <PickerTh title="Pcs" right upper className="w-[90px]" />
                 <PickerTh title="Weight (ct)" right className="w-[110px]" />
+                {fromStock && <PickerTh title="Sale Price" sub="Unit" right upper />}
+                {fromStock && <PickerTh title="Amount" right />}
               </>
             )}
             {showPrice && <PickerTh rowSpan={rows} title="Price" sub="Unit" right upper />}
@@ -236,6 +235,7 @@ export function MemoStockModal(props: MemoStockModalProps) {
                 </td>
                 <td className={cx(pickerCell, "text-right tabular-nums", showPrice && pending.cell)}>{item.pendingPcs}</td>
                 <td className={cx(pickerCell, "text-right tabular-nums", showPrice && pending.cell)}>{formatWeight(dec(item.pendingWeightCt), nf.weightPlaces)}</td>
+                {fromStock && !showPrice && <SalePriceCells item={item} />}
                 {showPrice && (
                   <td className={cx(pickerCell, "text-right tabular-nums")}>
                     {formatUnitPrice(item.netUnitPrice ?? "0", nf.pricePlaces)} {item.currency}
@@ -250,5 +250,21 @@ export function MemoStockModal(props: MemoStockModalProps) {
         </tbody>
       </PickerFrame>
     </PickerDialog>
+  );
+}
+
+/** Sale Price (with its currency and unit) and the server-computed Amount of a From Stock row; "—" when the lot has no price (Memo Stock). */
+function SalePriceCells({ item }: { item: FromStockItem }) {
+  const nf = useNumberFormat();
+  const row = item as FromStockItem & { salePrice?: string | null; saleAmount?: string | null; saleCurrency?: string | null };
+  const priced = row.salePrice != null && row.saleAmount != null;
+  return (
+    <>
+      <td className={cx(pickerCell, "text-right tabular-nums")}>
+        {priced ? `${formatUnitPrice(row.salePrice!, nf.pricePlaces)}${row.saleCurrency ? ` ${row.saleCurrency}` : ""}` : "—"}
+        <div className={pickerSub}>{item.priceUnit === "PER_PCS" ? "pcs" : "cts"}</div>
+      </td>
+      <td className={cx(pickerCell, "text-right tabular-nums")}>{priced ? formatMoneyText(row.saleAmount!, nf.pricePlaces) : "—"}</td>
+    </>
   );
 }

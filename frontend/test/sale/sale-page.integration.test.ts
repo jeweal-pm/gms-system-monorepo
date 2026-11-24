@@ -22,11 +22,10 @@ import {
   type SaleBinding,
   type SaleOptions,
 } from "@/features/sale/components/SalePage";
-import { ReserveLinePicker } from "@/features/sale/components/sale-pickers";
+import { ReserveLinePicker, SaleStockPicker } from "@/features/sale/components/sale-pickers";
 import { SALE_PHOTOS, saleKeys } from "@/features/sale/api";
 import { inventoryApprovalKeys } from "@/features/inventory/approval";
 import { todayIso } from "@/features/quotation/lib/format";
-import { MemoStockModal } from "@/features/trade-document/memo-stock-modal";
 import { emptySale, lotToSaleLine, reserveLineToSaleLine, type SaleFormValues } from "@/features/sale/form";
 import type { ConfirmRequest } from "@/features/quotation/components/use-confirm";
 import { authTrpc, createAuthTrpcClient } from "@/lib/auth-trpc";
@@ -174,7 +173,7 @@ describe("IT-SL-02 live Sale page (FE-SL-006, owner 2026-11-20 \"ทำหน้
     expect(button(html, "Edit")).not.toContain('disabled=""');
   });
 
-  it("the live binding: approval type sale, sale photo route, From Reserve on the reserve-lines picker, From Stock on MemoStockModal", () => {
+  it("the live binding: approval type sale, sale photo route, From Reserve on the reserve-lines picker, From Stock on SaleStockPicker", () => {
     expect(SALE_BINDING.approvalType).toBe("sale");
     expect(SALE_BINDING.photos).toBe(SALE_PHOTOS);
     expect(SALE_CONFIG.photos?.route).toBe("/api/inventory/v1/sale/photos");
@@ -184,12 +183,10 @@ describe("IT-SL-02 live Sale page (FE-SL-006, owner 2026-11-20 \"ทำหน้
     expect(reserve.props.customerId).toBe(ID);
     expect(reserve.props.currency).toBe("USD");
     expect([...reserve.props.excluded]).toEqual([reserveLine().reserveLineId]);
-    const stock = SALE_BINDING.fromStock({ values, onClose: () => undefined, onAdd: () => undefined }) as ReactElement<{ title: string; showPrice: boolean; pickedIds: Set<string>; vendorId?: string; fromStock?: boolean; memoOnly?: boolean }>;
-    expect(stock.type).toBe(MemoStockModal);
-    expect(stock.props).toMatchObject({ title: "Add From Stock", showPrice: false });
-    expect(stock.props).toMatchObject({ fromStock: true, memoOnly: true });
-    expect(stock.props.vendorId).toBeUndefined();
-    expect([...stock.props.pickedIds]).toEqual([stockItem().lotKey]);
+    // ADR-0058: the dialog is the Sale binding of the shared lot dialog (own stock + Memo Stock, no Memo-only restriction).
+    const stock = SALE_BINDING.fromStock({ values, onClose: () => undefined, onAdd: () => undefined }) as ReactElement<{ values: SaleFormValues }>;
+    expect(stock.type).toBe(SaleStockPicker);
+    expect(stock.props.values).toBe(values);
   });
 });
 

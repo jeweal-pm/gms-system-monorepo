@@ -31,7 +31,9 @@ export type SaleStoneAttrs = {
   stoneCode: string; stone: string; shape: string; size: string; color: string; clarity: string; cutting: string; quality: string;
   lot: string; location: string; cerType: string; cerNo: string;
 };
+/** `source` (ADR-0058 phase B): whether the Reserve line holds Memo Stock or own stock; absent from an older master = Memo Stock. */
 export type ReserveLineRef = SaleStoneAttrs & {
+  source?: "MEMO_STOCK" | "OWN_STOCK";
   reserveLineId: string; reserveId: string; reserveNo: string; reserveDate: string; dueDate: string;
   /** Legacy Reserve line: its item; a lot Reserve line (ADR-0055): null with `lotKey`. `stockId` is "" on a lot line. */
   memoStockId: string | null; lotKey?: string | null; stockId: string; priceUnit: PriceUnit;
@@ -63,7 +65,7 @@ export type PreparedLot = { lotKey: string; status: "OK" | "UNAVAILABLE"; stockC
 /** v2 (ADR-0055 D7): a STOCK line names `memoStockId` (legacy) or `lotKey`; a RESERVE line may omit `memoStockId`. */
 export type SaleConsumptionLine = { lineId: string; source: "RESERVE" | "STOCK"; reserveLineId?: string; memoStockId?: string; lotKey?: string; pcs: number; weightCt: string };
 /** Master's per-stock allocation of a line (server-to-server only, copied into sale_line_alloc; never returned publicly). */
-export type SaleLineAllocation = { lineId: string; rows: { seq: number; stockUuid: string; stockId: string; pcs: number; weightCt: string }[] };
+export type SaleLineAllocation = { lineId: string; rows: { seq: number; source?: "MEMO_STOCK" | "OWN_STOCK"; stockUuid: string; stockId: string; pcs: number; weightCt: string }[] };
 export type SaleConsumptionRequest = { saleDocNo: string; customerId: string; currency: string; lines: SaleConsumptionLine[] };
 export type SaleCapLine = { lineId: string; capPcs: number; capWeightCt: string };
 export type SaleConsumptionResponse = { revision: number; replayed: boolean; lines: SaleCapLine[]; allocations?: SaleLineAllocation[] };

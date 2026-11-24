@@ -6,6 +6,7 @@ import { Prisma } from "../generated/prisma/client";
 import type { SaleConsumptionPutInput } from "./inventory-internal.schemas";
 import { allocateFifo, settleOldestFirst, type AllocRow } from "../trade-document/lot-allocation";
 import { lockLotCandidates, readAllocations } from "../trade-document/lot-apply";
+import { expandOwnReserve, readAppliedOwn, writeOwn, type OwnUse } from "./sale-consumption-own";
 
 /**
  * sale SA rev 1 / ADR-0054 D4–D6 (BE-SL-002): the idempotent "set consumption" of one inventory Sale, in ONE master
@@ -32,7 +33,7 @@ const ZERO = new Decimal(0);
 export type ConsumptionLine = { lineId: string; source: "RESERVE" | "STOCK"; reserveLineId?: string | null; memoStockId: string; pcs: number; weightCt: string };
 export type CapLine = { lineId: string; capPcs: number; capWeightCt: string };
 /** ADR-0055 api-contract `LotAllocation` (server-to-server only; never returned to the browser). */
-export type LotAllocation = { seq: number; source: "MEMO_STOCK"; stockUuid: string; stockId: string; pcs: number; weightCt: string; settledPcs: number; settledWeightCt: string };
+export type LotAllocation = { seq: number; source: "MEMO_STOCK" | "OWN_STOCK"; stockUuid: string; stockId: string; pcs: number; weightCt: string; settledPcs: number; settledWeightCt: string };
 export type LineAllocation = { lineId: string; rows: LotAllocation[] };
 export type ConsumptionResult = { revision: number; replayed: boolean; lines: CapLine[]; allocations: LineAllocation[] };
 /** A desired line of the v2 request. */
@@ -215,7 +216,7 @@ const CONSUMPTION_MESSAGES: Record<string, string> = {
 export function packCaps(lines: readonly CapLine[], allocations: readonly LineAllocation[] = []) {
   return {
     l: lines.map((line) => [line.lineId, line.capPcs, line.capWeightCt]),
-    ...(allocations.length > 0 ? { a: allocations.map((entry) => [entry.lineId, entry.rows.map((row) => [row.seq, row.stockUuid, row.stockId, row.pcs, row.weightCt, row.settledPcs, row.settledWeightCt])]) } : {}),
+    ...(allocations.length > 0 ? { a: allocations.map((entry) => [entry.lineId, entry.rows.map((row) => [row.seq, row.stockUuid, row.stockId, row.pcs, row.weightCt, row.settledPcs, row.settledWeightCt, ...(row.source === "OWN_STOCK" ? [1] : [])])]) } : {}),
   };
 }
 export function unpackAllocations(value: unknown): LineAllocation[] {
@@ -223,7 +224,7 @@ export function unpackAllocations(value: unknown): LineAllocation[] {
   if (!Array.isArray(stored.a)) return [];
   return stored.a.flatMap((entry) => (Array.isArray(entry) && entry.length === 2 && Array.isArray(entry[1])
     ? [{ lineId: String(entry[0]), rows: (entry[1] as unknown[][]).map((row) => ({
-      seq: Number(row[0]), source: "MEMO_STOCK" as const, stockUuid: String(row[1]), stockId: String(row[2]), pcs: Number(row[3]), weightCt: String(row[4]),
+      seq: Number(row[0]), source: (row[7] === 1 ? "OWN_STOCK" : "MEMO_STOCK") as "MEMO_STOCK" | "OWN_STOCK", stockUuid: String(row[1]), stockId: String(row[2]), pcs: Number(row[3]), weightCt: String(row[4]),
       settledPcs: Number(row[5] ?? 0), settledWeightCt: String(row[6] ?? "0.000"),
     })) }]
     : []));
@@ -339,7 +340,9 @@ export async function applyConsumption(tx: Tx, saleId: string, input: SaleConsum
     FROM "partner"."sale_consumption_line" WHERE "sale_id" = ${saleId}::uuid`);
   const applied: ConsumptionLine[] = appliedRows.map((row) => ({ lineId: row.line_id, source: row.source, reserveLineId: row.reserve_line_id, memoStockId: row.memo_stock_id, pcs: row.pcs, weightCt: row.weight_ct }));
   const appliedLot = new Map(unpackLots(header.result));
-  const reserveLineIds = sortedUnique([...applied, ...input.lines].map((line) => (line.source === "RESERVE" ? line.reserveLineId : null)));
+  // ADR-0058 phase B: what this Sale settled on own-stock Reserve lines (own table) is released / replaced the same way.
+  const appliedOwn = await readAppliedOwn(tx, saleId);
+  const reserveLineIds = sortedUnique([...[...applied, ...input.lines].map((line) => (line.source === "RESERVE" ? line.reserveLineId : null)), ...appliedOwn.map((row) => row.reserveLineId)]);
 
   // 3. Reserve headers FOR SHARE (id order), then 4. the Reserve lines FOR UPDATE (id order).
   let reserveLines: LockedReserveLine[] = [];
@@ -367,15 +370,19 @@ export async function applyConsumption(tx: Tx, saleId: string, input: SaleConsum
   const reserveAllocRows = await readAllocations(tx, "reserve", reserveLineIds, true);
   const reserveAllocs = new Map<string, typeof reserveAllocRows>();
   for (const row of reserveAllocRows) if (row.memoStockId) reserveAllocs.set(row.lineId, [...(reserveAllocs.get(row.lineId) ?? []), row]);
+  // A Reserve line whose allocation names own stock is settled by the own path below; the Memo Stock path never sees it.
+  const ownReserveIds = new Set(reserveAllocRows.filter((row) => row.ownStockId).map((row) => row.lineId));
+  const ownInput = input.lines.filter((line) => line.source === "RESERVE" && line.reserveLineId && ownReserveIds.has(line.reserveLineId));
+  const memoLines = input.lines.filter((line) => !ownInput.includes(line));
   reserveLines = reserveLines.map((line) => ({ ...line, stocks: reserveAllocs.has(line.id) ? reserveAllocs.get(line.id)!.map((row) => row.memoStockId!) : line.memoStockId ? [line.memoStockId] : [] }));
 
   // 5. Memo Stock items FOR NO KEY UPDATE (id order, ONE statement): every item named by an applied or desired line, the
   //    Reserve lines' allocated items and the open items of the desired lots (≤ 500 per lot / 2,000 in all, D6).
   const itemIds = sortedUnique([
-    ...applied.map((line) => line.memoStockId), ...input.lines.map((line) => line.memoStockId), ...reserveLines.map((line) => line.memoStockId),
+    ...applied.map((line) => line.memoStockId), ...memoLines.map((line) => line.memoStockId), ...reserveLines.map((line) => line.memoStockId),
     ...reserveAllocRows.map((row) => row.memoStockId),
   ]);
-  const lotKeys = sortedUnique(input.lines.map((line) => (line.source === "STOCK" ? line.lotKey : null)));
+  const lotKeys = sortedUnique(memoLines.map((line) => (line.source === "STOCK" ? line.lotKey : null)));
   const locked = await lockLotCandidates(tx, lotKeys, itemIds);
   const items: LockedItem[] = locked.map((row) => ({
     id: row.id, stockId: row.stockId, pendingPcs: row.pendingPcs, pendingWeightCt: row.pendingWeight, reservedPcs: row.reservedPcs, reservedWeightCt: row.reservedWeight,
@@ -383,7 +390,7 @@ export async function applyConsumption(tx: Tx, saleId: string, input: SaleConsum
   }));
   const reserveItem = new Map(reserveLines.map((line) => [line.id, line.memoStockId]));
   const expanded = expandConsumption({
-    lines: input.lines, applied, appliedLot,
+    lines: memoLines, applied, appliedLot,
     candidates: locked.filter((row) => lotKeys.includes(row.lotKey)).map((row) => ({ id: row.id, stockId: row.stockId, lotKey: row.lotKey, refDate: row.refDate, pendingPcs: row.pendingPcs, pendingWeight: row.pendingWeight })),
     reserveAllocs, reserveItem,
   });
@@ -396,7 +403,23 @@ export async function applyConsumption(tx: Tx, saleId: string, input: SaleConsum
     if (plan.code === "SALE_CONSUMPTION_IN_USE") throw consumptionException(plan.code, HttpStatus.CONFLICT, { stockIds: plan.stockIds });
     throw consumptionException(plan.code, HttpStatus.CONFLICT, { lines: plan.lines });
   }
-  const caps = lineCaps(input.lines, plan.caps, locked, applied, desired);
+  // 5b. ADR-0058 phase B: own-stock Reserve lines (live, of this customer and currency, open on their own allocation rows).
+  const headerOf = new Map(reserveLines.map((line) => [line.id, line]));
+  const ownUnavailable = ownInput.filter((line) => { const rl = headerOf.get(line.reserveLineId!); return !rl || !rl.live || rl.customerId !== input.customerId || rl.currency !== input.currency; }).map((line) => line.lineId);
+  if (ownUnavailable.length > 0) throw consumptionException("SALE_CONSUMPTION_LINE_UNAVAILABLE", HttpStatus.UNPROCESSABLE_ENTITY, { lineIds: ownUnavailable });
+  const ownAllocsOf = new Map<string, typeof reserveAllocRows>();
+  for (const row of reserveAllocRows) if (row.ownStockId) ownAllocsOf.set(row.lineId, [...(ownAllocsOf.get(row.lineId) ?? []), row]);
+  const ownExpanded = expandOwnReserve(ownInput.map((line) => ({ lineId: line.lineId, reserveLineId: line.reserveLineId!, pcs: line.pcs, weightCt: line.weightCt })), appliedOwn, ownAllocsOf);
+  if (ownExpanded.short.length > 0) throw consumptionException("SALE_CONSUMPTION_EXCEEDS_AVAILABLE", HttpStatus.CONFLICT, { lines: ownExpanded.short });
+  const ownDesired: OwnUse[] = ownExpanded.rows;
+  const ownCaps: CapLine[] = ownInput.map((line) => {
+    const rl = headerOf.get(line.reserveLineId!)!;
+    const mine = appliedOwn.filter((row) => row.reserveLineId === rl.id).reduce((acc, row) => ({ pcs: acc.pcs + row.pcs, weight: acc.weight.plus(row.weightCt) }), { pcs: 0, weight: ZERO });
+    return { lineId: line.lineId, capPcs: rl.pcs - rl.soldPcs + mine.pcs, capWeightCt: rl.weightCt.minus(rl.soldWeightCt).plus(mine.weight).toFixed(3) };
+  });
+  const memoCaps = lineCaps(memoLines, plan.caps, locked, applied, desired);
+  const capOf = new Map([...memoCaps, ...ownCaps].map((cap) => [cap.lineId, cap]));
+  const caps = input.lines.map((line) => capOf.get(line.lineId)!);
   // 6. Bucket moves (only what changes), one statement per table.
   if (plan.reserveDeltas.length > 0) {
     const values = plan.reserveDeltas.map((delta) => Prisma.sql`(${delta.reserveLineId}::uuid, ${delta.pcs}::int, ${delta.weightCt.toFixed(3)}::numeric)`);
@@ -436,6 +459,7 @@ export async function applyConsumption(tx: Tx, saleId: string, input: SaleConsum
       FROM (VALUES ${Prisma.join(values)}) AS d(id, pp, pw, rp, rw, sp, sw)
       WHERE s."id" = d.id`);
   }
+  await writeOwn(tx, saleId, ownDesired, appliedOwn);
   // 7. Replace the consumption lines (set semantics).
   if (applied.length > 0) await tx.saleConsumptionLine.deleteMany({ where: { saleId } });
   if (desired.length > 0) {
@@ -447,10 +471,15 @@ export async function applyConsumption(tx: Tx, saleId: string, input: SaleConsum
   const stockIdOf = new Map(locked.map((row) => [row.id, row.stockId]));
   const allocations: LineAllocation[] = input.lines.map((line) => ({
     lineId: line.lineId,
-    rows: desired.filter((row) => row.lineId === line.lineId).map((row, index) => ({
-      seq: index + 1, source: "MEMO_STOCK" as const, stockUuid: row.memoStockId, stockId: stockIdOf.get(row.memoStockId) ?? "", pcs: row.pcs,
-      weightCt: new Decimal(row.weightCt).toFixed(3), settledPcs: 0, settledWeightCt: "0.000",
-    })),
+    rows: [
+      ...desired.filter((row) => row.lineId === line.lineId).map((row, index) => ({
+        seq: index + 1, source: "MEMO_STOCK" as const, stockUuid: row.memoStockId, stockId: stockIdOf.get(row.memoStockId) ?? "", pcs: row.pcs,
+        weightCt: new Decimal(row.weightCt).toFixed(3), settledPcs: 0, settledWeightCt: "0.000",
+      })),
+      ...ownDesired.filter((row) => row.lineId === line.lineId).map((row, index) => ({
+        seq: index + 1, source: "OWN_STOCK" as const, stockUuid: row.ownStockId, stockId: row.stockId, pcs: row.pcs, weightCt: row.weightCt, settledPcs: 0, settledWeightCt: "0.000",
+      })),
+    ],
   }));
   const lots = input.lines.flatMap((line) => (line.lotKey ? [[line.lineId, line.lotKey]] : []));
   // 8. Header: applied revision, hash and result.

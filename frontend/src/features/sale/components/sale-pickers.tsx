@@ -3,14 +3,17 @@
 import { PickerChip, PickerLot, pickerCell, pickerSub } from "@/features/trade-document/picker-ui";
 import { formatDate } from "@/features/quotation/lib/format";
 import { StockPicker, usePickerFilters, type PickerColumn, type PickerGroup, type StockPickerProps } from "@/features/trade-document/stock-picker";
-import { reserveLinePickerData, saleLoadError, useReserveLines } from "../api";
-import type { SaleReserveLineRef } from "../form";
+import { useQuery } from "@tanstack/react-query";
+import { MemoStockModal } from "@/features/trade-document/memo-stock-modal";
+import { retryTransient } from "@/lib/trpc-error";
+import { reserveLinePickerData, saleApi, saleKeys, saleLoadError, useReserveLines } from "../api";
+import { lotToSaleLine, pickedStockIds, type SaleFormValues, type SaleLine, type SaleReserveLineRef } from "../form";
 
 /**
  * P-01 "Add From Reserve" (sale FE-SL-004) on the shared stock picker shell: the open lines of the customer's approved
  * Reserves in the document currency (`GET /sale/reserve-lines`), oldest Reserve first, 50 a page with Load more, search
  * (250 ms debounce) and Start → Due on the Reserve date. Lines already on the document are left out (server `exclude`
- * and the shell's own check). P-02 "Add From Stock" reuses `MemoStockModal` (phase 1, Q-SL-01).
+ * and the shell's own check). P-02 "Add From Stock" is `SaleStockPicker` below.
  */
 
 type Tab = "ALL";
@@ -101,4 +104,25 @@ export function ReserveLinePicker({ customerId, ...scope }: Scope & { customerId
   const filters = usePickerFilters<Tab>("ALL");
   const query = useReserveLines({ customerId, currency: scope.currency, q: filters.filter.q, from: filters.filter.from, to: filters.filter.to, exclude: [...scope.excluded] });
   return <StockPicker {...reserveLinePickerProps(scope)} filters={filters} data={reserveLinePickerData(query)} />;
+}
+
+/**
+ * P-02 "Add From Stock" (ADR-0058): the shared lot dialog over `fromStock.lots` (own stock loaded by Load to Stock first, with its
+ * real Location, then Memo Stock lots; Sale permission is enough). An own-stock row's unit price is prefilled from the lot's Sale
+ * Price (÷ the Selling Rate in a foreign currency) and stays editable.
+ */
+export function SaleStockPicker({ values, onClose, onAdd }: { values: SaleFormValues; onClose: () => void; onAdd: (lines: SaleLine[]) => void }) {
+  const options = useQuery({ queryKey: saleKeys.options(values.customerId || undefined), queryFn: () => saleApi.options(values.customerId || undefined), staleTime: 60_000, retry: retryTransient });
+  const price = { currency: values.currency, exchangeRate: values.exchangeRate ?? "", companyCurrency: options.data?.companyCurrency ?? undefined };
+  return (
+    <MemoStockModal
+      title="Add From Stock"
+      fromStock
+      showPrice={false}
+      emptyText="No stock with anything available."
+      pickedIds={pickedStockIds(values.lines)}
+      onCancel={onClose}
+      onConfirm={(items) => onAdd(items.map((item) => lotToSaleLine(item, price)))}
+    />
+  );
 }

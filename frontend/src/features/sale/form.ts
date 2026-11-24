@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { toTradeDocumentInput } from "@/features/quotation/api";
-import { dec, toFixed } from "@/features/quotation/lib/decimal";
+import { dec, div, toFixed } from "@/features/quotation/lib/decimal";
 import { emptyLine, emptyQuotation, newKey } from "@/features/quotation/lib/defaults";
 import { isFilledLine, lineSchema, tradeDocumentRules, tradeDocumentShape, type QuotationLine } from "@/features/quotation/schema";
 import type { FromStockItem } from "@/features/trade-document/from-stock-api";
@@ -9,7 +9,7 @@ import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
 /**
  * Sale (SL) form model: UI rev 1 + SA rev 1 / ADR-0054 (owner "อนุมัติทั้งสอง" 2026-11-18). Every row is picked
  * (Q-SL-07): From Reserve (an open line of an approved Reserve of this customer in this currency, Q-SL-05) or From Stock
- * (a Memo Stock lot with pending, `fromStock.lots`, lot-based-stock round 2). Picked rows are `source: "STOCK"` in the shared form, so the row
+ * (an own-stock lot loaded by Load to Stock first, then Memo Stock lots with pending: `fromStock.lots`, ADR-0058). Picked rows are `source: "STOCK"` in the shared form, so the row
  * panel locks the copied fields; `saleSource` says which picker they came from. Only Pcs, Weight (≤ the row's cap),
  * Sale Price (> 0), the line discount and the Item Note are edited (Q-SL-06/08).
  */
@@ -23,8 +23,8 @@ export const SALE_NOTE_MAX = 250;
 /** ADR-0050: Draft, Pending Approval, Approved, Revise, Rejected. */
 export const SALE_STATUSES = APPROVAL_DOC_STATUSES;
 
-/** api-contract `Source` (phase 2 adds `OWN_STOCK`, ADR-0054 D11). */
-export type SaleLineSource = "RESERVE" | "STOCK";
+/** api-contract `Source`: `STOCK` = Memo Stock lot, `OWN_STOCK` = own-stock lot (ADR-0058). */
+export type SaleLineSource = "RESERVE" | "STOCK" | "OWN_STOCK";
 
 /**
  * `GET /api/inventory/v1/sale/reserve-lines` row (api-contract `ReserveLineRef`): an open line of an approved Reserve.
@@ -64,7 +64,7 @@ export type SaleReserveLineRef = {
  */
 const saleLineSchema = lineSchema.extend({
   lineId: z.string().default(""),
-  saleSource: z.enum(["", "RESERVE", "STOCK"]).default(""),
+  saleSource: z.enum(["", "RESERVE", "STOCK", "OWN_STOCK"]).default(""),
   reserveLineId: z.string().default(""),
   memoStockId: z.string().default(""),
   /** lot-based-stock: a From Stock row names its Memo Stock lot (a legacy line keeps its item id). */
@@ -84,7 +84,7 @@ export function saleLineSource(line: Partial<Pick<SaleLine, "saleSource">>): Sal
 }
 
 /** The cap word of each source in row errors and the row panel (ui-spec T-09). */
-const CAP_WORD: Record<SaleLineSource, string> = { RESERVE: "reserved", STOCK: "available" };
+const CAP_WORD: Record<SaleLineSource, string> = { RESERVE: "reserved", STOCK: "available", OWN_STOCK: "available" };
 
 /**
  * Row rules (form-guidelines, Q-SL-06/08): every filled row is picked; Pcs or Weight > 0 and each ≤ the row's cap; Sale
@@ -170,11 +170,27 @@ export function reserveLineToSaleLine(row: SaleReserveLineRef): SaleLine {
   };
 }
 
+/** What the Sale Price prefill needs from the header (ADR-0058 D7). */
+export type SalePriceContext = { currency: string; exchangeRate: string; companyCurrency?: string };
+
 /**
- * A Memo Stock lot → a From Stock row (P-02, as Reserve / Memo Out): the full pending as the starting quantity (the cap),
- * location Memo, `lotKey` and no Stock ID (a lot line has none, `""`), and an empty Sale Price the user must type (TC-SL-05).
+ * An own-stock lot's Sale Price (company currency per price unit) as the document's unit price: as is in the company currency,
+ * else divided by the Selling Rate (2 dp, half-up); "" when the lot has none or the rate is not known yet. Always editable.
  */
-export function lotToSaleLine(item: FromStockItem): SaleLine {
+export function ownSalePrice(item: Pick<FromStockItem, "source"> & { salePrice?: string | null }, context: SalePriceContext): string {
+  if (item.source !== "OWN_STOCK" || !item.salePrice || dec(item.salePrice) <= dec(0)) return "";
+  if (context.companyCurrency && context.currency === context.companyCurrency) return toFixed(dec(item.salePrice), 2);
+  const rate = dec(context.exchangeRate || "0");
+  return rate > dec(0) ? toFixed(div(dec(item.salePrice), rate), 2) : "";
+}
+
+/**
+ * A lot (own stock or Memo Stock) → a From Stock row (P-02, as Reserve / Memo Out): the full available as the starting quantity
+ * (the cap), the lot's real Location, `lotKey` and no Stock ID (a lot line has none, `""`). An own-stock row prefills its Sale
+ * Price when known; a Memo Stock row leaves it empty for the user to type (TC-SL-05).
+ */
+export function lotToSaleLine(item: FromStockItem, price?: SalePriceContext): SaleLine {
+  const source: SaleLineSource = item.source === "OWN_STOCK" ? "OWN_STOCK" : "STOCK";
   return {
     ...emptySaleLine(),
     key: newKey(),
@@ -194,8 +210,8 @@ export function lotToSaleLine(item: FromStockItem): SaleLine {
     pcs: String(item.pendingPcs),
     weightCt: toFixed(dec(item.pendingWeightCt), 3),
     priceUnit: item.priceUnit === "PER_PCS" ? "PER_PCS" : "PER_CT",
-    unitPrice: "",
-    saleSource: "STOCK",
+    unitPrice: price ? ownSalePrice(item, price) : "",
+    saleSource: source,
     lotKey: item.lotKey,
     sourceDocNo: item.ref.docNo,
     stockPendingPcs: String(item.pendingPcs),
@@ -221,7 +237,7 @@ export const pickedReserveLineIds = (lines: readonly QuotationLine[]) =>
 
 /** Lots already on the form as From Stock rows (Add From Stock leaves them out by `lotKey`; Reserve rows don't count). */
 export const pickedStockIds = (lines: readonly QuotationLine[]) =>
-  new Set(lines.flatMap((line) => (asSale(line).saleSource === "STOCK" && asSale(line).lotKey ? [asSale(line).lotKey!] : [])));
+  new Set(lines.flatMap((line) => ((asSale(line).saleSource === "STOCK" || asSale(line).saleSource === "OWN_STOCK") && asSale(line).lotKey ? [asSale(line).lotKey!] : [])));
 
 /** From Reserve rows on the form. */
 export const reserveRowCount = (lines: readonly QuotationLine[]) => lines.filter((line) => asSale(line).saleSource === "RESERVE").length;
@@ -250,7 +266,7 @@ export function saleHeaderChangeConfirm(count: number, field: "customer" | "curr
 export function saleStockNote(line: Partial<SaleLine>): string | null {
   const cap = `${line.stockPendingPcs || "0"} pcs / ${line.stockPendingWeightCt || "0"} ct`;
   if (line.saleSource === "RESERVE") return `Reserved ${cap}${line.sourceDocNo ? ` · ${line.sourceDocNo}` : ""}`;
-  if (line.saleSource === "STOCK") return `Available ${cap}`;
+  if (line.saleSource === "STOCK" || line.saleSource === "OWN_STOCK") return `Available ${cap}`;
   return null;
 }
 
