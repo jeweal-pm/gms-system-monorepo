@@ -1,12 +1,12 @@
 "use client";
 
-import { CircleMinus, MoreHorizontal } from "lucide-react";
+import { CircleMinus, Merge, Minus, MoreHorizontal, Split } from "lucide-react";
 import { Fragment, useState, type ReactNode } from "react";
 import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import { cx, NumberInput, SelectMenu, type Option } from "@/features/quotation/components/ui";
 import { toFixed } from "@/features/quotation/lib/decimal";
 import { loadTotals, refsById, rowCost, splitGroups, unitLabel, UNIT_COST_PLACES, type LoadFormValues, type LoadRowValues } from "../form";
-import type { PurchaseLineRef } from "../types";
+import type { LoadMode, PurchaseLineRef } from "../types";
 import { CerCell, GradeCell, HeaderCell, StoneCell, StoneCodeCell } from "./cells";
 import { SplitGroupRow } from "./split-group-row";
 
@@ -23,6 +23,25 @@ export function rowLocationOptions(names: readonly string[], current: string): O
 export function fromText(row: Pick<LoadRowValues, "sources">, refs: ReadonlyMap<string, PurchaseLineRef>): string {
   const numbers = [...new Set(row.sources.map((id) => refs.get(id)?.purchase.docNo).filter((value): value is string => Boolean(value)))];
   return numbers.length ? `From ${numbers.join(" + ")}` : "";
+}
+
+const MODE_CHIPS: Record<LoadMode, { label: string; hint: string; icon: ReactNode; tone: string }> = {
+  NONE: { label: "None", hint: "as it is, one load row per PU line", icon: <Minus className="size-3" />, tone: "bg-[#EEF0F2] text-[#637381]" },
+  SPLIT: { label: "Split", hint: "one load row per PU line", icon: <Split className="size-3 rotate-90" />, tone: "bg-[#E8EEFB] text-[#3A4FA0]" },
+  MERGE: { label: "Merge", hint: "all picked PU lines into one load", icon: <Merge className="size-3 rotate-180" />, tone: "bg-[#E3F1F0] text-[#0E5E63]" },
+};
+
+/** The document's mode beside the Load title (owner design 2026-11-24): icon, name and what it does. */
+export function LoadModeChip({ mode }: { mode: LoadMode | "" }) {
+  if (!mode) return null;
+  const chip = MODE_CHIPS[mode];
+  return (
+    <span data-load-mode={mode} className="inline-flex items-center gap-1.5 rounded-full border border-[#E3E6EA] bg-white py-0.5 pr-3 pl-1 text-xs text-[#6B7480]">
+      <span aria-hidden className={cx("flex size-5 items-center justify-center rounded-full", chip.tone)}>{chip.icon}</span>
+      <span className="font-medium text-[#1C252E]">{chip.label}</span>
+      <span>· {chip.hint}</span>
+    </span>
+  );
 }
 
 export type LoadTableProps = {
@@ -49,7 +68,8 @@ const COLUMNS = 13;
 /**
  * L-03…L-08 Load table (FE-LS-006…008, sources 03–05). None: one row per PU line, Pcs / Weight editable ≤ remaining.
  * Split: group rows S-01 with their children. Merge: the one merged row, Pcs / Weight locked. Location is a required
- * select that starts empty (FE-LS-017); Price / Amount are read-only costs in the company currency (DV-02); Totals are
+ * select that starts empty (FE-LS-017), its list portalled so the table's scroll box never clips the last row's menu,
+ * and no Parcel caption (owner 2026-11-24); Price / Amount are read-only costs in the company currency (DV-02); Totals are
  * computed (DV-05). No empty rows (Q-LS-15): the empty table opens the picker.
  */
 export function LoadTable(props: LoadTableProps) {
@@ -176,6 +196,7 @@ function LoadRow({ row, index, number, refs, values, currency, locations, readOn
         <td className="min-w-[170px] px-3 py-3" onClick={(event) => event.stopPropagation()}>
           <SelectMenu
             compact
+            portal
             value={row.location}
             placeholder="Select location"
             options={rowLocationOptions(locations, row.location)}
@@ -183,7 +204,6 @@ function LoadRow({ row, index, number, refs, values, currency, locations, readOn
             invalid={error !== undefined && !row.location ? true : undefined}
             onChange={(location) => onChange(index, { location })}
           />
-          <div className="mt-1 truncate pl-1 text-xs text-[#808D99]">{row.parcel || "Parcel"}</div>
         </td>
         <td className="px-3 py-4"><StoneCell attrs={row.attrs} /></td>
         <td className="px-3 py-4"><GradeCell attrs={row.attrs} /></td>

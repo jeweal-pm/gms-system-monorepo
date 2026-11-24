@@ -10,7 +10,16 @@ export async function insertParts(tx: Tx, saleId: string, doc: Pick<NormalizedSa
   await tx.sale_line.createMany({ data: doc.lines.map((line) => lineRow(saleId, line)) });
   if (doc.serviceCharges.length > 0) await tx.sale_charge.createMany({ data: doc.serviceCharges.map((charge) => ({ sale_id: saleId, charge_type: charge.type, amount: charge.amount })) });
   const photos = doc.lines.flatMap((line) => line.photoIds.map((fileId, index) => ({ line_id: line.id, position: index, file_id: fileId })));
-  if (photos.length > 0) await tx.sale_line_photo.createMany({ data: photos });
+  if (photos.length === 0) return;
+  // Own uploads are inventory files; any other id was confirmed by master as a Memo Receive photo of the line's Memo Stock (checkPhotos).
+  const own = new Set((await tx.stored_file.findMany({ where: { id: { in: photos.map((photo) => photo.file_id) }, source_type: SALE_PHOTO_SOURCE }, select: { id: true } })).map((file) => file.id));
+  const ownRows = photos.filter((photo) => own.has(photo.file_id));
+  const refRows = photos.filter((photo) => !own.has(photo.file_id));
+  if (ownRows.length > 0) await tx.sale_line_photo.createMany({ data: ownRows });
+  if (refRows.length > 0) {
+    const values = refRows.map((photo) => Prisma.sql`(${photo.line_id}::uuid, ${photo.position}::smallint, ${photo.file_id}::uuid)`);
+    await tx.$executeRaw(Prisma.sql`INSERT INTO "inventory"."sale_line_ref_photo" ("line_id", "position", "file_id") VALUES ${Prisma.join(values)}`);
+  }
 }
 
 /** Replaces lines (photo links cascade) and charges, then inserts the new set. */
@@ -70,7 +79,7 @@ export const headerFields = (doc: NormalizedSale) => ({
  * ADR-0054 D9: every photo id must be a READY `sale-line` file that is either linked from this Sale already or the
  * caller's own unlinked upload → else 422 SALE_PHOTO_INVALID at each bad one. One statement.
  */
-export async function checkPhotos(tx: Tx, saleId: string | null, actorId: string, lines: readonly { photoIds: readonly string[] }[]) {
+export async function checkPhotos(tx: Tx, saleId: string | null, actorId: string, lines: readonly { photoIds: readonly string[]; source?: string; memoStockId?: string | null; lotKey?: string | null }[], refOk: ReadonlySet<string> = new Set()) {
   const ids = [...new Set(lines.flatMap((line) => line.photoIds))];
   if (ids.length === 0) return;
   const rows = await tx.$queryRaw<{ id: string }[]>`
@@ -81,7 +90,9 @@ export async function checkPhotos(tx: Tx, saleId: string | null, actorId: string
         OR (f."created_by" = ${actorId} AND NOT EXISTS (SELECT 1 FROM "inventory"."sale_line_photo" p WHERE p."file_id" = f."id"))
       )`;
   const ok = new Set(rows.map((row) => row.id));
-  const fieldErrors = lines.flatMap((line, index) => line.photoIds.flatMap((id, position) => (ok.has(id) ? [] : [{ path: `lines.${index}.photoIds.${position}`, code: "invalid_photo" }])));
+  // A Memo Receive photo is accepted only when master confirmed it belongs to this line's own Memo Stock / lot (From Stock lines only).
+  const refAllowed = (line: { source?: string; memoStockId?: string | null; lotKey?: string | null }, id: string) => line.source === "STOCK" && refOk.has(`${id}|${line.memoStockId ?? ""}|${!line.memoStockId ? (line.lotKey ?? "") : ""}`);
+  const fieldErrors = lines.flatMap((line, index) => line.photoIds.flatMap((id, position) => (ok.has(id) || refAllowed(line, id) ? [] : [{ path: `lines.${index}.photoIds.${position}`, code: "invalid_photo" }])));
   if (fieldErrors.length > 0) throw new AppError(422, "SALE_PHOTO_INVALID", { fieldErrors: fieldErrors.slice(0, 50) });
 }
 export const SALE_PHOTO_SOURCE = "sale-line";

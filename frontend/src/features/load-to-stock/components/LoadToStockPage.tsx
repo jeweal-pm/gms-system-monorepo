@@ -8,6 +8,7 @@ import { ScanIcon } from "@/components/ui/scan-icon";
 import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import { useTabDirty, useTabDocument, useTabReplace } from "@/features/home/tabs/tab-host";
 import { QuotationHeader } from "@/features/quotation/components/header/QuotationHeader";
+import { ItemEditorDock } from "@/features/quotation/components/items/ItemEditorPanel";
 import { DocumentNote } from "@/features/quotation/components/note/DocumentNote";
 import { RailButtons, type RailPanel } from "@/features/quotation/components/rail/RightRail";
 import { Button, Field, FormDateInput, FormSelect, IconButton, ReadonlyBox, SidePanel, TextInput, Toast, type Option } from "@/features/quotation/components/ui";
@@ -57,7 +58,7 @@ import type { LoadMode, PurchaseLineRef } from "../types";
 import { LoadModeDialog } from "./load-mode-dialog";
 import { LoadPhotoBox, LoadRowPanel } from "./load-row-panel";
 import { LoadSourceTable } from "./load-source-table";
-import { LoadTable } from "./load-table";
+import { LoadModeChip, LoadTable } from "./load-table";
 import { PurchaseLinePicker } from "./purchase-line-picker";
 
 export const LOAD_DENIED = "You don't have permission to view Load to Stock.";
@@ -471,7 +472,7 @@ export function LoadToStockForm({ access, detail }: { access: DocumentAccess; de
               <div className="mb-4 flex flex-wrap items-center gap-3">
                 <h2 className="text-lg font-medium text-[#1C252E]">Load</h2>
                 <span className="text-xs text-[#6B7480]">{rows.length} row{rows.length === 1 ? "" : "s"}</span>
-                {values.mode && <span className="rounded bg-[#EEF0F2] px-2 py-0.5 text-xs text-[#4B5563]">Mode: {values.mode === "NONE" ? "None" : values.mode === "SPLIT" ? "Split" : "Merge"}</span>}
+                <LoadModeChip mode={values.mode ?? ""} />
                 {checked.size > 0 && !readOnly && (
                   <Button size="sm" variant="danger-outline" onClick={() => apply(removeRows(getValues(), checked))}>
                     <Trash2 className="size-4" /> Remove {checked.size} selected
@@ -521,7 +522,7 @@ export function LoadToStockForm({ access, detail }: { access: DocumentAccess; de
 
             {!panelOpen && <RailButtons active={rail} onChange={setRail} />}
             {panelOpen && selectedRow && (
-              <div className="sticky top-0 h-[calc(100vh-120px)] w-[400px] shrink-0">
+              <ItemEditorDock>
                 <LoadRowPanel
                   row={selectedRow}
                   index={selectedIndex}
@@ -534,9 +535,10 @@ export function LoadToStockForm({ access, detail }: { access: DocumentAccess; de
                   onChange={(patch) => updateRow(selectedIndex, patch)}
                   onPrev={() => setSelectedKey(rows[Math.max(0, selectedIndex - 1)]?.key ?? null)}
                   onNext={() => setSelectedKey(rows[Math.min(rows.length - 1, selectedIndex + 1)]?.key ?? null)}
+                  onRemove={() => apply(removeRows(getValues(), new Set([selectedRow.key])))}
                   onClose={() => setPanelOpen(false)}
                 />
-              </div>
+              </ItemEditorDock>
             )}
           </div>
         </div>

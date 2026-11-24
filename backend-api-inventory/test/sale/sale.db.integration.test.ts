@@ -556,4 +556,58 @@ describe.runIf(canRun)("IT-SL sale on PostgreSQL", () => {
     const back = await h.ownerDb.stock.findUniqueOrThrow({ where: { id: own.id } });
     expect([back.on_hand_pcs, back.sold_pcs]).toEqual([4, 0]);
   });
+
+  it("IT-SO-P01 Memo Receive photos by reference: a From Stock line may reference ONLY the photos of its own Memo Stock; a foreign memo file is refused; served through the Sale route with master's check", async () => {
+    await setting(false);
+    const [a, b] = await memoStock([receiveLine({ pcs: 3, weightCt: "1.5" }), receiveLine({ pcs: 3, weightCt: "1.5" })]);
+    const { createPhotoStore } = await masterModule("src/quotation/quotation-photo.storage");
+    const { findInvalidPhoto } = await masterModule("src/trade-document/memo-photo-ref");
+    const store = createPhotoStore("memo-receive-photo");
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9, 9, 9, 9]);
+    const photoOf = async (stockId: string) => {
+      const stock = await prisma.memoStock.findUniqueOrThrow({ where: { id: stockId } });
+      const stored = await store.store(png, "image/png");
+      const id = randomUUID();
+      await prisma.storedFile.create({ data: { id, kind: "memo-receive-photo", bucket: "files", objectKey: stored.key, filename: stored.key.split("/").pop(), contentType: "image/png", sizeBytes: BigInt(stored.sizeBytes), sha256: stored.sha256, status: "ready", sourceType: "memo_receive.line-photo", sourceId: id, createdBy: TAG, readyAt: new Date() } });
+      await prisma.memoReceiveLinePhoto.create({ data: { lineId: stock.memoReceiveLineId, position: 1, fileId: id } });
+      return id as string;
+    };
+    const photoA = await photoOf(a.id);
+    const photoB = await photoOf(b.id);
+    // The lot read returns the photo ids (<= 5) of the lot's Memo Receive lines, in the same page statement.
+    const { LotStockService } = await masterModule("src/trade-document/lot-stock.service");
+    const lotKeyA = (await prisma.memoStock.findUniqueOrThrow({ where: { id: a.id } })).lotKey;
+    const page = await new LotStockService().memoStockLots({ vendorId: vendor.id, currency: "THB", limit: 50 });
+    expect(page.items.find((row: { lotKey: string }) => row.lotKey === lotKeyA)).toMatchObject({ photoIds: [photoA], salePrice: expect.any(String), saleCurrency: "THB" });
+    // Master check (the rule every document shares): own Memo Stock yes; another stock's file, an unnamed stock, an unknown id: refused.
+    const check = (lines: unknown[]) => prisma.$transaction((tx: unknown) => findInvalidPhoto(tx, "reserve.line-photo", lines));
+    expect(await check([{ photoIds: [photoA], memoStockId: a.id }])).toBeNull();
+    expect(await check([{ photoIds: [photoB], memoStockId: a.id }])).toEqual({ line: 0, position: 0 });
+    expect(await check([{ photoIds: [photoA] }])).toEqual({ line: 0, position: 0 });
+    expect(await check([{ photoIds: [photoA, randomUUID()], memoStockId: a.id }])).toEqual({ line: 0, position: 1 });
+    // Sale: the reference is accepted for the right stock and refused (422 SALE_PHOTO_INVALID) for another stock's file.
+    const refused = await created(body([sLine(a.id, 1, "0.5", { photoIds: [photoB] })]));
+    expect(refused.status).toBe(422);
+    expect(refused.body.error).toMatchObject({ code: "SALE_PHOTO_INVALID", details: { fieldErrors: [{ path: "lines.0.photoIds.0", code: "invalid_photo" }] } });
+    const saved = await created(body([sLine(a.id, 1, "0.5", { photoIds: [photoA] })]));
+    expect(saved.status).toBe(201);
+    const detail = (await maker.call("GET", `/sale/${saved.body.id}`)).body;
+    expect(detail.lines[0].photoIds).toEqual([photoA]);
+    // Served through the Sale route (view-only user too); an unrelated memo file is a 404 (never linked from a Sale line).
+    const served = await viewer.call("GET", `/sale/photos/${photoA}`);
+    expect(served.status).toBe(200);
+    expect(served.response.headers.get("content-type")).toBe("image/png");
+    expect((await viewer.call("GET", `/sale/photos/${photoB}`)).status).toBe(404);
+    // Picker preview (a row picked but not saved yet): the Sale route serves the file when it belongs to the named stock, else 404.
+    expect((await viewer.call("GET", `/sale/photos/${photoB}?memoStockId=${b.id}`)).status).toBe(200);
+    expect((await viewer.call("GET", `/sale/photos/${photoB}?memoStockId=${a.id}`)).status).toBe(404);
+    expect((await stranger.call("GET", `/sale/photos/${photoB}?memoStockId=${b.id}`)).status).toBe(403);
+    // Master's own guard: the file must belong to the stock named by the caller.
+    const wrong = await h.masterApi.saleMemoPhoto(photoA, { memoStockId: b.id, lotKey: null });
+    wrong.body.resume();
+    expect(wrong.status).toBe(404);
+    const right = await h.masterApi.saleMemoPhoto(photoA, { memoStockId: a.id, lotKey: null });
+    right.body.resume();
+    expect(right.status).toBe(200);
+  });
 });

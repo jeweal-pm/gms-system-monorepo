@@ -1,6 +1,7 @@
 import { Readable } from "node:stream";
 import { buildKey, createStorage, uuidV7, type StorageDriver } from "@gms/storage";
 import { AppError } from "../../platform/errors";
+import type { MasterApi } from "../../platform/master-api";
 import type { Db } from "../../platform/db";
 import { PHOTO_MAX_BYTES, sizeGuard, sniffType, type Limiter } from "../load-to-stock/photos";
 import { SALE_PHOTO_SOURCE } from "./repository";
@@ -58,4 +59,39 @@ export class SalePhotoService {
     try { stream = await this.storage.get("files", file.object_key); } catch { throw new AppError(404, "PHOTO_NOT_FOUND"); }
     return { contentType: file.content_type, size, stream: stream.pipe(sizeGuard(size)) };
   }
+}
+
+/**
+ * Owner 2026-11-24: `GET /sale/photos/{id}` for a Memo Receive photo a Sale line REFERENCES. Inventory cannot see master files, so it
+ * asks master's internal endpoint, naming the Memo Stock / lot of the referencing line; master serves the file only when it belongs
+ * to that stock. Streamed (never buffered), image types only, <= 5 MiB, bounded by the master client timeout.
+ */
+/** Picker preview: `?lotKey=M…` / `?memoStockId=` of a row not saved yet; master still checks the file belongs to that lot / stock. */
+export function previewRefFromQuery(query: Record<string, string | undefined>): { memoStockId: string | null; lotKey: string | null } | undefined {
+  const memoStockId = query.memoStockId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(query.memoStockId) ? query.memoStockId.toLowerCase() : null;
+  const lotKey = query.lotKey && /^M[LS][0-9a-f-]{32,36}$/.test(query.lotKey) ? query.lotKey : null;
+  return memoStockId || lotKey ? { memoStockId, lotKey } : undefined;
+}
+
+export async function openReferencedMemoPhoto(db: Db, master: MasterApi, id: string, requestId: string, preview?: { memoStockId: string | null; lotKey: string | null }): Promise<{ contentType: string; size: number; stream: Readable }> {
+  const [linked] = await db.$queryRaw<{ memo_stock_id: string | null; lot_key: string | null }[]>`
+    SELECT l."memo_stock_id", l."lot_key" FROM "inventory"."sale_line_ref_photo" r
+    JOIN "inventory"."sale_line" l ON l."id" = r."line_id" JOIN "inventory"."sale" s ON s."id" = l."sale_id"
+    WHERE r."file_id" = ${id}::uuid AND NOT s."provisional" LIMIT 1`;
+  const ref = linked ?? (preview ? { memo_stock_id: preview.memoStockId, lot_key: preview.lotKey } : undefined);
+  if (!ref || (!ref.memo_stock_id && !ref.lot_key)) throw new AppError(404, "PHOTO_NOT_FOUND");
+  let answer;
+  try {
+    answer = await master.saleMemoPhoto(id, { memoStockId: ref.memo_stock_id, lotKey: ref.lot_key }, { requestId });
+  } catch (error) {
+    if (error instanceof AppError) throw error;
+    throw new AppError(503, "MASTER_UNAVAILABLE", undefined, { "Retry-After": "5" });
+  }
+  const contentType = String(answer.headers["content-type"] ?? "");
+  const size = Number(answer.headers["content-length"] ?? 0);
+  if (answer.status !== 200 || !/^image\/(jpeg|png)$/.test(contentType) || !Number.isInteger(size) || size <= 0 || size > PHOTO_MAX_BYTES) {
+    answer.body.resume();
+    throw new AppError(404, "PHOTO_NOT_FOUND");
+  }
+  return { contentType, size, stream: answer.body.pipe(sizeGuard(size)) };
 }

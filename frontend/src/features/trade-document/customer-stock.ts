@@ -5,7 +5,7 @@ import { z } from "zod";
 import { fromTradeDocument, toTradeDocumentInput } from "@/features/quotation/api";
 import { dec, toFixed } from "@/features/quotation/lib/decimal";
 import { emptyQuotation, newKey } from "@/features/quotation/lib/defaults";
-import { isFilledLine, lineSchema, stockLineRules, tradeDocumentRules, tradeDocumentShape, type QuotationLine } from "@/features/quotation/schema";
+import { isFilledLine, lineSchema, stockLineRules, tradeDocumentRules, tradeDocumentShape, type PhotoRef, type QuotationLine } from "@/features/quotation/schema";
 import type { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError } from "@/lib/trpc-error";
 import { mapDocumentSaveError } from "./document-api";
@@ -72,7 +72,27 @@ export function emptyCustomerStock(): CustomerStockFormValues {
  * details (read-only), location, the lot's pending / available as the starting quantity and cap, `lotKey` and no Stock ID
  * (owner Q-LOT-10); Sale Price still starts empty (Q-MO-11). The server copies the details on save.
  */
-export function lotToStockLine(item: FromStockItem): CustomerStockLine {
+/**
+ * Owner 2026-11-24: a picked Memo Stock lot brings its Memo Receive photos by REFERENCE (file ids, at most 5; the server accepts them
+ * only for that lot and serves them through the document's own photo route, `url`). Own-stock rows and rows without `url` bring none.
+ */
+export function lotPhotos(item: Pick<FromStockItem, "source" | "lotKey"> & { photoIds?: string[] }, url?: (id: string) => string): PhotoRef[] {
+  if (!url || item.source !== "MEMO_STOCK") return [];
+  // Not saved yet: no line links the file, so the preview carries the lot (the server serves it only if the file belongs to that lot).
+  const lot = item.lotKey ? `?lotKey=${encodeURIComponent(item.lotKey)}` : "";
+  return (item.photoIds ?? []).slice(0, 5).map((id, index) => ({ id, name: `Photo ${index + 1}`, url: `${url(id)}${lot}` }));
+}
+
+/**
+ * The lot's price as the row's starting Sale Price (editable): the lot read's `salePrice` when it is in the DOCUMENT's currency (no
+ * conversion here); otherwise empty, as before. Memo Stock lots carry the memo's price, own stock its Sale Price (company currency).
+ */
+export function lotUnitPrice(item: { salePrice?: string | null; saleCurrency?: string | null }, currency?: string): string {
+  if (!currency || !item.salePrice || item.saleCurrency !== currency || dec(item.salePrice) <= dec(0)) return "";
+  return toFixed(dec(item.salePrice), 2);
+}
+
+export function lotToStockLine(item: FromStockItem, photoUrl?: (id: string) => string, currency?: string): CustomerStockLine {
   return {
     key: newKey(),
     source: "STOCK",
@@ -93,11 +113,11 @@ export function lotToStockLine(item: FromStockItem): CustomerStockLine {
     pcs: String(item.pendingPcs),
     weightCt: toFixed(dec(item.pendingWeightCt), 3),
     priceUnit: item.priceUnit === "PER_PCS" ? "PER_PCS" : "PER_CT",
-    unitPrice: "",
+    unitPrice: lotUnitPrice(item as typeof item & { salePrice?: string | null; saleCurrency?: string | null }, currency),
     discountType: "PERCENT",
     discountValue: "",
     stonePartOrder: [],
-    photos: [],
+    photos: lotPhotos(item, photoUrl),
     // The vendor / load note stays on the lot (shown in the picker); the line starts without one (Q-MO-11 style).
     itemNote: "",
     memoStockId: "",

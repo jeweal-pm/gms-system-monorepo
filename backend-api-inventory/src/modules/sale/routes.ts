@@ -8,7 +8,7 @@ import { canApprove, requireGrant } from "../../platform/auth/principal";
 import { jsonBody, parse, queryObject, type AppContext, type AppEnv } from "../../platform/http";
 import { getDetail, listDocuments, nextNumber } from "./read";
 import type { SaleService } from "./service";
-import type { SalePhotoService } from "./photos";
+import { openReferencedMemoPhoto, previewRefFromQuery, type SalePhotoService } from "./photos";
 import { listQuerySchema, nextNumberSchema, optionsQuerySchema, rejectSchema, reserveLinesQuerySchema, reviseSchema, saleInputSchema, saleUpdateSchema, versionSchema, EXCLUDE_MAX } from "./schemas";
 
 /**
@@ -56,7 +56,7 @@ export function registerSaleRoutes(api: Hono<AppEnv>, deps: { db: Db; master: Ma
     return c.json(await master.saleReserveLines(query, { requestId: c.get("requestId") }));
   });
 
-  // ---------- photos (ADR-0054 D9) ----------
+  // ---------- photos (ADR-0054 D9; Memo Receive references, owner 2026-11-24) ----------
   api.post("/sale/photos", async (c) => {
     requireGrant(c.get("principal"), "sale", "ADD", "EDIT");
     const type = c.req.header("content-type") ?? "";
@@ -74,7 +74,14 @@ export function registerSaleRoutes(api: Hono<AppEnv>, deps: { db: Db; master: Ma
     requireGrant(c.get("principal"), "sale", "VIEW");
     const id = c.req.param("id");
     if (!z.uuid().safeParse(id).success) throw new AppError(404, "PHOTO_NOT_FOUND");
-    const file = await photos.reads.run(() => photos.open(c.get("principal").userId, id));
+    const file = await photos.reads.run(async () => {
+      try {
+        return await photos.open(c.get("principal").userId, id);
+      } catch (error) {
+        if (!(error instanceof AppError) || error.status !== 404) throw error;
+        return openReferencedMemoPhoto(db, master, id, c.get("requestId"), previewRefFromQuery(c.req.query()));
+      }
+    });
     return new Response(Readable.toWeb(file.stream) as unknown as ReadableStream, {
       status: 200,
       headers: { "Content-Type": file.contentType, "Content-Length": String(file.size), "Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff" },

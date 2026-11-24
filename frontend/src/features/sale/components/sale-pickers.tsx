@@ -6,7 +6,7 @@ import { StockPicker, usePickerFilters, type PickerColumn, type PickerGroup, typ
 import { useQuery } from "@tanstack/react-query";
 import { MemoStockModal } from "@/features/trade-document/memo-stock-modal";
 import { retryTransient } from "@/lib/trpc-error";
-import { reserveLinePickerData, saleApi, saleKeys, saleLoadError, useReserveLines } from "../api";
+import { reserveLinePickerData, saleApi, saleKeys, saleLoadError, salePhotoUrl, useReserveLines } from "../api";
 import { lotToSaleLine, pickedStockIds, type SaleFormValues, type SaleLine, type SaleReserveLineRef } from "../form";
 
 /**
@@ -122,7 +122,7 @@ export function SaleStockPicker({ values, onClose, onAdd }: { values: SaleFormVa
       emptyText="No stock with anything available."
       pickedIds={pickedStockIds(values.lines)}
       onCancel={onClose}
-      onConfirm={(items) => onAdd(items.map((item) => lotToSaleLine(item, price)))}
+      onConfirm={(items) => onAdd(items.map((item) => lotToSaleLine(item, price, salePhotoUrl)))}
     />
   );
 }

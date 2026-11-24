@@ -251,6 +251,11 @@ describe("IT-LS-P2-FE-01 shared From Stock picker (FE-LS-P2-03, FE-LOT-001/002)"
     expect(html).toContain("1,250.50 THB");
     expect(html).toContain("2,501.00");
     expect(html).toContain("<td class=\"px-3 py-2 align-top text-right tabular-nums\">—");
+    // A Memo Stock row with the memo's price shows it too (price, unit, currency, server amount).
+    const memoPriced = { ...memoItem, salePrice: "900.00", saleAmount: "2700.00", saleCurrency: "USD" } as FromStockItem;
+    const memoHtml = render(seed([{ items: [memoPriced], nextCursor: null, ownStock: "OK" }]), picker());
+    expect(memoHtml).toContain("900.00 USD");
+    expect(memoHtml).toContain("2,700.00");
     expect(html).not.toMatch(/Stock ID/);
   });
 

@@ -15,6 +15,7 @@ import { stockRowMessage } from "@/features/trade-document/stock-row-errors";
 import { masterTrpc } from "@/lib/master-trpc";
 import { readDomainError, retryTransient } from "@/lib/trpc-error";
 import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
+import { lotPhotos } from "@/features/trade-document/customer-stock";
 import { DOCUMENT_PHOTOS } from "@/features/trade-document/document-photos";
 
 /**
@@ -100,7 +101,7 @@ export function emptyMemoReturn(): MemoReturnFormValues {
  * net unit price (the weighted average of its open items, owner 2026-11-21) at 2 dp; Memo Stock has no stone code and a
  * row never carries a Stock ID (owner Q-LOT-10).
  */
-export function lotToLine(item: MemoStockItem): MemoReturnLine {
+export function lotToLine(item: MemoStockItem, photoUrl?: (id: string) => string): MemoReturnLine {
   return {
     key: newKey(),
     source: "MANUAL",
@@ -125,7 +126,7 @@ export function lotToLine(item: MemoStockItem): MemoReturnLine {
     discountType: "PERCENT",
     discountValue: "",
     stonePartOrder: [],
-    photos: [],
+    photos: lotPhotos(item, photoUrl),
     itemNote: item.itemNote,
     memoStockId: "",
     lotKey: item.lotKey,

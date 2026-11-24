@@ -3,6 +3,7 @@ import { toTradeDocumentInput } from "@/features/quotation/api";
 import { dec, div, toFixed } from "@/features/quotation/lib/decimal";
 import { emptyLine, emptyQuotation, newKey } from "@/features/quotation/lib/defaults";
 import { isFilledLine, lineSchema, tradeDocumentRules, tradeDocumentShape, type QuotationLine } from "@/features/quotation/schema";
+import { lotPhotos } from "@/features/trade-document/customer-stock";
 import type { FromStockItem } from "@/features/trade-document/from-stock-api";
 import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
 
@@ -178,7 +179,9 @@ export type SalePriceContext = { currency: string; exchangeRate: string; company
  * else divided by the Selling Rate (2 dp, half-up); "" when the lot has none or the rate is not known yet. Always editable.
  */
 export function ownSalePrice(item: Pick<FromStockItem, "source"> & { salePrice?: string | null }, context: SalePriceContext): string {
-  if (item.source !== "OWN_STOCK" || !item.salePrice || dec(item.salePrice) <= dec(0)) return "";
+  if (!item.salePrice || dec(item.salePrice) <= dec(0)) return "";
+  // A Memo Stock lot carries the memo's price in the memo's currency: used as is when it is the document currency, else left empty.
+  if (item.source !== "OWN_STOCK") return (item as { saleCurrency?: string | null }).saleCurrency === context.currency ? toFixed(dec(item.salePrice), 2) : "";
   if (context.companyCurrency && context.currency === context.companyCurrency) return toFixed(dec(item.salePrice), 2);
   const rate = dec(context.exchangeRate || "0");
   return rate > dec(0) ? toFixed(div(dec(item.salePrice), rate), 2) : "";
@@ -189,13 +192,14 @@ export function ownSalePrice(item: Pick<FromStockItem, "source"> & { salePrice?:
  * (the cap), the lot's real Location, `lotKey` and no Stock ID (a lot line has none, `""`). An own-stock row prefills its Sale
  * Price when known; a Memo Stock row leaves it empty for the user to type (TC-SL-05).
  */
-export function lotToSaleLine(item: FromStockItem, price?: SalePriceContext): SaleLine {
+export function lotToSaleLine(item: FromStockItem, price?: SalePriceContext, photoUrl?: (id: string) => string): SaleLine {
   const source: SaleLineSource = item.source === "OWN_STOCK" ? "OWN_STOCK" : "STOCK";
   return {
     ...emptySaleLine(),
     key: newKey(),
     source: "STOCK",
     stockId: "",
+    photos: lotPhotos(item, photoUrl),
     lot: item.lot,
     locationId: item.location,
     stone: item.stone,

@@ -123,6 +123,8 @@ export const salePrepareSchema = z.object({
   memoStockIds: z.array(z.uuid()).max(SALE_LINES_MAX),
   /** lot-based-stock (ADR-0055 D7): Memo Stock lots of From Stock lines (group snapshot + available, no lock). */
   lotKeys: z.array(memoLotKey).max(SALE_LINES_MAX).default([]),
+  /** Owner 2026-11-24: Memo Receive photo files a Sale line wants to reference; the answer lists the ones that belong to the line's Memo Stock / lot. */
+  photoRefs: z.array(z.object({ fileId: z.uuid(), memoStockId: z.uuid().nullish(), lotKey: memoLotKey.nullish() }).strict()).max(SALE_LINES_MAX * 5).default([]),
   saleId: z.uuid().optional(),
 }).strict();
 export type SalePrepareInput = z.output<typeof salePrepareSchema>;

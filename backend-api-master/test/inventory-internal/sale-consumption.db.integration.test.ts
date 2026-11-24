@@ -205,6 +205,8 @@ describe.runIf(canRun)("IT-SL master sale consumption on PostgreSQL", () => {
     await client.connect();
     try {
       await client.query("BEGIN");
+      // A later migration (sale_consumption_own, ADR-0058) depends on sale_consumption; its own rollback goes first (empty here).
+      await client.query(readFileSync(resolve(__dirname, "../../prisma/rollback/20261124090000_sale_consumption_own.down.sql"), "utf8"));
       await client.query(readFileSync(resolve(__dirname, "../../prisma/rollback/20261118090000_sale_consumption.down.sql"), "utf8"));
       const gone = await client.query(`SELECT to_regclass('partner.sale_consumption') AS t, (SELECT count(*) FROM information_schema.columns WHERE table_schema = 'partner' AND table_name = 'reserve_line' AND column_name = 'sold_pcs')::int AS c`);
       expect(gone.rows[0]).toEqual({ t: null, c: 0 });

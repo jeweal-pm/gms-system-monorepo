@@ -9,7 +9,7 @@ const reserve = LINE_PHOTO_DOCUMENTS.reserve;
 
 function tx(readyIds: string[]) {
   return {
-    storedFile: { findMany: vi.fn(async () => readyIds.map((id) => ({ id }))) },
+    storedFile: { findMany: vi.fn(async () => readyIds.map((id) => ({ id, sourceType: "reserve.line-photo" }))) },
     reserveLinePhoto: { createMany: vi.fn(async () => ({ count: 0 })) },
   };
 }
@@ -31,7 +31,7 @@ describe("line photos (ADR-0048)", () => {
   it("UT-LP-02 only ready photos of the document's own source are accepted, in one bounded query", async () => {
     const t = tx([A]);
     await expect(checkLinePhotos(t as never, reserve, [{ photoIds: [A] }])).resolves.toBeUndefined();
-    expect(t.storedFile.findMany).toHaveBeenCalledWith({ where: { id: { in: [A] }, sourceType: "reserve.line-photo", status: "ready" }, select: { id: true } });
+    expect(t.storedFile.findMany).toHaveBeenCalledWith({ where: { id: { in: [A] }, sourceType: { in: ["reserve.line-photo", "memo_receive.line-photo"] }, status: "ready" }, select: { id: true, sourceType: true } });
     await expect(checkLinePhotos(t as never, reserve, [{ photoIds: [] }, { photoIds: [A, B] }])).rejects.toMatchObject({
       response: { error: { code: "RESERVE_PHOTO_INVALID", fieldErrors: [{ path: "lines.1.photoIds.1", code: "invalid_photo" }] } },
     });
@@ -55,7 +55,7 @@ describe("line photos (ADR-0048)", () => {
     const t = tx([A]);
     t.storedFile.findMany.mockImplementation(async () => {
       order.push("photos");
-      return [{ id: A }];
+      return [{ id: A, sourceType: "reserve.line-photo" }];
     });
     const hook = withLinePhotos(reserve, existing);
     expect(await hook.assign(t as never, input([{ photoIds: [A] }]), null)).toEqual([{ stockId: "260001" }]);

@@ -1,13 +1,14 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, ImagePlus, X } from "lucide-react";
-import { useId, useRef, useState, type ReactNode } from "react";
+import { ImagePlus, X } from "lucide-react";
+import { useRef, useState, type ReactNode } from "react";
 import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
-import { Button, Field, IconButton, NumberInput, ReadonlyBox, SelectMenu, TextInput, type Option } from "@/features/quotation/components/ui";
+import { EditorSection, ItemEditorShell } from "@/features/quotation/components/items/ItemEditorPanel";
+import { Field, NumberInput, ReadonlyBox, SelectMenu, TextInput, type Option } from "@/features/quotation/components/ui";
 import { toFixed } from "@/features/quotation/lib/decimal";
 import { CER_TYPES } from "@/features/quotation/lib/options";
 import { loadPhotoUrl, PhotoUploadError, uploadLoadPhoto } from "../api";
-import { ITEM_NOTE_MAX, LOT_MAX, PARCEL_MAX, PHOTO_MAX, rowCost, unitLabel, UNIT_COST_PLACES, type LoadFormValues, type LoadRowValues } from "../form";
+import { ITEM_NOTE_MAX, LOT_MAX, PHOTO_MAX, rowCost, unitLabel, UNIT_COST_PLACES, type LoadFormValues, type LoadRowValues } from "../form";
 import type { LoadOptions, PurchaseLineRef, StoneAttrs } from "../types";
 import { rowLocationOptions } from "./load-table";
 
@@ -17,23 +18,24 @@ const withCurrent = (names: readonly string[], current: string): Option[] => {
 };
 
 type StoneList = "stones" | "shapes" | "sizes" | "colors" | "clarities" | "cuttings" | "qualities";
-const PART_FIELDS: { field: keyof StoneAttrs; label: string; list: StoneList }[] = [
-  { field: "stone", label: "Stone", list: "stones" },
-  { field: "shape", label: "Shape", list: "shapes" },
-  { field: "size", label: "Size", list: "sizes" },
-  { field: "color", label: "Color", list: "colors" },
-  { field: "clarity", label: "Clarity", list: "clarities" },
-  { field: "cutting", label: "Cutting", list: "cuttings" },
-  { field: "quality", label: "Quality", list: "qualities" },
-];
+type StonePart = "stone" | "shape" | "size" | "color" | "clarity" | "cutting" | "quality";
+const PART_FIELDS: Record<StonePart, { label: string; list: StoneList }> = {
+  stone: { label: "Stone", list: "stones" },
+  shape: { label: "Shape", list: "shapes" },
+  size: { label: "Size", list: "sizes" },
+  color: { label: "Color", list: "colors" },
+  clarity: { label: "Clarity", list: "clarities" },
+  cutting: { label: "Cutting", list: "cuttings" },
+  quality: { label: "Quality", list: "qualities" },
+};
 
 /**
- * L-09 row panel "More" (FE-LS-008, M-01…M-12): Purchase's row panel without the discount, with Price (read-only PU
- * cost), Stock Price * and Sale Price * (required, start empty, owner Q-LS-13). Location * + Parcel, stone details
- * (editable in every mode), Pcs / Weight (locked in Merge), note and ≤ 5 photos (copied from the PU line, changeable,
- * owner Q-LS-14). Previous / next row and Close.
+ * L-09 row panel "More" (FE-LS-008, M-01…M-12), owner 2026-11-24: the Quotation row editor's frame and sections, docked
+ * beside the Item card (ItemEditorDock). Info (Stock ID, Lot, Location *), Stone, Stone Quality, Certificate, Quantity &
+ * Price (Price = read-only PU cost, Stock Price * and Sale Price * start empty, owner Q-LS-13; Pcs / Weight locked in
+ * Merge), ≤ 5 photos and the note. Remove row / Close / Next row. Parcel is not shown (owner 2026-11-24).
  */
-export function LoadRowPanel({ row, index, total, values, options, currency, readOnly, errors, onChange, onPrev, onNext, onClose }: {
+export function LoadRowPanel({ row, index, total, values, options, currency, readOnly, errors, onChange, onPrev, onNext, onRemove, onClose }: {
   row: LoadRowValues;
   index: number;
   total: number;
@@ -45,10 +47,10 @@ export function LoadRowPanel({ row, index, total, values, options, currency, rea
   onChange: (patch: Partial<LoadRowValues>) => void;
   onPrev: () => void;
   onNext: () => void;
+  onRemove: () => void;
   onClose: () => void;
 }) {
   const nf = useNumberFormat();
-  const titleId = useId();
   const refs = new Map<string, PurchaseLineRef>(values.sources.map((ref) => [ref.purchaseLineId, ref]));
   const cost = rowCost(row, values.mode, refs);
   const merge = values.mode === "MERGE";
@@ -61,47 +63,66 @@ export function LoadRowPanel({ row, index, total, values, options, currency, rea
     if (!code) return;
     onChange({ attrs: { ...row.attrs, stoneCodeId: code.id, stoneCode: code.code, stone: code.stone, shape: code.shape, size: code.size, color: code.color, clarity: code.clarity, cutting: code.cutting, quality: code.quality } });
   };
+  const part = (field: StonePart) => {
+    const { label, list } = PART_FIELDS[field];
+    const current = String(row.attrs[field] ?? "");
+    return (
+      <Field label={label}>
+        <SelectMenu compact portal value={current} options={withCurrent((stone?.[list] ?? []).map((item) => item.name), current)} onChange={(value) => setAttr(field, value)} />
+      </Field>
+    );
+  };
 
   return (
-    <section role="region" aria-labelledby={titleId} className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-[#E3E6EA] bg-white shadow-xl">
-      <header className="flex items-center justify-between border-b border-[#E3E6EA] px-5 py-4">
-        <div>
-          <h2 id={titleId} className="text-lg font-medium text-[#1C252E]">Row {index + 1} of {total}</h2>
-          <p className="text-xs text-[#6B7480]">{merge ? "Merged row · pcs and weight come from the PU lines" : "Load row details"}</p>
-        </div>
-        <div className="flex items-center gap-1">
-          <IconButton label="Previous row" disabled={index === 0} onClick={onPrev}><ChevronLeft className="size-4" /></IconButton>
-          <IconButton label="Next row" disabled={index >= total - 1} onClick={onNext}><ChevronRight className="size-4" /></IconButton>
-          <IconButton label="Close" onClick={onClose} className="rounded-full bg-[#F6F7F8]"><X className="size-4" /></IconButton>
-        </div>
-      </header>
-      <fieldset disabled={readOnly} className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-        <div className="grid grid-cols-2 gap-x-3 gap-y-5">
-          {/* FE-LS-018 (source 07): Info group — Stock ID (Auto until issued), Lot (optional, ≤ 40, pre-filled from the PU line), Location. */}
-          <h3 className="col-span-2 -mb-2 text-sm font-medium text-[#1C252E]">Info</h3>
-          <Field label="Stock ID"><ReadonlyBox compact value={row.stockId || "Auto"} /></Field>
+    <ItemEditorShell
+      index={index}
+      total={total}
+      readOnly={readOnly}
+      title={row.attrs.stoneCode || (row.stockId ? `Stock ID ${row.stockId}` : "Load row")}
+      nextRowDisabled={index >= total - 1}
+      onPrev={onPrev}
+      onNext={onNext}
+      onNextRow={onNext}
+      onRemove={onRemove}
+      onClose={onClose}
+    >
+      <div key={row.key} data-editor-row={index} className="space-y-1">
+        {merge && <p className="pt-3 text-xs text-[#6B7480]">Merged row · pcs and weight come from the PU lines</p>}
+        {/* FE-LS-018 (source 07): Stock ID (Auto until issued), Lot (optional, ≤ 40, pre-filled from the PU line), Location. */}
+        <EditorSection title="Info">
+          <div>
+            <Field label="Stock ID"><ReadonlyBox compact value={row.stockId} placeholder="Auto" /></Field>
+            {!row.stockId && <p className="mt-1 pl-3 text-xs text-[#6B7480]">Assigned when you save</p>}
+          </div>
           <Field label="Lot" error={errors.lot}><TextInput compact aria-label="Lot" maxLength={LOT_MAX} value={row.attrs.lot} onChange={(event) => setAttr("lot", event.target.value)} /></Field>
           <Field label="Location" required error={errors.location}>
-            <SelectMenu compact value={row.location} placeholder="Select location" options={rowLocationOptions(options?.locations ?? [], row.location)} onChange={(location) => onChange({ location })} />
+            <SelectMenu compact portal value={row.location} placeholder="Select location" options={rowLocationOptions(options?.locations ?? [], row.location)} onChange={(location) => onChange({ location })} />
           </Field>
-          <Field label="Parcel" error={errors.parcel} className="col-span-2">
-            <TextInput compact maxLength={PARCEL_MAX} value={row.parcel} onChange={(event) => onChange({ parcel: event.target.value })} />
-          </Field>
+        </EditorSection>
+        <EditorSection title="Stone">
           <Field label="Stone Code" className="col-span-2">
-            <SelectMenu compact value={row.attrs.stoneCodeId ?? ""} placeholder={row.attrs.stoneCode || "Select"} options={codeOptions} onChange={pickCode} />
+            <SelectMenu compact portal value={row.attrs.stoneCodeId ?? ""} placeholder={row.attrs.stoneCode || "Select"} options={codeOptions} onChange={pickCode} />
           </Field>
-          {PART_FIELDS.map(({ field, label, list }) => (
-            <Field key={field} label={label}>
-              <SelectMenu compact value={String(row.attrs[field] ?? "")} options={withCurrent((stone?.[list] ?? []).map((part) => part.name), String(row.attrs[field] ?? ""))} onChange={(value) => setAttr(field, value)} />
-            </Field>
-          ))}
+          {part("stone")}
+          {part("shape")}
+          {part("size")}
+        </EditorSection>
+        <EditorSection title="Stone Quality">
+          {part("color")}
+          {part("clarity")}
+          {part("cutting")}
+          {part("quality")}
+        </EditorSection>
+        <EditorSection title="Certificate">
           <Field label="Cer Type">
-            <SelectMenu compact value={row.attrs.cerType} options={withCurrent(CER_TYPES.map((option) => option.value), row.attrs.cerType)} onChange={(value) => setAttr("cerType", value)} />
+            <SelectMenu compact portal value={row.attrs.cerType} options={withCurrent(CER_TYPES.map((option) => option.value), row.attrs.cerType)} onChange={(value) => setAttr("cerType", value)} />
           </Field>
-          <Field label="Cer No." className="col-span-2">
+          <Field label="Cer No.">
             <TextInput compact maxLength={60} value={row.attrs.cerNo} onChange={(event) => setAttr("cerNo", event.target.value)} />
           </Field>
-          <Field label="Pcs" required error={errors.pcs}>
+        </EditorSection>
+        <EditorSection title="Quantity & Price">
+          <Field label="PCS" required error={errors.pcs}>
             <NumberInput compact decimals={0} value={row.pcs} readOnly={merge} onChange={(event) => onChange({ pcs: event.target.value })} />
           </Field>
           <Field label="Weight (ct)" required error={errors.weightCt}>
@@ -115,8 +136,15 @@ export function LoadRowPanel({ row, index, total, values, options, currency, rea
           <Field label="Sale Price" required error={errors.salePrice}>
             <NumberInput compact decimals={2} suffix={currency} value={row.salePrice} placeholder="0.00" onChange={(event) => onChange({ salePrice: event.target.value })} />
           </Field>
+        </EditorSection>
+        <EditorSection title={`Photos ${row.photoIds.length} / ${PHOTO_MAX}`}>
+          <div className="col-span-2">
+            <RowPhotos photoIds={row.photoIds} readOnly={readOnly} onChange={(photoIds) => onChange({ photoIds })} hideTitle />
+          </div>
+        </EditorSection>
+        <EditorSection title="Item Note">
           <label className="col-span-2 block text-sm">
-            <span className="mb-1 block font-medium text-[#1C252E]">Note</span>
+            <span className="sr-only">Note</span>
             <textarea
               rows={3}
               maxLength={ITEM_NOTE_MAX}
@@ -126,22 +154,18 @@ export function LoadRowPanel({ row, index, total, values, options, currency, rea
             />
             <span className="block text-right text-xs text-[#6B7480]">{row.itemNote.length} / {ITEM_NOTE_MAX}</span>
           </label>
-          <div className="col-span-2">
-            <RowPhotos photoIds={row.photoIds} readOnly={readOnly} onChange={(photoIds) => onChange({ photoIds })} />
-          </div>
-        </div>
-      </fieldset>
-      <footer className="flex justify-end border-t border-[#E3E6EA] px-5 py-3">
-        <Button onClick={onClose}>Close</Button>
-      </footer>
-    </section>
+        </EditorSection>
+      </div>
+    </ItemEditorShell>
   );
 }
 
 /** M-12 / L-02: ≤ 5 photos, upload one at a time (JPEG/PNG ≤ 5 MB), remove keeps the file (ADR-0030). */
-export function RowPhotos({ photoIds, readOnly, onChange, upload = uploadLoadPhoto }: {
+export function RowPhotos({ photoIds, readOnly, onChange, upload = uploadLoadPhoto, hideTitle }: {
   photoIds: readonly string[];
   readOnly: boolean;
+  /** The row panel shows the count in its section title instead. */
+  hideTitle?: boolean;
   onChange: (photoIds: string[]) => void;
   upload?: (file: File) => Promise<string>;
 }) {
@@ -172,7 +196,7 @@ export function RowPhotos({ photoIds, readOnly, onChange, upload = uploadLoadPho
   }
   return (
     <div>
-      <p className="mb-2 text-sm font-medium text-[#1C252E]">Photos <span className="font-normal text-[#6B7480]">({photoIds.length} / {PHOTO_MAX})</span></p>
+      {!hideTitle && <p className="mb-2 text-sm font-medium text-[#1C252E]">Photos <span className="font-normal text-[#6B7480]">({photoIds.length} / {PHOTO_MAX})</span></p>}
       <div className="flex flex-wrap gap-2">
         {photoIds.map((id, position) => (
           <div key={id} className="relative size-20 overflow-hidden rounded-lg border border-[#E3E6EA] bg-[#F9F9F9]">

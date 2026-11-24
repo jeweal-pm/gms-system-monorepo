@@ -12,6 +12,7 @@ import { FormProvider, useFieldArray, useForm, useWatch } from "react-hook-form"
 import { ScanIcon } from "@/components/ui/scan-icon";
 import {
   mapSaveError,
+  photoUrl,
   quotationRestoreError,
   toQuotationInput,
   useNextNumber,
@@ -278,8 +279,9 @@ export function QuotationForm({ initial, deleted: initialDeleted = null, flow = 
     let cursor = 0;
     for (const item of items) {
       while (cursor < next.length && isFilledLine(next[cursor])) cursor++;
-      if (cursor < next.length) next[cursor] = lotToStockLine(item);
-      else next.push(lotToStockLine(item));
+      const currency = getValues("currency");
+      if (cursor < next.length) next[cursor] = lotToStockLine(item, photoUrl, currency);
+      else next.push(lotToStockLine(item, photoUrl, currency));
     }
     lineArray.replace(next);
     setFromStockOpen(false);

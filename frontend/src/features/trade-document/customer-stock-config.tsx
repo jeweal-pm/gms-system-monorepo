@@ -92,7 +92,7 @@ export function customerStockConfig(options: CustomerStockPageOptions): Document
           emptyText="No stock with anything pending."
           pickedIds={pickedStockIds(values.lines)}
           onCancel={onClose}
-          onConfirm={(items) => onAdd(items.map(lotToStockLine))}
+          onConfirm={(items) => onAdd(items.map((item) => lotToStockLine(item, options.photos.url, values.currency)))}
         />
       ),
       addedToast: (count) => `Added ${count} item${count === 1 ? "" : "s"} from Stock`,

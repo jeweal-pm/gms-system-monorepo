@@ -158,6 +158,8 @@ describe.runIf(canRun)("IT-LOT lot-based stock on PostgreSQL", () => {
     const [row] = (await lots.memoStockLots({ vendorId: vendorA.id, currency: "THB", q: `${LOT}-K`, limit: 50 })).items.filter((item: any) => item.lotKey === keys[0]);
     // 2 pcs at 100, 2 at 100, 2 at 101 (PER_PCS) → (200 + 200 + 202) / 6 = 100.33; amount = Σ item amounts.
     expect(row).toMatchObject({ pendingPcs: 6, unitPrice: "100.33", netUnitPrice: "100.3333", amount: "602.00" });
+    // From Stock dialogs: the memo price (quantity-weighted) as Sale Price, Amount = price x available pcs (PER_PCS), memo currency.
+    expect(row).toMatchObject({ salePrice: "100.33", saleAmount: "601.98", saleCurrency: "THB" });
     expect(keys[5]).toBe(`MS${items[5].id}`);
     expect(keys[6]).toBe(`MS${items[6].id}`);
   });
