@@ -169,7 +169,7 @@ describe("UT-SC-03 document route map", () => {
   });
 
   it("an unknown type (or no id) has no link; the number then renders as text", () => {
-    expect(docHref("stock-adjustment", "abc")).toBeUndefined();
+    expect(docHref("stock-adjustment", "abc")).toBe("/inventory/stock-adjustment/abc");
     expect(docHref("toString", "abc")).toBeUndefined();
     expect(docHref("memo-out", "")).toBeUndefined();
   });

@@ -1,8 +1,10 @@
 import { loadToStockApi, type LoadOut } from "@/features/load-to-stock/api";
 import { saleApi, type SaleOut } from "@/features/sale/api";
+import { stockAdjustmentApi, type AdjustmentOut } from "@/features/stock-adjustment/api";
 import type { InventoryPendingItem } from "@/features/inventory/approval";
 import type { PendingApprovalItem } from "./model";
 import type { PreviewDetail } from "./preview";
+import { sumDecimal } from "./preview";
 
 /**
  * load-to-stock FE-LS-011 (ADR-0052 D12): Approve Center adapters for the inventory document Load to Stock. Its
@@ -59,17 +61,60 @@ export function toPendingItem(item: InventoryPendingItem, currency: string, type
     // Sale (FE-SL-009) lists its grand total in the document currency; Load to Stock in the company currency.
     currency: item.currency ?? currency,
     grandTotal: item.value ?? item.valueBase ?? "0",
-    lineCount: 0,
-    totalPcs: item.totalPcs,
-    totalWeightCt: item.totalWeightCt,
+    lineCount: item.lineCount ?? 0,
+    totalPcs: type === "stock-adjustment" ? (item.totalDiffPcs ?? item.totalPcs ?? 0) : (item.totalPcs ?? 0),
+    totalWeightCt: type === "stock-adjustment" ? (item.totalDiffWeightCt ?? item.totalWeightCt ?? "0") : (item.totalWeightCt ?? "0"),
     stoneNames: [],
     moreStoneCount: 0,
     submittedAt: item.submittedAt,
     submittedBy: "",
     submittedByName: item.submittedByName,
-    revisionCount: item.revisionCount,
+    revisionCount: item.revisionCount ?? 0,
     lastReview: null,
     updatedAt: "",
+  };
+}
+
+/** Stock Adjustment's location and signed count deltas as the shared Approve Center preview. */
+export function stockAdjustmentPreview(detail: AdjustmentOut): PreviewDetail {
+  const lines = [...detail.lines].sort((a, b) => a.position - b.position);
+  return {
+    id: detail.id,
+    docNo: detail.docNo ?? "—",
+    status: detail.status,
+    version: detail.version,
+    docDate: detail.docDate,
+    currency: "—",
+    exchangeRate: null,
+    documentNote: detail.note,
+    location: detail.location,
+    lines: lines.map((line) => ({
+      stoneCode: line.attrs.stoneCode,
+      stockId: line.stockId,
+      stone: line.attrs.stone,
+      shape: line.attrs.shape,
+      size: line.attrs.size,
+      pcs: line.diffPcs,
+      weightCt: line.diffWeightCt,
+      amount: line.diffPrice,
+      location: line.attrs.location,
+    })),
+    totals: { grandTotal: sumDecimal(lines.map((line) => line.diffPrice), 2) },
+    deletedAt: detail.deleted?.at ?? null,
+    revisionCount: detail.approval.revisionCount,
+  };
+}
+
+type StockAdjustmentCalls = Pick<typeof stockAdjustmentApi, "get" | "approve" | "reject" | "requestRevision">;
+
+/** The Approve menu's per-document adapter for backend-api-inventory Stock Adjustment. */
+export function stockAdjustmentDocumentClient(calls: StockAdjustmentCalls = stockAdjustmentApi) {
+  const withVersion = async (id: string, expectedVersion: number) => (expectedVersion > 0 ? expectedVersion : (await calls.get(id)).version);
+  return {
+    get: { query: async ({ id }: { id: string }) => stockAdjustmentPreview(await calls.get(id)) },
+    approve: { mutate: async ({ id, expectedVersion }: { id: string; expectedVersion: number }) => calls.approve(id, await withVersion(id, expectedVersion)) },
+    reject: { mutate: async ({ id, expectedVersion, reason }: { id: string; expectedVersion: number; reason: string }) => calls.reject(id, await withVersion(id, expectedVersion), reason) },
+    requestRevision: { mutate: async ({ id, expectedVersion, note }: { id: string; expectedVersion: number; note: string }) => calls.requestRevision(id, await withVersion(id, expectedVersion), note) },
   };
 }
 

@@ -1,0 +1,7 @@
+# 2026-11-24 — Stock Adjustment (BE-SAJ-001…008, FE-SAJ-001…009)
+
+- Added Stock Adjustment documents in `backend-api-inventory`: schema and migration, SA numbering, grants and approval workflow, stock apply/reverse ledger movements, own-stock picker, soft delete/restore, notifications, and Stock Card / Stock Value integration.
+- Added Inventory › Stock Adjustment page at `/inventory/stock-adjustment`, with document fields, physical-count grid, decimal-safe differences, From Stock / barcode entry, daybook, approval actions, and stock-query invalidation.
+- No new package. Local dev DB migrations are applied and Prisma reports the schema up to date. The rebuilt local Compose stack is available at `http://localhost:8091` (Nginx) and `http://localhost:3002` (direct frontend); local ports come from the ignored `.env`.
+- Verification: Stock Adjustment backend focused tests passed 9/9; frontend suite passed 1,400/1,400; focused static security reviews were clear. The full inventory suite remains unresolved (197 passed, 26 failed, 6 skipped); see [INV-20261124-001](../task/investigation/INV-20261124-001-stock-adjustment-inventory-suite.md). HTTP smoke check of the page returned 200; a signed-in manual user-flow check has not been completed.
+- The central TODO remains `needs-validation` until the full inventory suite and manual user-flow verification are complete: [stock-adjustment TODO](../task/todo/stock-adjustment.md).

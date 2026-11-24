@@ -18,6 +18,7 @@ describe("navigationHref", () => {
     // stock-card FE-SC-010 (UT-SC-09) and stock-value FE-SV-010 (UT-SV-11): both Stock Movement reports have their own pages.
     expect(navigationHref({ label: "Stock Card", slug: "stock-card" })).toBe("/report/stock-movement/stock-card");
     expect(navigationHref({ label: "Stock Value", slug: "stock-value" })).toBe("/report/stock-movement/stock-value");
+    expect(navigationHref({ label: "Stock Adjustment", slug: "stock-adjustment" })).toBe("/inventory/stock-adjustment");
   });
 
   it("UT-HOME-02 an explicit href wins; menus without a page keep their placeholder", () => {

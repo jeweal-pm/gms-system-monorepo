@@ -20,6 +20,8 @@ export const CARD_KINDS: Readonly<Record<string, CardKind>> = {
   MEMO_OUT_RETURN_REVERSAL: { documentType: "memo-out-return", effect: "MOVEMENT" },
   SALE_OUT: { documentType: "sale", effect: "MOVEMENT" },
   SALE_OUT_REVERSAL: { documentType: "sale", effect: "MOVEMENT" },
+  ADJUST: { documentType: "stock-adjustment", effect: "MOVEMENT" },
+  ADJUST_REVERSAL: { documentType: "stock-adjustment", effect: "MOVEMENT" },
   HOLD_RESERVE: { documentType: "reserve", effect: "NOT_A_MOVEMENT" },
   RELEASE_RESERVE: { documentType: "reserve", effect: "NOT_A_MOVEMENT" },
 };
@@ -29,7 +31,7 @@ export type DocumentTypeInfo = {
   /** Whether the Stock ID may be shown / searched on a row of this type. */
   stockIdVisible: boolean;
   /** Date, number and account come from the stock row (Load to Stock) instead of `stock_hold_document`. */
-  source: "STOCK" | "HOLD";
+  source: "STOCK" | "HOLD" | "ADJUSTMENT";
 };
 
 export const DOCUMENT_TYPES: Readonly<Record<string, DocumentTypeInfo>> = {
@@ -39,6 +41,7 @@ export const DOCUMENT_TYPES: Readonly<Record<string, DocumentTypeInfo>> = {
   reserve: { label: "Reserve", stockIdVisible: false, source: "HOLD" },
   // Own-stock Sale (ADR-0058 D9) writes SALE_OUT / SALE_OUT_REVERSAL; the others are registry-ready (rows appear when their module writes kinds).
   sale: { label: "Sale", stockIdVisible: true, source: "HOLD" },
+  "stock-adjustment": { label: "Stock Adjustment", stockIdVisible: true, source: "ADJUSTMENT" },
   quotation: { label: "Quotation", stockIdVisible: false, source: "HOLD" },
   purchase: { label: "Purchase", stockIdVisible: false, source: "HOLD" },
   "memo-return": { label: "Memo Return", stockIdVisible: false, source: "HOLD" },
@@ -48,6 +51,7 @@ export const DOCUMENT_TYPES: Readonly<Record<string, DocumentTypeInfo>> = {
 export const MOVEMENT_KINDS: readonly string[] = Object.entries(CARD_KINDS).filter(([, kind]) => kind.effect === "MOVEMENT").map(([name]) => name).sort();
 export const HIDDEN_STOCK_ID_TYPES: readonly string[] = Object.entries(DOCUMENT_TYPES).filter(([, info]) => !info.stockIdVisible).map(([name]) => name).sort();
 export const STOCK_SOURCED_TYPES: readonly string[] = Object.entries(DOCUMENT_TYPES).filter(([, info]) => info.source === "STOCK").map(([name]) => name).sort();
+export const ADJUSTMENT_SOURCED_TYPES: readonly string[] = Object.entries(DOCUMENT_TYPES).filter(([, info]) => info.source === "ADJUSTMENT").map(([name]) => name).sort();
 
 export function documentTypeLabel(documentType: string): string {
   return DOCUMENT_TYPES[documentType]?.label ?? documentType;

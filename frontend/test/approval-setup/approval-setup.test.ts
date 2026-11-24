@@ -11,6 +11,7 @@ import {
   documentsLabel,
   helperText,
   isNotAvailable,
+  mergeSettings,
   rowLocked,
   settingOf,
   SETUP_ROWS,
@@ -53,10 +54,10 @@ const domainError = (domainCode: string, details?: Record<string, number>) =>
   TRPCClientError.from({ error: { message: domainCode, code: -32000, data: { code: "CONFLICT", httpStatus: 409, domainCode, details } } } as never);
 
 describe("UT-AS-01 rows", () => {
-  it("12 rows in sidebar order with the Memo rows (owner answer 2); Merge/Split and Transfer Location are not available (Load to Stock FE-LS-014 and Sale FE-SL-009 have pages)", () => {
+  it("13 rows in sidebar order; Stock Adjustment, Load to Stock and Sale have pages", () => {
     expect(SETUP_ROWS.map((entry) => entry.label)).toEqual([
       "Quotation", "Reserve", "Memo Receive", "Memo Return", "Memo Out", "Memo Out Return",
-      "Purchase Order (PO)", "Purchase", "Load to Stock", "Merge/Split Stock", "Transfer Location", "Sale",
+      "Purchase Order (PO)", "Purchase", "Load to Stock", "Merge/Split Stock", "Transfer Location", "Sale", "Stock Adjustment",
     ]);
     expect(SETUP_ROWS.filter(isNotAvailable).map((entry) => entry.slug)).toEqual(["merge-split", "transfer-location"]);
   });
@@ -68,6 +69,11 @@ describe("UT-AS-01 rows", () => {
     expect(rowLocked(menu("transfer-location"), settingOf(items, "stock-transfer-location"))).toBe("not-available");
     expect(rowLocked(menu("quotation"), settingOf(items, "quotation"))).toBe("not-available");
     expect(rowLocked(menu("purchase"), undefined)).toBe("loading");
+  });
+
+  it("FE-SAJ-007: joins the inventory Stock Adjustment setting as an available row with its waiting count", () => {
+    const merged = mergeSettings([settingItem("quotation")], [{ type: "stock-adjustment", requireApproval: true, version: 2, waitingCount: { pending: 3, revision: 1 } }]);
+    expect(merged?.find((entry) => entry.type === "stock-adjustment")).toMatchObject({ available: true, requireApproval: true, waiting: 4, version: 2 });
   });
 });
 

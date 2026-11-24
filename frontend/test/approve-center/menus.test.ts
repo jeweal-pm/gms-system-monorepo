@@ -3,7 +3,7 @@ import { APPROVE_MENUS, APPROVE_PERMISSIONS, approveBreadcrumbs, approveMenuFor,
 
 /** UT-AP-01 (FE-AP-002) registry and UT-AP-10 (FE-AP-001) routes / breadcrumbs. */
 describe("UT-AP-01 menu registry", () => {
-  it("lists 12 items in the sidebar order (owner Q-AP-03, 2026-11-07; Sale FE-SL-009)", () => {
+  it("lists 13 items in the sidebar order (owner Q-AP-03; Stock Adjustment FE-SAJ-007)", () => {
     expect(APPROVE_MENUS.map((menu) => menu.label)).toEqual([
       "Quotation",
       "Reserve",
@@ -17,6 +17,7 @@ describe("UT-AP-01 menu registry", () => {
       "Merge/Split Stock",
       "Transfer Location",
       "Sale",
+      "Stock Adjustment",
     ]);
   });
 
@@ -35,22 +36,24 @@ describe("UT-AP-01 menu registry", () => {
       ["purchase", "purchase"],
       ["load-to-stock", "loadToStock"],
       ["sale", "sale"],
+      ["stock-adjustment", "stockAdjustment"],
     ]);
   });
 
   it("uses the kebab-case approval setting keys as types (G13)", () => {
     expect(APPROVE_MENUS.map((menu) => menu.type)).toEqual([
-      "quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase", "load-to-stock", "merge-split", "stock-transfer-location", "sale",
+      "quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase", "load-to-stock", "merge-split", "stock-transfer-location", "sale", "stock-adjustment",
     ]);
   });
 
   it("uses the catalog leaves and parties of the documents", () => {
     expect(APPROVE_MENUS.map((menu) => menu.leaf)).toEqual([
-      "quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase", "load-to-stock", "merge-split", "stock-transfer-location", "sale",
+      "quotation", "reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase", "load-to-stock", "merge-split", "stock-transfer-location", "sale", "stock-adjustment",
     ]);
     expect(APPROVE_PERMISSIONS).toContain("stock-transfer-location:APPROVE");
     expect(APPROVE_MENUS.filter((menu) => menu.party === "vendor").map((menu) => menu.slug)).toEqual(["memo-receive", "memo-return", "purchase-order", "purchase", "load-to-stock"]);
     expect(approveMenuFor("sale")).toMatchObject({ party: "customer", leaf: "sale", type: "sale", proc: "sale" });
+    expect(approveMenuFor("stock-adjustment")).toMatchObject({ party: "none", leaf: "stock-adjustment", type: "stock-adjustment", proc: "stockAdjustment", documentBase: "/inventory/stock-adjustment" });
     // lot-based-stock (UT-LOT-FE-09, owner Q3): Quotation, Reserve, Memo Out, Purchase, Memo Return search by Lot; the rest keep the Stock ID.
     expect(searchPlaceholder(approveMenuFor("reserve")!)).toBe("Search no., customer, stone, Lot");
     expect(searchPlaceholder(approveMenuFor("quotation")!)).toBe("Search no., customer, stone, Lot");
@@ -73,6 +76,7 @@ describe("UT-AP-01 menu registry", () => {
     expect(base("memo-out-return")).toBe("/memo/memo-out-return");
     expect(base("quotation")).toBe("/pre-sale/quotation");
     expect(base("sale")).toBe("/sale/sale");
+    expect(base("stock-adjustment")).toBe("/inventory/stock-adjustment");
   });
 });
 

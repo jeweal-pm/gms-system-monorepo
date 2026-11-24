@@ -31,6 +31,10 @@
 
 ## Decisions (SA-SAJ-nn)
 
+### Implementation notes
+
+- `/stock-adjustment/options` currently makes two cached Master API reads: `reference` for locations and `numbering` for the configured flag. `MasterApi` exposes these separately; adding a combined master endpoint would expand the approved scope, so the implementation keeps both existing calls and documents the deviation from the one-call target.
+
 | ID | Decision |
 |---|---|
 | SA-SAJ-01 | **Placement:** `backend-api-inventory`, module `src/modules/stock-adjustment/` (ADR-0052 D1 / ADR-0027 already name it). There is no master stock call: the stock lives in inventory, so no saga is needed. |

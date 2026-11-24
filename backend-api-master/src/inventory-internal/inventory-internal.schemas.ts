@@ -62,7 +62,7 @@ export const masterDataResolveSchema = z.object({
 export type MasterDataResolveInput = z.output<typeof masterDataResolveSchema>;
 
 /** Document Setup keys an inventory document may resolve (ADR-0052 D10; sale ADR-0054 D10 widens the allow-list). */
-export const INVENTORY_NUMBERING_KEYS = ["load-to-stock", "sale"] as const;
+export const INVENTORY_NUMBERING_KEYS = ["load-to-stock", "sale", "stock-adjustment"] as const;
 
 export const numberingResolveSchema = z.object({
   transactionKey: z.enum(INVENTORY_NUMBERING_KEYS),

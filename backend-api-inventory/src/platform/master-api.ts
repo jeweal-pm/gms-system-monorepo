@@ -24,7 +24,7 @@ export type AllocationLine = { purchaseLineId: string; pcs: number; weightCt: st
 export type AllocationRequest = { vendorId: string; lines: AllocationLine[]; newStockIdCount: number };
 export type AllocationResponse = { revision: number; stockIds: string[]; lines: { purchaseLineId: string; remainingPcs: number; remainingWeightCt: string }[]; replayed: boolean };
 export type Numbering = { id: string; prefix: string; separator: string; startNo: number };
-export type NumberingKey = "load-to-stock" | "sale";
+export type NumberingKey = "load-to-stock" | "sale" | "stock-adjustment";
 
 // ---------- sale (ADR-0054, api-contract "Master internal API") ----------
 export type SaleStoneAttrs = {

@@ -1,6 +1,7 @@
 import { isLotDocumentType } from "@/features/trade-document/lot-stock";
 import {
   BoxClockIcon,
+  FileOutstandingIcon,
   MemoOutIcon,
   MemoOutReturnIcon,
   MemoReceiveIcon,
@@ -34,10 +35,11 @@ export type ApproveMenuSlug =
   | "load-to-stock"
   | "merge-split"
   | "transfer-location"
-  | "sale";
+  | "sale"
+  | "stock-adjustment";
 
 /** The `masterTrpc` router key of a document that can be approved today. */
-export type ApprovalProc = "quotation" | "reserve" | "memoReceive" | "memoReturn" | "memoOut" | "memoOutReturn" | "purchaseOrder" | "purchase" | "loadToStock" | "sale";
+export type ApprovalProc = "quotation" | "reserve" | "memoReceive" | "memoReturn" | "memoOut" | "memoOutReturn" | "purchaseOrder" | "purchase" | "loadToStock" | "sale" | "stockAdjustment";
 
 /** approval-setup api-contract `ApprovalType`: the kebab-case setting keys (G13), in sidebar order. */
 export type ApprovalSettingType =
@@ -211,6 +213,19 @@ export const APPROVE_MENUS: readonly ApproveMenu[] = [
     documentBase: "/sale/sale",
     dueLabel: null,
     consequence: (count) => `Its ${items(count, "item is", "items are")} recorded as sold to the customer, and it can no longer be edited.`,
+  },
+  {
+    slug: "stock-adjustment",
+    label: "Stock Adjustment",
+    icon: FileOutstandingIcon,
+    leaf: "stock-adjustment",
+    type: "stock-adjustment",
+    party: "none",
+    availability: "available",
+    proc: "stockAdjustment",
+    documentBase: "/inventory/stock-adjustment",
+    dueLabel: null,
+    consequence: (count) => `Its ${items(count, "stock count is", "stock counts are")} applied to the selected location.`,
   },
 ];
 

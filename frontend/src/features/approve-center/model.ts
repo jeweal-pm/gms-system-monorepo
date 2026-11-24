@@ -256,7 +256,7 @@ export function nextSort(current: SortState, key: SortKey): SortState {
 export const SERVER_SORT = { document: "docNo", detail: "party", qty: "qty", value: "value", submitted: "submittedAt" } as const satisfies Record<SortKey, string>;
 
 /** Master's `approval.pending` types; Load to Stock is listed by backend-api-inventory with the same input (FE-LS-011). */
-export type MasterApprovalType = Exclude<DocumentApprovalType, "load-to-stock" | "sale">;
+export type MasterApprovalType = Exclude<DocumentApprovalType, "load-to-stock" | "sale" | "stock-adjustment">;
 export type PendingInput = { type: MasterApprovalType; q?: string; sort: (typeof SERVER_SORT)[SortKey]; dir: SortDir; limit: number };
 
 /** The `approval.pending` input of one menu, search and sort (the cursor is added by the infinite query). */

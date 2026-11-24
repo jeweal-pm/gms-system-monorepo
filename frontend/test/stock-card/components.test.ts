@@ -145,16 +145,16 @@ describe("transactions table (FE-SC-006, S6 / S4)", () => {
     expect(markup).toContain("LS2609014");
     expect(markup).toContain("Load to Stock");
     expect(markup).toContain("Memo Out");
-    expect(markup.match(/<a /g)).toHaveLength(2);
+    expect(markup.match(/<a /g)).toHaveLength(3);
     expect(markup).toContain("font-semibold hover:underline");
   });
 
-  it("an unknown document type renders the number as text with its caption, and no link", () => {
+  it("Stock Adjustment uses its real page link even when the displayed document number is blank", () => {
     const markup = html(txnTable({ rows: [TXN_NEW_TYPE] }));
-    expect(markup).not.toContain("<a ");
+    expect(markup).toContain('href="/inventory/stock-adjustment/0192c"');
     expect(markup).toContain("Stock Adjustment");
     // No number stored: a dash.
-    expect(markup).toContain('<span class="font-semibold">—</span>');
+    expect(markup).toMatch(/href="\/inventory\/stock-adjustment\/0192c"[^>]*>—<\/a>/);
   });
 
   it("the other direction's cells are blank, the tint stays, BALANCE weight is bold", () => {
