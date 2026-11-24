@@ -73,6 +73,8 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   sale: "/sale/sale",
   // stock-card UI rev 1 (FE-SC-010, ADR-0056): Report › Stock Movement › Stock Card.
   "stock-card": "/report/stock-movement/stock-card",
+  // stock-value UI rev 1 (FE-SV-010, ADR-0057): Report › Stock Movement › Stock Value.
+  "stock-value": "/report/stock-movement/stock-value",
   // approve-center UI rev 1 (FE-AP-001): the Approve page.
   approve: APPROVE_HREF,
 };
@@ -281,8 +283,8 @@ export const sidebarSections: NavSection[] = [
       disclosure("stock-movement", "Stock Movement", FileOutstandingIcon, [
         // stock-card UI rev 1: stays active on /report/stock-movement/stock-card/[cardKey].
         { ...link("stock-card", "Stock Card", undefined, REAL_PAGE_HREFS["stock-card"]), activePrefix: REAL_PAGE_HREFS["stock-card"] },
-        // Stock Value has no design yet: its placeholder page opens from /modules/stock-value.
-        link("stock-value", "Stock Value"),
+        // stock-value UI rev 1: stays active on /report/stock-movement/stock-value/[cardKey].
+        { ...link("stock-value", "Stock Value", undefined, REAL_PAGE_HREFS["stock-value"]), activePrefix: REAL_PAGE_HREFS["stock-value"] },
       ]),
       disclosure("closing-stock", "Closing Stock", ClosingStockIcon, [link("closing-stock-primary", "Primary Stock"), link("closing-stock-consignment", "Consignment Stock")]),
       disclosure("sale-report", "Sale Report", SaleReportIcon, [

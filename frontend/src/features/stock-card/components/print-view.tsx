@@ -21,7 +21,7 @@ type Frame = {
   children: ReactNode;
 };
 
-function PrintFrame({ title, scope, filters, printedAt, children }: Frame) {
+export function PrintFrame({ title, scope, filters, printedAt, children }: Frame) {
   return (
     <div className={`${styles.printRoot} bg-white p-6 text-black`}>
       <header className="flex items-baseline justify-between border-b-2 border-black pb-2">

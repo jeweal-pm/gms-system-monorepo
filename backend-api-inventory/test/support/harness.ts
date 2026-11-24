@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { exportJWK, generateKeyPair, SignJWT, type JWK } from "jose";
 import { createApp } from "../../src/app";
-import type { ReportGuard } from "../../src/modules/reports/stock-card/guard";
+import type { ReportGuard } from "../../src/modules/reports/guard";
 import { createDb, type Db } from "../../src/platform/db";
 import { createLogger } from "../../src/platform/logger";
 import { MasterApi } from "../../src/platform/master-api";

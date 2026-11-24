@@ -8,10 +8,10 @@ const value = "mt-1 truncate text-2xl leading-8 font-semibold text-gms-text-head
  * The header block of the detail page (S6): Stone Code, Location and Lot over three equal cells, then the stone
  * description strip. A card without a lot shows "—".
  */
-export function StockCardHeaderBlock({ header }: { header: CardHeader }) {
+export function StockCardHeaderBlock({ header, label: regionLabel = "Stock card" }: { header: CardHeader; label?: string }) {
   const description = detailLine(header);
   return (
-    <section aria-label="Stock card" className="rounded-gms-md border border-gms-border">
+    <section aria-label={regionLabel} className="rounded-gms-md border border-gms-border">
       <div className="grid grid-cols-1 divide-y divide-gms-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
         <div className="min-w-0 px-4 py-3">
           <p className={label}>Stone Code</p>

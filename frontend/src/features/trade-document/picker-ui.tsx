@@ -30,7 +30,7 @@ export function pickerRowClass(checked: boolean) {
 /** Sold rows: 3 px red left accent (DV-10). */
 export const pickerMarkedCell = "shadow-[inset_3px_0_0_#DF1016]";
 
-export type PickerGroupTone = "orange" | "green" | "red" | "purple";
+export type PickerGroupTone = "orange" | "green" | "red" | "purple" | "blue";
 /** Column-group tints (design 136 §2): group header 30 %, sub-header 18 %, cells 8 %. */
 export const pickerGroupTone: Record<PickerGroupTone, { head: string; sub: string; cell: string }> = {
   orange: { head: "bg-gms-group-orange-head", sub: "bg-gms-group-orange-sub", cell: "bg-gms-group-orange-cell" },
@@ -38,6 +38,8 @@ export const pickerGroupTone: Record<PickerGroupTone, { head: string; sub: strin
   red: { head: "bg-gms-group-red-head", sub: "bg-gms-group-red-sub", cell: "bg-gms-group-red-cell" },
   // stock-card FE-SC-001: the BALANCE group.
   purple: { head: "bg-gms-group-purple-head", sub: "bg-gms-group-purple-sub", cell: "bg-gms-group-purple-cell" },
+  // stock-value FE-SV-001: the "Current value" group.
+  blue: { head: "bg-gms-group-blue-head", sub: "bg-gms-group-blue-sub", cell: "bg-gms-group-blue-cell" },
 };
 
 /**
@@ -48,7 +50,11 @@ export const pickerGroupHover: Partial<Record<PickerGroupTone, string>> = {
   green: "group-hover/row:bg-gms-group-green-hover",
   orange: "group-hover/row:bg-gms-group-orange-hover",
   purple: "group-hover/row:bg-gms-group-purple-hover",
+  blue: "group-hover/row:bg-gms-group-blue-hover",
 };
+
+/** Purple BALANCE cell of a ticked list row (stock-value design V4: #E6E7F0). */
+export const pickerPurpleTicked = "bg-gms-group-purple-active";
 
 // ---- dialog ----
 

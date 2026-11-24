@@ -18,6 +18,8 @@ export const CARD_KINDS: Readonly<Record<string, CardKind>> = {
   MEMO_OUT_REVERSAL: { documentType: "memo-out", effect: "MOVEMENT" },
   MEMO_OUT_RETURN: { documentType: "memo-out-return", effect: "MOVEMENT" },
   MEMO_OUT_RETURN_REVERSAL: { documentType: "memo-out-return", effect: "MOVEMENT" },
+  SALE_OUT: { documentType: "sale", effect: "MOVEMENT" },
+  SALE_OUT_REVERSAL: { documentType: "sale", effect: "MOVEMENT" },
   HOLD_RESERVE: { documentType: "reserve", effect: "NOT_A_MOVEMENT" },
   RELEASE_RESERVE: { documentType: "reserve", effect: "NOT_A_MOVEMENT" },
 };
@@ -35,7 +37,7 @@ export const DOCUMENT_TYPES: Readonly<Record<string, DocumentTypeInfo>> = {
   "memo-out": { label: "Memo Out", stockIdVisible: false, source: "HOLD" },
   "memo-out-return": { label: "Memo Out Return", stockIdVisible: true, source: "HOLD" },
   reserve: { label: "Reserve", stockIdVisible: false, source: "HOLD" },
-  // Registry-ready (rows appear when the owning module writes the kinds): ADR-0054 D11 own-stock Sale; the others stay hidden.
+  // Own-stock Sale (ADR-0058 D9) writes SALE_OUT / SALE_OUT_REVERSAL; the others are registry-ready (rows appear when their module writes kinds).
   sale: { label: "Sale", stockIdVisible: true, source: "HOLD" },
   quotation: { label: "Quotation", stockIdVisible: false, source: "HOLD" },
   purchase: { label: "Purchase", stockIdVisible: false, source: "HOLD" },

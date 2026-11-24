@@ -25,6 +25,7 @@ function lineRow(saleId: string, line: NormalizedLine) {
     id: line.id, sale_id: saleId, position: line.position, source: line.source,
     reserve_line_id: line.reserveLineId, reserve_id: line.reserveId, reserve_doc_no: line.reserveDocNo,
     memo_stock_id: line.memoStockId, lot_key: line.lotKey, stock_count: line.stockCount, stock_id: line.stockId.slice(0, 10), memo_receive_id: line.memoReceiveId, memo_receive_doc_no: line.memoReceiveDocNo,
+    load_id: line.loadId, load_doc_no: line.loadDocNo ? line.loadDocNo.slice(0, 40) : null,
     stone_code: line.attrs.stoneCode.slice(0, 60), stone: line.attrs.stone.slice(0, 60), shape: line.attrs.shape.slice(0, 60), size: line.attrs.size.slice(0, 60),
     color: line.attrs.color.slice(0, 60), clarity: line.attrs.clarity.slice(0, 60), cutting: line.attrs.cutting.slice(0, 60), quality: line.attrs.quality.slice(0, 60),
     lot: line.attrs.lot.slice(0, 40), location: line.attrs.location.slice(0, 40), cer_type: line.attrs.cerType.slice(0, 20), cer_no: line.attrs.cerNo.slice(0, 60),
@@ -36,10 +37,11 @@ function lineRow(saleId: string, line: NormalizedLine) {
 
 /**
  * ADR-0055 D7: replaces the Sale's allocation copy with master's result for the applied revision (one DELETE + one
- * INSERT … SELECT joined to the live lines, so a line removed meanwhile is skipped). Audit / reports only.
+ * INSERT … SELECT joined to the live lines, so a line removed meanwhile is skipped). Audit / reports only. Own-stock
+ * allocations (`own_stock_uuid`, ADR-0058) belong to inventory and are never touched here.
  */
 export async function writeSaleAllocations(tx: Tx, saleId: string, allocations: readonly { lineId: string; rows: { seq: number; stockUuid: string; stockId: string; pcs: number; weightCt: string }[] }[]) {
-  await tx.$executeRaw`DELETE FROM "inventory"."sale_line_alloc" a USING "inventory"."sale_line" l WHERE a."sale_line_id" = l."id" AND l."sale_id" = ${saleId}::uuid`;
+  await tx.$executeRaw`DELETE FROM "inventory"."sale_line_alloc" a USING "inventory"."sale_line" l WHERE a."sale_line_id" = l."id" AND l."sale_id" = ${saleId}::uuid AND a."own_stock_uuid" IS NULL`;
   const rows = allocations.flatMap((entry) => entry.rows.filter((row) => row.pcs > 0 || Number(row.weightCt) > 0).map((row) => ({ lineId: entry.lineId, ...row })));
   if (rows.length === 0) return;
   const values = rows.map((row) => Prisma.sql`(${row.lineId}::uuid, ${row.seq}::smallint, ${row.stockUuid}::uuid, ${row.stockId.slice(0, 10)}, ${row.pcs}::int, ${row.weightCt}::numeric)`);

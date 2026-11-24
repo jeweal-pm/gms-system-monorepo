@@ -26,7 +26,7 @@ export type Dir = "asc" | "desc";
 export type CardsParams = { q?: string; location?: string; from?: string; to?: string; sort: CardListSort; dir: Dir; page: number; pageSize: number };
 export type TransactionsParams = { q?: string; from?: string; to?: string; sort: TransactionSort; dir: Dir; page: number; pageSize: number };
 
-type StoneAttrs = { stoneCode: string; stone: string; shape: string; size: string; color: string; clarity: string; cutting: string; quality: string };
+export type StoneAttrs = { stoneCode: string; stone: string; shape: string; size: string; color: string; clarity: string; cutting: string; quality: string };
 export type CardRow = StoneAttrs & { cardKey: string; location: string; lot: string; vendorName: string; vendorCount: number; balancePcs: number; balanceWeightCt: string };
 export type CardsPage = { items: CardRow[]; total: number; page: number; pageSize: number; mode: "CURRENT" | "RANGE"; asOf: string | null };
 export type CardHeader = StoneAttrs & { cardKey: string; location: string; lot: string; vendorName: string; vendorCount: number; currentBalancePcs: number; currentBalanceWeightCt: string };
@@ -43,7 +43,7 @@ export type TransactionsPage = {
   totals: { inPcs: number; inWeightCt: string; outPcs: number; outWeightCt: string; balancePcs: number; balanceWeightCt: string };
 };
 
-const w3 = (value: string | number | null | undefined) => new Decimal(value ?? 0).toFixed(3);
+export const w3 = (value: string | number | null | undefined) => new Decimal(value ?? 0).toFixed(3);
 
 /** `%term%` for ILIKE with `\`, `%` and `_` escaped (the default LIKE escape is the backslash). */
 export function likePattern(term: string): string {
@@ -73,30 +73,30 @@ export function directionOf(pcs: number, weightCt: string) {
 
 // ---------- shared SQL ----------
 
-const ITEM_EXPR = `COALESCE(NULLIF(n."stone_code", ''), concat_ws(' ', NULLIF(n."stone", ''), NULLIF(n."shape", ''), NULLIF(n."size", ''), NULLIF(n."color", ''), NULLIF(n."clarity", ''), NULLIF(n."cutting", ''), NULLIF(n."quality", '')))`;
+export const ITEM_EXPR = `COALESCE(NULLIF(n."stone_code", ''), concat_ws(' ', NULLIF(n."stone", ''), NULLIF(n."shape", ''), NULLIF(n."size", ''), NULLIF(n."color", ''), NULLIF(n."clarity", ''), NULLIF(n."cutting", ''), NULLIF(n."quality", '')))`;
 /** Enumerated ORDER BY keys; the direction flips the first key only (ties break ascending). */
-const LIST_ORDER: Record<CardListSort, string[]> = {
+export const LIST_ORDER: Record<CardListSort, string[]> = {
   stoneCode: [ITEM_EXPR, 'n."location"', 'n."lot"', 'g."card_key"'],
   location: ['n."location"', ITEM_EXPR, 'n."lot"', 'g."card_key"'],
   lot: ['n."lot"', ITEM_EXPR, 'n."location"', 'g."card_key"'],
   balancePcs: ['g."bal_pcs"', ITEM_EXPR, 'n."location"', 'n."lot"', 'g."card_key"'],
   balanceWeightCt: ['g."bal_w"', ITEM_EXPR, 'n."location"', 'n."lot"', 'g."card_key"'],
 };
-const DIRECTION: Record<Dir, string> = { asc: "ASC", desc: "DESC" };
+export const DIRECTION: Record<Dir, string> = { asc: "ASC", desc: "DESC" };
 
 function listOrderBy(sort: CardListSort, dir: Dir): Prisma.Sql {
   const [first, ...rest] = LIST_ORDER[sort];
   return Prisma.raw(`${first} ${DIRECTION[dir]}, ${rest.join(", ")}`);
 }
 
-const locationFilter = (location: string | undefined) => (location ? Prisma.sql`AND upper(btrim(s."location")) = upper(btrim(${location}))` : Prisma.empty);
-const stockMatch = (pattern: string) => Prisma.sql`(s."stone_code" ILIKE ${pattern} OR s."stone" ILIKE ${pattern} OR s."lot" ILIKE ${pattern} OR s."vendor_name_snapshot" ILIKE ${pattern} OR s."stock_id" ILIKE ${pattern})`;
+export const locationFilter = (location: string | undefined) => (location ? Prisma.sql`AND upper(btrim(s."location")) = upper(btrim(${location}))` : Prisma.empty);
+export const stockMatch = (pattern: string) => Prisma.sql`(s."stone_code" ILIKE ${pattern} OR s."stone" ILIKE ${pattern} OR s."lot" ILIKE ${pattern} OR s."vendor_name_snapshot" ILIKE ${pattern} OR s."stock_id" ILIKE ${pattern})`;
 
-type ListRow = StoneAttrs & {
+export type ListRow = StoneAttrs & {
   total: number; card_key: string | null; location: string; lot: string; vendor_name: string; vendor_count: number; bal_pcs: number; bal_w: string;
 };
 
-function mapCard(row: ListRow & { card_key: string }): CardRow {
+export function mapCard(row: ListRow & { card_key: string }): CardRow {
   return {
     cardKey: row.card_key, stoneCode: row.stoneCode, stone: row.stone, shape: row.shape, size: row.size, color: row.color, clarity: row.clarity,
     cutting: row.cutting, quality: row.quality, location: row.location, lot: row.lot, vendorName: row.vendor_name, vendorCount: row.vendor_count,
@@ -104,7 +104,7 @@ function mapCard(row: ListRow & { card_key: string }): CardRow {
   };
 }
 
-const CARD_COLUMNS = Prisma.sql`
+export const CARD_COLUMNS = Prisma.sql`
   g."card_key", g."bal_pcs", g."bal_w"::text AS "bal_w", g."vendor_count", n."location", n."lot", n."stone_code" AS "stoneCode", n."stone", n."shape", n."size",
   n."color", n."clarity", n."cutting", n."quality", n."vendor_name_snapshot" AS "vendor_name"`;
 
@@ -114,7 +114,7 @@ const CARD_COLUMNS = Prisma.sql`
  * dropped) and `dated` (document date, number and account). `pattern` (nullable) feeds `stock_match`: a visible Stock ID of the
  * document matches the detail search.
  */
-function entriesSql(cardFilter: Prisma.Sql, pattern: string | null): Prisma.Sql {
+export function entriesSql(cardFilter: Prisma.Sql, pattern: string | null): Prisma.Sql {
   return Prisma.sql`
   ps AS (
     SELECT s."card_key", s."id" AS "stock_uuid", s."stock_id", s."status", s."vendor_id", s."vendor_name_snapshot" AS "vendor_name", s."ref_doc_date", s."ref_doc_no",
@@ -150,10 +150,14 @@ function entriesSql(cardFilter: Prisma.Sql, pattern: string | null): Prisma.Sql 
 
 // ---------- list ----------
 
-export async function readCards(client: Client, params: CardsParams): Promise<CardsPage> {
+/**
+ * The CTE `g` of the list: one row per card (card_key, bal_pcs, bal_w, newest_id, vendor_count). `CURRENT` (no Start, no Due)
+ * groups the ACTIVE stocks' book balance; `RANGE` builds it from the document entries (balance at Due, cards that moved in
+ * the range or still hold a balance). Shared by Stock Card and Stock Value so both lists show the same cards and balances.
+ */
+export function groupedCardsSql(params: Pick<CardsParams, "q" | "location" | "from" | "to">): { sql: Prisma.Sql; ranged: boolean } {
   const pattern = params.q ? likePattern(params.q) : null;
   const ranged = params.from !== undefined || params.to !== undefined;
-  const offset = (params.page - 1) * params.pageSize;
   const location = locationFilter(params.location);
   const searchHaving = pattern ? Prisma.sql`AND bool_or(${stockMatch(pattern)})` : Prisma.empty;
   const due = params.to ?? null;
@@ -191,6 +195,13 @@ export async function readCards(client: Client, params: CardsParams): Promise<Ca
         HAVING (sum(s."on_hand_pcs" + s."reserved_pcs") <> 0 OR sum(s."on_hand_weight_ct" + s."reserved_weight_ct") <> 0) ${searchHaving}
       )`;
 
+  return { sql: grouped, ranged };
+}
+
+export async function readCards(client: Client, params: CardsParams): Promise<CardsPage> {
+  const offset = (params.page - 1) * params.pageSize;
+  const { sql: grouped, ranged } = groupedCardsSql(params);
+
   // One statement: the total comes from the same CTE (count over g), the page from a lateral subselect, so an out-of-range
   // page still reports the exact total.
   const rows = await client.$queryRaw<ListRow[]>(Prisma.sql`
@@ -218,13 +229,17 @@ export async function readOptions(client: Client): Promise<{ locations: string[]
 
 // ---------- header ----------
 
+/** The CTE `g` of one card's header (current book balance of its ACTIVE stocks); shared with Stock Value. */
+export const headerGroupSql = (cardKey: string) => Prisma.sql`
+  g AS (
+    SELECT s."card_key", sum(s."on_hand_pcs" + s."reserved_pcs")::int AS "bal_pcs", sum(s."on_hand_weight_ct" + s."reserved_weight_ct") AS "bal_w",
+      (array_agg(s."id" ORDER BY s."created_at" DESC, s."id" DESC))[1] AS "newest_id", count(DISTINCT s."vendor_id")::int AS "vendor_count"
+    FROM "inventory"."stock" s WHERE s."card_key" = ${cardKey} AND s."status" = 'ACTIVE' GROUP BY s."card_key"
+  )`;
+
 export async function readHeader(client: Client, cardKey: string): Promise<CardHeader> {
   const [row] = await client.$queryRaw<(ListRow & { card_key: string })[]>(Prisma.sql`
-    WITH g AS (
-      SELECT s."card_key", sum(s."on_hand_pcs" + s."reserved_pcs")::int AS "bal_pcs", sum(s."on_hand_weight_ct" + s."reserved_weight_ct") AS "bal_w",
-        (array_agg(s."id" ORDER BY s."created_at" DESC, s."id" DESC))[1] AS "newest_id", count(DISTINCT s."vendor_id")::int AS "vendor_count"
-      FROM "inventory"."stock" s WHERE s."card_key" = ${cardKey} AND s."status" = 'ACTIVE' GROUP BY s."card_key"
-    )
+    WITH ${headerGroupSql(cardKey)}
     SELECT ${CARD_COLUMNS} FROM g JOIN "inventory"."stock" n ON n."id" = g."newest_id"`);
   if (!row) throw new AppError(404, "STOCK_CARD_NOT_FOUND");
   const card = mapCard(row);
@@ -234,10 +249,18 @@ export async function readHeader(client: Client, cardKey: string): Promise<CardH
 
 // ---------- transactions ----------
 
-type TxnRow = {
+export type TxnRow = {
   document_type: string; document_id: string; doc_no: string; doc_date: string; stock_id: string | null; stock_count: number; account_id: string | null; account_name: string;
   pcs: number; weight: string; bal_pcs: number; bal_w: string;
 };
+
+export function mapTxn(row: TxnRow): Txn {
+  return {
+    id: `${row.document_type}:${row.document_id}`, docType: row.document_type, docTypeLabel: documentTypeLabel(row.document_type), docId: row.document_id,
+    docNo: row.doc_no, docDate: row.doc_date, stockId: row.stock_id, stockIdExtra: Math.max(row.stock_count - 1, 0), accountId: row.account_id, accountName: row.account_name,
+    ...directionOf(row.pcs, row.weight), balancePcs: row.bal_pcs, balanceWeightCt: w3(row.bal_w),
+  };
+}
 
 /** Enumerated ORDER BY keys of the detail; `date` flips every key (a reversed chronological order), the others the first key. */
 const TXN_ORDER: Record<TransactionSort, { keys: string[]; flipAll: boolean }> = {
@@ -247,16 +270,32 @@ const TXN_ORDER: Record<TransactionSort, { keys: string[]; flipAll: boolean }> =
   account: { keys: ['"account_name"', '"doc_date"', '"first_at"', '"document_id"', '"document_type"'], flipAll: false },
 };
 
-function txnOrderBy(sort: TransactionSort, dir: Dir): Prisma.Sql {
+export function txnOrderBy(sort: TransactionSort, dir: Dir): Prisma.Sql {
   const { keys, flipAll } = TXN_ORDER[sort];
   const direction = DIRECTION[dir];
   return Prisma.raw(keys.map((key, index) => (index === 0 || flipAll ? (key.endsWith(" NULLS LAST") ? `${key.slice(0, -" NULLS LAST".length)} ${direction} NULLS LAST` : `${key} ${direction}`) : key)).join(", "));
 }
 
 /** Entries filter F (date range and search); null parameters switch a clause off. */
-function entryFilter(start: string | null, due: string | null, pattern: string | null): Prisma.Sql {
+export function entryFilter(start: string | null, due: string | null, pattern: string | null): Prisma.Sql {
   return Prisma.sql`(${start}::date IS NULL OR "doc_date" >= ${start}::date) AND (${due}::date IS NULL OR "doc_date" <= ${due}::date)
     AND (${pattern}::text IS NULL OR "stock_match" OR "doc_no" ILIKE ${pattern}::text OR "account_name" ILIKE ${pattern}::text)`;
+}
+
+/** Columns of statement A of the detail (needs the `ps` / `dated` CTEs of `entriesSql`); shared with Stock Value, which adds its valuation. */
+export function transactionStatsColumns(cardKey: string, start: string | null, due: string | null, filter: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`EXISTS (SELECT 1 FROM "inventory"."stock" WHERE "card_key" = ${cardKey} AND "status" = 'ACTIVE') AS "card_exists",
+      (SELECT count(*)::int FROM dated) AS "entries",
+      (SELECT COALESCE(sum("n_mv"), 0)::int FROM ps) AS "movements",
+      (SELECT count(*)::int FROM dated WHERE ${filter}) AS "total",
+      (SELECT COALESCE(sum("pcs"), 0)::int FROM dated WHERE ${start}::date IS NOT NULL AND "doc_date" < ${start}::date) AS "opening_pcs",
+      (SELECT COALESCE(sum("weight"), 0)::text FROM dated WHERE ${start}::date IS NOT NULL AND "doc_date" < ${start}::date) AS "opening_w",
+      (SELECT COALESCE(sum(GREATEST("pcs", 0)), 0)::int FROM dated WHERE ${filter}) AS "in_pcs",
+      (SELECT COALESCE(sum(GREATEST("weight", 0)), 0)::text FROM dated WHERE ${filter}) AS "in_w",
+      (SELECT COALESCE(sum(GREATEST(-"pcs", 0)), 0)::int FROM dated WHERE ${filter}) AS "out_pcs",
+      (SELECT COALESCE(sum(GREATEST(-"weight", 0)), 0)::text FROM dated WHERE ${filter}) AS "out_w",
+      (SELECT COALESCE(sum("pcs"), 0)::int FROM dated WHERE (${due}::date IS NULL OR "doc_date" <= ${due}::date)) AS "bal_pcs",
+      (SELECT COALESCE(sum("weight"), 0)::text FROM dated WHERE (${due}::date IS NULL OR "doc_date" <= ${due}::date)) AS "bal_w"`;
 }
 
 /**
@@ -276,18 +315,7 @@ export async function readTransactions(client: Client, cardKey: string, params: 
     in_pcs: number; in_w: string; out_pcs: number; out_w: string; bal_pcs: number; bal_w: string;
   }[]>(Prisma.sql`
     WITH ${entries}
-    SELECT EXISTS (SELECT 1 FROM "inventory"."stock" WHERE "card_key" = ${cardKey} AND "status" = 'ACTIVE') AS "card_exists",
-      (SELECT count(*)::int FROM dated) AS "entries",
-      (SELECT COALESCE(sum("n_mv"), 0)::int FROM ps) AS "movements",
-      (SELECT count(*)::int FROM dated WHERE ${filter}) AS "total",
-      (SELECT COALESCE(sum("pcs"), 0)::int FROM dated WHERE ${start}::date IS NOT NULL AND "doc_date" < ${start}::date) AS "opening_pcs",
-      (SELECT COALESCE(sum("weight"), 0)::text FROM dated WHERE ${start}::date IS NOT NULL AND "doc_date" < ${start}::date) AS "opening_w",
-      (SELECT COALESCE(sum(GREATEST("pcs", 0)), 0)::int FROM dated WHERE ${filter}) AS "in_pcs",
-      (SELECT COALESCE(sum(GREATEST("weight", 0)), 0)::text FROM dated WHERE ${filter}) AS "in_w",
-      (SELECT COALESCE(sum(GREATEST(-"pcs", 0)), 0)::int FROM dated WHERE ${filter}) AS "out_pcs",
-      (SELECT COALESCE(sum(GREATEST(-"weight", 0)), 0)::text FROM dated WHERE ${filter}) AS "out_w",
-      (SELECT COALESCE(sum("pcs"), 0)::int FROM dated WHERE (${due}::date IS NULL OR "doc_date" <= ${due}::date)) AS "bal_pcs",
-      (SELECT COALESCE(sum("weight"), 0)::text FROM dated WHERE (${due}::date IS NULL OR "doc_date" <= ${due}::date)) AS "bal_w"`);
+    SELECT ${transactionStatsColumns(cardKey, start, due, filter)}`);
   if (!stats?.card_exists) throw new AppError(404, "STOCK_CARD_NOT_FOUND");
   if (stats.entries > CARD_MAX_ENTRIES || stats.movements > CARD_MAX_MOVEMENTS) {
     throw new AppError(422, "STOCK_CARD_TOO_LARGE", { entries: stats.entries, movements: stats.movements, limit: CARD_MAX_ENTRIES });
@@ -309,11 +337,7 @@ export async function readTransactions(client: Client, cardKey: string, params: 
     LIMIT ${params.pageSize} OFFSET ${offset}`);
 
   return {
-    items: rows.map((row): Txn => ({
-      id: `${row.document_type}:${row.document_id}`, docType: row.document_type, docTypeLabel: documentTypeLabel(row.document_type), docId: row.document_id,
-      docNo: row.doc_no, docDate: row.doc_date, stockId: row.stock_id, stockIdExtra: Math.max(row.stock_count - 1, 0), accountId: row.account_id, accountName: row.account_name,
-      ...directionOf(row.pcs, row.weight), balancePcs: row.bal_pcs, balanceWeightCt: w3(row.bal_w),
-    })),
+    items: rows.map(mapTxn),
     total: stats.total, page: params.page, pageSize: params.pageSize,
     opening: { pcs: stats.opening_pcs, weightCt: w3(stats.opening_w) },
     totals: { inPcs: stats.in_pcs, inWeightCt: w3(stats.in_w), outPcs: stats.out_pcs, outWeightCt: w3(stats.out_w), balancePcs: stats.bal_pcs, balanceWeightCt: w3(stats.bal_w) },

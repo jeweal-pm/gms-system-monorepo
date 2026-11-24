@@ -51,10 +51,10 @@ export function SortTh<K extends string>({
 }
 
 /** Sub-header of a column group (18 % tint, h-8): sortable, right-aligned. */
-export function GroupSortTh<K extends string>({ label, tone, sortKey, sort, onSort }: { label: string; tone: PickerGroupTone; sortKey?: K; sort: { key: K; dir: SortDir }; onSort: (key: K) => void }) {
+export function GroupSortTh<K extends string>({ label, tone, sortKey, sort, onSort, title }: { label: string; tone: PickerGroupTone; sortKey?: K; sort: { key: K; dir: SortDir }; onSort: (key: K) => void; title?: string }) {
   const active = sortKey !== undefined && sort.key === sortKey;
   return (
-    <th scope="col" aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : undefined} className={cx("h-8 px-3 text-right text-sm font-medium", pickerGroupTone[tone].sub)}>
+    <th scope="col" title={title} aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : undefined} className={cx("h-8 px-3 text-right text-sm font-medium", pickerGroupTone[tone].sub)}>
       {sortKey === undefined ? (
         label
       ) : (

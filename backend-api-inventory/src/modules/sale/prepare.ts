@@ -2,6 +2,7 @@ import { AppError, validationError, type FieldError } from "../../platform/error
 import { Decimal } from "../../platform/db";
 import type { PriceUnit, SalePrepared, SaleStoneAttrs, SaleConsumptionLine } from "../../platform/master-api";
 import type { SaleInput, SaleSource } from "./schemas";
+import type { OwnLot } from "./own-stock";
 import { calculateTotals, oversizeAmounts, type Discount } from "./totals";
 
 /**
@@ -16,6 +17,8 @@ export type NormalizedLine = {
   id: string; position: number; source: SaleSource;
   reserveLineId: string | null; reserveId: string | null; reserveDocNo: string | null;
   memoStockId: string | null; lotKey: string | null; stockCount: number | null; stockId: string; memoReceiveId: string | null; memoReceiveDocNo: string | null;
+  /** OWN_STOCK only: the newest Load of the lot (ADR-0058 D2). */
+  loadId: string | null; loadDocNo: string | null;
   attrs: SaleStoneAttrs; priceUnit: PriceUnit;
   pcs: number; weightCt: string; capPcs: number; capWeightCt: string; reserveNetUnitPrice: string | null;
   unitPrice: string; discount: Discount; discountAmount: string; amount: string; itemNote: string; photoIds: string[];
@@ -49,6 +52,8 @@ export type NormalizeOptions = {
   lineId(index: number): string;
   /** A stored currency stays acceptable while inactive (edit of an existing sale). */
   storedCurrency?: string;
+  /** The own-stock lots of the OWN_STOCK lines (`resolveOwnLots`: available = on-hand + this Sale's own applied quantity). */
+  ownLots?: ReadonlyMap<string, OwnLot>;
 };
 
 const fixed = (value: string, places: number) => new Decimal(value).toFixed(places);
@@ -80,8 +85,20 @@ export function normalizeSale(input: SaleInput, prepared: SalePrepared, options:
       const { stoneCode, stone, shape, size, color, clarity, cutting, quality, lot, location, cerType, cerNo } = ref;
       lines.push({
         ...base, reserveLineId: ref.reserveLineId, reserveId: ref.reserveId, reserveDocNo: ref.reserveNo, memoStockId: ref.memoStockId, lotKey: null, stockCount: null, stockId: ref.stockId,
-        memoReceiveId: null, memoReceiveDocNo: null, attrs: { stoneCode, stone, shape, size, color, clarity, cutting, quality, lot, location, cerType, cerNo },
+        memoReceiveId: null, memoReceiveDocNo: null, loadId: null, loadDocNo: null, attrs: { stoneCode, stone, shape, size, color, clarity, cutting, quality, lot, location, cerType, cerNo },
         priceUnit: ref.priceUnit, capPcs: ref.openPcs, capWeightCt: fixed(ref.openWeightCt, 3), reserveNetUnitPrice: fixed(ref.netUnitPrice, 4),
+      });
+    } else if (line.source === "OWN_STOCK") {
+      // ADR-0058 D2: the group is re-derived from the database; the Stock ID stays "" (the allocation keeps the Stock IDs).
+      const lot = line.lotKey ? options.ownLots?.get(line.lotKey) : undefined;
+      if (!lot) {
+        unavailable.push({ path: `lines.${index}.reference`, code: "unavailable" });
+        return;
+      }
+      lines.push({
+        ...base, reserveLineId: null, reserveId: null, reserveDocNo: null, memoStockId: null, lotKey: lot.lotKey, stockCount: lot.stockCount, stockId: "",
+        memoReceiveId: null, memoReceiveDocNo: null, loadId: lot.loadId, loadDocNo: lot.loadDocNo, attrs: lot.attrs, priceUnit: lot.priceUnit,
+        capPcs: lot.availablePcs, capWeightCt: fixed(lot.availableWeightCt, 3), reserveNetUnitPrice: null,
       });
     } else if (!line.memoStockId && line.lotKey) {
       // ADR-0055 D4: a lot line keeps the group snapshot; master allocates it to Stock IDs when applied.
@@ -92,7 +109,7 @@ export function normalizeSale(input: SaleInput, prepared: SalePrepared, options:
       }
       lines.push({
         ...base, reserveLineId: null, reserveId: null, reserveDocNo: null, memoStockId: null, lotKey: lot.lotKey, stockCount: lot.stockCount ?? 1, stockId: "",
-        memoReceiveId: null, memoReceiveDocNo: null, attrs: lot.attrs, priceUnit: lot.priceUnit,
+        memoReceiveId: null, memoReceiveDocNo: null, loadId: null, loadDocNo: null, attrs: lot.attrs, priceUnit: lot.priceUnit,
         capPcs: lot.pendingPcs ?? 0, capWeightCt: fixed(lot.pendingWeightCt ?? "0", 3), reserveNetUnitPrice: null,
       });
     } else {
@@ -103,7 +120,7 @@ export function normalizeSale(input: SaleInput, prepared: SalePrepared, options:
       }
       lines.push({
         ...base, reserveLineId: null, reserveId: null, reserveDocNo: null, memoStockId: item.memoStockId, lotKey: null, stockCount: null, stockId: item.stockId,
-        memoReceiveId: item.memoReceive.id, memoReceiveDocNo: item.memoReceive.docNo, attrs: item.attrs, priceUnit: item.priceUnit,
+        memoReceiveId: item.memoReceive.id, memoReceiveDocNo: item.memoReceive.docNo, loadId: null, loadDocNo: null, attrs: item.attrs, priceUnit: item.priceUnit,
         capPcs: item.pendingPcs, capWeightCt: fixed(item.pendingWeightCt, 3), reserveNetUnitPrice: null,
       });
     }
@@ -149,8 +166,9 @@ export function normalizeSale(input: SaleInput, prepared: SalePrepared, options:
 /** The consumption set of stored / normalized lines (ADR-0054 D6 set semantics). */
 export function consumptionLines(lines: readonly { id: string; source: SaleSource; reserveLineId: string | null; memoStockId: string | null; lotKey?: string | null; pcs: number; weightCt: string }[]): SaleConsumptionLine[] {
   // v1 shape for legacy lines (memoStockId); v2 (ADR-0055 D7): `lotKey` for a lot line, no item for a lot Reserve line.
-  return lines.map((line) => ({
-    lineId: line.id, source: line.source, ...(line.source === "RESERVE" ? { reserveLineId: line.reserveLineId! } : {}),
+  // OWN_STOCK lines never go to master (ADR-0058 D4): inventory consumes its own stock locally.
+  return lines.filter((line) => line.source !== "OWN_STOCK").map((line) => ({
+    lineId: line.id, source: line.source as "RESERVE" | "STOCK", ...(line.source === "RESERVE" ? { reserveLineId: line.reserveLineId! } : {}),
     ...(line.memoStockId ? { memoStockId: line.memoStockId } : line.lotKey ? { lotKey: line.lotKey } : {}),
     pcs: line.pcs, weightCt: new Decimal(line.weightCt).toFixed(3),
   }));

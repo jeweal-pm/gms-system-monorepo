@@ -44,7 +44,7 @@ export const emptyState = <K extends string>(): ReportState<K> => ({ q: "", loca
 type Params = Pick<URLSearchParams, "get">;
 
 /** Reads the state from URL search params; anything malformed falls back to its default, never to an error. */
-function parseState<K extends string>(params: Params, sortKeys: readonly K[], withLocation: boolean): ReportState<K> {
+export function parseState<K extends string>(params: Params, sortKeys: readonly K[], withLocation: boolean): ReportState<K> {
   const state = emptyState<K>();
   state.q = (params.get("q") ?? "").slice(0, SEARCH_MAX);
   if (withLocation) state.location = (params.get("location") ?? "").slice(0, LOCATION_MAX);
