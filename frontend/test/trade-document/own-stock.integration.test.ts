@@ -242,11 +242,12 @@ describe("IT-LS-P2-FE-01 shared From Stock picker (FE-LS-P2-03, FE-LOT-001/002)"
     expect(html).not.toContain('role="tablist"');
   });
 
-  it("Sale (memoOnly): our stock rows and the our-stock notice are left out; only Memo Stock lots are pickable", () => {
-    const sale = (ownStock: "OK" | "UNAVAILABLE") => render(seed([{ items: [ownItem, memoItem], nextCursor: null, ownStock }]), createElement(MemoStockModal, { title: "Add From Stock", fromStock: true, memoOnly: true, showPrice: false, emptyText: "none", pickedIds: new Set<string>(), onCancel: () => undefined, onConfirm: () => undefined }));
+  it("Sale (ADR-0058): our stock rows come first with their real Location, then Memo Stock lots; the notice shows when our stock is down", () => {
+    const sale = (ownStock: "OK" | "UNAVAILABLE") => render(seed([{ items: [ownItem, memoItem], nextCursor: null, ownStock }]), createElement(MemoStockModal, { title: "Add From Stock", fromStock: true, showPrice: false, emptyText: "none", pickedIds: new Set<string>(), onCancel: () => undefined, onConfirm: () => undefined }));
     expect(sale("OK")).toContain("L-7");
-    expect(sale("OK")).not.toContain("RU-OV");
-    expect(sale("UNAVAILABLE")).not.toContain("Our stock is unavailable");
+    expect(sale("OK")).toContain("RU-OV");
+    expect(sale("OK").indexOf("RU-OV")).toBeLessThan(sale("OK").indexOf("L-7"));
+    expect(sale("UNAVAILABLE")).toContain("Our stock is unavailable");
   });
 
   it("our stock down: notice with Retry above the Memo rows; an empty list shows the notice, not the empty text", () => {

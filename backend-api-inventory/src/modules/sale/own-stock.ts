@@ -65,11 +65,11 @@ export async function resolveOwnLots(client: Client, lotKeys: readonly string[],
 export type OwnConsumeLine = { lineId: string; index: number; lotKey: string; pcs: number; weightCt: string };
 export type OwnContext = { saleId: string; revision: number; actorId: string };
 
-type Locked = { id: string; stock_id: string; lot_key: string; ref_doc_date: string; on_hand_pcs: number; on_hand_weight_ct: string; load_syncing: boolean };
+export type Locked = { id: string; stock_id: string; lot_key: string; ref_doc_date: string; on_hand_pcs: number; on_hand_weight_ct: string; load_syncing: boolean };
 type Take = { stock: Locked; pcs: number; weight: Dec };
 
 /** FIFO allocation of one dimension: `want` taken from the oldest stocks first. Returns the takes and what stayed short. */
-function allocate(stocks: readonly Locked[], pcsWant: number, weightWant: Dec): { takes: Map<string, { pcs: number; weight: Dec }>; shortPcs: boolean; shortWeight: boolean } {
+export function allocate(stocks: readonly Locked[], pcsWant: number, weightWant: Dec): { takes: Map<string, { pcs: number; weight: Dec }>; shortPcs: boolean; shortWeight: boolean } {
   const takes = new Map<string, { pcs: number; weight: Dec }>();
   let pcs = pcsWant;
   let weight = weightWant;

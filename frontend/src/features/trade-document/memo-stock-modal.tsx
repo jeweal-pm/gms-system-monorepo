@@ -72,7 +72,6 @@ type MemoStockModalProps = {
   | {
       /** Memo Return: the vendor's Memo Stock lots in its currency (`memoStock.lots`). */
       fromStock?: false;
-      memoOnly?: undefined;
       vendorId: string;
       currency: string;
       onConfirm: (items: MemoStockItem[]) => void;
@@ -83,8 +82,6 @@ type MemoStockModalProps = {
        * our stock (`fromStock.lots`, one row per lot); Location tells the source.
        */
       fromStock: true;
-      /** Sale (inventory accepts Memo Stock lots only): our stock's rows are left out and its notice is not shown. */
-      memoOnly?: boolean;
       vendorId?: undefined;
       currency?: undefined;
       onConfirm: (items: FromStockItem[]) => void;
@@ -114,14 +111,13 @@ export function MemoStockModal(props: MemoStockModalProps) {
   }, [onCancel]);
 
   const memoStock = useMemoStock(fromStock ? { vendorId: "", currency: "", q, from, to } : { vendorId, currency, q, from, to });
-  const memoOnly = props.memoOnly === true;
   const ownAndMemo = useFromStock({ q, from, to }, fromStock);
   const stock = fromStock ? ownAndMemo : memoStock;
   const pages = (stock.data?.pages ?? []) as { items: PickerItem[]; ownStock?: "OK" | "UNAVAILABLE" }[];
   const keyOf = (item: PickerItem) => pickKey(item);
-  const items = pages.flatMap((page) => page.items).filter((item) => !pickedIds.has(keyOf(item)) && !(memoOnly && item.source === "OWN_STOCK"));
+  const items = pages.flatMap((page) => page.items).filter((item) => !pickedIds.has(keyOf(item)));
   // FE-LS-P2-03: our stock down → Memo Stock rows stay listed and pickable under a notice (also instead of the empty text).
-  const ownDown = fromStock && !memoOnly && ownStockUnavailable(pages as { ownStock: "OK" | "UNAVAILABLE" }[]);
+  const ownDown = fromStock && ownStockUnavailable(pages as { ownStock: "OK" | "UNAVAILABLE" }[]);
   const allChecked = items.length > 0 && items.every((item) => checked.has(keyOf(item)));
   const columns = showPrice ? 12 : 10;
   const pending = pickerGroupTone.orange;

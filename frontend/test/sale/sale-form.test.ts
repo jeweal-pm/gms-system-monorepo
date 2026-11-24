@@ -71,6 +71,23 @@ describe("UT-SL-02 picked rows: reserve line and memo stock mapping, price prefi
     expect(saleLineSource(line)).toBe("RESERVE");
   });
 
+  it("an own-stock lot is an OWN_STOCK row with its real Location and no Stock ID; Sale Price is prefilled (company currency as is, foreign ÷ rate), editable, empty without a price or rate", () => {
+    const own = stockItem({ source: "OWN_STOCK", location: "Safe A", lotKey: "OS" + ID, salePrice: "1250.50", ref: { type: "LOAD", id: ID, docNo: "LS-001", docDate: "2026-11-01" } });
+    const line = lotToSaleLine(own, { currency: "THB", exchangeRate: "", companyCurrency: "THB" });
+    expect(line).toMatchObject({ source: "STOCK", saleSource: "OWN_STOCK", lotKey: "OS" + ID, stockId: "", locationId: "Safe A", sourceDocNo: "LS-001", unitPrice: "1250.50", reserveLineId: "", memoStockId: "" });
+    expect(lotToSaleLine(own, { currency: "USD", exchangeRate: "35", companyCurrency: "THB" }).unitPrice).toBe("35.73");
+    expect(lotToSaleLine(own, { currency: "USD", exchangeRate: "", companyCurrency: "THB" }).unitPrice).toBe("");
+    expect(lotToSaleLine({ ...own, salePrice: "0.00" }, { currency: "THB", exchangeRate: "", companyCurrency: "THB" }).unitPrice).toBe("");
+    expect(lotToSaleLine(stockItem(), { currency: "THB", exchangeRate: "", companyCurrency: "THB" }).unitPrice).toBe("");
+    expect(saleLineSource(line)).toBe("OWN_STOCK");
+    expect(saleStockNote(line)).toBe("Available 3 pcs / 2.100 ct");
+    const input = toSaleInput({ ...emptySale(), customerId: ID, shippingAddressId: ID, invoiceAddressId: ID, currency: "THB", lines: [{ ...line, unitPrice: "900" }] });
+    expect(input.lines[0]).toMatchObject({ source: "OWN_STOCK", lotKey: "OS" + ID, unitPrice: "900" });
+    expect(input.lines[0]).not.toHaveProperty("memoStockId");
+    expect([...pickedStockIds([line])]).toEqual(["OS" + ID]);
+    expect(issues(valid([{ ...line, pcs: "4" }])).join()).toContain("More than the available 3 pcs");
+  });
+
   it("a Memo Stock lot fills a From Stock row at its pending with an empty Sale Price, its Memo Receive No. and no Stock ID", () => {
     const line = lotToSaleLine(stockItem());
     expect(line).toMatchObject({
