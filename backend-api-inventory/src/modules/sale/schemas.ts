@@ -13,7 +13,8 @@ export const PHOTOS_PER_LINE_MAX = 5;
 export const EXCLUDE_MAX = 200;
 /** As master `quotation.schemas.ts` CHARGE_TYPES (the options list comes from master `sale/reference`). */
 export const CHARGE_TYPES = ["SHIPPING", "HANDLING", "INSURANCE", "CERTIFICATE"] as const;
-export const SOURCES = ["RESERVE", "STOCK"] as const;
+/** STOCK = Memo Stock (name unchanged); OWN_STOCK = own stock loaded by Load to Stock (ADR-0058 D1). */
+export const SOURCES = ["RESERVE", "STOCK", "OWN_STOCK"] as const;
 export const STATUSES = ["DRAFT", "PENDING_APPROVAL", "REVISION_REQUESTED", "APPROVED", "REJECTED"] as const;
 export type SaleSource = (typeof SOURCES)[number];
 export type SaleStatus = (typeof STATUSES)[number];
@@ -29,8 +30,8 @@ export const saleLineSchema = z.object({
   source: z.enum(SOURCES),
   reserveLineId: uuid.optional(),
   memoStockId: uuid.optional(),
-  /** lot-based-stock (ADR-0055 D4): a From Stock line names a Memo Stock lot (prefix M); item ids stay for stored lines. */
-  lotKey: z.string().regex(/^ML[0-9a-f]{32}$|^MS[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/).optional(),
+  /** lot-based-stock (ADR-0055 D4): a From Stock line names a lot: Memo Stock (prefix M, source STOCK) or own stock (prefix O, source OWN_STOCK); item ids stay for stored lines. */
+  lotKey: z.string().regex(/^ML[0-9a-f]{32}$|^MS[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|^OL[0-9a-f]{32}$|^OS[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/).optional(),
   pcs: z.number().int().min(0).max(999_999),
   weightCt: decimal(9, 3),
   unitPrice: decimal(16, 2),
@@ -80,8 +81,16 @@ export function saleRules(value: SaleShape, ctx: z.RefinementCtx) {
       if (!line.reserveLineId) issue(["lines", index, "reserveLineId"], "required");
       else if (reserveLines.has(line.reserveLineId)) issue(["lines", index, "reserveLineId"], "duplicate");
       else reserveLines.add(line.reserveLineId);
+    } else if (line.source === "OWN_STOCK") {
+      // ADR-0058 D1: an own-stock lot, never a Memo Stock item or a Reserve line.
+      if (line.reserveLineId || line.memoStockId) issue(["lines", index, "reference"], "invalid");
+      else if (!line.lotKey) issue(["lines", index, "reference"], "required");
+      else if (!line.lotKey.startsWith("O")) issue(["lines", index, "reference"], "invalid");
+      else if (stocks.has(line.lotKey)) issue(["lines", index, "reference"], "duplicate");
+      else stocks.add(line.lotKey);
     } else {
       if (line.reserveLineId) issue(["lines", index, "reserveLineId"], "invalid");
+      if (line.lotKey?.startsWith("O")) issue(["lines", index, "reference"], "invalid");
       const ref = line.memoStockId ?? line.lotKey;
       if (line.memoStockId && line.lotKey) issue(["lines", index, "reference"], "invalid");
       else if (!ref) issue(["lines", index, "memoStockId"], "required");

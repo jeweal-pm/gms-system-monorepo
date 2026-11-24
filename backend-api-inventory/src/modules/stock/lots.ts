@@ -41,7 +41,7 @@ export type LotFilters = { q?: string; from?: string; to?: string; location?: st
 type GroupRow = {
   lot_key: string; lot: string; stone_code: string; stone: string; shape: string; size: string; color: string; clarity: string; cutting: string;
   quality: string; cer_type: string; cer_no: string; location: string; item_note: string; price_unit: string; currency_code: string;
-  load_id: string; ref_doc_no: string; ref_doc_date: string; ref_count: number; on_hand_pcs: number; on_hand_weight_ct: string; d: string;
+  load_id: string; ref_doc_no: string; ref_doc_date: string; ref_count: number; on_hand_pcs: number; on_hand_weight_ct: string; d: string; sale_price: string;
 };
 
 /** api-contract `LotGroupRow` of our stock: bucket = on-hand, no price / cost / vendor (master merges vendor-free rows). */
@@ -63,6 +63,8 @@ export function lotGroupRow(row: GroupRow) {
     priceUnit: row.price_unit as "PER_CT" | "PER_PCS",
     unitPrice: null, netUnitPrice: null, amount: null,
     currency: null, vendor: null,
+    // ADR-0058 D7: the lot's Sale Price (company currency per price unit) so Sale From Stock can prefill its editable unit price; no cost, no vendor.
+    salePrice: new Prisma.Decimal(row.sale_price).toFixed(2),
   };
 }
 export type OwnLotGroupRow = ReturnType<typeof lotGroupRow>;
@@ -101,7 +103,7 @@ export async function lotsAvailablePage(client: Client, input: LotFilters): Prom
       FROM "inventory"."stock" s WHERE s."lot_key" IN (SELECT "lot_key" FROM k) AND ${OPEN} GROUP BY s."lot_key"
     ), n AS (
       SELECT DISTINCT ON (s."lot_key") s."lot_key", s."lot", s."stone_code", s."stone", s."shape", s."size", s."color", s."clarity", s."cutting", s."quality",
-        s."cer_type", s."cer_no", s."location", s."item_note", s."price_unit", s."currency_code", s."load_id", s."ref_doc_no", to_char(s."ref_doc_date", 'YYYY-MM-DD') AS "ref_doc_date"
+        s."cer_type", s."cer_no", s."location", s."item_note", s."price_unit", s."sale_price"::text AS "sale_price", s."currency_code", s."load_id", s."ref_doc_no", to_char(s."ref_doc_date", 'YYYY-MM-DD') AS "ref_doc_date"
       FROM "inventory"."stock" s WHERE s."lot_key" IN (SELECT "lot_key" FROM k) AND ${OPEN}
       ORDER BY s."lot_key", s."ref_doc_date" DESC, s."stock_id" DESC
     )

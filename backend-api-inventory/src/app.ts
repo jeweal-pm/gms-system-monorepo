@@ -18,7 +18,8 @@ import { SaleService } from "./modules/sale/service";
 import { SalePhotoService } from "./modules/sale/photos";
 import { registerSaleRoutes } from "./modules/sale/routes";
 import { registerStockCardRoutes } from "./modules/reports/stock-card/routes";
-import type { ReportGuard } from "./modules/reports/stock-card/guard";
+import { registerStockValueRoutes } from "./modules/reports/stock-value/routes";
+import { ReportGuard } from "./modules/reports/guard";
 import { pendingQuerySchema as salePendingQuerySchema } from "./modules/sale/schemas";
 import { LoadToStockService } from "./modules/load-to-stock/service";
 import { PhotoService, PHOTO_MAX_BYTES } from "./modules/load-to-stock/photos";
@@ -55,8 +56,10 @@ export type AppDeps = {
   internal?: { tokenDigest: Buffer | null; otherTokenDigest: Buffer | null };
   /** Readiness probe (own DB `SELECT 1` ≤ 1 s); master is not part of readiness. */
   ready?: () => Promise<boolean>;
-  /** Stock Card report limits (tests lower the statement timeout / share a guard); production uses the defaults. */
+  /** Stock Card report limits (tests lower the statement timeout / share a guard); production uses the defaults. The guard is shared with Stock Value. */
   stockCard?: { guard?: ReportGuard; statementTimeoutMs?: number };
+  /** Stock Value report limits (tests lower the statement timeout); the guard is Stock Card's (one limit for both reports). */
+  stockValue?: { statementTimeoutMs?: number };
 };
 
 const uuidParam = (value: string) => {
@@ -297,7 +300,10 @@ export function createApp(deps: AppDeps) {
 
   registerSaleRoutes(api, { db: deps.db, master: deps.master, service: saleService, photos: salePhotos });
   // stock-card ADR-0056 (BE-SC-003): read-only report over the own-stock ledger; limits are the module's, overridable in tests.
-  registerStockCardRoutes(api, { db: deps.db, ...deps.stockCard });
+  // stock-value ADR-0057 (BE-SV-004): second report module; ONE guard for both reports (at most 2 report queries in flight in total).
+  const reportGuard = deps.stockCard?.guard ?? new ReportGuard();
+  registerStockCardRoutes(api, { db: deps.db, ...deps.stockCard, guard: reportGuard });
+  registerStockValueRoutes(api, { db: deps.db, ...deps.stockValue, guard: reportGuard });
 
   app.route("/api/inventory/v1", api);
   // api-master → inventory (not routed by nginx).

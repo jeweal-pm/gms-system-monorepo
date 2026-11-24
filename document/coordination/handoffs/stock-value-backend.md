@@ -1,0 +1,39 @@
+# Handoff: stock-value -> backend (SA revision 1), with notes for frontend
+
+- Feature ID / UI revision: `stock-value` / UI revision 1 (approved by the owner's direct instruction, evidence in the [TODO](../../task/todo/stock-value.md))
+- SA revision / source UI revision (if applicable): **1** (pending-review; work authorized by the same instruction, no approval stop) / 1
+- From role/scope: `sa` (documents only; no application code written)
+- To role/scope / parent integration owner: `backend` (inventory); the parent serializes `backend-api-inventory/src/app.ts` (route registration and the shared guard instance), `backend-api-inventory/prisma/**` (migration), `document/task/index.md`, `document/task/frontend-latest.md`, `document/adr/tech-stack.md` (no edit needed)
+- Exact TODO IDs and source documents: BE-SV-001...006 (and 101, 102 not scheduled) in [todo/stock-value.md](../../task/todo/stock-value.md); [ADR-0057](../../adr/0057-stock-value-report-in-inventory-service.md); bundle [inventory/stock-value](../../apps/backend/inventory/stock-value/decisions.md) ([architecture](../../apps/backend/inventory/stock-value/architecture.md), [api-contract](../../apps/backend/inventory/stock-value/api-contract.md), [authorization](../../apps/backend/inventory/stock-value/authorization.md), [database-diagram](../../apps/backend/inventory/stock-value/database-diagram.md), [sequence-diagram](../../apps/backend/inventory/stock-value/sequence-diagram.md), [error-handling](../../apps/backend/inventory/stock-value/error-handling.md), [dependencies](../../apps/backend/inventory/stock-value/dependencies.md), [testing](../../apps/backend/inventory/stock-value/testing.md)); reused: [stock-card bundle](../../apps/backend/inventory/stock-card/decisions.md), [ADR-0056](../../adr/0056-stock-card-report-in-inventory-service.md); UI: [ui-spec](../../apps/frontend/stock-value/ui-spec.md), [data-fetching](../../apps/frontend/stock-value/data-fetching.md); earlier handoff from ui-spec: [stock-value-sa](stock-value-sa.md)
+- Approval status, approved revision, and owner evidence: owner instruction 2026-11-23 "uxui ช่วยทำ ui spec ให้หน่อย sa ทำ adr เสร็จแล้ว frontend ทำ ui และ backend ทำ api" (relayed by the parent); defaults of SQ-SV-01...18 apply. ADR-0057 stays **Proposed**; the parent records `sa-approved-revision` / by / at in the TODO.
+- Required contract / diagrams / ADRs: as listed above; sequence and database diagrams are in the bundle; ADR-0056 carries a refinement note.
+- Dependency ledger entries and installation status: **none** (no package; `tech-stack.md` unchanged).
+- Allowed code/document paths: `backend-api-inventory/src/modules/stock/{value.ts,card.ts (exports only)}`, `backend-api-inventory/src/modules/reports/{guard.ts,stock-card/{guard,schemas}.ts,stock-value/**}`, `backend-api-inventory/prisma/{schema.prisma,migrations/20261123110000_stock_value/**,rollback/20261123110000_stock_value.down.sql}`, `backend-api-inventory/test/stock-value/**`, `backend-api-inventory/src/app.ts` (parent-serialized), results in `document/apps/backend/inventory/stock-value/testing.md`. **Never touch `backend-api-auth/src/trpc/auth-trpc.csrf.ts` or its test.** No master, auth, frontend or infra change.
+- Integration-owned changes: `src/app.ts` creates one `ReportGuard` and passes it to both `registerStockCardRoutes` and `registerStockValueRoutes`; migration under `prisma/**`.
+- Infra service bundle/revision, ADR/config drift, network/egress and secret-adapter prerequisites (when containers change): **none** (INF-SV no change; `backend-api-inventory` row of the service index unchanged).
+- DevOps pipeline/source revision, Dockerfile/workspace dependencies, build/runtime variables, image platform and release/check requirements (when delivery changes): **none** (DO-SV no change; the existing inventory CI target runs the new tests).
+- Resource budget / capacity impact (4 GB RAM / 2 vCPU total): no container or limit change (inventory 0.20 vCPU / 256 MiB, pool 5 + authz 1). Report concurrency <= 2 **across both reports**; list 1 statement, header 1, detail 2, options 1; pages <= 50; 5 s timeout; no cache, worker or Redis. Targets to **measure** in BE-SV-005 (not claimed): `CURRENT` list p95 <= 600 ms at 50,000 stocks, `RANGE` <= 800 ms, detail <= 200 ms, last-sale probe <= 250 ms; if missed try the partial ACTIVE index (BE-SV-101) before relaxing.
+- Expected output and acceptance criteria: the contract exactly as in `api-contract.md`; acceptance AC-SV-01...10 and the tests UT/IT/PF-SV in `testing.md`; the verified contract handed back to frontend after BE-SV-004.
+- Verification completed / not run: none (design only; no code, no test run).
+- Blocking item, if any: none. Owner answers that would change numbers: SQ-SV-06 (Profit/Loss formula, none given), SQ-SV-02 (Price list = `sale_price`, `0.00` = not set), SQ-SV-04 / SQ-SV-12 (Last sale by stone, gross price), SQ-SV-03 (card-level price, no "Mixed").
+- Resume action and destination (backend -> frontend, etc.): backend BE-SV-001 and 002 (parallel) -> 003 -> 004 -> 005 -> 006 -> frontend FE-SV-005/006/007/008 integrate against the verified contract.
+- Corrective work ID / root-cause ledger link (if applicable): not applicable (new work).
+- Existing pass limit / allocated passes / active pass (inherit; never reset): not applicable.
+- Changed evidence, contract, or prerequisite justifying this handoff: new feature; Stock Card returns no price, amount or cost.
+- Concrete receiving-role output / next fact needed: migration + value functions + routes + measurements; report any `EXPLAIN` result that misses a target.
+- Stop reason / terminal outcome / explicit extension evidence, if any: none.
+
+## What backend builds (summary)
+
+1. **BE-SV-001** migration `20261123110000_stock_value`: `stock.item_key` and `sale_line.item_key` (stored generated, `'SI' || md5(upper(btrim(stone code or the seven attributes))))`, same expression as the item part of `card_key`), `sale_line_item_key_idx (item_key)`, Prisma schema, rollback script, migration test (IT-SV-M1).
+2. **BE-SV-002** move the report guard to `src/modules/reports/guard.ts` (parameterised error codes, re-export from `reports/stock-card/guard.ts`), export the shared Zod pieces; Stock Card behaviour and tests unchanged.
+3. **BE-SV-003** `modules/stock/value.ts`: export the Stock Card SQL helpers (`groupedCardsSql`, `entriesSql`, ...) with no behaviour change; value read functions (price per card = quantity-weighted Price list average of `sale_price > 0`, else Last sale of the stone, else none; unit CT/PCS; amount; weighted-average cost; profit/loss; totals; nulls-last sorts); list / header / transactions statements per [architecture](../../apps/backend/inventory/stock-value/architecture.md#valuation-rules).
+4. **BE-SV-004** module `reports/stock-value` (routes, strict Zod, `stock-value:VIEW`, codes `STOCK_VALUE_*`), registration in `app.ts` with the shared guard.
+5. **BE-SV-005** tests, full inventory suite, PF-SV measurements with `EXPLAIN`; **BE-SV-006** both security reviews once on one revision, verified-contract handoff.
+
+## Notes for frontend (FE-SV-005/006/007/008)
+
+- The UI documents were already reconciled to the SA contract. **Two additions since**: the detail accepts `sort=profitLoss` (nulls last), so the drawn PROFIT & LOSS sort icon can be built; `totals.profitLoss` is `"0.00"` when no card has a value.
+- Money and prices are decimal strings: `price` has **4** places, `amount` / `profitLoss` 2, weights 3. No `MIXED` source or unit, no `pricesUnavailable`. Error codes: `STOCK_VALUE_NOT_FOUND`, `STOCK_VALUE_TOO_LARGE`, `STOCK_VALUE_BUSY`, `STOCK_VALUE_TIMEOUT` (map them like the Stock Card codes).
+- Same `cardKey` as Stock Card, so a card can link between the two reports.
+- Until BE-SV-004 is deployed, `/api/inventory/v1/stock-value/*` returns 404; ship against typed fixtures in tests only.

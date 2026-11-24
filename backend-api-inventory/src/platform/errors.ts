@@ -66,6 +66,11 @@ export const MESSAGES: Record<string, string> = {
   STOCK_CARD_TOO_LARGE: "The stock card has too many transactions; narrow the date range",
   STOCK_CARD_BUSY: "The report is busy; retry shortly",
   STOCK_CARD_TIMEOUT: "The report took too long; narrow the date range or search",
+  // stock-value SA rev 1 error-handling.md (ADR-0057)
+  STOCK_VALUE_NOT_FOUND: "This stock card no longer exists",
+  STOCK_VALUE_TOO_LARGE: "The stock card has too many transactions; narrow the date range",
+  STOCK_VALUE_BUSY: "The report is busy; retry shortly",
+  STOCK_VALUE_TIMEOUT: "The report took too long; narrow the date range or search",
 };
 
 export class AppError extends Error {

@@ -17,21 +17,18 @@ describe("UT-SC-09 menu", () => {
     expect(JSON.stringify(sidebarSections)).not.toContain("stock-movement-consignment");
   });
 
-  it("Stock Card opens its real page; Stock Value stays a placeholder", () => {
+  it("Stock Card opens its real page; Stock Value opens its own real page (stock-value FE-SV-010)", () => {
     expect(REAL_PAGE_HREFS["stock-card"]).toBe(STOCK_CARD_HREF);
     expect(STOCK_CARD_HREF).toBe("/report/stock-movement/stock-card");
     expect(card.href).toBe(STOCK_CARD_HREF);
-    expect(children[1].href).toBe("/modules/stock-value");
+    expect(children[1].href).toBe("/report/stock-movement/stock-value");
     expect(navigationHref({ label: "Stock Card", slug: "stock-card" })).toBe(STOCK_CARD_HREF);
-    expect(navigationHref({ label: "Stock Value", slug: "stock-value" })).toBe("/modules/stock-value");
+    expect(navigationHref({ label: "Stock Value", slug: "stock-value" })).toBe("/report/stock-movement/stock-value");
     expect(navigationLabelFor(STOCK_CARD_HREF)).toBe("Stock Card");
   });
 
-  it("the Stock Value placeholder page has its breadcrumbs", () => {
-    expect(moduleBreadcrumbs("stock-value")).toEqual({
-      label: "Stock Value",
-      breadcrumbs: [{ label: "Home", href: "/" }, { label: "Report" }, { label: "Stock Movement" }, { label: "Stock Value" }],
-    });
+  it("Stock Value no longer has a /modules placeholder (it has its own page, stock-value FE-SV-010)", () => {
+    expect(moduleBreadcrumbs("stock-value").label).toBeNull();
   });
 
   it("Stock Card is active on the list and on a card route; its parent opens", () => {
@@ -61,7 +58,7 @@ describe("UT-SC-09 menu", () => {
     const block = all.find((entry) => entry.id === "report")?.blocks.find((entry) => entry.title === "Stock Movement");
     expect(block?.links.map((entry) => [entry.label, entry.href])).toEqual([
       ["Stock Card", STOCK_CARD_HREF],
-      ["Stock Value", "/modules/stock-value"],
+      ["Stock Value", "/report/stock-movement/stock-value"],
     ]);
   });
 

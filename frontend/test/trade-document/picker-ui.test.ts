@@ -11,6 +11,7 @@ import {
   PickerNote,
   PickerTh,
   pickerGroupHover,
+  pickerPurpleTicked,
   pickerGroupTone,
   pickerRowClass,
 } from "@/features/trade-document/picker-ui";
@@ -69,7 +70,10 @@ describe("UT-PK-03 column groups (design 136 §2)", () => {
 describe("UT-SC-10 purple BALANCE group (stock-card FE-SC-001)", () => {
   it("the purple tone maps to the 30 / 18 / 8 % tokens and existing tones are unchanged", () => {
     expect(pickerGroupTone.purple).toEqual({ head: "bg-gms-group-purple-head", sub: "bg-gms-group-purple-sub", cell: "bg-gms-group-purple-cell" });
-    expect(Object.keys(pickerGroupTone).sort()).toEqual(["green", "orange", "purple", "red"]);
+    expect(Object.keys(pickerGroupTone).sort()).toEqual(["blue", "green", "orange", "purple", "red"]);
+    // stock-value FE-SV-001 (UT-SV-12): the blue "Current value" tone.
+    expect(pickerGroupTone.blue).toEqual({ head: "bg-gms-group-blue-head", sub: "bg-gms-group-blue-sub", cell: "bg-gms-group-blue-cell" });
+    expect(inRow(createElement(PickerGroupTh, { title: "Current value", span: 2, tone: "blue" }))).toContain("bg-gms-group-blue-head");
     expect(pickerGroupTone.orange).toEqual({ head: "bg-gms-group-orange-head", sub: "bg-gms-group-orange-sub", cell: "bg-gms-group-orange-cell" });
     expect(inRow(createElement(PickerGroupTh, { title: "Balance", span: 2, tone: "purple" }))).toContain('uppercase bg-gms-group-purple-head">Balance</th>');
     expect(inRow(createElement(PickerGroupSubTh, { title: "Cts", tone: "purple" }))).toContain('bg-gms-group-purple-sub">Cts</th>');
@@ -80,7 +84,9 @@ describe("UT-SC-10 purple BALANCE group (stock-card FE-SC-001)", () => {
       green: "group-hover/row:bg-gms-group-green-hover",
       orange: "group-hover/row:bg-gms-group-orange-hover",
       purple: "group-hover/row:bg-gms-group-purple-hover",
+      blue: "group-hover/row:bg-gms-group-blue-hover",
     });
+    expect(pickerPurpleTicked).toBe("bg-gms-group-purple-active");
     expect(pickerGroupHover.red).toBeUndefined();
     expect(pickerRowClass(false)).not.toContain("group/row");
   });

@@ -6,15 +6,15 @@ import { CARD_KEY, CARD_MAX_PAGE, CARD_PAGE_SIZES } from "../../stock/card";
  * paging (page 1..200, pageSize 10 | 25 | 50), dates `YYYY-MM-DD`, `from <= to` (422 `to` / `before_from`), `q` <= 100.
  * An empty `q`, `location`, `from` or `to` is treated as absent.
  */
-const code = (value: string) => ({ params: { code: value } });
-const blankToUndefined = (value: string | undefined) => (value ? value : undefined);
-const text = (max: number) => z.string().trim().max(max).optional().transform(blankToUndefined);
-const date = z.string().trim().optional().transform(blankToUndefined).pipe(z.iso.date().optional());
-const dir = z.enum(["asc", "desc"]).default("asc");
-const page = z.string().regex(/^\d{1,4}$/).transform(Number).pipe(z.number().int().min(1).refine((value) => value <= CARD_MAX_PAGE, code("too_large"))).default(1);
-const pageSize = z.enum(CARD_PAGE_SIZES.map(String) as [string, ...string[]]).transform(Number).default(25);
+export const code = (value: string) => ({ params: { code: value } });
+export const blankToUndefined = (value: string | undefined) => (value ? value : undefined);
+export const text = (max: number) => z.string().trim().max(max).optional().transform(blankToUndefined);
+export const date = z.string().trim().optional().transform(blankToUndefined).pipe(z.iso.date().optional());
+export const dir = z.enum(["asc", "desc"]).default("asc");
+export const page = z.string().regex(/^\d{1,4}$/).transform(Number).pipe(z.number().int().min(1).refine((value) => value <= CARD_MAX_PAGE, code("too_large"))).default(1);
+export const pageSize = z.enum(CARD_PAGE_SIZES.map(String) as [string, ...string[]]).transform(Number).default(25);
 
-const range = (value: { from?: string; to?: string }, ctx: z.RefinementCtx) => {
+export const range = (value: { from?: string; to?: string }, ctx: z.RefinementCtx) => {
   if (value.from && value.to && value.from > value.to) ctx.addIssue({ code: "custom", path: ["to"], message: "before_from", ...code("before_from") });
 };
 

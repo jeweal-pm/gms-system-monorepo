@@ -3,6 +3,7 @@ import { AppError, validationError } from "../../platform/errors";
 import { Prisma, type Db } from "../../platform/db";
 import type { MasterApi, SalePrepared } from "../../platform/master-api";
 import { canApprove, hasGrant, type Principal } from "../../platform/auth/principal";
+import { resolveOwnLots } from "./own-stock";
 import { formatDocNo, nextRunningNo } from "./repository";
 
 /**
@@ -31,8 +32,9 @@ export type HeaderRow = {
   sync_state: string; provisional: boolean; applied_revision: number; require_approval: boolean | null;
 };
 type LineRow = {
-  id: string; position: number; source: "RESERVE" | "STOCK"; reserve_line_id: string | null; reserve_id: string | null; reserve_doc_no: string | null;
+  id: string; position: number; source: "RESERVE" | "STOCK" | "OWN_STOCK"; reserve_line_id: string | null; reserve_id: string | null; reserve_doc_no: string | null;
   memo_stock_id: string | null; lot_key: string | null; allocated: boolean; stock_id: string; memo_receive_id: string | null; memo_receive_doc_no: string | null;
+  load_id: string | null; load_doc_no: string | null;
   stone_code: string; stone: string; shape: string; size: string; color: string; clarity: string; cutting: string; quality: string; lot: string; location: string; cer_type: string; cer_no: string;
   price_unit: string; pcs: number; weight_ct: string; cap_pcs: number; cap_weight_ct: string; reserve_net_unit_price: string | null;
   unit_price: string; discount_type: string; discount_value: string; discount_amount: string; amount: string; item_note: string; photo_ids: string[];
@@ -79,7 +81,7 @@ export async function readHeader(db: Pick<Db, "$queryRaw">, id: string): Promise
 
 export async function readLines(db: Pick<Db, "$queryRaw">, id: string): Promise<LineRow[]> {
   return db.$queryRaw<LineRow[]>`
-    SELECT l."id", l."position", l."source", l."reserve_line_id", l."reserve_id", l."reserve_doc_no", l."memo_stock_id", l."lot_key", l."stock_id", l."memo_receive_id", l."memo_receive_doc_no",
+    SELECT l."id", l."position", l."source", l."reserve_line_id", l."reserve_id", l."reserve_doc_no", l."memo_stock_id", l."lot_key", l."stock_id", l."memo_receive_id", l."memo_receive_doc_no", l."load_id", l."load_doc_no",
       EXISTS (SELECT 1 FROM "inventory"."sale_line_alloc" a WHERE a."sale_line_id" = l."id") AS "allocated",
       l."stone_code", l."stone", l."shape", l."size", l."color", l."clarity", l."cutting", l."quality", l."lot", l."location", l."cer_type", l."cer_no",
       l."price_unit", l."pcs", l."weight_ct"::text AS "weight_ct", l."cap_pcs", l."cap_weight_ct"::text AS "cap_weight_ct", l."reserve_net_unit_price"::text AS "reserve_net_unit_price",
@@ -89,26 +91,32 @@ export async function readLines(db: Pick<Db, "$queryRaw">, id: string): Promise<
 }
 
 /** Live caps of an editable Sale (one master call; read-only mode, no party). Master down → the stored caps. */
-async function liveCaps(master: MasterApi, header: HeaderRow, lines: LineRow[], requestId: string): Promise<Map<string, { capPcs: number; capWeightCt: string }> | null> {
-  let prepared: SalePrepared;
+async function liveCaps(db: Db, master: MasterApi, header: HeaderRow, lines: LineRow[], requestId: string): Promise<Map<string, { capPcs: number; capWeightCt: string }> | null> {
+  // ADR-0058: own-stock lines read their caps locally (available + this Sale's own quantity); master is asked only for the others.
+  const ownLots = await resolveOwnLots(db, lines.flatMap((line) => (line.source === "OWN_STOCK" && line.lot_key ? [line.lot_key] : [])), header.id);
+  const masterLines = lines.filter((line) => line.source !== "OWN_STOCK");
+  let prepared: SalePrepared | null = null;
   try {
-    prepared = await master.salePrepare({
+    if (masterLines.length > 0) prepared = await master.salePrepare({
       currency: header.currency_code,
-      reserveLineIds: lines.flatMap((line) => (line.reserve_line_id ? [line.reserve_line_id] : [])),
-      memoStockIds: lines.flatMap((line) => (line.source === "STOCK" && line.memo_stock_id ? [line.memo_stock_id] : [])),
-      lotKeys: lines.flatMap((line) => (line.source === "STOCK" && !line.memo_stock_id && line.lot_key ? [line.lot_key] : [])),
+      reserveLineIds: masterLines.flatMap((line) => (line.reserve_line_id ? [line.reserve_line_id] : [])),
+      memoStockIds: masterLines.flatMap((line) => (line.source === "STOCK" && line.memo_stock_id ? [line.memo_stock_id] : [])),
+      lotKeys: masterLines.flatMap((line) => (line.source === "STOCK" && !line.memo_stock_id && line.lot_key ? [line.lot_key] : [])),
       saleId: header.id,
     }, { requestId });
   } catch (error) {
     if (error instanceof AppError && error.status === 503) return null;
     throw error;
   }
-  const reserve = new Map(prepared.reserveLines.map((ref) => [ref.reserveLineId, ref]));
-  const stock = new Map(prepared.memoStocks.map((item) => [item.memoStockId, item]));
-  const lots = new Map((prepared.memoLots ?? []).map((lot) => [lot.lotKey, lot]));
+  const reserve = new Map((prepared?.reserveLines ?? []).map((ref) => [ref.reserveLineId, ref]));
+  const stock = new Map((prepared?.memoStocks ?? []).map((item) => [item.memoStockId, item]));
+  const lots = new Map((prepared?.memoLots ?? []).map((lot) => [lot.lotKey, lot]));
   const caps = new Map<string, { capPcs: number; capWeightCt: string }>();
   for (const line of lines) {
-    if (line.source === "RESERVE") {
+    if (line.source === "OWN_STOCK") {
+      const lot = line.lot_key ? ownLots.get(line.lot_key) : undefined;
+      caps.set(line.id, lot ? { capPcs: lot.availablePcs, capWeightCt: lot.availableWeightCt } : { capPcs: 0, capWeightCt: "0.000" });
+    } else if (line.source === "RESERVE") {
       const ref = reserve.get(line.reserve_line_id!);
       const usable = ref && ref.status !== "UNAVAILABLE" && ref.customerId === header.customer_id && ref.currency === header.currency_code;
       caps.set(line.id, usable ? { capPcs: ref.openPcs, capWeightCt: ref.openWeightCt } : { capPcs: 0, capWeightCt: "0.000" });
@@ -132,7 +140,7 @@ export async function getDetail(db: Db, master: MasterApi, id: string, principal
     readLines(db, id),
     db.$queryRaw<{ charge_type: string; amount: string }[]>`SELECT "charge_type", "amount"::text AS "amount" FROM "inventory"."sale_charge" WHERE "sale_id" = ${id}::uuid ORDER BY "charge_type"`,
   ]);
-  const caps = isEditable(header) && lines.length > 0 ? await liveCaps(master, header, lines, requestId) : null;
+  const caps = isEditable(header) && lines.length > 0 ? await liveCaps(db, master, header, lines, requestId) : null;
   const requireApproval = header.require_approval ?? true;
   return {
     id: header.id, docNo: header.doc_no, status: header.status, version: header.version,
@@ -153,6 +161,8 @@ export async function getDetail(db: Db, master: MasterApi, id: string, principal
         lotKey: line.lot_key, allocated: line.allocated,
         sourceDoc: line.source === "RESERVE"
           ? { type: "RESERVE" as const, id: line.reserve_id!, docNo: line.reserve_doc_no ?? "" }
+          : line.source === "OWN_STOCK"
+          ? { type: "LOAD" as const, id: line.load_id ?? "", docNo: line.load_doc_no ?? "" }
           : { type: "MEMO_RECEIVE" as const, id: line.memo_receive_id ?? "", docNo: line.memo_receive_doc_no ?? "" },
         stoneCode: line.stone_code, stone: line.stone, shape: line.shape, size: line.size, color: line.color, clarity: line.clarity, cutting: line.cutting, quality: line.quality,
         lot: line.lot, location: line.location, cerType: line.cer_type, cerNo: line.cer_no,
