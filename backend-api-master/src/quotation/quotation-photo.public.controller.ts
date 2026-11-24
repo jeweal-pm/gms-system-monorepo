@@ -11,10 +11,13 @@ import type { ApprovalDocType } from "../approval-setting/approval-types";
 import { APPROVAL_REGISTRY } from "../approval/approval.registry";
 import type { MasterContext, MasterMenu } from "../master/authorization";
 import { MasterTrpcHandler } from "../master/trpc-handler";
+import { okPhotoRefs } from "../inventory-internal/sale-reads";
+import { MEMO_RECEIVE_PHOTO_FILE_SOURCE } from "../trade-document/memo-photo-ref";
 import { photoReader, photoUploaderId } from "./quotation-photo.http";
 import { mapQuotationError, quotationNotFound, quotationPhotoInvalid } from "./quotation.errors";
 import {
   isPhotoType,
+  createPhotoStore,
   PHOTO_MAX_BYTES,
   QUOTATION_PHOTO_SOURCE,
   openQuotationPhoto,
@@ -36,6 +39,8 @@ export type PhotoEndpoint = {
   event: string;
   store: PhotoStore["store"];
   open: PhotoStore["open"];
+  /** Link table of a document that may reference Memo Receive photos: such a file is served here only while a line of this document links it. */
+  memoRefTable?: string;
   invalid: (path: string) => Error;
   notFound: () => Error;
   mapError: (error: unknown, operation: string) => unknown;
@@ -83,6 +88,16 @@ export async function uploadPhoto(endpoint: PhotoEndpoint, context: MasterContex
   }
 }
 
+/** The memo-receive photo store (read only here; the bytes belong to Memo Receive). */
+let memoStore: PhotoStore | null = null;
+const memoReceivePhotoStore = () => (memoStore ??= createPhotoStore("memo-receive-photo"));
+
+/** A referenced memo photo is readable through a document route only while a line of THAT document links it (one indexed EXISTS). */
+async function isLinkedMemoPhoto(linkTable: string, fileId: string): Promise<boolean> {
+  const [row] = await prisma.$queryRaw<{ ok: boolean }[]>(Prisma.sql`SELECT EXISTS (SELECT 1 FROM ${Prisma.raw(`"partner"."${linkTable}"`)} p WHERE p."file_id" = ${fileId}::uuid) AS "ok"`);
+  return row?.ok === true;
+}
+
 /**
  * G14: whether photo `fileId` is on a line of a live PENDING_APPROVAL document of the endpoint's type (registry
  * identifiers only; one indexed EXISTS over `<line>_photo(file_id)`).
@@ -105,7 +120,19 @@ export async function isPendingDocumentPhoto(menu: MasterMenu, fileId: string): 
  * Streams one ready photo of this endpoint's source with immutable caching and safe headers. Readers: `<menu>:VIEW`, or
  * (G14) an approver of the type for a photo of a live PENDING_APPROVAL document; any other photo → PERMISSION_DENIED.
  */
-export async function streamPhoto(endpoint: PhotoEndpoint, context: MasterContext, rawId: string, response: Response, logger: Logger) {
+/**
+ * Picker preview (owner 2026-11-24): a row picked from a Memo Stock lot but not saved yet has no line linking its photos. The photo
+ * route then also accepts `?lotKey=ML…|MS…` or `?memoStockId=`: the file is served only if it is a photo of a Memo Receive line
+ * behind THAT lot / stock (the same rule as at save), under the document's own VIEW grant. Anything else is ignored.
+ */
+export function lotRefFromQuery(query: unknown): { memoStockId: string | null; lotKey: string | null } | undefined {
+  const q = (query ?? {}) as Record<string, unknown>;
+  const memoStockId = typeof q.memoStockId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q.memoStockId) ? q.memoStockId.toLowerCase() : null;
+  const lotKey = typeof q.lotKey === "string" && /^M[LS][0-9a-f-]{32,36}$/.test(q.lotKey) ? q.lotKey : null;
+  return memoStockId || lotKey ? { memoStockId, lotKey } : undefined;
+}
+
+export async function streamPhoto(endpoint: PhotoEndpoint, context: MasterContext, rawId: string, response: Response, logger: Logger, lotRef?: { memoStockId: string | null; lotKey: string | null }) {
   const { approverOnly } = photoReader(context, endpoint.menu);
   const id = parseId(rawId);
   if (approverOnly) {
@@ -117,9 +144,11 @@ export async function streamPhoto(endpoint: PhotoEndpoint, context: MasterContex
     }
     if (!allowed) throw new TRPCError({ code: "FORBIDDEN", message: "PERMISSION_DENIED" });
   }
-  const file = await prisma.storedFile.findFirst({ where: { id, sourceType: endpoint.source, status: "ready" }, select: { objectKey: true, contentType: true } });
+  const file = await prisma.storedFile.findFirst({ where: { id, sourceType: endpoint.memoRefTable ? { in: [endpoint.source, MEMO_RECEIVE_PHOTO_FILE_SOURCE] } : endpoint.source, status: "ready" }, select: { objectKey: true, contentType: true, sourceType: true } });
   if (!file) throw endpoint.notFound();
-  const photo = await endpoint.open(file.objectKey);
+  const referenced = Boolean(endpoint.memoRefTable) && file.sourceType === MEMO_RECEIVE_PHOTO_FILE_SOURCE && endpoint.source !== MEMO_RECEIVE_PHOTO_FILE_SOURCE;
+  if (referenced && !(await isLinkedMemoPhoto(endpoint.memoRefTable!, id)) && !(lotRef && (await okPhotoRefs([{ fileId: id, ...lotRef }])).length > 0)) throw endpoint.notFound();
+  const photo = await (referenced ? memoReceivePhotoStore().open(file.objectKey) : endpoint.open(file.objectKey));
   if (!photo) throw endpoint.notFound();
   // Ids are immutable (a replaced photo gets a new id), so the bytes can be cached.
   response.setHeader("cache-control", "private, max-age=31536000, immutable");
@@ -143,6 +172,7 @@ const quotationPhotos: PhotoEndpoint = {
   menu: "quotation",
   kind: "quotation-photo",
   source: QUOTATION_PHOTO_SOURCE,
+  memoRefTable: "quotation_line_photo",
   event: "quotation",
   // Late-bound so the storage functions stay replaceable (tests mock the storage module).
   store: (data, contentType) => storeQuotationPhoto(data, contentType),
@@ -171,7 +201,7 @@ export class QuotationPhotoPublicController {
 
   @Get(":id")
   async read(@Req() request: Request, @Param("id") rawId: string, @Res() response: Response) {
-    return streamPhoto(quotationPhotos, await this.auth.createContext(request), rawId, response, this.logger);
+    return streamPhoto(quotationPhotos, await this.auth.createContext(request), rawId, response, this.logger, lotRefFromQuery(request.query));
   }
 }
 

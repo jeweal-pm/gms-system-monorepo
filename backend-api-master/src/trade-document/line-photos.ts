@@ -2,6 +2,7 @@ import { HttpStatus } from "@nestjs/common";
 import { partnerException } from "../common/errors";
 import type { Tx } from "../common/persistence";
 import type { LineHook, TradeDocumentInput } from "./document-engine";
+import { findInvalidPhoto, type PhotoLine } from "./memo-photo-ref";
 
 /**
  * ADR-0048 (owner 2026-11-11): line photos on Reserve, Memo Return, Memo Out, Memo Out Return and Purchase, exactly as
@@ -52,16 +53,10 @@ export const linePhotoInvalid = (document: Pick<LinePhotoDocument, "code">) => (
  * Every photo id must be a ready file of this document's source (a photo uploaded for another document, an unknown or a
  * pending file is refused) → `<CODE>_PHOTO_INVALID` at `lines.N.photoIds.M`. One bounded query (≤ 5 ids × lines).
  */
-export async function checkLinePhotos(tx: Tx, document: LinePhotoDocument, lines: readonly { photoIds: readonly string[] }[]): Promise<void> {
-  const photoIds = [...new Set(lines.flatMap((line) => line.photoIds))];
-  if (photoIds.length === 0) return;
-  const files = await tx.storedFile.findMany({ where: { id: { in: photoIds }, sourceType: document.source, status: "ready" }, select: { id: true } });
-  const known = new Set(files.map((file) => file.id));
-  const invalid = linePhotoInvalid(document);
-  lines.forEach((line, index) => {
-    const bad = line.photoIds.findIndex((photoId) => !known.has(photoId));
-    if (bad >= 0) throw invalid(`lines.${index}.photoIds.${bad}`);
-  });
+export async function checkLinePhotos(tx: Tx, document: LinePhotoDocument, lines: readonly PhotoLine[]): Promise<void> {
+  // Own uploads, or (owner 2026-11-24) the photos of the Memo Stock the line picked; nothing else (memo-photo-ref.ts).
+  const bad = await findInvalidPhoto(tx, document.source, lines);
+  if (bad) throw linePhotoInvalid(document)(`lines.${bad.line}.photoIds.${bad.position}`);
 }
 
 type PhotoLinkDelegate = { createMany(args: { data: { lineId: string; position: number; fileId: string }[] }): Promise<unknown> };
@@ -71,7 +66,7 @@ type PhotoLinkDelegate = { createMany(args: { data: { lineId: string; position: 
  * photo ids are checked, read back in order with each line, and written after the lines (the save replaced the lines
  * and, by CASCADE, their old photo links).
  */
-export function withLinePhotos<Input extends TradeDocumentInput & { lines: readonly { photoIds: readonly string[] }[] }>(
+export function withLinePhotos<Input extends TradeDocumentInput & { lines: readonly PhotoLine[] }>(
   document: LinePhotoDocument,
   hook?: LineHook<Input>,
 ): LineHook<Input> {

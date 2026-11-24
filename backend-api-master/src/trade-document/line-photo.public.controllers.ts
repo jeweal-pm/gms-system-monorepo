@@ -4,7 +4,7 @@ import { PublicRoute } from "../internal-auth/public.decorator";
 import type { MasterMenu } from "../master/authorization";
 import { MasterTrpcHandler } from "../master/trpc-handler";
 import { purchaseErrors } from "../purchase/purchase.errors";
-import { streamPhoto, uploadPhoto, type PhotoEndpoint } from "../quotation/quotation-photo.public.controller";
+import { lotRefFromQuery, streamPhoto, uploadPhoto, type PhotoEndpoint } from "../quotation/quotation-photo.public.controller";
 import { createPhotoStore } from "../quotation/quotation-photo.storage";
 import type { DocumentErrors } from "./document-errors";
 import { LINE_PHOTO_DOCUMENTS, linePhotoInvalid, type LinePhotoDocument } from "./line-photos";
@@ -18,6 +18,14 @@ import { reserveErrors } from "./reserve.service";
  * Purchase — the Purchase Order photo boundary (SA-PO-11) with each document's own module, source and grants. The
  * route middleware in main.ts has already applied live authorization and a slot of the shared limiter.
  */
+/** Documents whose lines pick Memo Stock lots and may reference their Memo Receive photos (owner 2026-11-24): their link table. */
+const MEMO_REF_TABLES: Partial<Record<LinePhotoDocument["linkModel"], string>> = {
+  reserveLinePhoto: "reserve_line_photo",
+  memoOutLinePhoto: "memo_out_line_photo",
+  purchaseLinePhoto: "purchase_line_photo",
+  memoReturnLinePhoto: "memo_return_line_photo",
+};
+
 function photoEndpoint(document: LinePhotoDocument, errors: Pick<DocumentErrors, "notFound" | "map">): PhotoEndpoint {
   const store = createPhotoStore(document.module);
   return {
@@ -27,6 +35,8 @@ function photoEndpoint(document: LinePhotoDocument, errors: Pick<DocumentErrors,
     event: document.event,
     store: (data, contentType) => store.store(data, contentType),
     open: (key) => store.open(key),
+    // Reserve and Memo Out lines may reference their Memo Stock Memo Receive photos (owner 2026-11-24).
+    ...(MEMO_REF_TABLES[document.linkModel] ? { memoRefTable: MEMO_REF_TABLES[document.linkModel] } : {}),
     invalid: linePhotoInvalid(document),
     notFound: errors.notFound,
     mapError: errors.map,
@@ -55,7 +65,7 @@ export class ReservePhotoPublicController {
 
   @Get(":id")
   async read(@Req() request: Request, @Param("id") rawId: string, @Res() response: Response) {
-    return streamPhoto(linePhotoEndpoints.reserve, await this.auth.createContext(request), rawId, response, this.logger);
+    return streamPhoto(linePhotoEndpoints.reserve, await this.auth.createContext(request), rawId, response, this.logger, lotRefFromQuery(request.query));
   }
 }
 
@@ -73,7 +83,7 @@ export class MemoReturnPhotoPublicController {
 
   @Get(":id")
   async read(@Req() request: Request, @Param("id") rawId: string, @Res() response: Response) {
-    return streamPhoto(linePhotoEndpoints.memoReturn, await this.auth.createContext(request), rawId, response, this.logger);
+    return streamPhoto(linePhotoEndpoints.memoReturn, await this.auth.createContext(request), rawId, response, this.logger, lotRefFromQuery(request.query));
   }
 }
 
@@ -91,7 +101,7 @@ export class MemoOutPhotoPublicController {
 
   @Get(":id")
   async read(@Req() request: Request, @Param("id") rawId: string, @Res() response: Response) {
-    return streamPhoto(linePhotoEndpoints.memoOut, await this.auth.createContext(request), rawId, response, this.logger);
+    return streamPhoto(linePhotoEndpoints.memoOut, await this.auth.createContext(request), rawId, response, this.logger, lotRefFromQuery(request.query));
   }
 }
 
@@ -127,7 +137,7 @@ export class PurchasePhotoPublicController {
 
   @Get(":id")
   async read(@Req() request: Request, @Param("id") rawId: string, @Res() response: Response) {
-    return streamPhoto(linePhotoEndpoints.purchase, await this.auth.createContext(request), rawId, response, this.logger);
+    return streamPhoto(linePhotoEndpoints.purchase, await this.auth.createContext(request), rawId, response, this.logger, lotRefFromQuery(request.query));
   }
 }
 

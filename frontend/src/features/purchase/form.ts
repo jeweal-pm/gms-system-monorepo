@@ -4,6 +4,7 @@ import { add, dec, mul, toFixed } from "@/features/quotation/lib/decimal";
 import { emptyLine, emptyQuotation, newKey } from "@/features/quotation/lib/defaults";
 import { isFilledLine, lineSchema, tradeDocumentRules, tradeDocumentShape, type QuotationLine } from "@/features/quotation/schema";
 import type { masterTrpc } from "@/lib/master-trpc";
+import { lotPhotos } from "@/features/trade-document/customer-stock";
 import { APPROVAL_DOC_STATUSES } from "@/features/trade-document/flow-status";
 
 /**
@@ -138,13 +139,15 @@ const copied = (row: Copied): Copied => ({
  * locked, no Stock ID (owner Q-LOT-10); Pcs and Weight start at the part's quantity (its cap); Price starts at the lot's net
  * unit price (the weighted average of its items, owner 2026-11-21) at 2 dp. The part is sent back as `memoGroup`.
  */
-export function memoStockToPurchaseLine(row: PurchaseMemoStockRow): PurchaseLine {
+export function memoStockToPurchaseLine(row: PurchaseMemoStockRow, photoUrl?: (id: string) => string): PurchaseLine {
   return {
     ...emptyPurchaseLine(),
     ...copied(row),
     key: newKey(),
     source: "STOCK",
     stockId: "",
+    // The memo's photos by reference (owner 2026-11-24); the preview URL names the lot until the row is saved.
+    photos: lotPhotos(row, photoUrl),
     locationId: row.location,
     pcs: String(row.pendingPcs),
     weightCt: toFixed(dec(row.pendingWeightCt), 3),
@@ -237,6 +240,8 @@ export function mergedPurchaseLine(sold: PurchaseLine, inStock: PurchaseLine): P
   return {
     ...sold,
     key: newKey(),
+    // Both parts belong to one lot: the merged row keeps the photos of both (<= 5, no duplicate).
+    photos: [...sold.photos, ...inStock.photos.filter((photo) => !sold.photos.some((own) => own.id === photo.id))].slice(0, 5),
     memoGroup: "MERGED",
     pcs: toFixed(capPcs, 0),
     weightCt: toFixed(capWeight, 3),

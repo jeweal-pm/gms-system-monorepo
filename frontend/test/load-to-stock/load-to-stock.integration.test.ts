@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { getQueryKey } from "@trpc/react-query";
 import { createElement, type ComponentProps, type ReactElement, type ReactNode } from "react";
@@ -9,7 +10,8 @@ import { inventoryApprovalKeys } from "@/features/inventory/approval";
 import { applyPick, emptyLoad, loadKeys, loadToStockCalls, toLoadInput, type LoadFormValues } from "@/features/load-to-stock/api";
 import { copyLinePhotos, EditLoadToStockPage, IN_USE_NOTE, loadFlow, LOAD_DENIED, photoLines } from "@/features/load-to-stock/components/LoadToStockPage";
 import { LoadModeDialog } from "@/features/load-to-stock/components/load-mode-dialog";
-import { EMPTY_LOAD_TEXT, LoadTable, rowLocationOptions, type LoadTableProps } from "@/features/load-to-stock/components/load-table";
+import { EMPTY_LOAD_TEXT, LoadModeChip, LoadTable, rowLocationOptions, type LoadTableProps } from "@/features/load-to-stock/components/load-table";
+import { LoadRowPanel } from "@/features/load-to-stock/components/load-row-panel";
 import { PICKER_EMPTY_TEXT, PICKER_SEARCH_PLACEHOLDER, PurchaseLinePicker } from "@/features/load-to-stock/components/purchase-line-picker";
 import { LoadSourceTable } from "@/features/load-to-stock/components/load-source-table";
 import { todayIso } from "@/features/quotation/lib/format";
@@ -224,7 +226,10 @@ describe("IT-LS-03 / IT-LS-04 Load table (FE-LS-003, FE-LS-006…008, FE-LS-017)
     const html = table(applyPick(base, LINES, "NONE"));
     expect(html.match(/aria-label="Remove load row/g)).toHaveLength(3);
     expect(html.match(/Select location/g)).toHaveLength(3);
-    expect(html).toContain("Parcel");
+    // Owner 2026-11-24: no Parcel caption under the location select.
+    expect(html).not.toContain("Parcel");
+    // The location list is portalled so the table's scroll box never clips the last row's menu.
+    expect(readFileSync("src/features/load-to-stock/components/load-table.tsx", "utf8")).toMatch(/<SelectMenu\s+compact\s+portal\s+value=\{row\.location\}/);
     expect(inputTag(html, "Pcs of load row 1")).toContain('value="10"');
     expect(inputTag(html, "Pcs of load row 1")).not.toContain("readOnly");
     expect(html).toContain("52,490.00 THB");
@@ -260,6 +265,57 @@ describe("IT-LS-03 / IT-LS-04 Load table (FE-LS-003, FE-LS-006…008, FE-LS-017)
     expect(rowLocationOptions(["Safe A"], "Old shelf").map((option) => option.value)).toEqual(["Old shelf", "Safe A"]);
     expect(rowLocationOptions(["Safe A"], "safe a").map((option) => option.value)).toEqual(["Safe A"]);
     expect(rowLocationOptions(["Safe A"], "").map((option) => option.value)).toEqual(["Safe A"]);
+  });
+
+  it("mode chip: icon, name and hint for None / Split / Merge; nothing before a pick", () => {
+    const chip = (mode: LoadFormValues["mode"]) => render(seeded(ALL), createElement(LoadModeChip, { mode }));
+    expect(chip("NONE")).toContain("None</span><span>· as it is, one load row per PU line");
+    expect(chip("SPLIT")).toContain("Split</span><span>· one load row per PU line");
+    expect(chip("MERGE")).toContain("Merge</span><span>· all picked PU lines into one load");
+    expect(chip("MERGE")).toContain('data-load-mode="MERGE"');
+    expect(chip("")).toBe("");
+  });
+
+  it("More opens the Quotation row editor frame: Row n of m, sections, Remove row / Close / Next row, no Parcel", () => {
+    const values = applyPick(base, LINES, "NONE");
+    const panel = (index: number, extra: Partial<ComponentProps<typeof LoadRowPanel>> = {}) =>
+      render(
+        seeded(ALL),
+        createElement(LoadRowPanel, {
+          row: values.rows[index]!,
+          index,
+          total: values.rows.length,
+          values,
+          options: OPTIONS as never,
+          currency: "THB",
+          readOnly: false,
+          errors: {},
+          onChange: vi.fn(),
+          onPrev: vi.fn(),
+          onNext: vi.fn(),
+          onRemove: vi.fn(),
+          onClose: vi.fn(),
+          ...extra,
+        }),
+      );
+    const html = panel(0);
+    expect(html).toContain("Row 1 of 3");
+    expect(html).toContain("w-[var(--item-editor-width,460px)]");
+    for (const title of ["Info", "Stone", "Stone Quality", "Certificate", "Quantity & Price", "Photos 0 / 5", "Item Note"]) expect(html).toContain(`>${title}</h3>`);
+    expect(html).not.toContain("Parcel");
+    expect(html).toContain("Assigned when you save");
+    expect(button(html, "Remove row")).not.toContain('disabled=""');
+    expect(button(html, "Close")).not.toBe("");
+    expect(html.match(/<button[^>]*>/g)?.find((tag) => tag.includes('aria-label="Previous row"'))).toContain('disabled=""');
+    expect(button(panel(2), "Next row")).toContain('disabled=""');
+    expect(button(html, "Next row")).not.toContain('disabled=""');
+    expect(button(panel(0, { readOnly: true }), "Remove row")).toContain('disabled=""');
+  });
+
+  it("the page docks the row panel like Quotation (ItemEditorDock) inside the Item card", () => {
+    const source = readFileSync("src/features/load-to-stock/components/LoadToStockPage.tsx", "utf8");
+    expect(source).toContain("<ItemEditorDock>\n                <LoadRowPanel".replace(/\n/g, source.includes("\r\n") ? "\r\n" : "\n"));
+    expect(source).not.toContain("Mode: {");
   });
 
   it("Item table: picked lines read-only with 'New on load Auto', 'From {PU} · date', remaining and amount", () => {

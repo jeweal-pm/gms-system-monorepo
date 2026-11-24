@@ -75,6 +75,8 @@ export type LotGroupRow = {
   /** Own stock only: Sale Price x the available quantity (server-computed), and the company currency of both. */
   saleAmount?: string | null;
   saleCurrency?: string | null;
+  /** Memo Stock only: ready photo files of the lot's Memo Receive lines (newest stock first, <= 5); a document line may reference them (memo-photo-ref.ts). */
+  photoIds?: string[];
 };
 
 /** Memo Stock bucket a picker lists (fixed SQL, never input). */
@@ -87,7 +89,7 @@ type Bucket = keyof typeof BUCKETS;
 type MemoLotRow = {
   lot_key: string; d: string; n: number; p: number; w: string; amount: string; ref_count: number; sold_p: number; sold_w: string; avg_unit: string; avg_net: string;
   lot: string; stone_code: string | null; stone: string; shape: string; size: string; color: string; clarity: string; cutting: string; quality: string;
-  cer_type: string; cer_no: string; location: string; item_note: string; price_unit: string; unit_price: string; net_unit_price: string; currency_code: string;
+  cer_type: string; cer_no: string; location: string; item_note: string; price_unit: string; unit_price: string; net_unit_price: string; currency_code: string; photo_ids: string[] | null;
   vendor_id: string; vendor_code_snapshot: string; vendor_name_snapshot: string; memo_receive_id: string; received_doc_no: string; ref_date: string;
 };
 
@@ -141,8 +143,19 @@ export function memoLotSql(query: MemoLotQuery): Prisma.Sql {
       FROM "partner"."memo_stock" s WHERE s.lot_key IN (SELECT lot_key FROM k) AND ${bucket.open}
       ORDER BY s.lot_key, s.received_doc_date DESC, s.stock_id DESC
     )
-    SELECT n.*, g.n, g.p, g.w, g.amount, g.ref_count, g.sold_p, g.sold_w, g.avg_unit, g.avg_net, to_char(k.d, 'YYYY-MM-DD') AS d
-    FROM k JOIN g ON g.lot_key = k.lot_key JOIN n ON n.lot_key = k.lot_key
+    , ph AS (
+      -- Photos of the lot's Memo Receive lines, newest stock first then photo position, at most 5 per lot (one statement for the page).
+      SELECT x.lot_key, array_agg(x.file_id::text ORDER BY x.rn) AS photo_ids
+      FROM (
+        SELECT s.lot_key, p.file_id, row_number() OVER (PARTITION BY s.lot_key ORDER BY s.received_doc_date DESC, s.stock_id DESC, p."position") AS rn
+        FROM "partner"."memo_stock" s
+        JOIN "partner"."memo_receive_line_photo" p ON p.line_id = s.memo_receive_line_id
+        JOIN "partner"."stored_files" f ON f.id = p.file_id AND f.status = 'ready'
+        WHERE s.lot_key IN (SELECT lot_key FROM k) AND ${bucket.open}
+      ) x WHERE x.rn <= 5 GROUP BY x.lot_key
+    )
+    SELECT n.*, g.n, g.p, g.w, g.amount, g.ref_count, g.sold_p, g.sold_w, g.avg_unit, g.avg_net, ph.photo_ids, to_char(k.d, 'YYYY-MM-DD') AS d
+    FROM k JOIN g ON g.lot_key = k.lot_key JOIN n ON n.lot_key = k.lot_key LEFT JOIN ph ON ph.lot_key = k.lot_key
     ORDER BY k.d DESC, k.lot_key DESC`;
 }
 
@@ -168,6 +181,13 @@ export function memoLotRow(row: MemoLotRow): LotGroupRow {
     amount: new Prisma.Decimal(row.amount).toFixed(2),
     currency: row.currency_code,
     vendor: { id: row.vendor_id, code: row.vendor_code_snapshot, name: row.vendor_name_snapshot },
+    // From Stock dialogs: a Memo Stock lot has no separate Sale Price in the data model, so the memo's own Price (the Memo Receive unit
+    // price, quantity-weighted over the lot's open items) is shown with its unit; Amount = that price x the available weight (PER_CT) or
+    // pcs (PER_PCS), 2 dp half-up, in the memo's currency.
+    salePrice: new Prisma.Decimal(row.avg_unit).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP).toFixed(2),
+    saleAmount: new Prisma.Decimal(row.avg_unit).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP).times(row.price_unit === "PER_CT" ? row.w : row.p).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP).toFixed(2),
+    saleCurrency: row.currency_code,
+    photoIds: row.photo_ids ?? [],
   };
 }
 

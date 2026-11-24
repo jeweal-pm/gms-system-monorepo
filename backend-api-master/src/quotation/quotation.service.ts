@@ -27,6 +27,7 @@ import { completeOwnStockLines, storedOwnLines, STORED_OWN_LINE_SELECT } from ".
 import { completeOwnLotLines } from "../trade-document/own-lot-lines";
 import { lineTotals } from "../trade-document/document-totals";
 import { QUOTATION_PHOTO_SOURCE } from "./quotation-photo.storage";
+import { findInvalidPhoto } from "../trade-document/memo-photo-ref";
 import { CHARGE_TYPES, type QuotationInput, type QuotationListInput, type QuotationStatus } from "./quotation.schemas";
 import { assertEditable, saveStatus, type FlowPrincipal } from "../approval-setting/approval-flow";
 import { peekApprovalSetting, readApprovalSetting } from "../approval-setting/approval-setting.service";
@@ -709,15 +710,9 @@ export class QuotationService {
     }
     if (errors.length > 0) throw quotationReferenceInvalid(errors);
 
-    const photoIds = [...new Set(input.lines.flatMap((line) => line.photoIds))];
-    if (photoIds.length > 0) {
-      const files = await tx.storedFile.findMany({ where: { id: { in: photoIds }, sourceType: QUOTATION_PHOTO_SOURCE, status: "ready" }, select: { id: true } });
-      const known = new Set(files.map((file) => file.id));
-      input.lines.forEach((line, index) => {
-        const bad = line.photoIds.findIndex((photoId) => !known.has(photoId));
-        if (bad >= 0) throw quotationPhotoInvalid(`lines.${index}.photoIds.${bad}`);
-      });
-    }
+    // Own uploads, or the photos of the Memo Stock the line picked (owner 2026-11-24); nothing else.
+    const badPhoto = await findInvalidPhoto(tx, QUOTATION_PHOTO_SOURCE, input.lines);
+    if (badPhoto) throw quotationPhotoInvalid(`lines.${badPhoto.line}.photoIds.${badPhoto.position}`);
 
     // A foreign-currency quotation needs a rate to the company currency (SA-QT-06).
     const company = await tx.companyProfile.findUnique({ where: { id: COMPANY_PROFILE_ID }, select: { currencyCode: true } });

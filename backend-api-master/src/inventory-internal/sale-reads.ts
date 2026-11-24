@@ -104,6 +104,21 @@ export async function searchSaleReserveLines(input: SaleReserveLineSearchInput) 
   };
 }
 
+// ---------- Memo Receive photo references (owner 2026-11-24) ----------
+
+/** Keys `fileId|memoStockId|lotKey` of the requested references that are a photo of the Memo Stock (or a stock of the lot) they name. One statement. */
+export const photoRefKey = (ref: { fileId: string; memoStockId?: string | null; lotKey?: string | null }) => `${ref.fileId}|${ref.memoStockId ?? ""}|${ref.lotKey ?? ""}`;
+export async function okPhotoRefs(refs: readonly { fileId: string; memoStockId?: string | null; lotKey?: string | null }[]): Promise<string[]> {
+  if (refs.length === 0) return [];
+  const values = refs.map((ref) => Prisma.sql`(${ref.fileId}::uuid, ${ref.memoStockId ?? null}::uuid, ${ref.lotKey ?? null}::varchar)`);
+  const rows = await prisma.$queryRaw<{ file_id: string; ms: string | null; lk: string | null }[]>(Prisma.sql`
+    SELECT v.file_id::text AS file_id, v.ms::text AS ms, v.lk FROM (VALUES ${Prisma.join(values)}) AS v(file_id, ms, lk)
+    WHERE EXISTS (
+      SELECT 1 FROM "partner"."memo_receive_line_photo" p JOIN "partner"."memo_stock" s ON s."memo_receive_line_id" = p."line_id" JOIN "partner"."stored_files" f ON f."id" = p."file_id" AND f."status" = 'ready'
+      WHERE p."file_id" = v.file_id AND ((v.ms IS NOT NULL AND s."id" = v.ms) OR (v.lk IS NOT NULL AND s."lot_key" = v.lk)))`);
+  return rows.map((row) => photoRefKey({ fileId: row.file_id, memoStockId: row.ms, lotKey: row.lk }));
+}
+
 // ---------- prepare (Save / Submit / detail validation) ----------
 
 type PreparedReserveLine = ReserveLineRef & { status: "OPEN" | "CLOSED" | "UNAVAILABLE"; customerId: string; currency: string };
@@ -212,5 +227,6 @@ export async function prepareSale(input: SalePrepareInput) {
     currencyActive: currencyRow[0]?.active === true,
     companyCurrency: currencyRow[0]?.company ?? null,
     reserveLines, memoStocks, memoLots,
+    photoRefsOk: await okPhotoRefs(input.photoRefs ?? []),
   };
 }
