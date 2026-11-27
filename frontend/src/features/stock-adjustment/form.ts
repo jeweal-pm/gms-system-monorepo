@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { dec, sub, toFixed } from "@/features/quotation/lib/decimal";
+import { add, dec, sub, toFixed } from "@/features/quotation/lib/decimal";
 
 export type AdjustmentLine = {
   key: string;
@@ -72,4 +72,33 @@ export function toAdjustmentInput(value: AdjustmentForm) {
       physicalPrice: line.physicalPrice || null, remark: line.remark.trim(),
     })),
   };
+}
+
+/** Summary rail totals: on-hand Stock against the typed Physical counts (blank Physical counts as 0). */
+export function adjustmentTotals(lines: readonly AdjustmentLine[]) {
+  const whole = (text: string) => (/^\d+$/.test(text.trim()) ? Number(text) : 0);
+  const weight = (text: string) => (/^\d+(\.\d+)?$/.test(text.trim()) ? dec(text.trim()) : dec("0"));
+  const stockPcs = lines.reduce((sum, line) => sum + line.stockPcs, 0);
+  const physicalPcs = lines.reduce((sum, line) => sum + whole(line.physicalPcs), 0);
+  const stockCt = add(dec("0"), ...lines.map((line) => weight(line.stockWeightCt)));
+  const physicalCt = add(dec("0"), ...lines.map((line) => weight(line.physicalWeightCt)));
+  return {
+    rowCount: lines.length,
+    stockPcs,
+    physicalPcs,
+    diffPcs: physicalPcs - stockPcs,
+    stockWeightCt: toFixed(stockCt, 3),
+    physicalWeightCt: toFixed(physicalCt, 3),
+    diffWeightCt: toFixed(sub(physicalCt, stockCt), 3),
+  };
+}
+
+export type StoneSort = "asc" | "desc" | null;
+/** Stone Code header: none → ascending → descending → none. */
+export const nextStoneSort = (current: StoneSort): StoneSort => (current === null ? "asc" : current === "asc" ? "desc" : null);
+/** Rows ordered by Stone Code (Stock ID when there is none); the original order when unsorted. */
+export function sortByStoneCode(lines: readonly AdjustmentLine[], sort: StoneSort): readonly AdjustmentLine[] {
+  if (!sort) return lines;
+  const code = (line: AdjustmentLine) => line.attrs.stoneCode || line.stockId;
+  return [...lines].sort((a, b) => code(a).localeCompare(code(b), undefined, { numeric: true }) * (sort === "asc" ? 1 : -1));
 }

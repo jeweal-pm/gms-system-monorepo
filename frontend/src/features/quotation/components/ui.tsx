@@ -1,7 +1,7 @@
 "use client";
 
 // Primitive เฉพาะ feature นี้ — ถ้าโปรเจกต์มี design system กลางอยู่แล้ว ให้เปลี่ยนไปใช้ของกลางแทน
-import { DateInput, isBeforeDate } from "@/components/ui/date-input";
+import { DateInput, isBeforeDate, type DateInputProps } from "@/components/ui/date-input";
 import { Check, ChevronDown, X } from "lucide-react";
 import {
   createContext,
@@ -580,6 +580,15 @@ export function FormDateInput<T extends FieldValues = FieldValues>({ name, compa
     />
   );
 }
+
+/**
+ * The same date control as FormDateInput (dd/mm/yyyy, calendar icon, field look) for pages that keep their own form
+ * state instead of react-hook-form (stock-adjustment).
+ */
+export const DateBox = forwardRef<HTMLInputElement, DateInputProps & { compact?: boolean }>(function DateBox({ compact, className, ...props }, ref) {
+  const invalid = useFieldInvalid(props["aria-invalid"]);
+  return <DateInput ref={ref} {...props} aria-invalid={invalid} className={cx(controlClass, readOnlyInputClass, compact && "h-10 px-3 text-sm", className)} />;
+});
 
 /** SelectMenu ที่ผูกกับ react-hook-form ผ่าน name */
 export function FormSelect<T extends FieldValues = FieldValues>({
