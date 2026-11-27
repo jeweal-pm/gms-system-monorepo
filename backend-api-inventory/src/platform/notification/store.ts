@@ -9,7 +9,7 @@ import { Prisma, type Db, type Tx } from "../db";
  */
 export const NOTIFICATION_TYPES = ["approval.pending", "document.approved", "document.rejected", "document.revision_requested"] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
-export const NOTIFICATION_DOCUMENT_TYPES = ["load-to-stock", "sale", "stock-adjustment"] as const;
+export const NOTIFICATION_DOCUMENT_TYPES = ["load-to-stock", "sale", "stock-transfer-location", "stock-adjustment"] as const;
 export type NotificationDocumentType = (typeof NOTIFICATION_DOCUMENT_TYPES)[number];
 export type NotificationSummary = { partyName?: string; amount?: string; currency?: string; reason?: string };
 export type NotificationSignal = { eventId: string; type: NotificationType; documentType: NotificationDocumentType; recipients: readonly string[] };

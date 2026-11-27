@@ -294,6 +294,8 @@ model stock {
   card_key             String?            @db.VarChar(34)
   /// stock-value ADR-0057 D4: STORED GENERATED stone identity (the item part of card_key, no location or lot). Written by PostgreSQL only.
   item_key             String?            @db.VarChar(34)
+  /// stock-transfer-location ADR-0060 D2: the source stock of a row created by a transfer (every transfer creates a new Stock ID).
+  transferred_from_uuid String?           @db.Uuid
   version             Int                @default(1)
   created_at           DateTime           @default(now()) @db.Timestamptz(3)
   updated_at           DateTime           @default(now()) @db.Timestamptz(3)
@@ -301,8 +303,13 @@ model stock {
   stock_hold           stock_hold[]
   stock_movement       stock_movement[]
   stock_photo          stock_photo[]
+  transferred_from     stock?             @relation("stock_transfer_origin", fields: [transferred_from_uuid], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "stock_transferred_from_fkey")
+  transferred_to       stock[]            @relation("stock_transfer_origin")
+  transfer_lines_from  stock_transfer_line[] @relation("stock_transfer_line_from")
+  transfer_lines_new   stock_transfer_line[] @relation("stock_transfer_line_new")
   stock_adjustment_line stock_adjustment_line[]
 
+  @@index([transferred_from_uuid], map: "stock_transferred_from_idx", where: raw("(transferred_from_uuid IS NOT NULL)"))
   @@index([ref_doc_date(sort: Desc), stock_id(sort: Desc)], map: "stock_picker_idx", where: raw("(((status)::text = 'ACTIVE'::text) AND ((on_hand_pcs > 0) OR (on_hand_weight_ct > (0)::numeric)))"))
   @@index([load_id], map: "stock_in_use_idx", where: raw("((on_hand_pcs <> pcs) OR (on_hand_weight_ct <> weight_ct))"))
   @@index([load_id], map: "stock_load_idx")
@@ -421,7 +428,7 @@ model stock_hold_document {
 model stock_movement {
   id              String   @id @db.Uuid
   stock_uuid      String   @db.Uuid
-  kind            String   @db.VarChar(20)
+  kind            String   @db.VarChar(32)
   document_type   String   @db.VarChar(40)
   document_id     String   @db.Uuid
   revision        Int
@@ -678,5 +685,77 @@ model sale_line_alloc {
   @@unique([sale_line_id, seq], map: "sale_line_alloc_seq_key")
   @@unique([sale_line_id, memo_stock_id], map: "sale_line_alloc_memo_stock_key")
   @@index([memo_stock_id], map: "sale_line_alloc_memo_stock_idx")
+  @@schema("inventory")
+}
+
+// stock-transfer-location SA rev 1 / ADR-0060 D2 (BE-STL-001): migration 20261124120000_stock_transfer_location; CHECK constraints
+// and the NULLS NOT DISTINCT running-number index live in the migration SQL.
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stock_transfer {
+  id                String                @id @db.Uuid
+  numbering_id      String?               @db.Uuid
+  running_no        Int
+  doc_no            String                @db.VarChar(40)
+  doc_date          DateTime              @db.Date
+  ref               String                @default("") @db.VarChar(100)
+  note              String                @default("") @db.VarChar(250)
+  status            String                @db.VarChar(20)
+  auto_approved     Boolean               @default(false)
+  revision_count    Int                   @default(0) @db.SmallInt
+  applied_revision  Int                   @default(0)
+  line_count        Int                   @default(0) @db.SmallInt
+  total_pcs         Int                   @default(0)
+  total_weight_ct   Decimal               @default(0) @db.Decimal(14, 3)
+  submitted_at      DateTime?             @db.Timestamptz(3)
+  submitted_by      String?               @db.VarChar(64)
+  submitted_by_name String?               @db.VarChar(200)
+  review_action     String?               @db.VarChar(10)
+  review_note       String?               @db.VarChar(500)
+  reviewed_at       DateTime?             @db.Timestamptz(3)
+  reviewed_by       String?               @db.VarChar(64)
+  reviewed_by_name  String?               @db.VarChar(200)
+  approved_at       DateTime?             @db.Timestamptz(3)
+  approved_by       String?               @db.VarChar(64)
+  applied_at        DateTime?             @db.Timestamptz(3)
+  version           Int                   @default(1)
+  deleted_at        DateTime?             @db.Timestamptz(3)
+  deleted_by        String?               @db.VarChar(64)
+  created_at        DateTime              @default(now()) @db.Timestamptz(3)
+  created_by        String                @db.VarChar(64)
+  updated_at        DateTime              @default(now()) @db.Timestamptz(3)
+  updated_by        String                @db.VarChar(64)
+  stock_transfer_line stock_transfer_line[]
+
+  @@index([doc_date(sort: Desc), created_at(sort: Desc), id(sort: Desc)], map: "stock_transfer_daybook_idx", where: raw("(deleted_at IS NULL)"))
+  @@index([doc_date(sort: Desc), created_at(sort: Desc), id(sort: Desc)], map: "stock_transfer_deleted_idx", where: raw("(deleted_at IS NOT NULL)"))
+  @@index([submitted_at, id], map: "stock_transfer_pending_idx", where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"))
+  @@index([id], map: "stock_transfer_revision_idx", where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"))
+  @@schema("inventory")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stock_transfer_line {
+  id                   String         @id @db.Uuid
+  transfer_id          String         @db.Uuid
+  position             Int            @db.SmallInt
+  from_stock_uuid      String         @db.Uuid
+  from_location        String         @db.VarChar(40)
+  on_hand_pcs          Int
+  on_hand_weight_ct    Decimal        @db.Decimal(12, 3)
+  to_location          String         @db.VarChar(40)
+  pcs                  Int
+  weight_ct            Decimal        @db.Decimal(12, 3)
+  new_stock_uuid       String?        @db.Uuid
+  applied_from_version Int?
+  remark               String         @default("") @db.VarChar(250)
+  stock_transfer       stock_transfer @relation(fields: [transfer_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "stock_transfer_line_transfer_fkey")
+  from_stock           stock          @relation("stock_transfer_line_from", fields: [from_stock_uuid], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "stock_transfer_line_from_stock_fkey")
+  new_stock            stock?         @relation("stock_transfer_line_new", fields: [new_stock_uuid], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "stock_transfer_line_new_stock_fkey")
+
+  @@unique([transfer_id, from_stock_uuid], map: "stock_transfer_line_from_key")
+  @@unique([transfer_id, position], map: "stock_transfer_line_position_key")
+  @@index([from_stock_uuid], map: "stock_transfer_line_from_stock_idx")
+  @@index([new_stock_uuid], map: "stock_transfer_line_new_stock_idx", where: raw("(new_stock_uuid IS NOT NULL)"))
   @@schema("inventory")
 }

@@ -30,7 +30,7 @@ export async function getDetail(db: Db, master: MasterApi, id: string, requestId
       h."currency_code", h."ref", h."document_note", h."mode", h."row_count", h."total_pcs", h."total_weight_ct"::text AS "total_weight_ct", h."total_cost_base"::text AS "total_cost_base",
       h."auto_approved", h."revision_count", h."submitted_at", h."submitted_by", h."submitted_by_name", h."review_action", h."review_note", h."reviewed_at", h."reviewed_by",
       h."reviewed_by_name", h."deleted_at", h."deleted_by", h."created_at", h."created_by", h."updated_at", h."updated_by", h."sync_state", h."provisional",
-      EXISTS (SELECT 1 FROM "inventory"."stock" s WHERE s."load_id" = h."id" AND (s."on_hand_pcs" <> s."pcs" OR s."on_hand_weight_ct" <> s."weight_ct")) AS "in_use",
+      EXISTS (SELECT 1 FROM "inventory"."stock" s WHERE s."load_id" = h."id" AND s."status" = 'ACTIVE' AND (s."on_hand_pcs" <> s."pcs" OR s."on_hand_weight_ct" <> s."weight_ct" OR s."transferred_from_uuid" IS NOT NULL)) AS "in_use",
       (SELECT a."require_approval" FROM "inventory"."approval_setting" a WHERE a."type" = 'load-to-stock') AS "require_approval",
       COALESCE((SELECT json_agg(json_build_object('documentType', x."document_type", 'documentNo', x."document_no") ORDER BY x."document_type", x."document_no")
         FROM (SELECT DISTINCT k."document_type", k."document_no" FROM "inventory"."stock_hold" k JOIN "inventory"."stock" s2 ON s2."id" = k."stock_uuid"

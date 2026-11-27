@@ -1,14 +1,16 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { adjustmentKeys } from "@/features/stock-adjustment/api";
 import { StockAdjustmentPage } from "@/features/stock-adjustment/components/StockAdjustmentPage";
 
 const access = vi.hoisted(() => ({ view: true, add: true, edit: true, delete: true, approve: false }));
 vi.mock("@/features/trade-document/document-api", () => ({ useDocumentAccess: () => access }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
-afterEach(() => vi.clearAllMocks());
+// The page defaults Doc Date to today (todayIso); pin the clock so the number preview key matches the cached 2026-11-24 entry.
+beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-24T10:00:00+07:00")); });
+afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); });
 
 function renderPage(permission = true) {
   access.view = permission;

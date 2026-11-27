@@ -1,4 +1,5 @@
-import { mapReadError, type CallOptions, type MasterTransport } from "./master-client";
+import { AppError } from "./errors";
+import { MasterRefusal, mapReadError, type CallOptions, type MasterTransport } from "./master-client";
 
 /** Typed calls of the master internal API (load-to-stock api-contract "Master internal API"). */
 export type PriceUnit = "PER_CT" | "PER_PCS";
@@ -24,7 +25,10 @@ export type AllocationLine = { purchaseLineId: string; pcs: number; weightCt: st
 export type AllocationRequest = { vendorId: string; lines: AllocationLine[]; newStockIdCount: number };
 export type AllocationResponse = { revision: number; stockIds: string[]; lines: { purchaseLineId: string; remainingPcs: number; remainingWeightCt: string }[]; replayed: boolean };
 export type Numbering = { id: string; prefix: string; separator: string; startNo: number };
-export type NumberingKey = "load-to-stock" | "sale" | "stock-adjustment";
+export type NumberingKey = "load-to-stock" | "sale" | "stock-transfer-location" | "stock-adjustment";
+/** ADR-0060 D6: inventory document types that take Stock IDs from master per revision (not Load to Stock). */
+export type StockIdIssueType = "stock-transfer-location";
+export type StockIdIssueResponse = { revision: number; stockIds: string[]; replayed: boolean };
 
 // ---------- sale (ADR-0054, api-contract "Master internal API") ----------
 export type SaleStoneAttrs = {
@@ -159,6 +163,19 @@ export class MasterApi {
 
   getAllocation(loadId: string, options?: CallOptions) {
     return this.transport.json<{ revision: number; lines: AllocationLine[]; stockIds: string[] }>("GET", `/load-allocations/${loadId}`, undefined, options);
+  }
+
+  /**
+   * ADR-0060 D6: Stock IDs for one revision of a document, before the inventory transaction. Idempotent per (type, id,
+   * revision), so a transient failure is retried once here; unavailable → 503 MASTER_UNAVAILABLE, stale → 409 VERSION_CONFLICT.
+   */
+  async issueStockIds(documentType: StockIdIssueType, documentId: string, revision: number, count: number, options?: CallOptions): Promise<StockIdIssueResponse> {
+    try {
+      return await this.transport.json<StockIdIssueResponse>("PUT", `/stock-id-issues/${documentType}/${documentId}`, { revision, count }, { ...options, retry: true });
+    } catch (error) {
+      if (error instanceof MasterRefusal && error.code === "STOCK_ID_ISSUE_STALE") throw new AppError(409, "VERSION_CONFLICT", {});
+      throw mapReadError(error);
+    }
   }
 
   linePhotos(lineId: string, options?: CallOptions) {

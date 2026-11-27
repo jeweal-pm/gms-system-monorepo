@@ -8,7 +8,7 @@ import { readDomainError } from "@/lib/trpc-error";
 
 export const SETUP_ROWS: readonly ApproveMenu[] = APPROVE_MENUS;
 
-/** Load to Stock, Merge/Split Stock, Transfer Location: no page yet; switch On and disabled (Q-AS-04). */
+/** Merge/Split Stock: no page yet; switch On and disabled (Q-AS-04). */
 export const isNotAvailable = (menu: ApproveMenu) => menu.availability === "not-available";
 
 // ---------- server rows (FE-AS-008, api-contract `approvalSetting.list`) ----------
@@ -29,7 +29,7 @@ type InventorySetting = { type: string; requireApproval: boolean; version: numbe
 
 /**
  * FE-LS-014 (ADR-0052 D8): master's rows without the three inventory types plus backend-api-inventory's rows in the
- * same shape. Only Load to Stock has a page (Merge/Split and Transfer Location stay not available). `undefined` until
+ * same shape. Load to Stock, Sale and Stock Transfer Location (ADR-0060 D8) have a page; Merge/Split stays not available. `undefined` until
  * master's list has loaded; inventory rows join when theirs has.
  */
 export function mergeSettings(master: readonly ApprovalSettingItem[] | undefined, inventory: readonly InventorySetting[] | undefined): ApprovalSettingItem[] | undefined {
@@ -38,7 +38,7 @@ export function mergeSettings(master: readonly ApprovalSettingItem[] | undefined
   const fromInventory = (inventory ?? []).map((item) => ({
     type: item.type,
     requireApproval: item.requireApproval,
-    available: item.type === "load-to-stock" || item.type === "sale" || item.type === "stock-adjustment",
+    available: AVAILABLE_INVENTORY_TYPES.has(item.type),
     version: item.version,
     updatedAt: "",
     updatedByName: null,
@@ -48,6 +48,7 @@ export function mergeSettings(master: readonly ApprovalSettingItem[] | undefined
 }
 
 const INVENTORY_TYPES = new Set(["load-to-stock", "merge-split", "stock-transfer-location", "sale", "stock-adjustment"]);
+const AVAILABLE_INVENTORY_TYPES = new Set(["load-to-stock", "sale", "stock-transfer-location", "stock-adjustment"]);
 
 export const settingOf = (items: readonly ApprovalSettingItem[] | undefined, type: ApprovalSettingType) => items?.find((item) => item.type === type);
 
