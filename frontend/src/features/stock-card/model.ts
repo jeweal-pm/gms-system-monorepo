@@ -178,6 +178,8 @@ export const rowNumber = (page: number, pageSize: number, index: number) => (pag
 const DOC_ROUTES: Readonly<Record<string, string>> = {
   "load-to-stock": "/inventory/load-to-stock",
   "stock-adjustment": "/inventory/stock-adjustment",
+  // merge-split (ADR-0060): SPLIT_* / MERGE_* rows open the Merge/Split document.
+  "merge-split": "/inventory/merge-split",
   "memo-receive": "/memo/memo-receive",
   "memo-out-return": "/memo/memo-out-return",
   "memo-out": "/memo/memo-out",

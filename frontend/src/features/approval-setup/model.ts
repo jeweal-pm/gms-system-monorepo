@@ -48,7 +48,7 @@ export function mergeSettings(master: readonly ApprovalSettingItem[] | undefined
 }
 
 const INVENTORY_TYPES = new Set(["load-to-stock", "merge-split", "stock-transfer-location", "sale", "stock-adjustment"]);
-const AVAILABLE_INVENTORY_TYPES = new Set(["load-to-stock", "sale", "stock-transfer-location", "stock-adjustment"]);
+const AVAILABLE_INVENTORY_TYPES = new Set(["load-to-stock", "merge-split", "sale", "stock-transfer-location", "stock-adjustment"]);
 
 export const settingOf = (items: readonly ApprovalSettingItem[] | undefined, type: ApprovalSettingType) => items?.find((item) => item.type === type);
 

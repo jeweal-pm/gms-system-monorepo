@@ -201,7 +201,7 @@ describe("IT-STL-04 navigation, Approval Setup, flow status, Stock Card (FE-STL-
     expect(mapFlowError(new InventoryApiError(409, "STOCK_TRANSFER_REVISE_LIMIT", "x"), "stock-transfer-location", "ST-1", "submit")?.message).toBe("ST-1 was already sent back once. Approve or reject it.");
     expect(mapFlowError(new InventoryApiError(409, "STOCK_TRANSFER_APPROVAL_OFF", "x"), "stock-transfer-location", "ST-1", "submit")?.settingChanged).toBe(true);
     const merged = mergeSettings([], [{ type: "stock-transfer-location", requireApproval: true, version: 1, waitingCount: { pending: 2, revision: 0 } }, { type: "merge-split", requireApproval: true, version: 1 }])!;
-    expect(merged.map((entry) => [entry.type, entry.available, entry.waiting])).toEqual([["stock-transfer-location", true, 2], ["merge-split", false, null]]);
+    expect(merged.map((entry) => [entry.type, entry.available, entry.waiting])).toEqual([["stock-transfer-location", true, 2], ["merge-split", true, null]]);
     expect(docHref("stock-transfer-location", ID)).toBe(`/inventory/stock-transfer-location/${ID}`);
   });
 });

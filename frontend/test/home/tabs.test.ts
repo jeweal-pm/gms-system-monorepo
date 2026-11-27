@@ -146,7 +146,7 @@ describe("tab list (app-shell-tabs UI rev 1)", () => {
 
   it("UT-TAB-17 a new tab (and its toast) is named by its sidebar label before the page names itself", async () => {
     const { navigationLabelFor } = await import("@/features/home/navigation");
-    expect(navigationLabelFor("/modules/merge-split")).toBe("Merge/Split");
+    expect(navigationLabelFor("/inventory/merge-split")).toBe("Merge/Split");
     expect(navigationLabelFor("/pre-sale/quotation")).toBe("Quotation");
     expect(navigationLabelFor("/setup/vendor")).toBe("Vendor");
     expect(navigationLabelFor("/no/such/page")).toBeUndefined();

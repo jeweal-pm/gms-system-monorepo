@@ -93,7 +93,7 @@ describe("IT-LS-07 Approve Center: Load to Stock from backend-api-inventory (FE-
 describe("IT-LS-08 Approval Setup and approval settings from inventory (FE-LS-014)", () => {
   const masterItem = (type: string) => ({ type, requireApproval: true, available: true, version: 2, updatedAt: "2026-11-10T00:00:00.000Z", updatedByName: null, waiting: 0 });
 
-  it("master rows without the inventory types + inventory rows; only Load to Stock is switchable; waiting = pending + revision", () => {
+  it("master rows without the inventory types + inventory rows; the inventory types are switchable; waiting = pending + revision", () => {
     const merged = mergeSettings([masterItem("reserve"), masterItem("load-to-stock")], [
       { type: "load-to-stock", requireApproval: false, version: 4, waitingCount: { pending: 2, revision: 1 } },
       { type: "merge-split", requireApproval: true, version: 1 },
@@ -101,7 +101,7 @@ describe("IT-LS-08 Approval Setup and approval settings from inventory (FE-LS-01
     expect(merged?.map((item) => [item.type, item.available, item.version, item.waiting])).toEqual([
       ["reserve", true, 2, 0],
       ["load-to-stock", true, 4, 3],
-      ["merge-split", false, 1, null],
+      ["merge-split", true, 1, null],
     ]);
     expect(mergeSettings(undefined, [])).toBeUndefined();
   });

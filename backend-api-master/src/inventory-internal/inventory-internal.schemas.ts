@@ -62,7 +62,7 @@ export const masterDataResolveSchema = z.object({
 export type MasterDataResolveInput = z.output<typeof masterDataResolveSchema>;
 
 /** Document Setup keys an inventory document may resolve (ADR-0052 D10; sale ADR-0054 D10, stock-adjustment ADR-0059 and stock-transfer-location ADR-0060 D10 widen the allow-list). */
-export const INVENTORY_NUMBERING_KEYS = ["load-to-stock", "sale", "stock-transfer-location", "stock-adjustment"] as const;
+export const INVENTORY_NUMBERING_KEYS = ["load-to-stock", "sale", "stock-transfer-location", "stock-adjustment", "merge-split"] as const;
 
 export const numberingResolveSchema = z.object({
   transactionKey: z.enum(INVENTORY_NUMBERING_KEYS),
@@ -96,7 +96,7 @@ export type AllocationPutInput = z.output<typeof allocationPutSchema>;
 // ---------- stock-transfer-location ADR-0060 D6 (BE-STL-002) ----------
 
 /** Inventory document types that may take Stock IDs through `PUT /stock-id-issues/{documentType}/{documentId}`. */
-export const STOCK_ID_ISSUE_TYPES = ["stock-transfer-location"] as const;
+export const STOCK_ID_ISSUE_TYPES = ["stock-transfer-location", "merge-split"] as const;
 export type StockIdIssueType = (typeof STOCK_ID_ISSUE_TYPES)[number];
 export const stockIdIssueTypeSchema = z.enum(STOCK_ID_ISSUE_TYPES);
 export const STOCK_ID_ISSUE_MAX = 200;
