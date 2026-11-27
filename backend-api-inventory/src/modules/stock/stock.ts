@@ -44,14 +44,19 @@ export async function createStocks(tx: Tx, header: StockHeader, rows: readonly S
   });
 }
 
-type ActiveStock = { id: string; stock_id: string; pcs: number; weight_ct: string; cost_amount_base: string; on_hand_pcs: number; on_hand_weight_ct: string };
+type ActiveStock = { id: string; stock_id: string; pcs: number; weight_ct: string; cost_amount_base: string; on_hand_pcs: number; on_hand_weight_ct: string; transferred?: boolean };
 
-/** Locks the load's active stocks (id order) and returns them with the in-use ones (quantity outside on-hand). */
+/**
+ * Locks the load's active stocks (id order) and returns them with the in-use ones: quantity outside on-hand, or (ADR-0060 D9)
+ * moved by a Stock Transfer Location — a row created by a transfer, or a source with an ACTIVE row transferred from it. The
+ * Load can't rewrite or reverse those rows; the transfer must be deleted first.
+ */
 export async function lockLoadStocks(tx: Tx, loadId: string): Promise<{ stocks: ActiveStock[]; inUse: string[] }> {
   const stocks = await tx.$queryRaw<ActiveStock[]>`
-    SELECT "id", "stock_id", "pcs", "weight_ct"::text AS "weight_ct", "cost_amount_base"::text AS "cost_amount_base", "on_hand_pcs", "on_hand_weight_ct"::text AS "on_hand_weight_ct"
-    FROM "inventory"."stock" WHERE "load_id" = ${loadId}::uuid AND "status" = 'ACTIVE' ORDER BY "id" FOR UPDATE`;
-  const inUse = stocks.filter((stock) => stock.on_hand_pcs !== stock.pcs || !new Decimal(stock.on_hand_weight_ct).equals(stock.weight_ct)).map((stock) => stock.stock_id);
+    SELECT s."id", s."stock_id", s."pcs", s."weight_ct"::text AS "weight_ct", s."cost_amount_base"::text AS "cost_amount_base", s."on_hand_pcs", s."on_hand_weight_ct"::text AS "on_hand_weight_ct",
+      (s."transferred_from_uuid" IS NOT NULL OR EXISTS (SELECT 1 FROM "inventory"."stock" c WHERE c."transferred_from_uuid" = s."id" AND c."status" = 'ACTIVE')) AS "transferred"
+    FROM "inventory"."stock" s WHERE s."load_id" = ${loadId}::uuid AND s."status" = 'ACTIVE' ORDER BY s."id" FOR UPDATE OF s`;
+  const inUse = stocks.filter((stock) => stock.transferred || stock.on_hand_pcs !== stock.pcs || !new Decimal(stock.on_hand_weight_ct).equals(stock.weight_ct)).map((stock) => stock.stock_id);
   return { stocks, inUse };
 }
 

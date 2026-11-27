@@ -13,7 +13,9 @@ import { LINE_PHOTO_DOCUMENTS } from "../trade-document/line-photos";
 // customer-stock-document → memo-stock → memo-receive → memo-out-return → memo-out cycle before the class exists.
 import { customerDocumentOptions } from "../trade-document/memo-out.service";
 import { allocationException, applyAllocation, unpackResult, type AllocationResult } from "./allocation";
+import { issueForDocument, type StockIdIssueResult } from "./stock-id-issue";
 import type {
+  StockIdIssuePutInput, StockIdIssueType,
   AllocationPutInput, LineBatchInput, LoadableSearchInput, MasterDataResolveInput, NumberingResolveInput, SaleConsumptionPutInput, SalePrepareInput, SaleReferenceQuery,
   SaleReserveLineSearchInput, VendorsQuery,
 } from "./inventory-internal.schemas";
@@ -110,6 +112,17 @@ export class InventoryInternalService {
         stockIds: unpackResult(header.result).stockIds,
       };
     });
+  }
+
+  /** ADR-0060 D6: Stock IDs for one revision of an inventory document, idempotent; one WRITE_TX (below inventory's 5 s timeout). */
+  async issueStockIds(documentType: StockIdIssueType, documentId: string, input: StockIdIssuePutInput, actorId: string | null): Promise<StockIdIssueResult> {
+    try {
+      const result = await prisma.$transaction((tx) => issueForDocument(tx, documentType, documentId, input, actorId, this.clock), WRITE_TX);
+      this.logger.log({ event: result.replayed ? "stock_id_issue.replayed" : "stock_id_issue.issued", documentType, documentId, revision: result.revision, count: result.stockIds.length });
+      return result;
+    } catch (error) {
+      throw this.mapError(error, "stock_id_issue");
+    }
   }
 
   // ---------- sale SA rev 1 / ADR-0054 (BE-SL-002) ----------

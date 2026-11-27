@@ -92,8 +92,10 @@ describe("IT-AS-S01 page from approvalSetting.list (FE-AS-008)", () => {
     expect(rowOf(html, "Reserve")).toContain("2 documents");
     expect(rowOf(html, "Purchase")).toContain("100+ documents");
     expect(rowOf(html, "Purchase")).not.toContain("href=");
-    expect(rowOf(html, "Transfer Location")).toContain('aria-disabled="true"');
-    expect(rowOf(html, "Transfer Location")).toContain("Not available yet");
+    // FE-STL-005: Transfer Location has a page; Merge/Split stays not available.
+    expect(rowOf(html, "Merge/Split Stock")).toContain('aria-disabled="true"');
+    expect(rowOf(html, "Merge/Split Stock")).toContain("Not available yet");
+    expect(rowOf(html, "Transfer Location")).not.toContain("Not available yet");
     expect(html).not.toContain("View only");
     expect(calls).toEqual([]);
   });

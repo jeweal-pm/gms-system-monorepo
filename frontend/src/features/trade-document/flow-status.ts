@@ -15,7 +15,7 @@ export type ApprovalDocStatus = (typeof APPROVAL_DOC_STATUSES)[number];
  * The document types with a page (approval setting keys, kebab-case as `approvalSetting.list`). `load-to-stock` is an
  * inventory type (ADR-0052 D8): its setting is read from `backend-api-inventory`.
  */
-export type DocumentApprovalType = "quotation" | "reserve" | "memo-receive" | "memo-return" | "memo-out" | "memo-out-return" | "purchase-order" | "purchase" | "load-to-stock" | "sale";
+export type DocumentApprovalType = "quotation" | "reserve" | "memo-receive" | "memo-return" | "memo-out" | "memo-out-return" | "purchase-order" | "purchase" | "load-to-stock" | "sale" | "stock-transfer-location";
 
 /** Error code prefix (`<CODE>_*`) and the menu name used in messages ("Approval is now off for {Menu}."). */
 export const APPROVAL_DOCUMENTS: Record<DocumentApprovalType, { code: string; menu: string }> = {
@@ -30,6 +30,8 @@ export const APPROVAL_DOCUMENTS: Record<DocumentApprovalType, { code: string; me
   "load-to-stock": { code: "LOAD_TO_STOCK", menu: "Load to Stock" },
   // sale FE-SL-009 (ADR-0054): served by backend-api-inventory, like Load to Stock.
   sale: { code: "SALE", menu: "Sale" },
+  // stock-transfer-location FE-STL-005 (ADR-0060 D8): served by backend-api-inventory; codes `STOCK_TRANSFER_*`.
+  "stock-transfer-location": { code: "STOCK_TRANSFER", menu: "Stock Transfer Location" },
 };
 
 export type DocReview = { action: "REVISE" | "REJECT"; note: string; at: string; byName: string | null };

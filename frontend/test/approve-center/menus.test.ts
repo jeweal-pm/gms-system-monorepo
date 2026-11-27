@@ -20,9 +20,16 @@ describe("UT-AP-01 menu registry", () => {
     ]);
   });
 
-  it("Merge/Split and Transfer Location are not available; the eight document types and Load to Stock (FE-LS-011) are available with their procedures", () => {
+  it("Merge/Split is not available; the eight document types, Load to Stock (FE-LS-011), Transfer Location (FE-STL-005) and Sale are available with their procedures", () => {
     const by = Object.fromEntries(APPROVE_MENUS.map((menu) => [menu.slug, menu]));
-    for (const slug of ["merge-split", "transfer-location"]) expect(by[slug].availability).toBe("not-available");
+    expect(by["merge-split"].availability).toBe("not-available");
+    const transfer = by["transfer-location"];
+    expect(transfer.availability).toBe("available");
+    if (transfer.availability === "available") {
+      expect(transfer.type).toBe("stock-transfer-location");
+      expect(transfer.documentBase).toBe("/inventory/stock-transfer-location");
+      expect(transfer.consequence(2)).toContain("2 items move to the new locations");
+    }
     const procs = APPROVE_MENUS.flatMap((menu) => (menu.availability === "available" ? [[menu.slug, menu.proc]] : []));
     expect(procs).toEqual([
       ["quotation", "quotation"],
@@ -34,6 +41,7 @@ describe("UT-AP-01 menu registry", () => {
       ["purchase-order", "purchaseOrder"],
       ["purchase", "purchase"],
       ["load-to-stock", "loadToStock"],
+      ["transfer-location", "stockTransferLocation"],
       ["sale", "sale"],
     ]);
   });

@@ -20,6 +20,11 @@ export const CARD_KINDS: Readonly<Record<string, CardKind>> = {
   MEMO_OUT_RETURN_REVERSAL: { documentType: "memo-out-return", effect: "MOVEMENT" },
   SALE_OUT: { documentType: "sale", effect: "MOVEMENT" },
   SALE_OUT_REVERSAL: { documentType: "sale", effect: "MOVEMENT" },
+  // Stock Transfer Location (ADR-0060 D4/D5): OUT on the old card (source Stock ID), IN on the new card (new Stock ID).
+  TRANSFER_OUT: { documentType: "stock-transfer-location", effect: "MOVEMENT" },
+  TRANSFER_IN: { documentType: "stock-transfer-location", effect: "MOVEMENT" },
+  TRANSFER_OUT_REVERSAL: { documentType: "stock-transfer-location", effect: "MOVEMENT" },
+  TRANSFER_IN_REVERSAL: { documentType: "stock-transfer-location", effect: "MOVEMENT" },
   HOLD_RESERVE: { documentType: "reserve", effect: "NOT_A_MOVEMENT" },
   RELEASE_RESERVE: { documentType: "reserve", effect: "NOT_A_MOVEMENT" },
 };
@@ -28,8 +33,11 @@ export type DocumentTypeInfo = {
   label: string;
   /** Whether the Stock ID may be shown / searched on a row of this type. */
   stockIdVisible: boolean;
-  /** Date, number and account come from the stock row (Load to Stock) instead of `stock_hold_document`. */
-  source: "STOCK" | "HOLD";
+  /**
+   * Where date, number and account come from: the stock row (Load to Stock), `stock_hold_document` (master documents, Sale),
+   * or `stock_transfer` (ADR-0060 D5: Account = "→ <to location>" on OUT, "← <from location>" on IN).
+   */
+  source: "STOCK" | "HOLD" | "TRANSFER";
 };
 
 export const DOCUMENT_TYPES: Readonly<Record<string, DocumentTypeInfo>> = {
@@ -42,12 +50,14 @@ export const DOCUMENT_TYPES: Readonly<Record<string, DocumentTypeInfo>> = {
   quotation: { label: "Quotation", stockIdVisible: false, source: "HOLD" },
   purchase: { label: "Purchase", stockIdVisible: false, source: "HOLD" },
   "memo-return": { label: "Memo Return", stockIdVisible: false, source: "HOLD" },
+  "stock-transfer-location": { label: "Stock Transfer Location", stockIdVisible: true, source: "TRANSFER" },
 };
 
 /** Ledger kinds that are card movements (the fixed array passed to SQL as a parameter, never user text). */
 export const MOVEMENT_KINDS: readonly string[] = Object.entries(CARD_KINDS).filter(([, kind]) => kind.effect === "MOVEMENT").map(([name]) => name).sort();
 export const HIDDEN_STOCK_ID_TYPES: readonly string[] = Object.entries(DOCUMENT_TYPES).filter(([, info]) => !info.stockIdVisible).map(([name]) => name).sort();
 export const STOCK_SOURCED_TYPES: readonly string[] = Object.entries(DOCUMENT_TYPES).filter(([, info]) => info.source === "STOCK").map(([name]) => name).sort();
+export const TRANSFER_SOURCED_TYPES: readonly string[] = Object.entries(DOCUMENT_TYPES).filter(([, info]) => info.source === "TRANSFER").map(([name]) => name).sort();
 
 export function documentTypeLabel(documentType: string): string {
   return DOCUMENT_TYPES[documentType]?.label ?? documentType;

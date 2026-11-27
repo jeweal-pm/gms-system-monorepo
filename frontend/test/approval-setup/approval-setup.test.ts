@@ -53,19 +53,22 @@ const domainError = (domainCode: string, details?: Record<string, number>) =>
   TRPCClientError.from({ error: { message: domainCode, code: -32000, data: { code: "CONFLICT", httpStatus: 409, domainCode, details } } } as never);
 
 describe("UT-AS-01 rows", () => {
-  it("12 rows in sidebar order with the Memo rows (owner answer 2); Merge/Split and Transfer Location are not available (Load to Stock FE-LS-014 and Sale FE-SL-009 have pages)", () => {
+  it("12 rows in sidebar order with the Memo rows (owner answer 2); Merge/Split is not available (Load to Stock FE-LS-014, Sale FE-SL-009 and Transfer Location FE-STL-005 have pages)", () => {
     expect(SETUP_ROWS.map((entry) => entry.label)).toEqual([
       "Quotation", "Reserve", "Memo Receive", "Memo Return", "Memo Out", "Memo Out Return",
       "Purchase Order (PO)", "Purchase", "Load to Stock", "Merge/Split Stock", "Transfer Location", "Sale",
     ]);
-    expect(SETUP_ROWS.filter(isNotAvailable).map((entry) => entry.slug)).toEqual(["merge-split", "transfer-location"]);
+    expect(SETUP_ROWS.filter(isNotAvailable).map((entry) => entry.slug)).toEqual(["merge-split"]);
   });
 
   it("FE-AS-008: each row reads its server item by the setting key; unavailable or loading rows are locked", () => {
     const items = [settingItem("reserve"), settingItem("stock-transfer-location", { available: false }), settingItem("quotation", { available: false })];
     expect(settingOf(items, "reserve")?.type).toBe("reserve");
     expect(rowLocked(menu("reserve"), settingOf(items, "reserve"))).toBeNull();
+    // A page that exists is still locked while the server reports the type unavailable.
     expect(rowLocked(menu("transfer-location"), settingOf(items, "stock-transfer-location"))).toBe("not-available");
+    expect(rowLocked(menu("transfer-location"), settingItem("stock-transfer-location"))).toBeNull();
+    expect(rowLocked(menu("merge-split"), settingItem("merge-split"))).toBe("not-available");
     expect(rowLocked(menu("quotation"), settingOf(items, "quotation"))).toBe("not-available");
     expect(rowLocked(menu("purchase"), undefined)).toBe("loading");
   });

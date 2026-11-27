@@ -18,7 +18,7 @@ import { registerStockCardRoutes } from "../../src/modules/reports/stock-card/ro
 
 describe("UT-SC-01 CARD_KINDS registry", () => {
   it("classifies the ledger kinds: Load / Memo Out / Memo Out Return are movements, Reserve is not", () => {
-    expect(MOVEMENT_KINDS).toEqual(["LOAD_ADJUST", "LOAD_IN", "LOAD_REVERSAL", "MEMO_OUT", "MEMO_OUT_RETURN", "MEMO_OUT_RETURN_REVERSAL", "MEMO_OUT_REVERSAL", "SALE_OUT", "SALE_OUT_REVERSAL"]);
+    expect(MOVEMENT_KINDS).toEqual(["LOAD_ADJUST", "LOAD_IN", "LOAD_REVERSAL", "MEMO_OUT", "MEMO_OUT_RETURN", "MEMO_OUT_RETURN_REVERSAL", "MEMO_OUT_REVERSAL", "SALE_OUT", "SALE_OUT_REVERSAL", "TRANSFER_IN", "TRANSFER_IN_REVERSAL", "TRANSFER_OUT", "TRANSFER_OUT_REVERSAL"]);
     expect(classifyKind("HOLD_RESERVE")).toEqual({ documentType: "reserve", effect: "NOT_A_MOVEMENT" });
     expect(classifyKind("RELEASE_RESERVE")?.effect).toBe("NOT_A_MOVEMENT");
     expect(MOVEMENT_KINDS).not.toContain("HOLD_RESERVE");

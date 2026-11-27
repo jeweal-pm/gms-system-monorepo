@@ -1,6 +1,6 @@
 import { AppError } from "../../platform/errors";
 import { Decimal, Prisma, type Client, type Dec } from "../../platform/db";
-import { HIDDEN_STOCK_ID_TYPES, MOVEMENT_KINDS, STOCK_SOURCED_TYPES, documentTypeLabel } from "./card-kinds";
+import { HIDDEN_STOCK_ID_TYPES, MOVEMENT_KINDS, STOCK_SOURCED_TYPES, TRANSFER_SOURCED_TYPES, documentTypeLabel } from "./card-kinds";
 
 /**
  * Stock Card read functions (stock-card SA rev 1, ADR-0056 D1-D8; architecture.md "Read paths" and "Entry computation").
@@ -140,11 +140,28 @@ export function entriesSql(cardFilter: Prisma.Sql, pattern: string | null): Pris
   dated AS (
     SELECT d."card_key", d."document_type", d."document_id", d."pcs", d."weight", d."first_at", d."stock_id", d."stock_count", d."stock_match",
       CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN COALESCE(d."stock_date", (d."first_at" AT TIME ZONE 'Asia/Bangkok')::date)
+        WHEN d."document_type" = ANY(${[...TRANSFER_SOURCED_TYPES]}::text[]) THEN COALESCE(t."doc_date", (d."first_at" AT TIME ZONE 'Asia/Bangkok')::date)
         ELSE COALESCE(h."doc_date", (d."first_at" AT TIME ZONE 'Asia/Bangkok')::date) END AS "doc_date",
-      CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN COALESCE(d."stock_no", '') ELSE COALESCE(h."document_no", '') END AS "doc_no",
-      CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN d."vendor_id" ELSE h."party_id" END AS "account_id",
-      CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN COALESCE(d."vendor_name", '') ELSE COALESCE(h."party_name", '') END AS "account_name"
+      CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN COALESCE(d."stock_no", '')
+        WHEN d."document_type" = ANY(${[...TRANSFER_SOURCED_TYPES]}::text[]) THEN COALESCE(t."doc_no", '')
+        ELSE COALESCE(h."document_no", '') END AS "doc_no",
+      CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN d."vendor_id"
+        WHEN d."document_type" = ANY(${[...TRANSFER_SOURCED_TYPES]}::text[]) THEN NULL::uuid
+        ELSE h."party_id" END AS "account_id",
+      CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN COALESCE(d."vendor_name", '')
+        WHEN d."document_type" = ANY(${[...TRANSFER_SOURCED_TYPES]}::text[]) THEN
+          -- ADR-0060 D5: OUT (net < 0) names where the stones went, IN where they came from; only this card's moved stocks count.
+          CASE WHEN d."pcs" < 0 OR (d."pcs" = 0 AND d."weight" < 0) THEN '→ ' || COALESCE((
+              SELECT string_agg(DISTINCT tl."to_location", ', ' ORDER BY tl."to_location") FROM "inventory"."stock_transfer_line" tl
+              WHERE tl."transfer_id" = d."document_id" AND tl."from_stock_uuid" IN (
+                SELECT p."stock_uuid" FROM ps p WHERE p."card_key" = d."card_key" AND p."document_type" = d."document_type" AND p."document_id" = d."document_id" AND (p."pcs" <> 0 OR p."weight" <> 0))), '')
+            ELSE '← ' || COALESCE((
+              SELECT string_agg(DISTINCT src."location", ', ' ORDER BY src."location") FROM ps p
+              JOIN "inventory"."stock" n ON n."id" = p."stock_uuid" JOIN "inventory"."stock" src ON src."id" = n."transferred_from_uuid"
+              WHERE p."card_key" = d."card_key" AND p."document_type" = d."document_type" AND p."document_id" = d."document_id" AND (p."pcs" <> 0 OR p."weight" <> 0)), '') END
+        ELSE COALESCE(h."party_name", '') END AS "account_name"
     FROM doc d LEFT JOIN "inventory"."stock_hold_document" h ON h."document_type" = d."document_type" AND h."document_id" = d."document_id"
+      LEFT JOIN "inventory"."stock_transfer" t ON d."document_type" = ANY(${[...TRANSFER_SOURCED_TYPES]}::text[]) AND t."id" = d."document_id"
   )`;
 }
 

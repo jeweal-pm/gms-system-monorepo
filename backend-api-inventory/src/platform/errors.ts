@@ -50,6 +50,18 @@ export const MESSAGES: Record<string, string> = {
   SALE_SOURCE_SHORT: "Some items no longer have enough available quantity",
   SALE_REFERENCE_INVALID: "Some items are no longer available",
   SALE_PHOTO_INVALID: "A photo is missing or is not a ready Sale photo",
+  // stock-transfer-location api-contract "Errors" (ADR-0060)
+  STOCK_TRANSFER_NOT_FOUND: "Stock Transfer Location not found",
+  VERSION_CONFLICT: "The document was changed by someone else",
+  STOCK_TRANSFER_STATUS: "The Stock Transfer Location can't be changed in its current status",
+  STOCK_TRANSFER_EXCEEDS_ON_HAND: "Some stocks no longer have enough on-hand quantity",
+  STOCK_TRANSFER_IN_USE: "Stock moved by this transfer is already used; it can't be changed",
+  STOCK_TRANSFER_LINE_UNAVAILABLE: "Some stocks can no longer be transferred",
+  STOCK_TRANSFER_APPROVAL_OFF: "Approval is turned off for Stock Transfer Location; save the document instead",
+  VALIDATION_FAILED: "The request is invalid",
+  STOCK_TRANSFER_REVISE_LIMIT: "The Stock Transfer Location was already sent back for revision once",
+  LOCATION_INVALID: "A New Location is unknown, inactive or the same as the current location",
+  NUMBERING_NOT_CONFIGURED: "Document numbering is not configured",
   // Internal API for api-master (ADR-0052 D18/D21, error-handling "Inventory internal codes").
   SERVICE_UNAUTHENTICATED: "The service credential is missing or invalid",
   INVENTORY_BUSY: "Too many internal requests; retry shortly",
