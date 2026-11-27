@@ -31,3 +31,19 @@ describe("UT-STL-M02 issueForDocument replay rules (no DB)", () => {
       .rejects.toMatchObject({ status: 409, response: { error: { code: "STOCK_ID_ISSUE_STALE", details: { appliedRevision: 3 } } } });
   });
 });
+
+/** merge-split SA-MS-07 / SA-MS-13 (BE-MS-002): the Merge/Split numbering key and Stock ID issue type reuse the same allow-lists. */
+describe("UT-MS-M01 merge-split numbering key and issue type", () => {
+  it("allows the merge-split numbering key (Document Setup code MS)", () => {
+    expect(INVENTORY_NUMBERING_KEYS).toContain("merge-split");
+    expect(numberingResolveSchema.safeParse({ transactionKey: "merge-split", docDate: "2026-11-27", markUsed: true }).success).toBe(true);
+  });
+  it("accepts merge-split as a Stock ID issue document type; other inventory types stay refused", () => {
+    expect(stockIdIssueTypeSchema.safeParse("merge-split").success).toBe(true);
+    expect(stockIdIssueTypeSchema.safeParse("stock-adjustment").success).toBe(false);
+  });
+  it("replays the same apply sequence of a merge-split document", async () => {
+    const client = { $queryRaw: vi.fn(async (sql: { sql?: string }) => (String(sql.sql ?? "").includes("stock_id_issue") ? [{ revision: 1, stock_ids: ["900001", "900002"] }] : [])), $executeRaw: vi.fn(async () => 1) } as never;
+    expect(await issueForDocument(client, "merge-split", "0192a1b2-0000-7000-8000-0000000000aa", { revision: 1, count: 2 }, null, () => new Date())).toEqual({ revision: 1, stockIds: ["900001", "900002"], replayed: true });
+  });
+});

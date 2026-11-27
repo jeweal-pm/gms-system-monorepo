@@ -71,6 +71,8 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   "load-to-stock": "/inventory/load-to-stock",
   // stock-adjustment UI rev 1 (FE-SAJ-006, ADR-0059): Inventory › Stock Adjustment.
   "stock-adjustment": "/inventory/stock-adjustment",
+  // merge-split UI rev 1 (FE-MS-007, ADR-0060): Inventory › Merge/Split.
+  "merge-split": "/inventory/merge-split",
   // sale UI rev 1 (FE-SL-008, owner 2026-11-18 "ทำแค่ ui พอ ยังไม่ต้องต่อ api"): Sale › Sale, linked before the API exists.
   sale: "/sale/sale",
   // stock-transfer-location (ADR-0060 D12, FE-STL-005): Inventory › Stock Transfer Location.
@@ -268,7 +270,7 @@ export const sidebarSections: NavSection[] = [
     title: "Inventory",
     items: [
       { ...link("load-to-stock", "Load to Stock", BoxClockIcon, REAL_PAGE_HREFS["load-to-stock"]), activePrefix: REAL_PAGE_HREFS["load-to-stock"] },
-      link("merge-split", "Merge/Split", SplitVerticalIcon),
+      { ...link("merge-split", "Merge/Split", SplitVerticalIcon, REAL_PAGE_HREFS["merge-split"]), activePrefix: REAL_PAGE_HREFS["merge-split"] },
       {
         ...link("stock-transfer-location", "Stock Transfer Location", StockTransferIcon, REAL_PAGE_HREFS["stock-transfer-location"]),
         activePrefix: REAL_PAGE_HREFS["stock-transfer-location"],

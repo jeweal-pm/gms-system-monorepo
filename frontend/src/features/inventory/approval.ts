@@ -39,7 +39,7 @@ export function inventoryApprovalCalls(deps: InventoryClientDeps = {}) {
       inventoryRequest(`/approval-settings/${encodeURIComponent(type)}`, { method: "PUT", body: { requireApproval, expectedVersion }, schema: approvalSettingUpdateSchema }, deps),
     summary: () => inventoryRequest("/approval/summary", { schema: approvalSummarySchema }, deps),
     pending: (input: InventoryPendingInput, cursor?: string | null) => {
-      const query = input.type === "stock-adjustment"
+      const query = input.type === "stock-adjustment" || input.type === "merge-split"
         ? { type: input.type, q: input.q, limit: input.limit, cursor }
         : { type: input.type, q: input.q, sort: input.sort, dir: input.dir, limit: input.limit, cursor };
       return inventoryRequest("/approval/pending", { query, schema: pendingPageSchema }, deps);

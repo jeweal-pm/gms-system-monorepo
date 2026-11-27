@@ -21,9 +21,11 @@ describe("UT-AP-01 menu registry", () => {
     ]);
   });
 
-  it("Merge/Split is not available; the eight document types, Load to Stock (FE-LS-011), Transfer Location (FE-STL-005) and Sale are available with their procedures", () => {
+  it("the eight document types, Load to Stock (FE-LS-011), Merge/Split (FE-MS-007), Transfer Location (FE-STL-005) and Sale are available with their procedures", () => {
     const by = Object.fromEntries(APPROVE_MENUS.map((menu) => [menu.slug, menu]));
-    expect(by["merge-split"].availability).toBe("not-available");
+    const merge = by["merge-split"];
+    expect(merge.availability).toBe("available");
+    if (merge.availability === "available") expect(merge.documentBase).toBe("/inventory/merge-split");
     const transfer = by["transfer-location"];
     expect(transfer.availability).toBe("available");
     if (transfer.availability === "available") {
@@ -42,6 +44,7 @@ describe("UT-AP-01 menu registry", () => {
       ["purchase-order", "purchaseOrder"],
       ["purchase", "purchase"],
       ["load-to-stock", "loadToStock"],
+      ["merge-split", "mergeSplit"],
       ["transfer-location", "stockTransferLocation"],
       ["sale", "sale"],
       ["stock-adjustment", "stockAdjustment"],

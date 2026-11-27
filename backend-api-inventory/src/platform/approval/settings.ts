@@ -7,7 +7,7 @@ import { hasGrant, type Principal } from "../auth/principal";
  * Inventory approval switches (ADR-0052 D8, Q-LS-25 default; ADR-0050 D4/D5 semantics as master): every create /
  * update / submit reads the row FOR SHARE in its own transaction; `update` locks it FOR UPDATE and refuses OFF while
  * documents wait. `load-to-stock`, `sale` (ADR-0054 D7), `stock-transfer-location` (ADR-0060 D8) and `stock-adjustment` (ADR-0059)
- * have documents; merge-split counts 0.
+ * have documents; merge-split (SA-MS-12) too.
  */
 export const INVENTORY_APPROVAL_TYPES = ["load-to-stock", "merge-split", "stock-transfer-location", "sale", "stock-adjustment"] as const;
 export type InventoryApprovalType = (typeof INVENTORY_APPROVAL_TYPES)[number];
@@ -32,6 +32,13 @@ export async function waitingCounts(client: Db | Tx, type: InventoryApprovalType
     const [row] = await client.$queryRaw<Waiting[]>`
       SELECT (SELECT count(*) FROM (SELECT 1 FROM "inventory"."stock_transfer" WHERE "status" = 'PENDING_APPROVAL' AND "deleted_at" IS NULL LIMIT 100) p)::int AS "pending",
              (SELECT count(*) FROM (SELECT 1 FROM "inventory"."stock_transfer" WHERE "status" = 'REVISION_REQUESTED' AND "deleted_at" IS NULL LIMIT 100) r)::int AS "revision"`;
+    return { pending: Number(row.pending), revision: Number(row.revision) };
+  }
+  if (type === "merge-split") {
+    // merge_split_pending_idx / merge_split_revision_idx (merge-split SA-MS-12).
+    const [row] = await client.$queryRaw<Waiting[]>`
+      SELECT (SELECT count(*) FROM (SELECT 1 FROM "inventory"."merge_split" WHERE "status" = 'PENDING_APPROVAL' AND "deleted_at" IS NULL LIMIT 100) p)::int AS "pending",
+             (SELECT count(*) FROM (SELECT 1 FROM "inventory"."merge_split" WHERE "status" = 'REVISION_REQUESTED' AND "deleted_at" IS NULL LIMIT 100) r)::int AS "revision"`;
     return { pending: Number(row.pending), revision: Number(row.revision) };
   }
   if (type === "stock-adjustment") {

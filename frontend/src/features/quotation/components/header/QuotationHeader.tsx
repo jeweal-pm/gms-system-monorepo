@@ -83,6 +83,7 @@ export function QuotationHeader({
   hideDelete = false,
   statusNote,
   canDuplicate = true,
+  onPrint,
 }: {
   docNo: string;
   isPreview: boolean;
@@ -111,6 +112,8 @@ export function QuotationHeader({
   statusNote?: { text: string; tone: "warning" | "danger" | "muted" } | null;
   /** false keeps Duplicate disabled (Load to Stock: rows are bound to PU remaining quantities, Q-LS-17). */
   canDuplicate?: boolean;
+  /** merge-split H-02: when given, Print is enabled and runs it (browser print of the read-only view). */
+  onPrint?: () => void;
 }) {
   const editing = mode === "edit";
   return (
@@ -138,7 +141,7 @@ export function QuotationHeader({
       <div className="flex flex-col items-end gap-3">
         <div className="flex items-center gap-1">
           {/* Print / Excel ยังไม่มี implementation */}
-          <IconButton label="Print" disabled>
+          <IconButton label="Print" disabled={!onPrint} onClick={onPrint}>
             <Printer className="size-4" />
           </IconButton>
           <IconButton label="Export Excel" disabled className="text-[#1D6F42]">

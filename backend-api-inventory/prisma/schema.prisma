@@ -308,6 +308,8 @@ model stock {
   transfer_lines_from  stock_transfer_line[] @relation("stock_transfer_line_from")
   transfer_lines_new   stock_transfer_line[] @relation("stock_transfer_line_new")
   stock_adjustment_line stock_adjustment_line[]
+  merge_split_sources  merge_split_source[]
+  merge_split_results  merge_split_result[]
 
   @@index([transferred_from_uuid], map: "stock_transferred_from_idx", where: raw("(transferred_from_uuid IS NOT NULL)"))
   @@index([ref_doc_date(sort: Desc), stock_id(sort: Desc)], map: "stock_picker_idx", where: raw("(((status)::text = 'ACTIVE'::text) AND ((on_hand_pcs > 0) OR (on_hand_weight_ct > (0)::numeric)))"))
@@ -478,6 +480,7 @@ model stored_file {
   load_to_stock_row_photo load_to_stock_row_photo[]
   stock_photo             stock_photo[]
   sale_line_photo         sale_line_photo[]
+  merge_split_result_photo merge_split_result_photo[]
 
   @@unique([bucket, object_key])
   @@unique([origin_service, origin_file_id], map: "stored_file_origin_key", where: raw("(origin_file_id IS NOT NULL)"))
@@ -757,5 +760,126 @@ model stock_transfer_line {
   @@unique([transfer_id, position], map: "stock_transfer_line_position_key")
   @@index([from_stock_uuid], map: "stock_transfer_line_from_stock_idx")
   @@index([new_stock_uuid], map: "stock_transfer_line_new_stock_idx", where: raw("(new_stock_uuid IS NOT NULL)"))
+  @@schema("inventory")
+}
+
+/// merge-split SA rev 1 / ADR-0060 (merge-split) D2 (BE-MS-001): one document converts own stock (SPLIT 1 → N, MERGE N → 1). CHECKs in SQL.
+model merge_split {
+  id                String               @id @db.Uuid
+  numbering_id      String?              @db.Uuid
+  running_no        Int
+  doc_no            String               @unique(map: "merge_split_doc_no_key") @db.VarChar(40)
+  doc_date          DateTime             @db.Date
+  mode              String               @db.VarChar(5)
+  ref               String               @default("") @db.VarChar(100)
+  note              String               @default("") @db.VarChar(250)
+  status            String               @db.VarChar(20)
+  auto_approved     Boolean              @default(false)
+  revision_count    Int                  @default(0) @db.SmallInt
+  apply_seq         Int                  @default(0)
+  source_count      Int                  @default(0) @db.SmallInt
+  result_count      Int                  @default(0) @db.SmallInt
+  total_pcs         Int                  @default(0)
+  total_weight_ct   Decimal              @default(0) @db.Decimal(14, 3)
+  submitted_at      DateTime?            @db.Timestamptz(3)
+  submitted_by      String?              @db.VarChar(64)
+  submitted_by_name String?              @db.VarChar(200)
+  review_action     String?              @db.VarChar(10)
+  review_note       String?              @db.VarChar(500)
+  reviewed_at       DateTime?            @db.Timestamptz(3)
+  reviewed_by       String?              @db.VarChar(64)
+  reviewed_by_name  String?              @db.VarChar(200)
+  approved_at       DateTime?            @db.Timestamptz(3)
+  approved_by       String?              @db.VarChar(64)
+  applied_at        DateTime?            @db.Timestamptz(3)
+  version           Int                  @default(1)
+  deleted_at        DateTime?            @db.Timestamptz(3)
+  deleted_by        String?              @db.VarChar(64)
+  created_at        DateTime             @default(now()) @db.Timestamptz(3)
+  created_by        String               @db.VarChar(64)
+  updated_at        DateTime             @default(now()) @db.Timestamptz(3)
+  updated_by        String               @db.VarChar(64)
+  sources           merge_split_source[]
+  results           merge_split_result[]
+
+  @@index([doc_date(sort: Desc), created_at(sort: Desc), id(sort: Desc)], map: "merge_split_list_idx", where: raw("(deleted_at IS NULL)"))
+  @@index([doc_date(sort: Desc), created_at(sort: Desc), id(sort: Desc)], map: "merge_split_deleted_idx", where: raw("(deleted_at IS NOT NULL)"))
+  @@index([submitted_at, id], map: "merge_split_pending_idx", where: raw("(((status)::text = 'PENDING_APPROVAL'::text) AND (deleted_at IS NULL))"))
+  @@index([id], map: "merge_split_revision_idx", where: raw("(((status)::text = 'REVISION_REQUESTED'::text) AND (deleted_at IS NULL))"))
+  @@schema("inventory")
+}
+
+model merge_split_source {
+  id              String               @id @db.Uuid
+  merge_split_id  String               @db.Uuid
+  position        Int                  @db.SmallInt
+  client_key      String               @db.VarChar(40)
+  stock_uuid      String               @db.Uuid
+  stock_id        String               @db.VarChar(10)
+  avail_pcs       Int
+  avail_weight_ct Decimal              @db.Decimal(12, 3)
+  price_unit      String               @db.VarChar(10)
+  unit_cost_base  Decimal              @default(0) @db.Decimal(18, 4)
+  take_cost_base  Decimal              @default(0) @db.Decimal(18, 2)
+  merge_split     merge_split          @relation(fields: [merge_split_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "merge_split_source_doc_fkey")
+  stock           stock                @relation(fields: [stock_uuid], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "merge_split_source_stock_fkey")
+  results         merge_split_result[]
+
+  @@unique([merge_split_id, stock_uuid], map: "merge_split_source_stock_key")
+  @@unique([merge_split_id, position], map: "merge_split_source_position_key")
+  @@unique([merge_split_id, client_key], map: "merge_split_source_client_key")
+  @@index([stock_uuid], map: "merge_split_source_stock_idx")
+  @@schema("inventory")
+}
+
+model merge_split_result {
+  id               String                     @id @db.Uuid
+  merge_split_id   String                     @db.Uuid
+  position         Int                        @db.SmallInt
+  source_id        String?                    @db.Uuid
+  stone_code_id    String?                    @db.Uuid
+  stone_code       String                     @default("") @db.VarChar(60)
+  stone            String                     @default("") @db.VarChar(60)
+  shape            String                     @default("") @db.VarChar(60)
+  size             String                     @default("") @db.VarChar(60)
+  color            String                     @default("") @db.VarChar(60)
+  clarity          String                     @default("") @db.VarChar(60)
+  cutting          String                     @default("") @db.VarChar(60)
+  quality          String                     @default("") @db.VarChar(60)
+  cer_type         String                     @default("") @db.VarChar(20)
+  cer_no           String                     @default("") @db.VarChar(60)
+  location         String                     @db.VarChar(40)
+  lot              String                     @default("") @db.VarChar(40)
+  parcel           String                     @default("") @db.VarChar(50)
+  price_unit       String                     @db.VarChar(10)
+  pcs              Int
+  weight_ct        Decimal                    @db.Decimal(12, 3)
+  unit_cost_base   Decimal                    @default(0) @db.Decimal(18, 4)
+  cost_amount_base Decimal                    @default(0) @db.Decimal(18, 2)
+  stock_price      Decimal                    @default(0) @db.Decimal(18, 2)
+  sale_price       Decimal                    @default(0) @db.Decimal(18, 2)
+  item_note        String                     @default("") @db.VarChar(500)
+  stock_uuid       String?                    @db.Uuid
+  stock_id         String?                    @db.VarChar(10)
+  applied_version  Int?
+  merge_split      merge_split                @relation(fields: [merge_split_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "merge_split_result_doc_fkey")
+  source           merge_split_source?        @relation(fields: [source_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "merge_split_result_source_fkey")
+  stock            stock?                     @relation(fields: [stock_uuid], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "merge_split_result_stock_fkey")
+  photos           merge_split_result_photo[]
+
+  @@unique([merge_split_id, position], map: "merge_split_result_position_key")
+  @@index([source_id], map: "merge_split_result_source_idx", where: raw("(source_id IS NOT NULL)"))
+  @@schema("inventory")
+}
+
+model merge_split_result_photo {
+  result_id   String             @db.Uuid
+  position    Int                @db.SmallInt
+  file_id     String             @db.Uuid
+  result      merge_split_result @relation(fields: [result_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "merge_split_result_photo_result_fkey")
+  stored_file stored_file        @relation(fields: [file_id], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "merge_split_result_photo_file_fkey")
+
+  @@id([result_id, position])
+  @@index([file_id], map: "merge_split_result_photo_file_idx")
   @@schema("inventory")
 }

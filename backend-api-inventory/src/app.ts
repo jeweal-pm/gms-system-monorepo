@@ -25,6 +25,11 @@ import { StockAdjustmentService } from "./modules/stock-adjustment/service";
 import { registerStockAdjustmentRoutes } from "./modules/stock-adjustment/routes";
 import { approvalPending as adjustmentPending, approvalSummary as adjustmentSummary } from "./modules/stock-adjustment/read";
 import { pendingQuerySchema as adjustmentPendingQuerySchema } from "./modules/stock-adjustment/schemas";
+import { MergeSplitService } from "./modules/merge-split/service";
+import { MergeSplitPhotoService } from "./modules/merge-split/photos";
+import { registerMergeSplitRoutes } from "./modules/merge-split/routes";
+import { approvalPending as mergeSplitPending, approvalSummary as mergeSplitSummary } from "./modules/merge-split/read";
+import { pendingQuerySchema as mergeSplitPendingQuerySchema } from "./modules/merge-split/schemas";
 import { registerStockCardRoutes } from "./modules/reports/stock-card/routes";
 import { registerStockValueRoutes } from "./modules/reports/stock-value/routes";
 import { ReportGuard } from "./modules/reports/guard";
@@ -92,6 +97,9 @@ export function createApp(deps: AppDeps) {
   const salePhotos = new SalePhotoService(deps.db, deps.storageRoot, photos.writes, photos.reads);
   // stock-transfer-location ADR-0060 (BE-STL-004): document + stock move in one inventory transaction, no saga.
   const transferService = new StockTransferService({ db: deps.db, master: deps.master, logger: deps.logger, hub, approvers: deps.approvers });
+  // merge-split SA rev 1 (BE-MS-004): own stock converted in one inventory transaction, no saga; photos share the process limiters.
+  const mergeSplitService = new MergeSplitService({ db: deps.db, master: deps.master, logger: deps.logger, hub, approvers: deps.approvers });
+  const mergeSplitPhotos = new MergeSplitPhotoService(deps.db, deps.storageRoot, photos.writes, photos.reads);
   const app = new Hono<AppEnv>();
   app.use("*", requestContext(deps.logger));
   app.onError((error, c) => errorResponse(c, error, deps.logger));
@@ -115,7 +123,8 @@ export function createApp(deps: AppDeps) {
   const photoCap = bodyLimit({ maxSize: PHOTO_BODY_MAX, onError: limitTooLarge });
   api.use("/load-to-stock/photos", photoCap);
   api.use("/sale/photos", photoCap);
-  api.use("*", async (c, next) => (c.req.path.endsWith("/load-to-stock/photos") || c.req.path.endsWith("/sale/photos") ? next() : jsonCap(c, next)));
+  api.use("/merge-split/photos", photoCap);
+  api.use("*", async (c, next) => (c.req.path.endsWith("/load-to-stock/photos") || c.req.path.endsWith("/sale/photos") || c.req.path.endsWith("/merge-split/photos") ? next() : jsonCap(c, next)));
   api.use("*", session);
 
   // ---------- reference ----------
@@ -246,13 +255,18 @@ export function createApp(deps: AppDeps) {
     return c.json(await updateSetting(deps.db, c.get("principal"), parsedType.data, input));
   });
   api.get("/approval/summary", async (c) => {
-    const [load, sale, transfer, adjustment] = await Promise.all([
+    const [load, sale, transfer, adjustment, mergeSplit] = await Promise.all([
       approvalSummary(deps.db, c.get("principal")), saleSummary(deps.db, c.get("principal")),
-      transferSummary(deps.db, c.get("principal")), adjustmentSummary(deps.db, c.get("principal")),
+      transferSummary(deps.db, c.get("principal")), adjustmentSummary(deps.db, c.get("principal")), mergeSplitSummary(deps.db, c.get("principal")),
     ]);
-    return c.json({ ...load, items: [...load.items, ...sale, ...transfer, ...adjustment] });
+    return c.json({ ...load, items: [...load.items, ...sale, ...transfer, ...adjustment, ...mergeSplit] });
   });
   api.get("/approval/pending", async (c) => {
+    if (c.req.query("type") === "merge-split") {
+      const query = parse(mergeSplitPendingQuerySchema, queryObject(c));
+      if (!canApprove(c.get("principal"), "merge-split")) throw new AppError(403, "PERMISSION_DENIED");
+      return c.json(await mergeSplitPending(deps.db, query));
+    }
     if (c.req.query("type") === "stock-adjustment") {
       const query = parse(adjustmentPendingQuerySchema, queryObject(c));
       if (!canApprove(c.get("principal"), "stock-adjustment")) throw new AppError(403, "PERMISSION_DENIED");
@@ -280,7 +294,7 @@ export function createApp(deps: AppDeps) {
     const query = parse(notificationList, queryObject(c));
     const principal = c.get("principal");
     if (query.scope === "all") {
-      const types = (["load-to-stock", "sale", "stock-transfer-location", "stock-adjustment"] as const).filter((type) => hasGrant(principal, type, "VIEW"));
+      const types = (["load-to-stock", "sale", "stock-transfer-location", "stock-adjustment", "merge-split"] as const).filter((type) => hasGrant(principal, type, "VIEW"));
       return c.json(await listForTypes(deps.db, types, query.cursor, query.limit));
     }
     return c.json(await listForUser(deps.db, principal.userId, query.cursor, query.limit));
@@ -325,6 +339,7 @@ export function createApp(deps: AppDeps) {
   registerSaleRoutes(api, { db: deps.db, master: deps.master, service: saleService, photos: salePhotos });
   registerStockTransferRoutes(api, { db: deps.db, master: deps.master, service: transferService });
   registerStockAdjustmentRoutes(api, { db: deps.db, master: deps.master, service: stockAdjustmentService });
+  registerMergeSplitRoutes(api, { db: deps.db, master: deps.master, service: mergeSplitService, photos: mergeSplitPhotos });
   // stock-card ADR-0056 (BE-SC-003): read-only report over the own-stock ledger; limits are the module's, overridable in tests.
   // stock-value ADR-0057 (BE-SV-004): second report module; ONE guard for both reports (at most 2 report queries in flight in total).
   const reportGuard = deps.stockCard?.guard ?? new ReportGuard();
@@ -334,5 +349,5 @@ export function createApp(deps: AppDeps) {
   app.route("/api/inventory/v1", api);
   // api-master → inventory (not routed by nginx).
   app.route("/internal/v1/master", createMasterRoutes({ db: deps.db, logger: deps.logger, tokenDigest: deps.internal?.tokenDigest ?? null, otherTokenDigest: deps.internal?.otherTokenDigest ?? null }));
-  return { app, service, hub, photos, saleService, salePhotos, transferService, stockAdjustmentService };
+  return { app, service, hub, photos, saleService, salePhotos, transferService, stockAdjustmentService, mergeSplitService, mergeSplitPhotos };
 }

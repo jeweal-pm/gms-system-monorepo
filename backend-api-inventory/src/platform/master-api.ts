@@ -25,9 +25,9 @@ export type AllocationLine = { purchaseLineId: string; pcs: number; weightCt: st
 export type AllocationRequest = { vendorId: string; lines: AllocationLine[]; newStockIdCount: number };
 export type AllocationResponse = { revision: number; stockIds: string[]; lines: { purchaseLineId: string; remainingPcs: number; remainingWeightCt: string }[]; replayed: boolean };
 export type Numbering = { id: string; prefix: string; separator: string; startNo: number };
-export type NumberingKey = "load-to-stock" | "sale" | "stock-transfer-location" | "stock-adjustment";
-/** ADR-0060 D6: inventory document types that take Stock IDs from master per revision (not Load to Stock). */
-export type StockIdIssueType = "stock-transfer-location";
+export type NumberingKey = "load-to-stock" | "sale" | "stock-transfer-location" | "stock-adjustment" | "merge-split";
+/** ADR-0060 D6 (transfer) / merge-split SA-MS-07: inventory document types that take Stock IDs from master per revision (not Load to Stock). */
+export type StockIdIssueType = "stock-transfer-location" | "merge-split";
 export type StockIdIssueResponse = { revision: number; stockIds: string[]; replayed: boolean };
 
 // ---------- sale (ADR-0054, api-contract "Master internal API") ----------
