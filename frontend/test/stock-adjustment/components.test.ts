@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { AdjustmentTable, EMPTY_ROW_TEXT, GROUP_TONE, ROW_TONE, type AdjustmentTableProps } from "@/features/stock-adjustment/components/adjustment-table";
+import { AdjustmentTable, EMPTY_ROW_TEXT, GROUP_TONE, type AdjustmentTableProps } from "@/features/stock-adjustment/components/adjustment-table";
 import { lineFromStock } from "@/features/stock-adjustment/form";
 
 const row = { ...lineFromStock({ stockUuid: "b9b3adcf-0805-45ee-b578-54d0fd4ddfbb", stockId: "SA-01", lotKey: "OS-1", refDocNo: "LS-1", priceUnit: "PER_CT", onHandPcs: 3, onHandWeightCt: "1.120", stockPrice: "12.50", attrs: { stoneCode: "SC-1", stone: "Sapphire", shape: "Oval", size: "5 mm", color: "Blue", clarity: "VS1", cutting: "Good", quality: "A", lot: "L-1", location: "Safe A", cerType: "", cerNo: "" } }), key: "row-1" };
@@ -30,9 +30,9 @@ describe("IT-SAJ-01 adjustment grouped table (owner images 01–03)", () => {
     expect(html).toContain('aria-label="Remove SA-01"'); expect(html).toContain(GROUP_TONE.physical.body);
   });
   it("tones selected and error rows, and locks inputs when read-only", () => {
-    expect(render({ lines: [row], selected: new Set(["row-1"]) })).toContain(ROW_TONE.selected);
+    expect(render({ lines: [row], selected: new Set(["row-1"]) })).toMatch(/class="gms-row[^"]*" data-checked="" aria-selected="true"/);
     const error = render({ lines: [row], rowErrors: { "row-1": "Enter whole pieces" } });
-    expect(error).toContain(ROW_TONE.error); expect(error).toContain("Row 1: Enter whole pieces");
+    expect(error).toMatch(/class="gms-row[^"]*" data-error=""/); expect(error).toContain("Row 1: Enter whole pieces");
     const locked = render({ lines: [row], editable: false });
     expect(locked).toMatch(/aria-label="SA-01 Physical Pcs"[^>]*readOnly=""/); expect(locked).not.toContain(EMPTY_ROW_TEXT);
   });

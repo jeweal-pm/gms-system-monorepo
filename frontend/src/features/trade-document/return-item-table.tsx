@@ -12,6 +12,7 @@ import { useNumberFormat } from "@/features/decimal-setup/number-format-provider
 import { sanitizeQuantity } from "@/features/quotation/lib/number";
 import { visibleRowsHeight } from "@/features/quotation/lib/table-scroll";
 import { isFilledLine, type QuotationLine } from "@/features/quotation/schema";
+import { COLUMN_TONE, rowState, TABLE_HEAD, TABLE_ROW } from "@/features/trade-document/table-row";
 
 /** Same props as the Quotation item table, so the shared document form can use either. */
 export type ReturnItemTableProps = Parameters<typeof ItemTable>[0];
@@ -88,7 +89,7 @@ export function returnItemTable(options: ReturnTableOptions) {
       <div className="min-w-0 flex-1">
         <div ref={scrollRef} className="overflow-auto rounded-lg">
           <table className="w-full min-w-[1400px] border-collapse text-sm text-[#1C252E]">
-            <thead className="sticky top-0 z-10 bg-[#F6F7F8] text-left">
+            <thead className={cx("sticky top-0 z-10 text-left", TABLE_HEAD)}>
               <tr>
                 {controls && (
                   <>
@@ -111,7 +112,7 @@ export function returnItemTable(options: ReturnTableOptions) {
                   </th>
                 ))}
                 <th colSpan={2} className={cx("border-b border-[#E3E6EA] px-3 py-3 text-center font-medium", DIVIDER)}>Outstanding</th>
-                <th colSpan={2} className={cx("border-b border-[#E3E6EA] px-3 py-3 text-center font-medium", DIVIDER)}>Return</th>
+                <th colSpan={2} className={cx("border-b border-[#E3E6EA] px-3 py-3 text-center font-medium", DIVIDER, COLUMN_TONE.teal.head)}>Return</th>
                 <th rowSpan={2} className={cx("w-[130px] px-3 py-3 text-right font-medium", DIVIDER)}>
                   <span className="inline-flex flex-row-reverse items-center gap-1.5">
                     <span className="leading-tight">
@@ -124,10 +125,10 @@ export function returnItemTable(options: ReturnTableOptions) {
                 <th rowSpan={2} className="w-[130px] px-3 py-3 text-right font-medium">Amount</th>
               </tr>
               <tr>
-                <th className={cx("py-2.5 font-medium", QTY, DIVIDER)}>Pcs</th>
-                <th className={cx("py-2.5 font-medium", QTY)}>Weight</th>
-                <th className={cx("py-2.5 font-medium", QTY, DIVIDER)}>Pcs</th>
-                <th className={cx("py-2.5 font-medium", QTY)}>Weight</th>
+                <th className={cx("py-2.5 font-medium", QTY, DIVIDER, COLUMN_TONE.neutral.sub)}>Pcs</th>
+                <th className={cx("py-2.5 font-medium", QTY, COLUMN_TONE.neutral.sub)}>Weight</th>
+                <th className={cx("py-2.5 font-medium", QTY, DIVIDER, COLUMN_TONE.teal.sub)}>Pcs</th>
+                <th className={cx("py-2.5 font-medium", QTY, COLUMN_TONE.teal.sub)}>Weight</th>
               </tr>
             </thead>
             <tbody>
@@ -138,7 +139,8 @@ export function returnItemTable(options: ReturnTableOptions) {
                   <tr
                     key={line.key}
                     onClick={() => onSelectRow(index)}
-                    className={cx("cursor-pointer border-b border-[#EEF0F2] align-top", index === selectedIndex ? "bg-[#E6F1F1]" : "hover:bg-[#FAFBFB]")}
+                    className={cx("cursor-pointer", TABLE_ROW)}
+                    {...rowState({ active: index === selectedIndex, checked: checkedKeys.has(line.key) })}
                   >
                     {controls && (
                       <>
@@ -170,10 +172,10 @@ export function returnItemTable(options: ReturnTableOptions) {
                     )}
                     <td className={cx("py-4", QTY, DIVIDER)}>{filled ? line.outstandingPcs || "0" : ""}</td>
                     <td className={cx("py-4", QTY)}>{filled ? formatWeight(dec(line.outstandingWeightCt), nf.weightPlaces) : ""}</td>
-                    <td className={cx(editable ? "py-2" : "py-4", QTY, DIVIDER)} onClick={(e) => editable && e.stopPropagation()}>
+                    <td className={cx(editable ? "py-2" : "py-4", QTY, DIVIDER, COLUMN_TONE.teal.body)} onClick={(e) => editable && e.stopPropagation()}>
                       {editable ? <ReturnInput index={index} field="pcs" label={`Return pcs, row ${index + 1}`} line={line} autoWeight={options.autoWeight} /> : filled ? line.pcs || "0" : ""}
                     </td>
-                    <td className={cx(editable ? "py-2" : "py-4", QTY)} onClick={(e) => editable && e.stopPropagation()}>
+                    <td className={cx(editable ? "py-2" : "py-4", QTY, COLUMN_TONE.teal.body)} onClick={(e) => editable && e.stopPropagation()}>
                       {editable ? <ReturnInput index={index} field="weightCt" label={`Return weight, row ${index + 1}`} line={line} autoWeight={false} /> : filled ? formatWeight(dec(line.weightCt), nf.weightPlaces) : ""}
                     </td>
                     <td className={cx("px-3 py-4 text-right", DIVIDER)}>

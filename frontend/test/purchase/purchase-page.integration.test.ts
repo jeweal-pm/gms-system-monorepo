@@ -129,7 +129,7 @@ describe("IT-PU-02 purchase page composition (rev 2, wired)", () => {
     const html = render(seeded(["purchase:VIEW", "purchase:ADD"]), createElement(PurchaseRoutePage));
     expect(html).toContain("Purchase No.:");
     expect(html).toContain("PU-8");
-    expect(html).toContain("Number preview");
+    expect(html).not.toContain("Number preview");
     for (const label of ["Doc Date", "Vendor", "Address", "Due Date", "Currency", "Exchange Rate", "Ref."]) expect(html).toContain(`>${label}`);
     expect(html).not.toContain("Vender");
     expect(html).not.toContain("can't be saved yet");

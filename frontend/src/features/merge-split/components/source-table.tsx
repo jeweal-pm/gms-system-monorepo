@@ -4,6 +4,7 @@ import { useNumberFormat } from "@/features/decimal-setup/number-format-provider
 import { toFixed, dec } from "@/features/quotation/lib/decimal";
 import { CerCell, GradeCell, HeaderCell, StoneCell, StoneCodeCell } from "@/features/load-to-stock/components/cells";
 import { shortDate, unitLabel, UNIT_COST_PLACES, type MsSource } from "../form";
+import { TABLE_HEAD, TABLE_ROW } from "@/features/trade-document/table-row";
 
 export const EMPTY_SOURCE_TEXT = "No stocks yet. Use From Stock to pick our own stock.";
 
@@ -20,7 +21,7 @@ export function MergeSplitSourceTable({ sources, currency }: { sources: readonly
   return (
     <div className="overflow-x-auto rounded-lg">
       <table className="w-full min-w-[1100px] border-collapse text-sm text-[#1C252E]" aria-label="Picked stocks">
-        <thead className="bg-[#F6F7F8] text-left">
+        <thead className={`text-left ${TABLE_HEAD}`}>
           <tr>
             <th scope="col" className="w-10 px-3 py-3 font-normal text-[#6B7480]">#</th>
             <HeaderCell title="Stone Code" sub="Stock ID · Lot" />
@@ -41,7 +42,7 @@ export function MergeSplitSourceTable({ sources, currency }: { sources: readonly
             </tr>
           )}
           {sources.map((source, index) => (
-            <tr key={source.key} className="border-b border-[#EEF0F2] align-top" data-source-stock={source.stockId}>
+            <tr key={source.key} className={TABLE_ROW} data-source-stock={source.stockId}>
               <td className="px-3 py-4 text-[#6B7480]">{index + 1}</td>
               <td className="px-3 py-4">
                 <StoneCodeCell code={source.attrs.stoneCode} label="Stock ID" stockId={source.stockId} lot={source.lot} note={loadedNote(source) || undefined} />

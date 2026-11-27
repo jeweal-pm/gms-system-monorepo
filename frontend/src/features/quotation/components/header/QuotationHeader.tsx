@@ -76,7 +76,6 @@ export function QuotationHeader({
   actions,
   noLabel = "Quotation No.:",
   newHref = "/pre-sale/quotation",
-  previewNote = "Number preview — the number is issued when you save.",
   statusLabels = STATUS_LABEL,
   extraActions,
   hideEditDelete = false,
@@ -97,10 +96,9 @@ export function QuotationHeader({
   canEdit: boolean;
   canDelete: boolean;
   actions: HeaderActions;
-  /** Label above the number, Create New target, the note under a preview number and status badges (memo documents reuse this header). */
+  /** Label above the number, Create New target, and status badges (memo documents reuse this header). */
   noLabel?: string;
   newHref?: string;
-  previewNote?: string;
   statusLabels?: StatusLabels;
   /** Extra buttons after Delete (Memo Receive's Approve, rev 3). Quotation passes none. */
   extraActions?: ReactNode;
@@ -129,7 +127,6 @@ export function QuotationHeader({
           </IconButton>
           <StatusChip status={status} labels={statusLabels} />
         </div>
-        {isPreview && <p className="mt-1 text-xs text-[#6B7480]">{previewNote}</p>}
         {statusNote && (
           <p className={cx("mt-1 max-w-xl text-xs break-words", NOTE_TONE[statusNote.tone])}>{statusNote.text}</p>
         )}

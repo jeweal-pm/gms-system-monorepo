@@ -147,7 +147,7 @@ describe("IT-SL-02 live Sale page (FE-SL-006, owner 2026-11-20 \"ทำหน้
     const html = render(live(["sale:VIEW", "sale:ADD"]), createElement(SaleRoutePage));
     expect(html).toContain("Sale No.:");
     expect(html).toContain("SL-1002");
-    expect(html).toContain("Number preview");
+    expect(html).not.toContain("Number preview");
     expect(html).not.toContain("Not connected");
     for (const label of ["Doc Date", "Customer", "Shipping Address", "Invoice Address", "Due Date", "Currency", "Ref."]) expect(html).toContain(`>${label}`);
     const fromReserve = html.indexOf(button(html, "From Reserve"));
@@ -206,7 +206,7 @@ describe("IT-SL-02 page composition with a binding (TC-SL-01 shell)", () => {
     const html = render(seeded(["sale:VIEW", "sale:ADD"]), createElement(SalePage, { binding: binding() }));
     expect(html).toContain("Sale No.:");
     expect(html).toContain("SL-26110001");
-    expect(html).toContain("Number preview");
+    expect(html).not.toContain("Number preview");
     for (const label of ["Doc Date", "Customer", "Shipping Address", "Invoice Address", "Due Date", "Currency", "Ref."]) expect(html).toContain(`>${label}`);
     const fromReserve = html.indexOf(button(html, "From Reserve"));
     const fromStock = html.indexOf(button(html, "From Stock"));

@@ -4,6 +4,7 @@ import { useNumberFormat } from "@/features/decimal-setup/number-format-provider
 import { shortDate, unitLabel } from "../form";
 import type { PurchaseLineRef } from "../types";
 import { CerCell, GradeCell, HeaderCell, StoneCell, StoneCodeCell } from "./cells";
+import { TABLE_HEAD, TABLE_ROW } from "@/features/trade-document/table-row";
 
 /** "per ct · rate 36.20" (the rate only when the PU is in another currency). */
 export function priceSub(ref: Pick<PurchaseLineRef, "priceUnit" | "purchase">, companyCurrency: string): string {
@@ -20,7 +21,7 @@ export function LoadSourceTable({ sources, companyCurrency }: { sources: readonl
   return (
     <div className="overflow-x-auto rounded-lg">
       <table className="w-full min-w-[1100px] border-collapse text-sm text-[#1C252E]" aria-label="Picked purchase lines">
-        <thead className="bg-[#F6F7F8] text-left">
+        <thead className={`text-left ${TABLE_HEAD}`}>
           <tr>
             <th scope="col" className="w-10 px-3 py-3 font-normal text-[#6B7480]">#</th>
             <HeaderCell title="Stone Code" sub="Stock ID · Lot" />
@@ -43,7 +44,7 @@ export function LoadSourceTable({ sources, companyCurrency }: { sources: readonl
             </tr>
           )}
           {sources.map((ref, index) => (
-            <tr key={ref.purchaseLineId} className="border-b border-[#EEF0F2] align-top">
+            <tr key={ref.purchaseLineId} className={TABLE_ROW}>
               <td className="px-3 py-4 text-[#6B7480]">{index + 1}</td>
               <td className="px-3 py-4">
                 <StoneCodeCell code={ref.stoneCode} label="New on load" stockId={null} lot={ref.lot} note={`From ${ref.purchase.docNo} · ${shortDate(ref.purchase.docDate)}`} />

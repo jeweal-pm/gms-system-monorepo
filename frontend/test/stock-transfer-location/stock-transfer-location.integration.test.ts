@@ -13,7 +13,7 @@ import { inventoryApprovalKeys, isInventoryApprovalType } from "@/features/inven
 import { docHref } from "@/features/stock-card/model";
 import { transferKeys } from "@/features/stock-transfer-location/api";
 import { EditStockTransferLocationPage, TRANSFER_DENIED, TRANSFER_DELETED_TEXT } from "@/features/stock-transfer-location/components/StockTransferLocationPage";
-import { EMPTY_ROW_TEXT, ROW_TONE, TransferTable, type TransferTableProps } from "@/features/stock-transfer-location/components/transfer-table";
+import { EMPTY_ROW_TEXT, TransferTable, type TransferTableProps } from "@/features/stock-transfer-location/components/transfer-table";
 import { lotToRow } from "@/features/stock-transfer-location/form";
 import { todayIso } from "@/features/quotation/lib/format";
 import { APPROVAL_DOCUMENTS, mapFlowError } from "@/features/trade-document/flow-status";
@@ -138,7 +138,7 @@ describe("IT-STL-02 grid (FE-STL-002)", () => {
     expect(count(html, "Select Location")).toBe(2);
     expect(count(html, 'placeholder="0"')).toBe(4);
     expect(html).toContain("0.62");
-    expect(html).toMatch(new RegExp(`class="[^"]*${ROW_TONE.selected.replace(/[[\]#]/g, "\\$&")}[^"]*" aria-selected="true" data-row-key="k2"`));
+    expect(html).toMatch(/class="gms-row[^"]*" data-checked="" aria-selected="true" data-row-key="k2"/);
     expect(html).toContain('aria-selected="false" data-row-key="k1"');
     expect(count(html, EMPTY_ROW_TEXT)).toBe(3);
   });

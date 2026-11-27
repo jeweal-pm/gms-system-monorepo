@@ -58,7 +58,7 @@ describe("IT-LS-05 page shell, access and approval flow (FE-LS-002, FE-LS-009, F
     const html = render(seeded(ALL), createElement(LoadToStockRoutePage));
     expect(html).toContain("Load to Stock No.:");
     expect(html).toContain("LSGMS2609001");
-    expect(html).toContain("Number preview");
+    expect(html).not.toContain("Number preview");
     for (const label of ["Doc Date", "Account", "Currency", "Ref."]) expect(html).toContain(`>${label}`);
     expect(html).not.toContain("Rfe.");
     expect(html).toMatch(/aria-readonly="true"[^>]*><span class="truncate">THB<\/span>/);

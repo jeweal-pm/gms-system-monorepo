@@ -99,11 +99,11 @@ function TabStrip({ tabs, activeId, onSelect, onClose }: Readonly<Pick<TabBarPro
               key={tab.id}
               data-tab-id={tab.id}
               role="presentation"
-              className={`group flex h-9 max-w-[220px] shrink-0 items-center gap-2 rounded-t-gms-md border-r border-gms-border-header px-3 transition-colors last:border-r-0 ${
-                // Owner 2026-11-07: the tab shell is 40px high and each tab 36px, bottom-aligned. Owner 2026-11-05: active #FFFFFF, hover #F9F9F9, inactive #EDEDED. The strip overlaps the topbar's bottom
+              className={`group flex h-9 max-w-[220px] shrink-0 items-center gap-2 rounded-t-gms-md border-r border-gms-border-header px-3 transition-colors ${
+                // Owner 2026-11-07: the tab shell is 40px high and each tab 36px, bottom-aligned. Owner 2026-11-05: hover #F9F9F9, inactive #EDEDED; owner 2026-11-27: active #F9F9F9 (was #FFFFFF), matching the page. The strip overlaps the topbar's bottom
                 // border by 1px (-mb-px): the active tab covers it so it joins the page below; inactive tabs draw the line.
                 active
-                  ? "bg-[#FFFFFF] text-gms-text"
+                  ? "bg-[#F9F9F9] text-gms-text"
                   : "bg-[#EDEDED] text-gms-text-muted shadow-[inset_0_-1px_0_var(--color-gms-border-header)] hover:bg-[#F9F9F9]"
               }`}
             >
