@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adjustmentSchema, diff, emptyAdjustment, lineFromStock, sanitize, toAdjustmentInput } from "@/features/stock-adjustment/form";
+import { adjustmentSchema, adjustmentTotals, diff, emptyAdjustment, lineFromStock, nextStoneSort, sanitize, sortByStoneCode, toAdjustmentInput } from "@/features/stock-adjustment/form";
 
 const stock = {
   stockUuid: "b9b3adcf-0805-45ee-b578-54d0fd4ddfbb", stockId: "SA-RBLDVGVS1AAA", lotKey: "OS-stock", refDocNo: "LS2611-001",
@@ -32,5 +32,20 @@ describe("UT-SAJ-01/02 adjustment form model", () => {
       docDate: "2026-11-24", location: "Safe A", ref: "R-1", note: "",
       lines: [{ stockUuid: stock.stockUuid, stockPcs: 3, stockWeightCt: "1.120", physicalPcs: 2, physicalWeightCt: "0.900", physicalPrice: null, remark: "" }],
     });
+  });
+});
+
+describe("UT-SAJ-03 summary totals and Stone Code sort", () => {
+  const a = { ...lineFromStock(stock), key: "a", physicalPcs: "2", physicalWeightCt: "0.900", attrs: { ...stock.attrs, stoneCode: "SC-10" } };
+  const b = { ...lineFromStock(stock), key: "b", physicalPcs: "", physicalWeightCt: "", attrs: { ...stock.attrs, stoneCode: "SC-2" } };
+  it("sums stock against physical with blanks counted as zero", () => {
+    expect(adjustmentTotals([a, b])).toEqual({ rowCount: 2, stockPcs: 6, physicalPcs: 2, diffPcs: -4, stockWeightCt: "2.240", physicalWeightCt: "0.900", diffWeightCt: "-1.340" });
+    expect(adjustmentTotals([])).toMatchObject({ rowCount: 0, stockPcs: 0, diffWeightCt: "0.000" });
+  });
+  it("cycles none → asc → desc → none and sorts numerically by stone code", () => {
+    expect([nextStoneSort(null), nextStoneSort("asc"), nextStoneSort("desc")]).toEqual(["asc", "desc", null]);
+    expect(sortByStoneCode([a, b], "asc").map((line) => line.key)).toEqual(["b", "a"]);
+    expect(sortByStoneCode([a, b], "desc").map((line) => line.key)).toEqual(["a", "b"]);
+    expect(sortByStoneCode([a, b], null).map((line) => line.key)).toEqual(["a", "b"]);
   });
 });
