@@ -188,3 +188,66 @@ export async function lotCandidates(client: Client, lotKeys: readonly string[]) 
   }
   return { groups: [...groups].map(([lotKey, stocks]) => ({ lotKey, rows: stocks })) };
 }
+
+// ---------- Stock Transfer Location From Stock picker (ADR-0060 D11) ----------
+
+export type TransferStockFilters = { q?: string; location?: string; exclude: readonly string[]; cursor?: string; limit: number };
+
+/** Opaque keyset cursor of the transfer picker: base64url(`YYYY-MM-DD|stockId`); invalid → 422 VALIDATION_ERROR `cursor invalid`. */
+export function decodeStockCursor(value: string): { date: string; stockId: string } {
+  const invalid = () => validationError([{ path: "cursor", code: "invalid" }]);
+  if (!/^[A-Za-z0-9_-]{1,200}$/.test(value)) throw invalid();
+  const match = /^(\d{4}-\d{2}-\d{2})\|([A-Za-z0-9-]{1,10})$/.exec(Buffer.from(value, "base64url").toString("utf8"));
+  if (!match || Number.isNaN(Date.parse(match[1])) || new Date(`${match[1]}T00:00:00Z`).toISOString().slice(0, 10) !== match[1]) throw invalid();
+  return { date: match[1], stockId: match[2] };
+}
+export function encodeStockCursor(date: string, stockId: string): string {
+  return Buffer.from(`${date}|${stockId}`, "utf8").toString("base64url");
+}
+
+type TransferStockRow = {
+  id: string; stock_id: string; lot_key: string; ref_doc_no: string; ref_doc_date: string; location: string; price_unit: string; stock_price: string; currency_code: string;
+  on_hand_pcs: number; on_hand_weight_ct: string; stone_code: string; stone: string; shape: string; size: string; color: string; clarity: string; cutting: string;
+  quality: string; lot: string; cer_type: string; cer_no: string;
+};
+
+/**
+ * One page of our own open stocks (ACTIVE, on hand > 0) at any location for Stock Transfer Location: one row per Stock ID (own lot
+ * = one stock, ADR-0055), oldest ref date first (ref date, Stock ID), keyset ≤ 50, ONE statement on `stock_picker_idx`. `q`
+ * matches Stock ID, lot, stone code or the Load number; `exclude` drops the lots already on the document. No cost or vendor.
+ */
+export async function transferStockPage(client: Client, input: TransferStockFilters) {
+  const where: Prisma.Sql[] = [OPEN];
+  if (input.location) where.push(Prisma.sql`upper(btrim(s."location")) = upper(btrim(${input.location}))`);
+  if (input.exclude.length > 0) where.push(Prisma.sql`s."id" <> ALL(${[...input.exclude]}::uuid[])`);
+  if (input.q) {
+    const pattern = `%${escapeLike(input.q)}%`;
+    where.push(Prisma.sql`(s."stock_id" ILIKE ${pattern} OR s."lot" ILIKE ${pattern} OR s."stone_code" ILIKE ${pattern} OR s."ref_doc_no" ILIKE ${pattern})`);
+  }
+  if (input.cursor) {
+    const after = decodeStockCursor(input.cursor);
+    where.push(Prisma.sql`(s."ref_doc_date", s."stock_id") > (${after.date}::date, ${after.stockId}::varchar)`);
+  }
+  const rows = await client.$queryRaw<TransferStockRow[]>(Prisma.sql`
+    SELECT s."id", s."stock_id", s."lot_key", s."ref_doc_no", to_char(s."ref_doc_date", 'YYYY-MM-DD') AS "ref_doc_date", s."location", s."price_unit",
+      s."stock_price"::text AS "stock_price", s."currency_code", s."on_hand_pcs", s."on_hand_weight_ct"::text AS "on_hand_weight_ct", s."stone_code", s."stone", s."shape",
+      s."size", s."color", s."clarity", s."cutting", s."quality", s."lot", s."cer_type", s."cer_no"
+    FROM "inventory"."stock" s
+    WHERE ${Prisma.join(where, " AND ")}
+    ORDER BY s."ref_doc_date", s."stock_id"
+    LIMIT ${input.limit + 1}`);
+  const page = rows.slice(0, input.limit);
+  const last = page[page.length - 1];
+  return {
+    items: page.map((row) => ({
+      stockUuid: row.id, stockId: row.stock_id, lotKey: row.lot_key, refDocNo: row.ref_doc_no, refDocDate: row.ref_doc_date, location: row.location,
+      priceUnit: row.price_unit as "PER_CT" | "PER_PCS", stockPrice: new Prisma.Decimal(row.stock_price).toFixed(2), currency: row.currency_code,
+      onHandPcs: Number(row.on_hand_pcs), onHandWeightCt: new Prisma.Decimal(row.on_hand_weight_ct).toFixed(3),
+      attrs: {
+        stoneCode: row.stone_code, stone: row.stone, shape: row.shape, size: row.size, color: row.color, clarity: row.clarity, cutting: row.cutting,
+        quality: row.quality, lot: row.lot, location: row.location, cerType: row.cer_type, cerNo: row.cer_no,
+      },
+    })),
+    nextCursor: rows.length > input.limit && last ? encodeStockCursor(last.ref_doc_date, last.stock_id) : null,
+  };
+}

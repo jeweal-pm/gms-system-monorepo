@@ -17,6 +17,10 @@ import { approvalPending as salePending, approvalSummary as saleSummary } from "
 import { SaleService } from "./modules/sale/service";
 import { SalePhotoService } from "./modules/sale/photos";
 import { registerSaleRoutes } from "./modules/sale/routes";
+import { StockTransferService } from "./modules/stock-transfer-location/service";
+import { registerStockTransferRoutes } from "./modules/stock-transfer-location/routes";
+import { approvalPending as transferPending, approvalSummary as transferSummary } from "./modules/stock-transfer-location/read";
+import { pendingQuerySchema as transferPendingQuerySchema } from "./modules/stock-transfer-location/schemas";
 import { StockAdjustmentService } from "./modules/stock-adjustment/service";
 import { registerStockAdjustmentRoutes } from "./modules/stock-adjustment/routes";
 import { approvalPending as adjustmentPending, approvalSummary as adjustmentSummary } from "./modules/stock-adjustment/read";
@@ -86,6 +90,8 @@ export function createApp(deps: AppDeps) {
   const saleService = new SaleService({ db: deps.db, master: deps.master, logger: deps.logger, hub, approvers: deps.approvers });
   const stockAdjustmentService = new StockAdjustmentService({ db: deps.db, master: deps.master, hub, approvers: deps.approvers });
   const salePhotos = new SalePhotoService(deps.db, deps.storageRoot, photos.writes, photos.reads);
+  // stock-transfer-location ADR-0060 (BE-STL-004): document + stock move in one inventory transaction, no saga.
+  const transferService = new StockTransferService({ db: deps.db, master: deps.master, logger: deps.logger, hub, approvers: deps.approvers });
   const app = new Hono<AppEnv>();
   app.use("*", requestContext(deps.logger));
   app.onError((error, c) => errorResponse(c, error, deps.logger));
@@ -240,10 +246,11 @@ export function createApp(deps: AppDeps) {
     return c.json(await updateSetting(deps.db, c.get("principal"), parsedType.data, input));
   });
   api.get("/approval/summary", async (c) => {
-    const [load, sale, adjustment] = await Promise.all([
-      approvalSummary(deps.db, c.get("principal")), saleSummary(deps.db, c.get("principal")), adjustmentSummary(deps.db, c.get("principal")),
+    const [load, sale, transfer, adjustment] = await Promise.all([
+      approvalSummary(deps.db, c.get("principal")), saleSummary(deps.db, c.get("principal")),
+      transferSummary(deps.db, c.get("principal")), adjustmentSummary(deps.db, c.get("principal")),
     ]);
-    return c.json({ ...load, items: [...load.items, ...sale, ...adjustment] });
+    return c.json({ ...load, items: [...load.items, ...sale, ...transfer, ...adjustment] });
   });
   api.get("/approval/pending", async (c) => {
     if (c.req.query("type") === "stock-adjustment") {
@@ -255,6 +262,11 @@ export function createApp(deps: AppDeps) {
       const query = parse(salePendingQuerySchema, queryObject(c));
       if (!canApprove(c.get("principal"), "sale")) throw new AppError(403, "PERMISSION_DENIED");
       return c.json(await salePending(deps.db, query));
+    }
+    if (c.req.query("type") === "stock-transfer-location") {
+      const query = parse(transferPendingQuerySchema, queryObject(c));
+      if (!canApprove(c.get("principal"), "stock-transfer-location")) throw new AppError(403, "PERMISSION_DENIED");
+      return c.json(await transferPending(deps.db, query));
     }
     const query = parse(pendingQuerySchema, queryObject(c));
     approver(c);
@@ -268,7 +280,7 @@ export function createApp(deps: AppDeps) {
     const query = parse(notificationList, queryObject(c));
     const principal = c.get("principal");
     if (query.scope === "all") {
-      const types = (["load-to-stock", "sale", "stock-adjustment"] as const).filter((type) => hasGrant(principal, type, "VIEW"));
+      const types = (["load-to-stock", "sale", "stock-transfer-location", "stock-adjustment"] as const).filter((type) => hasGrant(principal, type, "VIEW"));
       return c.json(await listForTypes(deps.db, types, query.cursor, query.limit));
     }
     return c.json(await listForUser(deps.db, principal.userId, query.cursor, query.limit));
@@ -311,6 +323,7 @@ export function createApp(deps: AppDeps) {
   });
 
   registerSaleRoutes(api, { db: deps.db, master: deps.master, service: saleService, photos: salePhotos });
+  registerStockTransferRoutes(api, { db: deps.db, master: deps.master, service: transferService });
   registerStockAdjustmentRoutes(api, { db: deps.db, master: deps.master, service: stockAdjustmentService });
   // stock-card ADR-0056 (BE-SC-003): read-only report over the own-stock ledger; limits are the module's, overridable in tests.
   // stock-value ADR-0057 (BE-SV-004): second report module; ONE guard for both reports (at most 2 report queries in flight in total).
@@ -321,5 +334,5 @@ export function createApp(deps: AppDeps) {
   app.route("/api/inventory/v1", api);
   // api-master → inventory (not routed by nginx).
   app.route("/internal/v1/master", createMasterRoutes({ db: deps.db, logger: deps.logger, tokenDigest: deps.internal?.tokenDigest ?? null, otherTokenDigest: deps.internal?.otherTokenDigest ?? null }));
-  return { app, service, hub, photos, saleService, salePhotos, stockAdjustmentService };
+  return { app, service, hub, photos, saleService, salePhotos, transferService, stockAdjustmentService };
 }

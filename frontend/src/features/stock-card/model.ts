@@ -183,6 +183,8 @@ const DOC_ROUTES: Readonly<Record<string, string>> = {
   "memo-out": "/memo/memo-out",
   "memo-return": "/memo/memo-return",
   sale: "/sale/sale",
+  // stock-transfer-location (ADR-0060 D5): TRANSFER_OUT / TRANSFER_IN rows open the transfer.
+  "stock-transfer-location": "/inventory/stock-transfer-location",
 };
 
 /** The document page of a row, or `undefined` for a type this UI has no route for (the number then renders as text). */

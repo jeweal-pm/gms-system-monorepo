@@ -1,6 +1,6 @@
-import { Body, Controller, Get, Header, HttpCode, Param, Post, Put, Query, Req, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Header, HttpCode, HttpStatus, Param, Post, Put, Query, Req, Res, UseGuards } from "@nestjs/common";
 import type { Request, Response } from "express";
-import { parseOrThrow } from "../common/errors";
+import { parseOrThrow, partnerException } from "../common/errors";
 import { parseId, requireJson } from "../common/request";
 import { InventoryInternalRoute, InventoryServiceTokenGuard } from "./inventory-token.guard";
 import {
@@ -13,6 +13,8 @@ import {
   salePrepareSchema,
   saleReferenceQuerySchema,
   saleReserveLineSearchSchema,
+  stockIdIssuePutSchema,
+  stockIdIssueTypeSchema,
   vendorsQuerySchema,
 } from "./inventory-internal.schemas";
 import { InventoryInternalService } from "./inventory-internal.service";
@@ -91,6 +93,19 @@ export class InventoryInternalController {
   @Header("Cache-Control", "no-store")
   getAllocation(@Param("loadId") loadId: string) {
     return this.service.getAllocation(parseId(loadId));
+  }
+
+  // ---------- stock-transfer-location ADR-0060 D6 (BE-STL-002) ----------
+
+  /** Idempotent per (documentType, documentId, revision); an unknown document type is 404 (no such resource). */
+  @Put("stock-id-issues/:documentType/:documentId")
+  @Header("Cache-Control", "no-store")
+  putStockIdIssue(@Req() request: Request, @Param("documentType") documentType: string, @Param("documentId") documentId: string, @Body() body: unknown) {
+    requireJson(request);
+    const type = stockIdIssueTypeSchema.safeParse(documentType);
+    if (!type.success) throw partnerException("NOT_FOUND", HttpStatus.NOT_FOUND);
+    const id = parseId(documentId);
+    return this.service.issueStockIds(type.data, id, parseOrThrow(stockIdIssuePutSchema, body), actorOf(request));
   }
 
   // ---------- sale SA rev 1 api-contract "Master internal API" (BE-SL-002) ----------

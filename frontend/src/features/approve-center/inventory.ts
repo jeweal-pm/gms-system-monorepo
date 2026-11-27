@@ -1,5 +1,6 @@
 import { loadToStockApi, type LoadOut } from "@/features/load-to-stock/api";
 import { saleApi, type SaleOut } from "@/features/sale/api";
+import { stockTransferApi, type TransferOut } from "@/features/stock-transfer-location/api";
 import { stockAdjustmentApi, type AdjustmentOut } from "@/features/stock-adjustment/api";
 import type { InventoryPendingItem } from "@/features/inventory/approval";
 import type { PendingApprovalItem } from "./model";
@@ -161,6 +162,54 @@ export function saleDocumentClient(calls: SaleCalls = saleApi) {
   const withVersion = async (id: string, expectedVersion: number) => (expectedVersion > 0 ? expectedVersion : (await calls.get(id)).version);
   return {
     get: { query: async ({ id }: { id: string }) => salePreview(await calls.get(id)) },
+    approve: { mutate: async ({ id, expectedVersion }: { id: string; expectedVersion: number }) => calls.approve(id, await withVersion(id, expectedVersion)) },
+    reject: { mutate: async ({ id, expectedVersion, reason }: { id: string; expectedVersion: number; reason: string }) => calls.reject(id, await withVersion(id, expectedVersion), reason) },
+    requestRevision: {
+      mutate: async ({ id, expectedVersion, note }: { id: string; expectedVersion: number; note: string }) => calls.requestRevision(id, await withVersion(id, expectedVersion), note),
+    },
+  };
+}
+
+/**
+ * stock-transfer-location FE-STL-005 (ADR-0060 D8): `TransferOut` → the preview modal's fields. One line per row; the
+ * location column shows "from → to" and the value is blank (a transfer moves stock, it has no amount).
+ */
+export function stockTransferPreview(detail: TransferOut): PreviewDetail {
+  return {
+    id: detail.id,
+    docNo: detail.docNo ?? "",
+    status: detail.status,
+    version: detail.version,
+    docDate: detail.docDate,
+    currency: "",
+    exchangeRate: null,
+    documentNote: detail.note,
+    lines: [...detail.lines]
+      .sort((a, b) => a.position - b.position)
+      .map((line) => ({
+        stoneCode: line.attrs.stoneCode,
+        stockId: line.stockId,
+        stone: line.attrs.stone,
+        shape: line.attrs.shape,
+        size: line.attrs.size,
+        pcs: line.pcs,
+        weightCt: line.weightCt,
+        amount: "0",
+        location: `${line.fromLocation} → ${line.toLocation}`,
+      })),
+    totals: { grandTotal: "0" },
+    deletedAt: null,
+    revisionCount: detail.approval.revisionCount,
+  };
+}
+
+type TransferCalls = Pick<typeof stockTransferApi, "get" | "approve" | "reject" | "requestRevision">;
+
+/** The Approve menu's per-document client for Stock Transfer Location (backend-api-inventory, same surface as master's). */
+export function stockTransferDocumentClient(calls: TransferCalls = stockTransferApi) {
+  const withVersion = async (id: string, expectedVersion: number) => (expectedVersion > 0 ? expectedVersion : (await calls.get(id)).version);
+  return {
+    get: { query: async ({ id }: { id: string }) => stockTransferPreview(await calls.get(id)) },
     approve: { mutate: async ({ id, expectedVersion }: { id: string; expectedVersion: number }) => calls.approve(id, await withVersion(id, expectedVersion)) },
     reject: { mutate: async ({ id, expectedVersion, reason }: { id: string; expectedVersion: number; reason: string }) => calls.reject(id, await withVersion(id, expectedVersion), reason) },
     requestRevision: {

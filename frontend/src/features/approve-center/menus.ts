@@ -39,14 +39,10 @@ export type ApproveMenuSlug =
   | "stock-adjustment";
 
 /** The `masterTrpc` router key of a document that can be approved today. */
-export type ApprovalProc = "quotation" | "reserve" | "memoReceive" | "memoReturn" | "memoOut" | "memoOutReturn" | "purchaseOrder" | "purchase" | "loadToStock" | "sale" | "stockAdjustment";
+export type ApprovalProc = "quotation" | "reserve" | "memoReceive" | "memoReturn" | "memoOut" | "memoOutReturn" | "purchaseOrder" | "purchase" | "loadToStock" | "sale" | "stockTransferLocation" | "stockAdjustment";
 
 /** approval-setup api-contract `ApprovalType`: the kebab-case setting keys (G13), in sidebar order. */
-export type ApprovalSettingType =
-  | DocumentApprovalType
-  | "load-to-stock"
-  | "merge-split"
-  | "stock-transfer-location";
+export type ApprovalSettingType = DocumentApprovalType | "merge-split";
 
 export type Party = "customer" | "vendor" | "none";
 
@@ -199,7 +195,20 @@ export const APPROVE_MENUS: readonly ApproveMenu[] = [
     consequence: () => "Its rows go into stock with their Stock IDs and the PU lines are deducted. It can no longer be edited.",
   },
   { slug: "merge-split", label: "Merge/Split Stock", icon: SplitVerticalIcon, leaf: "merge-split", type: "merge-split", party: "none", availability: "not-available" },
-  { slug: "transfer-location", label: "Transfer Location", icon: StockTransferIcon, leaf: "stock-transfer-location", type: "stock-transfer-location", party: "none", availability: "not-available" },
+  // stock-transfer-location FE-STL-005 (ADR-0060 D8): served by backend-api-inventory (`approve-center/inventory.ts`).
+  {
+    slug: "transfer-location",
+    label: "Transfer Location",
+    icon: StockTransferIcon,
+    leaf: "stock-transfer-location",
+    type: "stock-transfer-location",
+    party: "none",
+    availability: "available",
+    proc: "stockTransferLocation",
+    documentBase: "/inventory/stock-transfer-location",
+    dueLabel: null,
+    consequence: (count) => `Its ${items(count, "item moves", "items move")} to the new locations with new Stock IDs, and it can no longer be edited.`,
+  },
   // sale FE-SL-009 (ADR-0054): served by backend-api-inventory (`approve-center/inventory.ts`).
   {
     slug: "sale",
