@@ -9,6 +9,7 @@ import { loadTotals, refsById, rowCost, splitGroups, unitLabel, UNIT_COST_PLACES
 import type { LoadMode, PurchaseLineRef } from "../types";
 import { CerCell, GradeCell, HeaderCell, StoneCell, StoneCodeCell } from "./cells";
 import { SplitGroupRow } from "./split-group-row";
+import { rowState, TABLE_HEAD, TABLE_ROW } from "@/features/trade-document/table-row";
 
 export const EMPTY_LOAD_TEXT = "No load rows yet · click here or use From Purchase to pick PU lines";
 
@@ -126,7 +127,7 @@ export function LoadTable(props: LoadTableProps) {
   return (
     <div className="overflow-x-auto rounded-lg">
       <table className="w-full min-w-[1180px] border-collapse text-sm text-[#1C252E]" aria-label="Load rows">
-        <thead className="bg-[#F6F7F8] text-left">
+        <thead className={cx("text-left", TABLE_HEAD)}>
           <tr>
             <th scope="col" className="w-10 px-3 py-3">
               <input type="checkbox" aria-label="Select all load rows" className="size-4 accent-[#0E5E63]" checked={allChecked} disabled={readOnly || values.rows.length === 0} onChange={() => onToggleAll(!allChecked)} />
@@ -179,7 +180,8 @@ function LoadRow({ row, index, number, refs, values, currency, locations, readOn
       <tr
         onClick={() => onSelect(index)}
         aria-selected={selectedKey === row.key}
-        className={cx("border-b border-[#EEF0F2] align-top", selectedKey === row.key ? "bg-[#F2F8F8]" : "hover:bg-[#FAFBFB]", error && "bg-[#FFF6F6]")}
+        className={TABLE_ROW}
+        {...rowState({ active: selectedKey === row.key, checked: checkedKeys.has(row.key), error: Boolean(error) })}
       >
         <td className="px-3 py-4" onClick={(event) => event.stopPropagation()}>
           <input type="checkbox" aria-label={`Select load row ${index + 1}`} className="size-4 accent-[#0E5E63]" checked={checkedKeys.has(row.key)} disabled={readOnly} onChange={() => onToggleCheck(row.key)} />
@@ -226,8 +228,8 @@ function LoadRow({ row, index, number, refs, values, currency, locations, readOn
         </td>
       </tr>
       {error && (
-        <tr className="bg-[#FFF6F6]">
-          <td colSpan={COLUMNS} className="px-12 pb-2 text-xs text-[#E5484D]" role="alert">
+        <tr className="bg-white">
+          <td colSpan={COLUMNS} className="px-12 pb-2 shadow-[inset_3px_0_0_#D9535C] text-xs text-[#E5484D]" role="alert">
             Row {index + 1}: {error}
           </td>
         </tr>

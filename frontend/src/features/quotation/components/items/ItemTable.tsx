@@ -10,6 +10,7 @@ import { visibleRowsHeight } from "../../lib/table-scroll";
 import { DEFAULT_PRICE_TITLE, useDocumentKind } from "../../document-kind";
 import { isFilledLine, type QuotationLine } from "../../schema";
 import { Badge, Button, cx } from "../ui";
+import { rowState, TABLE_HEAD, TABLE_ROW } from "@/features/trade-document/table-row";
 
 type Column = { title: string; sub?: string; align?: "right"; className?: string };
 
@@ -97,7 +98,7 @@ export function ItemTable({
     <div className="min-w-0 flex-1">
       <div ref={scrollRef} className="overflow-auto rounded-lg">
         <table className="w-full min-w-[1180px] border-collapse text-sm text-[#1C252E]">
-          <thead className="sticky top-0 z-10 bg-[#F6F7F8] text-left">
+          <thead className={cx("sticky top-0 z-10 text-left", TABLE_HEAD)}>
             <tr>
               <th className="w-10 px-3 py-3">
                 <input
@@ -130,24 +131,21 @@ export function ItemTable({
               const filled = isFilledLine(line);
               const selected = index === selectedIndex;
               const rowError = rowErrors?.[index];
-              // A row and its error line share one <tbody> so hover/selection colours both of them together.
-              const errorTone = selected ? "bg-[#F9D7D7]" : "bg-[#FDECEC] group-hover/line:bg-[#FBE0E0]";
+              const checked = checkedKeys.has(line.key);
               return (
-                <tbody key={line.key} className="group/line">
+                <tbody key={line.key}>
                 <tr
                   onClick={() => onSelectRow(index)}
                   aria-invalid={rowError ? true : undefined}
-                  className={cx(
-                    "cursor-pointer align-top",
-                    rowError ? errorTone : cx("border-b border-[#EEF0F2]", selected ? "bg-[#E6F1F1]" : "hover:bg-[#FAFBFB]"),
-                  )}
+                  className={cx("cursor-pointer", TABLE_ROW)}
+                  {...rowState({ active: selected, checked, error: Boolean(rowError) })}
                 >
                   <td className="px-3 py-4" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       aria-label={`Select row ${index + 1}`}
                       className="size-5 accent-[#0E5E63]"
-                      checked={checkedKeys.has(line.key)}
+                      checked={checked}
                       disabled={readOnly}
                       onChange={() => onToggleCheck(line.key)}
                     />
@@ -184,8 +182,8 @@ export function ItemTable({
                   </td>
                 </tr>
                 {rowError && (
-                  <tr onClick={() => onSelectRow(index)} className={cx("cursor-pointer border-b border-[#EEF0F2]", errorTone)}>
-                    <td colSpan={COLUMNS.length + 4} className="px-3 pb-2 text-xs text-[#E5484D]" role="alert">
+                  <tr onClick={() => onSelectRow(index)} className="cursor-pointer border-b border-[#EEF0F2] bg-white">
+                    <td colSpan={COLUMNS.length + 4} className="px-3 pb-2 shadow-[inset_3px_0_0_#D9535C] text-xs text-[#E5484D]" role="alert">
                       {`Row ${index + 1}: ${rowError}`}
                     </td>
                   </tr>

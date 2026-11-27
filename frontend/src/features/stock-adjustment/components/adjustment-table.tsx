@@ -5,19 +5,15 @@ import { useState, type ChangeEvent } from "react";
 import { useNumberFormat } from "@/features/decimal-setup/number-format-provider";
 import { cx, TextInput } from "@/features/quotation/components/ui";
 import { diff, nextStoneSort, sanitize, sortByStoneCode, type AdjustmentLine, type StoneSort } from "../form";
+import { COLUMN_TONE, rowState, TABLE_HEAD, TABLE_ROW } from "@/features/trade-document/table-row";
 
 export const EMPTY_ROW_TEXT = "Empty row · click to pick from stock";
 export type PhysicalField = "physicalPcs" | "physicalWeightCt" | "physicalPrice" | "remark";
 
 /** Row backgrounds (owner image 03, same as the transfer grid): default white, hover light grey, selected light teal. */
-export const ROW_TONE = { base: "bg-white hover:bg-[#F6F7F8]", selected: "bg-[#E6F2F2]", error: "bg-[#FFF6F6]" } as const;
 
 /** Group colors (owner images 01–03): strong header, lighter sub-header, light body. */
-export const GROUP_TONE = {
-  stock: { head: "bg-[#A8CFCF]", sub: "bg-[#D3E3E2]", body: "bg-[#E1EBEA]" },
-  physical: { head: "bg-[#F2A7AA]", sub: "bg-[#F3D5D6]", body: "bg-[#FBE6E6]" },
-  diff: { head: "bg-[#B5D3FA]", sub: "bg-[#DCE6F6]", body: "bg-[#EDF2FB]" },
-} as const;
+export const GROUP_TONE = { stock: COLUMN_TONE.neutral, physical: COLUMN_TONE.red, diff: COLUMN_TONE.blue } as const;
 const GROUPS = ["stock", "physical", "diff"] as const;
 const GROUP_LABEL = { stock: "Stock", physical: "Physical", diff: "Diff" } as const;
 const SUBS = ["Pcs", "Cts", "Price"] as const;
@@ -52,7 +48,7 @@ export function AdjustmentTable({ lines, editable, selected, rowErrors = {}, onS
   return (
     <div className="overflow-x-auto rounded-lg">
       <table className="w-full min-w-[1400px] border-collapse text-sm text-[#1C252E]" aria-label="Adjustment rows">
-        <thead className="bg-[#E9EDEE] text-left">
+        <thead className={cx("text-left", TABLE_HEAD)}>
           <tr>
             <th rowSpan={2} scope="col" className="w-10 px-3 py-3">
               <input type="checkbox" aria-label="Select all adjustment rows" className="size-4 accent-[#0E5E63]" checked={allChecked} disabled={!editable || lines.length === 0} onChange={() => onSelectAll(!allChecked)} />
@@ -103,7 +99,7 @@ export function AdjustmentTable({ lines, editable, selected, rowErrors = {}, onS
           {Array.from({ length: empties }, (_, offset) => {
             const number = lines.length + offset + 1;
             return (
-              <tr key={`empty-${number}`} className={cx("border-b border-[#EEF0F2]", ROW_TONE.base)} data-empty-row="">
+              <tr key={`empty-${number}`} className={TABLE_ROW} data-empty-row="">
                 <td className="px-3 py-4">
                   <input type="checkbox" aria-label={`Select empty row ${number}`} className="size-4 accent-[#0E5E63]" disabled checked={false} readOnly />
                 </td>
@@ -150,7 +146,6 @@ function AdjustmentRow({
   editable: boolean;
   nf: ReturnType<typeof useNumberFormat>;
 } & Pick<AdjustmentTableProps, "onSelect" | "onChange" | "onRemove">) {
-  const tone = error ? ROW_TONE.error : checked ? ROW_TONE.selected : ROW_TONE.base;
   const dPcs = diff(line.physicalPcs, line.stockPcs, 0);
   const dCts = diff(line.physicalWeightCt, line.stockWeightCt, 3);
   const dPrice = diff(line.physicalPrice, line.stockPrice, 2);
@@ -164,7 +159,7 @@ function AdjustmentRow({
 
   return (
     <>
-      <tr className={cx("border-b border-[#EEF0F2] align-top", tone)} aria-selected={checked} data-row-key={line.key}>
+      <tr className={TABLE_ROW} {...rowState({ checked, error: Boolean(error) })} aria-selected={checked} data-row-key={line.key}>
         <td className="px-3 py-4">
           <input type="checkbox" aria-label={`Select ${line.stockId}`} className="size-4 accent-[#0E5E63]" checked={checked} disabled={!editable} onChange={(event) => onSelect(line.key, event.target.checked)} />
         </td>
@@ -207,8 +202,8 @@ function AdjustmentRow({
         </td>
       </tr>
       {error && (
-        <tr className={ROW_TONE.error}>
-          <td colSpan={COLUMNS} className="px-12 pb-2 text-xs text-[#E5484D]" role="alert">
+        <tr className="bg-white">
+          <td colSpan={COLUMNS} className="px-12 pb-2 shadow-[inset_3px_0_0_#D9535C] text-xs text-[#E5484D]" role="alert">
             Row {number}: {error}
           </td>
         </tr>

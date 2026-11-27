@@ -64,23 +64,21 @@ describe("Transaction confirm modal", () => {
 });
 
 describe("Item table error rows", () => {
-  it("UT-QT-ROW-01 each row and its error line share one tbody that hovers together", () => {
+  it("UT-QT-ROW-01 (table guide 2026-11-27) an error row keeps its background and gets a red left line, its error line too", () => {
     const parts = bodies(table(null));
     expect(parts).toHaveLength(3);
     for (const index of [0, 2]) {
-      expect(parts[index]).toContain('class="group/line"');
-      expect(parts[index].match(/bg-\[#FDECEC\] group-hover\/line:bg-\[#FBE0E0\]/g)).toHaveLength(2);
-      expect(parts[index]).not.toContain("hover:bg-[#FAFBFB]");
+      expect(parts[index]).toMatch(/class="cursor-pointer gms-row[^"]*" data-error=""/);
+      expect(parts[index]).toContain("shadow-[inset_3px_0_0_#D9535C]");
+      expect(parts[index]).not.toContain("#FDECEC");
     }
-    expect(parts[1]).toContain("hover:bg-[#FAFBFB]");
-    expect(parts[1]).not.toContain("#FDECEC");
+    expect(parts[1]).not.toContain("data-error");
   });
 
-  it("UT-QT-ROW-02 a selected error row stays red with its error line, not teal", () => {
-    const [first = "", second = ""] = bodies(table(0));
-    expect(first.match(/bg-\[#F9D7D7\]/g)).toHaveLength(2);
-    expect(first).not.toContain("bg-[#E6F1F1]");
-    expect(bodies(table(1))[1]).toContain("bg-[#E6F1F1]");
-    expect(second).not.toContain("bg-[#F9D7D7]");
+  it("UT-QT-ROW-02 (table guide 2026-11-27) the selected row is active; an active error row keeps both markers (CSS draws the red line)", () => {
+    const [first = ""] = bodies(table(0));
+    expect(first).toMatch(/data-active="" data-error=""/);
+    expect(bodies(table(1))[1]).toContain('data-active=""');
+    expect(bodies(table(1))[0]).not.toContain("data-active");
   });
 });

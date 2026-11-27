@@ -5,8 +5,13 @@ import { describe, expect, it } from "vitest";
 describe("tab strip colours and body background", () => {
   const source = readFileSync("src/features/home/tabs/tab-bar.tsx", "utf8");
 
-  it("active #FFFFFF, inactive #EDEDED, hover #F9F9F9", () => {
-    expect(source).toContain('? "bg-[#FFFFFF] text-gms-text"');
+  it("every tab keeps its right border, the last one too (owner 2026-11-27: the last tab blended into the page)", () => {
+    expect(source).toContain("border-r border-gms-border-header px-3");
+    expect(source).not.toContain("last:border-r-0");
+  });
+
+  it("active #F9F9F9 (owner 2026-11-27), inactive #EDEDED, hover #F9F9F9", () => {
+    expect(source).toContain('? "bg-[#F9F9F9] text-gms-text"');
     expect(source).toContain('"bg-[#EDEDED] text-gms-text-muted shadow-[inset_0_-1px_0_var(--color-gms-border-header)] hover:bg-[#F9F9F9]"');
   });
 

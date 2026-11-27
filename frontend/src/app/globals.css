@@ -297,3 +297,18 @@ select:-webkit-autofill {
   top: 0;
   left: 0;
 }
+
+/*
+ * Transaction table rows (owner table guide 2026-11-27). Unlayered so it wins over cell utilities.
+ * Rows start at 56px, padding 8px, centred. A state is a thin teal tint laid over each cell's own
+ * colour, so it works on every column group: hover #F6FAFA, checkbox active and active #E5F3F2.
+ * Priority: active > checkbox active > hover. Active adds a 3px accent on the left; error a 3px red one
+ * instead (background unchanged, the wrong cell has its own red border).
+ */
+.gms-head > tr:only-child > th { height: 56px; }
+.gms-row > td { height: 56px; padding-top: 8px; padding-bottom: 8px; vertical-align: middle; background-image: linear-gradient(var(--gms-row-tint, transparent), var(--gms-row-tint, transparent)); }
+.gms-row:hover { --gms-row-tint: rgb(19 146 137 / 0.04); }
+.gms-row[data-checked] { --gms-row-tint: rgb(19 146 137 / 0.11); }
+.gms-row[data-active] { --gms-row-tint: rgb(19 146 137 / 0.11); }
+.gms-row[data-active] > td:first-child { box-shadow: inset 3px 0 0 #0E5A5F; }
+.gms-row[data-error] > td:first-child { box-shadow: inset 3px 0 0 #D9535C; }

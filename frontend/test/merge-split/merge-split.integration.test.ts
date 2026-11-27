@@ -58,7 +58,7 @@ describe("IT-MS-01 page shell and access (FE-MS-001)", () => {
     const html = render(seeded(ALL), createElement(MergeSplitRoutePage));
     expect(html).toContain("Merge/Split No.:");
     expect(html).toContain("MSGMS2611001");
-    expect(html).toContain("Number preview");
+    expect(html).not.toContain("Number preview");
     for (const label of ["Doc Date", "Ref."]) expect(html).toContain(`>${label}`);
     for (const absent of [">Account", ">Currency", "From Purchase", "From Memo"]) expect(html).not.toContain(absent);
     expect(button(html, "From Stock")).not.toContain('disabled=""');

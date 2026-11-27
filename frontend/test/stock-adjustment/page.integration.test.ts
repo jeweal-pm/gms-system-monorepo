@@ -45,7 +45,7 @@ describe("IT-SAJ-02 Stock Adjustment daybook rail", () => {
 describe("IT-SAJ-01 Stock Adjustment page", () => {
   it("renders the number preview, headers, empty rows, picker affordance and disabled export actions", () => {
     const html = renderPage();
-    expect(html).toContain("SA2611003"); expect(html).toContain("Number preview");
+    expect(html).toContain("SA2611003"); expect(html).not.toContain("Number preview");
     for (const title of ["Doc Date", "Main Location", "Ref.", "Stock Adjustment", "Document Note"]) expect(html).toContain(title);
     // Transfer-page controls: dd/mm/yyyy date box, styled Select (no native <select>), From Stock + barcode button, right rail.
     expect(html).toContain('value="24/11/2026"'); expect(html).toContain('aria-label="Open calendar"');
