@@ -200,11 +200,13 @@ export async function lineBatch(input: LineBatchInput): Promise<{ items: BatchLi
   return { items: rows.map(toLineRef) };
 }
 
-/** DISTINCT vendors with ≥ 1 loadable line; keyset on (name_key, id), the cursor carries only the id. */
+/**
+ * Every active vendor (owner 2026-11-27: the Load to Stock Account list shows all accounts; From Purchase then lists
+ * that account's loadable lines, empty when it has none). Keyset on (name_key, id), the cursor carries only the id.
+ * The route keeps its `/vendors/loadable` path so inventory needs no change.
+ */
 export async function loadableVendors(input: VendorsQuery) {
-  const where: Prisma.Sql[] = [Prisma.sql`EXISTS (
-    SELECT 1 FROM "partner"."purchase" p JOIN "partner"."purchase_line" l ON l."purchase_id" = p."id"
-    WHERE p."vendor_id" = v."id" AND p."status" = 'APPROVED' AND p."deleted_at" IS NULL AND l."source" <> 'STOCK' AND l."pcs" > l."loaded_pcs")`];
+  const where: Prisma.Sql[] = [Prisma.sql`v."active" = true`];
   if (input.q) {
     const pattern = `%${escapeLike(input.q)}%`;
     where.push(Prisma.sql`(v."name" ILIKE ${pattern} ESCAPE '\\' OR v."code" ILIKE ${pattern} ESCAPE '\\')`);
