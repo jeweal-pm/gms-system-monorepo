@@ -207,7 +207,7 @@ describe("transactions table (FE-SV-008, V2 / V5)", () => {
     const markup = html(txnTable());
     expect(markup).toContain('href="/inventory/load-to-stock/0192a"');
     expect(markup).toContain('href="/memo/memo-out/0192b"');
-    expect(markup).not.toContain("stock-adjustment/");
+    expect(markup).toContain('href="/inventory/stock-adjustment/0192c"');
     expect(markup).toContain(">Load to Stock<");
     expect(markup).toContain(">260215 +2<");
     expect(markup).toContain(">—<");

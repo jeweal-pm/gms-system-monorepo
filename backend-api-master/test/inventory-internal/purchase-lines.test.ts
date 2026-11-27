@@ -67,6 +67,7 @@ describe("picker input and cursor", () => {
     expect(masterDataResolveSchema.safeParse({ stoneCodeIds: [], locationNames: ["Safe A"] }).success).toBe(true);
     expect(masterDataResolveSchema.safeParse({ stoneCodeIds: [], locationNames: ["x".repeat(41)] }).success).toBe(false);
     expect(numberingResolveSchema.safeParse({ transactionKey: "load-to-stock", docDate: "2026-11-17", markUsed: true }).success).toBe(true);
+    expect(numberingResolveSchema.safeParse({ transactionKey: "stock-adjustment", docDate: "2026-11-17", markUsed: false }).success).toBe(true);
     expect(numberingResolveSchema.safeParse({ transactionKey: "purchase", docDate: "2026-11-17", markUsed: true }).success).toBe(false);
   });
 });

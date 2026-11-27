@@ -286,6 +286,7 @@ export class SaleService {
     const lineIds = input.lines.map(() => uuidV7());
     const ownLots = await resolveOwnLots(this.deps.db, ownLotKeys(input.lines), null);
     const doc = normalizeSale(input, prepared, { lineId: (index) => lineIds[index], ownLots });
+    const refOk = new Set(prepared.photoRefsOk ?? []);
     const numbering = (await this.deps.master.numbering(input.docDate, true, { requestId }, "sale")).numbering;
     const id = uuidV7();
     let op: SaleOpRow | null = null;
@@ -293,7 +294,7 @@ export class SaleService {
     let docNo = "";
     await this.deps.db.$transaction(async (tx) => {
       const requireApproval = await readSettingForShare(tx, "sale");
-      await checkPhotos(tx, null, principal.userId, doc.lines);
+      await checkPhotos(tx, null, principal.userId, doc.lines, refOk);
       const runningNo = await nextRunningNo(tx, numbering, true);
       docNo = formatDocNo(numbering, runningNo);
       await tx.sale.create({
@@ -334,12 +335,13 @@ export class SaleService {
     const fresh = input.lines.map((line) => (line.id && stored.has(line.id) ? line.id : uuidV7()));
     const ownLots = await resolveOwnLots(this.deps.db, ownLotKeys(input.lines), id);
     const doc = normalizeSale(input, prepared, { lineId: (index) => fresh[index], storedCurrency: current.currency_code, ownLots });
+    const refOk = new Set(prepared.photoRefsOk ?? []);
     let op: SaleOpRow | null = null;
     let local: SaleWriteResult | null = null;
     let status = current.status;
     await this.deps.db.$transaction(async (tx) => {
       const requireApproval = await readSettingForShare(tx, "sale");
-      await checkPhotos(tx, id, principal.userId, doc.lines);
+      await checkPhotos(tx, id, principal.userId, doc.lines, refOk);
       const locked = await tx.$executeRaw`
         UPDATE "inventory"."sale" SET "version" = "version" + 1, "updated_at" = now(), "updated_by" = ${principal.userId}
         WHERE "id" = ${id}::uuid AND "version" = ${expectedVersion}::int AND "deleted_at" IS NULL AND "sync_state" = 'IDLE' AND NOT "provisional"

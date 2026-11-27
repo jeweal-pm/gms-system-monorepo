@@ -61,8 +61,8 @@ export const masterDataResolveSchema = z.object({
 }).strict();
 export type MasterDataResolveInput = z.output<typeof masterDataResolveSchema>;
 
-/** Document Setup keys an inventory document may resolve (ADR-0052 D10; sale ADR-0054 D10 and stock-transfer-location ADR-0060 D10 widen the allow-list). */
-export const INVENTORY_NUMBERING_KEYS = ["load-to-stock", "sale", "stock-transfer-location"] as const;
+/** Document Setup keys an inventory document may resolve (ADR-0052 D10; sale ADR-0054 D10, stock-adjustment ADR-0059 and stock-transfer-location ADR-0060 D10 widen the allow-list). */
+export const INVENTORY_NUMBERING_KEYS = ["load-to-stock", "sale", "stock-transfer-location", "stock-adjustment"] as const;
 
 export const numberingResolveSchema = z.object({
   transactionKey: z.enum(INVENTORY_NUMBERING_KEYS),
@@ -136,6 +136,8 @@ export const salePrepareSchema = z.object({
   memoStockIds: z.array(z.uuid()).max(SALE_LINES_MAX),
   /** lot-based-stock (ADR-0055 D7): Memo Stock lots of From Stock lines (group snapshot + available, no lock). */
   lotKeys: z.array(memoLotKey).max(SALE_LINES_MAX).default([]),
+  /** Owner 2026-11-24: Memo Receive photo files a Sale line wants to reference; the answer lists the ones that belong to the line's Memo Stock / lot. */
+  photoRefs: z.array(z.object({ fileId: z.uuid(), memoStockId: z.uuid().nullish(), lotKey: memoLotKey.nullish() }).strict()).max(SALE_LINES_MAX * 5).default([]),
   saleId: z.uuid().optional(),
 }).strict();
 export type SalePrepareInput = z.output<typeof salePrepareSchema>;

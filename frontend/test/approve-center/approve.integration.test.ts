@@ -76,7 +76,7 @@ function withProviders(queryClient: QueryClient, children: ReactNode) {
 
 const reserve = approveMenuFor("reserve") as AvailableMenu;
 const quotation = approveMenuFor("quotation") as AvailableMenu;
-const ALL_GRANTS = ["reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase", "quotation", "load-to-stock", "merge-split", "stock-transfer-location"].flatMap(
+const ALL_GRANTS = ["reserve", "memo-receive", "memo-return", "memo-out", "memo-out-return", "purchase-order", "purchase", "quotation", "load-to-stock", "merge-split", "stock-transfer-location", "sale", "stock-adjustment"].flatMap(
   (leaf) => [`${leaf}:VIEW`, `${leaf}:APPROVE`],
 );
 const reserveInput = pendingInput(reserve, undefined, DEFAULT_SORT);
@@ -89,7 +89,7 @@ function seeded(permissions: string[], data = summary()) {
   queryClient.setQueryData(pendingQueryKey(reserveInput), { pages: [page(sourceTwoItems(), { nextCursor: "c2" })], pageParams: [null] });
   // FE-LS-011: Load to Stock counts come from backend-api-inventory (approval OFF here, so no badge).
   queryClient.setQueryData(inventoryApprovalKeys.summary(), { items: [], countCap: 100 });
-  queryClient.setQueryData(inventoryApprovalKeys.settings(), { items: [{ type: "load-to-stock", requireApproval: false, version: 1 }] });
+  queryClient.setQueryData(inventoryApprovalKeys.settings(), { items: [{ type: "load-to-stock", requireApproval: false, version: 1 }, { type: "sale", requireApproval: false, version: 1 }, { type: "stock-adjustment", requireApproval: false, version: 1 }] });
   return queryClient;
 }
 
@@ -115,7 +115,7 @@ describe("IT-AP-01 visibility through permission.mine", () => {
     const html = render(seeded(ALL_GRANTS), createElement(ApproveMenuPage, { slug: "reserve" }));
     const panel = panelOf(html);
     const labels = [...panel.matchAll(/<span class="min-w-0 flex-1 truncate">([^<]+)<\/span>/g)].map((match) => match[1]);
-    expect(labels).toEqual(["Quotation", "Reserve", "Memo Receive", "Memo Return", "Memo Out", "Memo Out Return", "Purchase Order (PO)", "Purchase", "Load to Stock", "Merge/Split Stock", "Transfer Location"]);
+    expect(labels).toEqual(["Quotation", "Reserve", "Memo Receive", "Memo Return", "Memo Out", "Memo Out Return", "Purchase Order (PO)", "Purchase", "Load to Stock", "Merge/Split Stock", "Transfer Location", "Sale", "Stock Adjustment"]);
     expect(panel).toMatch(/aria-current="page"[^>]*href="\/approve\/reserve"/);
   });
 

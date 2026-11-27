@@ -86,7 +86,7 @@ export async function readLines(db: Pick<Db, "$queryRaw">, id: string): Promise<
       l."stone_code", l."stone", l."shape", l."size", l."color", l."clarity", l."cutting", l."quality", l."lot", l."location", l."cer_type", l."cer_no",
       l."price_unit", l."pcs", l."weight_ct"::text AS "weight_ct", l."cap_pcs", l."cap_weight_ct"::text AS "cap_weight_ct", l."reserve_net_unit_price"::text AS "reserve_net_unit_price",
       l."unit_price"::text AS "unit_price", l."discount_type", l."discount_value"::text AS "discount_value", l."discount_amount"::text AS "discount_amount", l."amount"::text AS "amount", l."item_note",
-      COALESCE((SELECT array_agg(p."file_id"::text ORDER BY p."position") FROM "inventory"."sale_line_photo" p WHERE p."line_id" = l."id"), ARRAY[]::text[]) AS "photo_ids"
+      COALESCE((SELECT array_agg(u."file_id"::text ORDER BY u."position") FROM (SELECT p."file_id", p."position" FROM "inventory"."sale_line_photo" p WHERE p."line_id" = l."id" UNION ALL SELECT r."file_id", r."position" FROM "inventory"."sale_line_ref_photo" r WHERE r."line_id" = l."id") u), ARRAY[]::text[]) AS "photo_ids"
     FROM "inventory"."sale_line" l WHERE l."sale_id" = ${id}::uuid ORDER BY l."position"`;
 }
 

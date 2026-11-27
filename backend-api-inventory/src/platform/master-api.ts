@@ -25,7 +25,7 @@ export type AllocationLine = { purchaseLineId: string; pcs: number; weightCt: st
 export type AllocationRequest = { vendorId: string; lines: AllocationLine[]; newStockIdCount: number };
 export type AllocationResponse = { revision: number; stockIds: string[]; lines: { purchaseLineId: string; remainingPcs: number; remainingWeightCt: string }[]; replayed: boolean };
 export type Numbering = { id: string; prefix: string; separator: string; startNo: number };
-export type NumberingKey = "load-to-stock" | "sale" | "stock-transfer-location";
+export type NumberingKey = "load-to-stock" | "sale" | "stock-transfer-location" | "stock-adjustment";
 /** ADR-0060 D6: inventory document types that take Stock IDs from master per revision (not Load to Stock). */
 export type StockIdIssueType = "stock-transfer-location";
 export type StockIdIssueResponse = { revision: number; stockIds: string[]; replayed: boolean };
@@ -57,7 +57,11 @@ export type PreparedStock = {
   memoStockId: string; stockId: string; priceUnit: PriceUnit; attrs: SaleStoneAttrs; memoReceive: { id: string; docNo: string };
   pendingPcs: number; pendingWeightCt: string; status: "OK" | "UNAVAILABLE";
 };
+/** Owner 2026-11-24: a Memo Receive photo a Sale line wants to reference, checked by master against the line's Memo Stock / lot. */
+export type SalePhotoRef = { fileId: string; memoStockId?: string | null; lotKey?: string | null };
 export type SalePrepared = {
+  /** Keys `fileId|memoStockId|lotKey` of the requested photo references master confirmed. */
+  photoRefsOk?: string[];
   party: { code: string; name: string; shippingText: string; invoiceText: string } | null;
   partyErrors: { path: string; code: string }[];
   currencyActive: boolean; companyCurrency: string | null;
@@ -176,6 +180,12 @@ export class MasterApi {
 
   linePhotos(lineId: string, options?: CallOptions) {
     return this.read(() => this.transport.json<{ items: { fileId: string; position: number; contentType: string; sizeBytes: number; sha256: string }[] }>("GET", `/purchase-lines/${lineId}/photos`, undefined, options));
+  }
+
+  /** The bytes of a Memo Receive photo referenced by a Sale line; master checks it belongs to the Memo Stock / lot named (404 otherwise). */
+  saleMemoPhoto(fileId: string, ref: { memoStockId: string | null; lotKey: string | null }, options?: CallOptions) {
+    const query = ref.memoStockId ? `memoStockId=${ref.memoStockId}` : `lotKey=${ref.lotKey ?? ""}`;
+    return this.transport.stream(`/sale/memo-photos/${fileId}?${query}`, options);
   }
 
   fileContent(fileId: string, options?: CallOptions) {

@@ -8,7 +8,7 @@ import { AppError, errorBody } from "../../src/platform/errors";
 import { type AppEnv, errorResponse, parse } from "../../src/platform/http";
 import { createLogger } from "../../src/platform/logger";
 import type { Principal } from "../../src/platform/auth/principal";
-import { CARD_KINDS, DOCUMENT_TYPES, HIDDEN_STOCK_ID_TYPES, MOVEMENT_KINDS, STOCK_SOURCED_TYPES, classifyKind, documentTypeLabel, stockIdVisible } from "../../src/modules/stock/card-kinds";
+import { ADJUSTMENT_SOURCED_TYPES, CARD_KINDS, DOCUMENT_TYPES, HIDDEN_STOCK_ID_TYPES, MOVEMENT_KINDS, STOCK_SOURCED_TYPES, classifyKind, documentTypeLabel, stockIdVisible } from "../../src/modules/stock/card-kinds";
 import { directionOf, likePattern, readCards, readHeader, readTransactions, type CardsParams, type TransactionsParams } from "../../src/modules/stock/card";
 import { ReportGuard, isQueryCanceled, runReport } from "../../src/modules/reports/stock-card/guard";
 import { cardKeyParam, cardsQuerySchema, holdMetadataSchema, transactionsQuerySchema } from "../../src/modules/reports/stock-card/schemas";
@@ -18,7 +18,7 @@ import { registerStockCardRoutes } from "../../src/modules/reports/stock-card/ro
 
 describe("UT-SC-01 CARD_KINDS registry", () => {
   it("classifies the ledger kinds: Load / Memo Out / Memo Out Return are movements, Reserve is not", () => {
-    expect(MOVEMENT_KINDS).toEqual(["LOAD_ADJUST", "LOAD_IN", "LOAD_REVERSAL", "MEMO_OUT", "MEMO_OUT_RETURN", "MEMO_OUT_RETURN_REVERSAL", "MEMO_OUT_REVERSAL", "SALE_OUT", "SALE_OUT_REVERSAL", "TRANSFER_IN", "TRANSFER_IN_REVERSAL", "TRANSFER_OUT", "TRANSFER_OUT_REVERSAL"]);
+    expect(MOVEMENT_KINDS).toEqual(["ADJUST", "ADJUST_REVERSAL", "LOAD_ADJUST", "LOAD_IN", "LOAD_REVERSAL", "MEMO_OUT", "MEMO_OUT_RETURN", "MEMO_OUT_RETURN_REVERSAL", "MEMO_OUT_REVERSAL", "SALE_OUT", "SALE_OUT_REVERSAL", "TRANSFER_IN", "TRANSFER_IN_REVERSAL", "TRANSFER_OUT", "TRANSFER_OUT_REVERSAL"]);
     expect(classifyKind("HOLD_RESERVE")).toEqual({ documentType: "reserve", effect: "NOT_A_MOVEMENT" });
     expect(classifyKind("RELEASE_RESERVE")?.effect).toBe("NOT_A_MOVEMENT");
     expect(MOVEMENT_KINDS).not.toContain("HOLD_RESERVE");
@@ -37,6 +37,7 @@ describe("UT-SC-01 CARD_KINDS registry", () => {
     expect(stockIdVisible("future-type")).toBe(false);
     expect([...HIDDEN_STOCK_ID_TYPES]).toEqual(["memo-out", "memo-return", "purchase", "quotation", "reserve"]);
     expect([...STOCK_SOURCED_TYPES]).toEqual(["load-to-stock"]);
+    expect([...ADJUSTMENT_SOURCED_TYPES]).toEqual(["stock-adjustment"]);
   });
 
   it("captions come from the registry; an unknown document type shows its key", () => {
@@ -44,7 +45,7 @@ describe("UT-SC-01 CARD_KINDS registry", () => {
     expect(documentTypeLabel("memo-out")).toBe("Memo Out");
     expect(documentTypeLabel("memo-out-return")).toBe("Memo Out Return");
     expect(documentTypeLabel("sale")).toBe("Sale");
-    expect(documentTypeLabel("stock-adjustment")).toBe("stock-adjustment");
+    expect(documentTypeLabel("stock-adjustment")).toBe("Stock Adjustment");
     for (const [name, kind] of Object.entries(CARD_KINDS)) expect(DOCUMENT_TYPES[kind.documentType], name).toBeDefined();
   });
 });

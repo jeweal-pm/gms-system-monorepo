@@ -43,11 +43,15 @@ export function prepareRequest(input: Pick<SaleInput, "customerId" | "shippingAd
     reserveLineIds: [...new Set(input.lines.flatMap((line) => (line.source === "RESERVE" && line.reserveLineId ? [line.reserveLineId] : [])))],
     memoStockIds: [...new Set(input.lines.flatMap((line) => (line.source === "STOCK" && line.memoStockId ? [line.memoStockId] : [])))],
     lotKeys: [...new Set(input.lines.flatMap((line) => (line.source === "STOCK" && !line.memoStockId && line.lotKey ? [line.lotKey] : [])))],
+    // Memo Receive photos a From Stock line references (owner 2026-11-24): master confirms each against the line's Memo Stock / lot.
+    photoRefs: input.lines.flatMap((line) => (line.source === "STOCK" ? line.photoIds.map((fileId) => ({ fileId, ...(line.memoStockId ? { memoStockId: line.memoStockId } : {}), ...(!line.memoStockId && line.lotKey ? { lotKey: line.lotKey } : {}) })) : [])),
     ...(options.saleId ? { saleId: options.saleId } : {}),
   };
 }
 
 export type NormalizeOptions = {
+  /** Photo references master confirmed (`fileId|memoStockId|lotKey`). */
+  photoRefsOk?: ReadonlySet<string>;
   /** The stored line id to keep for input line `index` (update), else a new id. */
   lineId(index: number): string;
   /** A stored currency stays acceptable while inactive (edit of an existing sale). */

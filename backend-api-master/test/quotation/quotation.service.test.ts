@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Static imports are fine: vi.mock calls are hoisted above them (CommonJS tsconfig).
 import { formatAddress, QuotationService } from "../../src/quotation/quotation.service";
 import { createQuotationSchema, type QuotationInput } from "../../src/quotation/quotation.schemas";
+import { QUOTATION_PHOTO_SOURCE } from "../../src/quotation/quotation-photo.storage";
 
 /**
  * UT-QT-B01…B04, B12…B20: numbering, references/snapshots, status guards, list keyset — against a
@@ -66,7 +67,7 @@ vi.mock("../../src/database/prisma-client", () => {
     stoneClarity: { findMany: vi.fn(async () => []) },
     stoneCutting: { findMany: vi.fn(async () => []) },
     stoneQuality: { findMany: vi.fn(async () => []) },
-    storedFile: { findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => db.photos.filter((photo) => where.id.in.includes(photo.id))) },
+    storedFile: { findMany: vi.fn(async ({ where }: { where: { id: { in: string[] } } }) => db.photos.filter((photo) => where.id.in.includes(photo.id)).map((photo) => ({ ...photo, sourceType: QUOTATION_PHOTO_SOURCE }))) },
     companyProfile: { findUnique: vi.fn(async () => (db.companyCurrency ? { currencyCode: db.companyCurrency } : null)) },
     // Currency master (currency SA-CUR-05): THB/USD active, EUR inactive.
     currency: {

@@ -71,6 +71,51 @@ export function lotGroupRow(row: GroupRow) {
 }
 export type OwnLotGroupRow = ReturnType<typeof lotGroupRow>;
 
+export type AdjustmentStockFilters = { location: string; q?: string; exclude: string[]; cursor?: string; limit: number };
+type AdjustmentStockRow = {
+  id: string; stock_id: string; lot_key: string; ref_doc_no: string; ref_doc_date: string; price_unit: string;
+  on_hand_pcs: number; on_hand_weight_ct: string; stock_price: string; stone_code: string; stone: string; shape: string;
+  size: string; color: string; clarity: string; cutting: string; quality: string; lot: string; location: string; cer_type: string; cer_no: string;
+};
+function adjustmentCursor(value: string): { date: string; stockId: string; id: string } {
+  const invalid = () => validationError([{ path: "cursor", code: "invalid" }]);
+  if (!/^[A-Za-z0-9_-]{1,300}$/.test(value)) throw invalid();
+  let body: Partial<{ date: string; stockId: string; id: string }>;
+  try { body = JSON.parse(Buffer.from(value, "base64url").toString("utf8")); } catch { throw invalid(); }
+  if (!body || typeof body.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(body.date) || typeof body.stockId !== "string" || typeof body.id !== "string" || !/^[0-9a-f-]{36}$/.test(body.id)) throw invalid();
+  return { date: body.date, stockId: body.stockId, id: body.id };
+}
+
+/** Stock Adjustment picker: own ACTIVE stock at the selected location, positive on-hand, one keyset query per page. */
+export async function stockAdjustmentPage(client: Client, input: AdjustmentStockFilters) {
+  const where: Prisma.Sql[] = [OPEN, Prisma.sql`lower(s."location") = lower(${input.location})`];
+  if (input.exclude.length) where.push(Prisma.sql`NOT (s."id" = ANY(${input.exclude}::uuid[]))`);
+  if (input.q) {
+    const pattern = `%${escapeLike(input.q)}%`;
+    where.push(Prisma.sql`(s."stock_id" ILIKE ${pattern} ESCAPE '\\' OR s."lot" ILIKE ${pattern} ESCAPE '\\' OR s."stone_code" ILIKE ${pattern} ESCAPE '\\' OR s."ref_doc_no" ILIKE ${pattern} ESCAPE '\\')`);
+  }
+  if (input.cursor) {
+    const after = adjustmentCursor(input.cursor);
+    where.push(Prisma.sql`(s."ref_doc_date", s."stock_id", s."id") > (${after.date}::date, ${after.stockId}, ${after.id}::uuid)`);
+  }
+  const rows = await client.$queryRaw<AdjustmentStockRow[]>(Prisma.sql`
+    SELECT s."id", s."stock_id", s."lot_key", s."ref_doc_no", to_char(s."ref_doc_date", 'YYYY-MM-DD') AS "ref_doc_date", s."price_unit",
+      s."on_hand_pcs", s."on_hand_weight_ct"::text AS "on_hand_weight_ct", s."stock_price"::text AS "stock_price",
+      s."stone_code", s."stone", s."shape", s."size", s."color", s."clarity", s."cutting", s."quality", s."lot", s."location", s."cer_type", s."cer_no"
+    FROM "inventory"."stock" s WHERE ${Prisma.join(where, " AND ")}
+    ORDER BY s."ref_doc_date" ASC, s."stock_id" ASC, s."id" ASC LIMIT ${input.limit + 1}`);
+  const page = rows.slice(0, input.limit);
+  const last = page.at(-1);
+  return {
+    items: page.map((row) => ({
+      stockUuid: row.id, stockId: row.stock_id, lotKey: row.lot_key, refDocNo: row.ref_doc_no, refDocDate: row.ref_doc_date,
+      priceUnit: row.price_unit as "PER_CT" | "PER_PCS", onHandPcs: row.on_hand_pcs, onHandWeightCt: new Prisma.Decimal(row.on_hand_weight_ct).toFixed(3), stockPrice: new Prisma.Decimal(row.stock_price).toFixed(2),
+      attrs: { stoneCode: row.stone_code, stone: row.stone, shape: row.shape, size: row.size, color: row.color, clarity: row.clarity, cutting: row.cutting, quality: row.quality, lot: row.lot, location: row.location, cerType: row.cer_type, cerNo: row.cer_no },
+    })),
+    nextCursor: rows.length > input.limit && last ? Buffer.from(JSON.stringify({ date: last.ref_doc_date, stockId: last.stock_id, id: last.id })).toString("base64url") : null,
+  };
+}
+
 const OPEN = Prisma.sql`s."status" = 'ACTIVE' AND (s."on_hand_pcs" > 0 OR s."on_hand_weight_ct" > 0)`;
 
 export async function lotsAvailablePage(client: Client, input: LotFilters): Promise<OwnLotGroupRow[]> {

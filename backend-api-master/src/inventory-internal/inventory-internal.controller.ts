@@ -152,6 +152,19 @@ export class InventoryInternalController {
     return this.service.linePhotos(parseId(id));
   }
 
+  @Get("sale/memo-photos/:fileId")
+  async memoPhoto(@Param("fileId") fileId: string, @Query("memoStockId") memoStockId: string | undefined, @Query("lotKey") lotKey: string | undefined, @Res() response: Response) {
+    const file = await this.service.memoPhotoContent(parseId(fileId), { memoStockId: memoStockId ? parseId(memoStockId) : null, lotKey: lotKey && /^M[LS][0-9a-f-]{32,36}$/.test(lotKey) ? lotKey : null });
+    response.status(200);
+    response.setHeader("Content-Type", file.contentType);
+    response.setHeader("Content-Length", String(file.size));
+    response.setHeader("X-Content-SHA256", file.sha256);
+    response.setHeader("Cache-Control", "no-store");
+    response.setHeader("X-Content-Type-Options", "nosniff");
+    file.stream.on("error", () => response.destroy());
+    file.stream.pipe(response);
+  }
+
   @Get("files/:fileId/content")
   async fileContent(@Param("fileId") fileId: string, @Res() response: Response) {
     const file = await this.service.fileContent(parseId(fileId));

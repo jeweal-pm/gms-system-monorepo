@@ -13,7 +13,7 @@ ALTER TABLE "inventory"."stock_movement" DROP CONSTRAINT "stock_movement_kind_ch
 ALTER TABLE "inventory"."stock_movement" ADD CONSTRAINT "stock_movement_kind_check" CHECK ("kind" IN (
   'LOAD_IN', 'LOAD_ADJUST', 'LOAD_REVERSAL',
   'HOLD_RESERVE', 'RELEASE_RESERVE', 'MEMO_OUT', 'MEMO_OUT_REVERSAL', 'MEMO_OUT_RETURN', 'MEMO_OUT_RETURN_REVERSAL',
-  'SALE_OUT', 'SALE_OUT_REVERSAL'));
+  'SALE_OUT', 'SALE_OUT_REVERSAL', 'ADJUST', 'ADJUST_REVERSAL'));
 -- stock_movement.kind stays VARCHAR(32) (narrowing would need a rewrite and is not needed for the old kinds).
 DROP TABLE "inventory"."stock_transfer_line";
 DROP TABLE "inventory"."stock_transfer";

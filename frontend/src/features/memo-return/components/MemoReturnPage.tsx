@@ -97,7 +97,7 @@ const CONFIG: DocumentFormConfig<MemoReturnFormValues, MemoReturnInput, MemoRetu
         emptyText={`No memo stock from this vendor in ${values.currency}.`}
         pickedIds={pickedStockIds(values.lines)}
         onCancel={onClose}
-        onConfirm={(items) => onAdd(items.map(lotToLine))}
+        onConfirm={(items) => onAdd(items.map((item) => lotToLine(item, DOCUMENT_PHOTOS.memoReturn.url)))}
       />
     ),
     addedToast: (count) => `Added ${count} item${count === 1 ? "" : "s"} from Memo Stock`,

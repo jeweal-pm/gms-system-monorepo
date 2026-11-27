@@ -31,6 +31,16 @@ export const MESSAGES: Record<string, string> = {
   PAYLOAD_TOO_LARGE: "The request body is too large",
   VALIDATION_ERROR: "The request is invalid",
   LOAD_TO_STOCK_LINE_UNAVAILABLE: "Some purchase lines can no longer be loaded",
+  // stock-adjustment SA rev 1 error-handling.md (ADR-0059).
+  STOCK_ADJUSTMENT_NOT_FOUND: "Stock Adjustment not found",
+  STOCK_ADJUSTMENT_STOCK_CHANGED: "Stock changed since it was picked",
+  STOCK_ADJUSTMENT_IN_USE: "Some stock has been used since this adjustment; it can't be changed",
+  STOCK_ADJUSTMENT_STATUS: "The Stock Adjustment can't be changed in its current status",
+  STOCK_ADJUSTMENT_LINE_UNAVAILABLE: "Some stock is no longer available at this location",
+  STOCK_ADJUSTMENT_REVISE_LIMIT: "The Stock Adjustment was already sent back for revision once",
+  LOCATION_INVALID: "Select an active location",
+  NUMBERING_NOT_CONFIGURED: "Document numbering is not configured",
+  VERSION_CONFLICT: "The document was changed by someone else",
   LOAD_TO_STOCK_PHOTO_INVALID: "A photo is missing or is not a ready Load to Stock photo",
   RATE_LIMITED: "Too many requests; try again shortly",
   MASTER_UNAVAILABLE: "Purchase data is temporarily unavailable",
@@ -52,7 +62,6 @@ export const MESSAGES: Record<string, string> = {
   SALE_PHOTO_INVALID: "A photo is missing or is not a ready Sale photo",
   // stock-transfer-location api-contract "Errors" (ADR-0060)
   STOCK_TRANSFER_NOT_FOUND: "Stock Transfer Location not found",
-  VERSION_CONFLICT: "The document was changed by someone else",
   STOCK_TRANSFER_STATUS: "The Stock Transfer Location can't be changed in its current status",
   STOCK_TRANSFER_EXCEEDS_ON_HAND: "Some stocks no longer have enough on-hand quantity",
   STOCK_TRANSFER_IN_USE: "Stock moved by this transfer is already used; it can't be changed",
@@ -60,8 +69,6 @@ export const MESSAGES: Record<string, string> = {
   STOCK_TRANSFER_APPROVAL_OFF: "Approval is turned off for Stock Transfer Location; save the document instead",
   VALIDATION_FAILED: "The request is invalid",
   STOCK_TRANSFER_REVISE_LIMIT: "The Stock Transfer Location was already sent back for revision once",
-  LOCATION_INVALID: "A New Location is unknown, inactive or the same as the current location",
-  NUMBERING_NOT_CONFIGURED: "Document numbering is not configured",
   // Internal API for api-master (ADR-0052 D18/D21, error-handling "Inventory internal codes").
   SERVICE_UNAUTHENTICATED: "The service credential is missing or invalid",
   INVENTORY_BUSY: "Too many internal requests; retry shortly",

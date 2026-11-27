@@ -186,6 +186,33 @@ export class InventoryInternalService {
   }
 
   /** Bytes of a ready Purchase line photo of an approved, live Purchase only; anything else → 404. Streamed. */
+  /**
+   * Owner 2026-11-24: the bytes of a Memo Receive photo that a Sale line references (Sale lives in inventory and cannot see master files).
+   * The file must be a photo of the Memo Stock / lot the caller names (checked here, never trusted), ready, ≤ PHOTO_MAX_BYTES; streamed.
+   */
+  async memoPhotoContent(fileId: string, ref: { memoStockId: string | null; lotKey: string | null }): Promise<{ contentType: string; size: number; sha256: string; stream: Readable }> {
+    if (!ref.memoStockId && !ref.lotKey) throw partnerException("NOT_FOUND", HttpStatus.NOT_FOUND);
+    const file = await this.read("memo_photo_content", async () => {
+      const rows = await prisma.$queryRaw<{ object_key: string; content_type: string; sha256: string }[]>(Prisma.sql`
+        SELECT f."object_key", f."content_type", f."sha256" FROM "partner"."stored_files" f
+        WHERE f."id" = ${fileId}::uuid AND f."status" = 'ready' AND f."source_type" = 'memo_receive.line-photo' AND f."bucket" = 'files'
+          AND EXISTS (SELECT 1 FROM "partner"."memo_receive_line_photo" p JOIN "partner"."memo_stock" s ON s."memo_receive_line_id" = p."line_id"
+            WHERE p."file_id" = f."id" AND ((${ref.memoStockId}::uuid IS NOT NULL AND s."id" = ${ref.memoStockId}::uuid) OR (${ref.lotKey}::varchar IS NOT NULL AND s."lot_key" = ${ref.lotKey}::varchar)))
+        LIMIT 1`);
+      return rows[0] ?? null;
+    });
+    if (!file) throw partnerException("NOT_FOUND", HttpStatus.NOT_FOUND);
+    let opened: { size: number; stream: Readable } | null;
+    try {
+      opened = await createPhotoStore("memo-receive-photo").open(file.object_key);
+    } catch {
+      opened = null;
+    }
+    if (!opened) throw partnerException("NOT_FOUND", HttpStatus.NOT_FOUND);
+    const size = Math.min(opened.size, PHOTO_MAX_BYTES);
+    return { contentType: file.content_type, size, sha256: file.sha256, stream: opened.stream.pipe(sizeGuard(size)) };
+  }
+
   async fileContent(fileId: string): Promise<{ contentType: string; size: number; sha256: string; stream: Readable }> {
     const file = await this.read("file_content", async () => {
       const rows = await prisma.$queryRaw<{ object_key: string; content_type: string; size_bytes: bigint; sha256: string }[]>(Prisma.sql`

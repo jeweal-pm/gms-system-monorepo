@@ -9,7 +9,8 @@ import { memoStockLoadError, useMemoStock, type MemoStockItem } from "./memo-sto
 import { OWN_STOCK_UNAVAILABLE_TEXT, ownStockUnavailable, pickKey, useFromStock, type FromStockItem } from "./from-stock-api";
 import { stockRef, stockRefLabel, type StockRefSource } from "./stock-ref";
 import { transferLoadError, useTransferStock } from "@/features/stock-transfer-location/api";
-import type { StockLot } from "@/features/stock-transfer-location/types";
+import type { StockLot as TransferStockLot } from "@/features/stock-transfer-location/types";
+import { useStockLots, type StockLot as AdjustmentStockLot } from "@/features/stock-adjustment/api";
 import {
   PickerChip,
   PickerDialog,
@@ -58,6 +59,7 @@ export function RefCell({ item }: { item: StockRefSource }) {
  *   and amount.
  * - Quotation / Sale / Memo Out "Add From Stock" (look: designs 135 / 137 / 138): Memo Stock and our stock without
  *   prices; Pcs and Weight (ct) are plain columns.
+ * - Stock Adjustment: our positive own stock at the selected Main Location, with current on-hand counts and unit price.
  * Every row is a lot (lot-based-stock): Memo Return reads `memoStock.lots`, From Stock `fromStock.lots`; one row per lot,
  * key `lotKey`, Lot chip over Stone Code and the note, no Stock ID anywhere. Location, Ref. Search + Start → Due (memo receive Doc
  * Date, Q-MR-10) filter; rows already on the document are left out; 50 a page with Load more. OK adds the checked rows.
@@ -70,7 +72,7 @@ type MemoStockModalProps = {
   title: string;
   showPrice: boolean;
   emptyText: string;
-  /** `lotKey`s of the lots already on the document. */
+  /** Existing lot keys, or Stock UUIDs for the Stock Adjustment picker. */
   pickedIds: Set<string>;
   onCancel: () => void;
 } & (
@@ -101,15 +103,24 @@ type MemoStockModalProps = {
       fromStock?: undefined;
       vendorId?: undefined;
       currency?: undefined;
-      onConfirm: (items: StockLot[]) => void;
+      onConfirm: (items: TransferStockLot[]) => void;
+    }
+  | {
+      /** Stock Adjustment: own stock only, filtered to the selected Main Location. */
+      source: "stock-adjustment";
+      location: string;
+      vendorId?: undefined;
+      currency?: undefined;
+      fromStock?: undefined;
+      onConfirm: (items: AdjustmentStockLot[]) => void;
     }
 );
 
 /** The picker key of a transfer lot (its `lotKey`, else its stock UUID). */
-export const transferLotKey = (lot: Pick<StockLot, "lotKey" | "stockUuid">) => lot.lotKey || lot.stockUuid;
+export const transferLotKey = (lot: Pick<TransferStockLot, "lotKey" | "stockUuid">) => lot.lotKey || lot.stockUuid;
 
 /** A transfer lot in the picker's row shape: on hand as Pcs / Weight, the Stock Price as the unit price. */
-export function transferPickerRow(lot: StockLot): FromStockItem {
+export function transferPickerRow(lot: TransferStockLot): FromStockItem {
   const { attrs } = lot;
   return {
     lotKey: transferLotKey(lot),
@@ -147,6 +158,13 @@ export const inDateRange = (date: string, from: string, to: string) => (!from ||
 const NO_EXCLUDE: readonly string[] = [];
 
 export function MemoStockModal(props: MemoStockModalProps) {
+  if ("source" in props && props.source === "stock-adjustment") return <StockAdjustmentStockPicker props={props} />;
+  return <MemoStockContent props={props as ExistingMemoStockModalProps} />;
+}
+
+type ExistingMemoStockModalProps = Exclude<MemoStockModalProps, { source: "stock-adjustment" }>;
+
+function MemoStockContent({ props }: { props: ExistingMemoStockModalProps }) {
   const { title, vendorId, currency, showPrice, emptyText, pickedIds, onCancel } = props;
   const fromStock = props.fromStock === true;
   const transfer = props.source === "stock-transfer-location";
@@ -329,6 +347,69 @@ export function MemoStockModal(props: MemoStockModalProps) {
             );
           })}
           {stock.hasNextPage && <PickerLoadMore span={columns} loading={stock.isFetchingNextPage} onMore={() => void stock.fetchNextPage()} />}
+        </tbody>
+      </PickerFrame>
+    </PickerDialog>
+  );
+}
+
+function StockAdjustmentStockPicker({ props }: { props: Extract<MemoStockModalProps, { source: "stock-adjustment" }> }) {
+  const titleId = useId();
+  const nf = useNumberFormat();
+  const [search, setSearch] = useState("");
+  const [q, setQ] = useState("");
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const timer = setTimeout(() => setQ(search), 250);
+    return () => clearTimeout(timer);
+  }, [search]);
+  const stock = useStockLots(props.location, q, [...props.pickedIds], true);
+  const items = (stock.data?.pages ?? []).flatMap((page) => page.items);
+  const allChecked = items.length > 0 && items.every((item) => checked.has(item.stockUuid));
+  const toggle = (id: string) => setChecked((current) => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+  return (
+    <PickerDialog titleId={titleId} title={`${props.title} · ${props.location}`} onClose={props.onCancel}>
+      <PickerToolbar search={{ value: search, onChange: setSearch, placeholder: "Search Stock ID, Lot, Stone Code or Reference", label: "Search stock" }} />
+      <PickerFrame minWidth="min-w-[1100px]" footer={<PickerFooter count={checked.size} onCancel={props.onCancel} onOk={() => props.onConfirm(items.filter((item) => checked.has(item.stockUuid)))} />}>
+        <thead className={pickerHead}>
+          <tr className="h-14">
+            <th scope="col" className="w-14 px-4"><input type="checkbox" aria-label="Select all stock" className={pickerCheckbox} checked={allChecked} disabled={items.length === 0} onChange={() => setChecked(allChecked ? new Set() : new Set(items.map((item) => item.stockUuid)))} /></th>
+            <th scope="col" className="w-8 text-sm font-medium">#</th>
+            <PickerTh title="Stock ID · Lot" />
+            <PickerTh title="Reference" sub="Doc Date" plainSub />
+            <PickerTh title="Stone" sub="Shape · Size" upper />
+            <PickerTh title="Color · Clarity" sub="Cutting · Quality" upper />
+            <PickerTh title="Location" upper />
+            <PickerTh title="Pcs" right upper className="w-[90px]" />
+            <PickerTh title="Weight (ct)" right className="w-[110px]" />
+            <PickerTh title="Price" sub="Unit" right upper />
+          </tr>
+        </thead>
+        <tbody>
+          {stock.isPending && <PickerMessage span={10}>Loading stock…</PickerMessage>}
+          {stock.isError && <PickerMessage span={10} error>Could not load stock. <button type="button" className="underline" onClick={() => void stock.refetch()}>Retry</button></PickerMessage>}
+          {stock.isSuccess && items.length === 0 && <PickerMessage span={10}>{props.emptyText}</PickerMessage>}
+          {items.map((item, index) => {
+            const selected = checked.has(item.stockUuid);
+            return <tr key={item.stockUuid} onClick={() => toggle(item.stockUuid)} className={pickerRowClass(selected)}>
+              <td className={pickerCheckCell}><input type="checkbox" aria-label={`Select ${item.stockId}`} className={pickerCheckbox} checked={selected} onChange={() => toggle(item.stockUuid)} onClick={(event) => event.stopPropagation()} /></td>
+              <td className={pickerIndexCell}>{index + 1}</td>
+              <LotCell lot={item.attrs.lot} stoneCode={item.attrs.stoneCode} note="" />
+              <td className={pickerCell}><div className="font-medium">{item.refDocNo || "—"}</div><div className={pickerSub}>{item.refDocDate}</div></td>
+              <td className={pickerCell}><div className="font-medium">{item.attrs.stone}</div><div className={pickerSub}>{[item.attrs.shape, item.attrs.size].filter(Boolean).join(" · ")}</div></td>
+              <td className={pickerCell}><div>{[item.attrs.color, item.attrs.clarity].filter(Boolean).join(" · ")}</div><div className={pickerSub}>{[item.attrs.cutting, item.attrs.quality].filter(Boolean).join(" · ")}</div></td>
+              <td className={pickerCell}>{item.attrs.location}</td>
+              <td className={cx(pickerCell, "text-right tabular-nums")}>{item.onHandPcs}</td>
+              <td className={cx(pickerCell, "text-right tabular-nums")}>{formatWeight(dec(item.onHandWeightCt), nf.weightPlaces)}</td>
+              <td className={cx(pickerCell, "text-right tabular-nums")}>{formatUnitPrice(item.stockPrice, nf.pricePlaces)}<div className={pickerSub}>{item.priceUnit === "PER_PCS" ? "pcs" : "cts"}</div></td>
+            </tr>;
+          })}
+          {stock.hasNextPage && <PickerLoadMore span={10} loading={stock.isFetchingNextPage} onMore={() => void stock.fetchNextPage()} />}
         </tbody>
       </PickerFrame>
     </PickerDialog>

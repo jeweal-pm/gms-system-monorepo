@@ -33,6 +33,7 @@ export type PreviewDetail = {
   documentNote: string;
   customer?: { name: string } | null;
   vendor?: { name: string } | null;
+  location?: string | null;
   lines: readonly PreviewLine[];
   totals: { grandTotal: string };
   deletedAt?: string | null;
@@ -112,7 +113,7 @@ export const currencyText = (detail: Pick<PreviewDetail, "currency" | "exchangeR
 
 export type PreviewRow = { key: number; index: number; code: string; stone: string; orderedBy: string | null; pcs: number; weightCt: string; value: string; location: string };
 export type PreviewView = {
-  partyLabel: "Customer" | "Vendor";
+  partyLabel: "Customer" | "Vendor" | "Location";
   partyName: string;
   docDate: string;
   currency: string;
@@ -129,7 +130,8 @@ export type PreviewView = {
 export function previewView(menu: AvailableMenu, detail: PreviewDetail, baseCurrency: string | null, pricePlaces: number): PreviewView {
   const rate = converts(detail, baseCurrency) ? detail.exchangeRate : null;
   const customer = menu.party === "customer";
-  const partyName = (customer ? detail.customer?.name : detail.vendor?.name) || DASH;
+  const location = menu.party === "none";
+  const partyName = (customer ? detail.customer?.name : location ? detail.location : detail.vendor?.name) || DASH;
   const rows = detail.lines.map((line, index) => ({
     key: index,
     index: index + 1,
@@ -144,7 +146,7 @@ export function previewView(menu: AvailableMenu, detail: PreviewDetail, baseCurr
   const value = sumDecimal(rows.map((row) => row.value), pricePlaces);
   const grand = lineValue(detail.totals.grandTotal, rate, pricePlaces);
   return {
-    partyLabel: customer ? "Customer" : "Vendor",
+    partyLabel: customer ? "Customer" : location ? "Location" : "Vendor",
     partyName,
     docDate: shortDate(detail.docDate),
     currency: currencyText(detail, baseCurrency),

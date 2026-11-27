@@ -9,6 +9,7 @@ import {
   useContext,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ButtonHTMLAttributes,
@@ -16,6 +17,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { useController, useFormContext, useWatch, type FieldValues, type Path } from "react-hook-form";
 import { sanitizeDecimal } from "../lib/number";
 import { DUE_BEFORE_DOC_MESSAGE } from "../schema";
@@ -208,6 +210,7 @@ export function SelectMenu({
   invalid,
   className,
   onOpen,
+  portal,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -219,10 +222,17 @@ export function SelectMenu({
   className?: string;
   /** Called each time the list opens (e.g. to fetch the latest options). */
   onOpen?: () => void;
+  /**
+   * Render the list on document.body, fixed under the button (or above it when the window has less room below), so a
+   * scrolling or clipped container such as a table never hides it. Closes when anything scrolls behind it.
+   */
+  portal?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const [place, setPlace] = useState<MenuPlace | null>(null);
   const listId = useId();
   const selected = options.find((o) => o.value === value);
   const isInvalid = useFieldInvalid(invalid);
@@ -230,11 +240,29 @@ export function SelectMenu({
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (!rootRef.current?.contains(target) && !listRef.current?.contains(target)) setOpen(false);
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open || !portal) return undefined;
+    const button = rootRef.current;
+    if (!button) return undefined;
+    setPlace(menuPlace(button.getBoundingClientRect(), window.innerHeight));
+    const onScroll = (e: Event) => {
+      if (!listRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onResize = () => setOpen(false);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [open, portal]);
 
   const openMenu = () => {
     setActive(Math.max(0, options.findIndex((o) => o.value === value)));
@@ -285,13 +313,20 @@ export function SelectMenu({
         <span className={cx("truncate", !selected && "text-gms-text-placeholder")}>{selected?.label ?? placeholder}</span>
         <ChevronDown className={cx("size-4 shrink-0 transition-transform", open && "rotate-180", disabled ? "text-gms-checkbox-readonly" : "text-gms-text")} />
       </button>
-      {open && (
+      {open && (!portal || place) && (() => {
+        const list = (
         <ul
+          ref={listRef}
           id={listId}
           role="listbox"
           // อยู่ใน <label> ของ Field: กันไม่ให้ label ส่ง click กลับไปเปิด dropdown ซ้ำ
           onClick={(e) => e.preventDefault()}
-          className="absolute right-0 left-0 z-30 mt-2 max-h-64 overflow-y-auto rounded-gms-lg border border-gms-border bg-gms-surface py-2 shadow-gms-overlay"
+          style={portal && place ? { position: "fixed", left: place.left, width: place.width, top: place.top, bottom: place.bottom, maxHeight: place.maxHeight } : undefined}
+          data-placement={portal ? place?.placement : undefined}
+          className={cx(
+            "max-h-64 overflow-y-auto rounded-gms-lg border border-gms-border bg-gms-surface py-2 shadow-gms-overlay",
+            portal ? "z-[60]" : "absolute right-0 left-0 z-30 mt-2",
+          )}
         >
           {options.length === 0 && <li className="px-5 py-2.5 text-sm text-gms-text-placeholder">No options</li>}
           {options.map((o, i) => (
@@ -313,9 +348,25 @@ export function SelectMenu({
             </li>
           ))}
         </ul>
-      )}
+        );
+        return portal ? createPortal(list, document.body) : list;
+      })()}
     </div>
   );
+}
+
+/** A portalled SelectMenu list: below the button, or above it when the window has less room below. */
+export type MenuPlace = { placement: "below" | "above"; left: number; width: number; top?: number; bottom?: number; maxHeight: number };
+const MENU_GAP = 8;
+const MENU_MAX_HEIGHT = 256;
+
+export function menuPlace(rect: Pick<DOMRect, "top" | "bottom" | "left" | "width">, viewportHeight: number): MenuPlace {
+  const below = viewportHeight - rect.bottom - MENU_GAP * 2;
+  const above = rect.top - MENU_GAP * 2;
+  if (below >= MENU_MAX_HEIGHT || below >= above) {
+    return { placement: "below", left: rect.left, width: rect.width, top: rect.bottom + MENU_GAP, maxHeight: Math.max(0, Math.min(MENU_MAX_HEIGHT, below)) };
+  }
+  return { placement: "above", left: rect.left, width: rect.width, bottom: viewportHeight - rect.top + MENU_GAP, maxHeight: Math.min(MENU_MAX_HEIGHT, above) };
 }
 
 /** Rows shown at once; typing narrows the rest. */

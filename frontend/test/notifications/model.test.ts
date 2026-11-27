@@ -58,6 +58,8 @@ describe("notification view model", () => {
     // FE-LS-015: Load to Stock has its page and Approve menu now.
     expect(listHref({ documentType: "load-to-stock", type: "approval.pending" })).toBe("/approve/load-to-stock");
     expect(documentHref({ documentType: "load-to-stock", documentId: "l1" })).toBe("/inventory/load-to-stock/l1");
+    expect(listHref({ documentType: "stock-adjustment", type: "approval.pending" })).toBe("/approve/stock-adjustment");
+    expect(documentHref({ documentType: "stock-adjustment", documentId: "sa-1" })).toBe("/inventory/stock-adjustment/sa-1");
   });
 
   it("UT-NT-FE-03 the For me badge hides at 0 and caps at 99+; the bell names the unread count", () => {

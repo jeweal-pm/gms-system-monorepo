@@ -109,7 +109,7 @@ export function PickerToolbar({
 }: {
   lead?: ReactNode;
   search: { value: string; onChange: (text: string) => void; placeholder: string; label: string; maxLength?: number };
-  dates: { from: string; to: string; onFrom: (date: string) => void; onTo: (date: string) => void; fromLabel: string; toLabel: string };
+  dates?: { from: string; to: string; onFrom: (date: string) => void; onTo: (date: string) => void; fromLabel: string; toLabel: string };
 }) {
   return (
     <div className="mb-5 flex flex-wrap items-center gap-3">
@@ -126,11 +126,11 @@ export function PickerToolbar({
           className="w-full bg-transparent outline-none placeholder:text-gms-text-subtle"
         />
       </label>
-      <div className="flex h-9 items-center gap-2 rounded-gms-md border border-gms-border bg-white px-3 text-sm text-[#1C252E]">
+      {dates && <div className="flex h-9 items-center gap-2 rounded-gms-md border border-gms-border bg-white px-3 text-sm text-[#1C252E]">
         <DateInput aria-label={dates.fromLabel} placeholder="Start" value={dates.from} onChange={dates.onFrom} className="w-[110px] bg-transparent outline-none" />
         <ArrowRight aria-hidden className="size-4 text-gms-text-muted" />
         <DateInput aria-label={dates.toLabel} placeholder="Due" value={dates.to} onChange={dates.onTo} className="w-[110px] bg-transparent outline-none" />
-      </div>
+      </div>}
     </div>
   );
 }

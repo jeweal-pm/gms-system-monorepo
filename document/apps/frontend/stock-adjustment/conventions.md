@@ -1,0 +1,21 @@
+# Conventions: stock-adjustment (UI revision 1, approved 2026-11-24)
+
+- Feature folder: `frontend/src/features/stock-adjustment/`
+  - `components/StockAdjustmentPage.tsx`: page, header, info card, note
+  - `components/adjustment-table.tsx`: grouped-header grid
+  - `form.ts`: form model, validation, diff
+  - `api.ts`: REST adapter to `/api/inventory/v1/stock-adjustment*`
+  - Each file has a test beside it.
+- Route: `frontend/src/app/(app)/inventory/stock-adjustment/` (new `page.tsx` and `[id]/page.tsx`, same layout as `inventory/load-to-stock/`). It replaces the `/modules/stock-adjustment` placeholder in `frontend/src/features/home/navigation.ts`, which is a parent-serialized shared file.
+- Copy the existing inventory page instead of inventing new patterns:
+  - `frontend/src/features/load-to-stock/components/LoadToStockPage.tsx`: header via `QuotationHeader`, approval flow, daybook.
+  - `frontend/src/features/trade-document/memo-stock-modal.tsx` + `from-stock-api.ts` (`useFromStock`): the From Stock dialog.
+  - `frontend/src/features/trade-document/picker-ui.tsx` (`PickerGroupTh`) and `features/stock-card/components/stock-card-table.tsx`: grouped column headers.
+  - `frontend/src/features/trade-document/approval-flow.tsx`, `flow-status.ts`, `document-api.tsx`: status, access, daybook.
+- Number formats:
+  - Pcs: integer.
+  - Cts: 3 dp with the suffix `cts` in Stock.
+  - Price: 2 dp with thousands separators.
+  - Decimals travel as strings (API convention).
+- Diff is computed in the browser with a decimal-safe helper. Use the existing trade-document decimal utilities, not float arithmetic.
+- Texts are English like the rest of the app. Toasts follow the Load to Stock wording.

@@ -146,7 +146,7 @@ export function MemoStockPickStep({ values, onClose, onAdd }: { values: Purchase
   const { getValues, setValue } = useFormContext<PurchaseFormValues>();
   const [asking, setAsking] = useState<{ picked: PurchaseLine[]; pairs: MergePair[] } | null>(null);
   const onConfirm = (rows: Parameters<typeof memoStockToPurchaseLine>[0][]) => {
-    const picked = rows.map(memoStockToPurchaseLine);
+    const picked = rows.map((row) => memoStockToPurchaseLine(row, DOCUMENT_PHOTOS.purchase.url));
     const pairs = findMergePairs(picked, getValues("lines"));
     if (pairs.length === 0) onAdd(picked);
     else setAsking({ picked, pairs });

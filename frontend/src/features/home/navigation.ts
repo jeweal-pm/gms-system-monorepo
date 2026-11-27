@@ -69,6 +69,8 @@ export const REAL_PAGE_HREFS: Readonly<Record<string, string>> = {
   purchase: "/purchase-order/purchase",
   // load-to-stock UI rev 1 (FE-LS-012, ADR-0052): Inventory › Load to Stock.
   "load-to-stock": "/inventory/load-to-stock",
+  // stock-adjustment UI rev 1 (FE-SAJ-006, ADR-0059): Inventory › Stock Adjustment.
+  "stock-adjustment": "/inventory/stock-adjustment",
   // sale UI rev 1 (FE-SL-008, owner 2026-11-18 "ทำแค่ ui พอ ยังไม่ต้องต่อ api"): Sale › Sale, linked before the API exists.
   sale: "/sale/sale",
   // stock-transfer-location (ADR-0060 D12, FE-STL-005): Inventory › Stock Transfer Location.
@@ -271,7 +273,7 @@ export const sidebarSections: NavSection[] = [
         ...link("stock-transfer-location", "Stock Transfer Location", StockTransferIcon, REAL_PAGE_HREFS["stock-transfer-location"]),
         activePrefix: REAL_PAGE_HREFS["stock-transfer-location"],
       },
-      link("stock-adjustment", "Stock Adjustment", FileOutstandingIcon),
+      { ...link("stock-adjustment", "Stock Adjustment", FileOutstandingIcon, REAL_PAGE_HREFS["stock-adjustment"]), activePrefix: REAL_PAGE_HREFS["stock-adjustment"] },
       link("barcode-printing", "Barcode Printing", BarcodeIcon),
     ],
   },

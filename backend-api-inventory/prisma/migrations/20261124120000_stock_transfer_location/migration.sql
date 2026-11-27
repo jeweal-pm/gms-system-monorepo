@@ -105,6 +105,8 @@ ALTER TABLE "inventory"."stock_movement" ADD CONSTRAINT "stock_movement_kind_che
   'LOAD_IN', 'LOAD_ADJUST', 'LOAD_REVERSAL',
   'HOLD_RESERVE', 'RELEASE_RESERVE', 'MEMO_OUT', 'MEMO_OUT_REVERSAL', 'MEMO_OUT_RETURN', 'MEMO_OUT_RETURN_REVERSAL',
   'SALE_OUT', 'SALE_OUT_REVERSAL',
+  -- stock-adjustment (ADR-0059, 20261124120000_stock_adjustment runs first in lexical order): keep its kinds.
+  'ADJUST', 'ADJUST_REVERSAL',
   'TRANSFER_OUT', 'TRANSFER_IN', 'TRANSFER_OUT_REVERSAL', 'TRANSFER_IN_REVERSAL'));
 
 -- 4. Approval type: present since the init migration (default ON); kept as is.
