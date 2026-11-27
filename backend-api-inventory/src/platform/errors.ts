@@ -61,6 +61,16 @@ export const MESSAGES: Record<string, string> = {
   SALE_REFERENCE_INVALID: "Some items are no longer available",
   SALE_PHOTO_INVALID: "A photo is missing or is not a ready Sale photo",
   // stock-transfer-location api-contract "Errors" (ADR-0060)
+  // merge-split SA rev 1 error-handling.md
+  MERGE_SPLIT_NOT_FOUND: "Merge/Split not found",
+  MERGE_SPLIT_STATUS: "The Merge/Split can't be changed in its current status",
+  MERGE_SPLIT_STOCK_CHANGED: "Some stocks changed since they were picked",
+  MERGE_SPLIT_SOURCE_PENDING: "Some stocks are on another Merge/Split waiting for approval",
+  MERGE_SPLIT_BUSY: "Some stocks are being updated; retry shortly",
+  MERGE_SPLIT_IN_USE: "Stock created by this Merge/Split is already used; it can't be changed",
+  MERGE_SPLIT_SOURCE_UNAVAILABLE: "Some stocks are no longer available",
+  MERGE_SPLIT_CURRENCY_MIXED: "Stocks with different currencies can't be merged",
+  MASTER_DATA_INVALID: "Select active master data",
   STOCK_TRANSFER_NOT_FOUND: "Stock Transfer Location not found",
   STOCK_TRANSFER_STATUS: "The Stock Transfer Location can't be changed in its current status",
   STOCK_TRANSFER_EXCEEDS_ON_HAND: "Some stocks no longer have enough on-hand quantity",

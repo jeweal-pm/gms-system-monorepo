@@ -1,6 +1,6 @@
 import { AppError } from "../../platform/errors";
 import { Decimal, Prisma, type Client, type Dec } from "../../platform/db";
-import { ADJUSTMENT_SOURCED_TYPES, HIDDEN_STOCK_ID_TYPES, MOVEMENT_KINDS, STOCK_SOURCED_TYPES, TRANSFER_SOURCED_TYPES, documentTypeLabel } from "./card-kinds";
+import { ADJUSTMENT_SOURCED_TYPES, HIDDEN_STOCK_ID_TYPES, MERGE_SPLIT_SOURCED_TYPES, MOVEMENT_KINDS, STOCK_SOURCED_TYPES, TRANSFER_SOURCED_TYPES, documentTypeLabel } from "./card-kinds";
 
 /**
  * Stock Card read functions (stock-card SA rev 1, ADR-0056 D1-D8; architecture.md "Read paths" and "Entry computation").
@@ -142,14 +142,17 @@ export function entriesSql(cardFilter: Prisma.Sql, pattern: string | null): Pris
       CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN COALESCE(d."stock_date", (d."first_at" AT TIME ZONE 'Asia/Bangkok')::date)
         WHEN d."document_type" = ANY(${[...TRANSFER_SOURCED_TYPES]}::text[]) THEN COALESCE(t."doc_date", (d."first_at" AT TIME ZONE 'Asia/Bangkok')::date)
         WHEN d."document_type" = ANY(${[...ADJUSTMENT_SOURCED_TYPES]}::text[]) THEN COALESCE(a."doc_date", (d."first_at" AT TIME ZONE 'Asia/Bangkok')::date)
+        WHEN d."document_type" = ANY(${[...MERGE_SPLIT_SOURCED_TYPES]}::text[]) THEN COALESCE(ms."doc_date", (d."first_at" AT TIME ZONE 'Asia/Bangkok')::date)
         ELSE COALESCE(h."doc_date", (d."first_at" AT TIME ZONE 'Asia/Bangkok')::date) END AS "doc_date",
       CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN COALESCE(d."stock_no", '')
         WHEN d."document_type" = ANY(${[...TRANSFER_SOURCED_TYPES]}::text[]) THEN COALESCE(t."doc_no", '')
         WHEN d."document_type" = ANY(${[...ADJUSTMENT_SOURCED_TYPES]}::text[]) THEN COALESCE(a."doc_no", '')
+        WHEN d."document_type" = ANY(${[...MERGE_SPLIT_SOURCED_TYPES]}::text[]) THEN COALESCE(ms."doc_no", '')
         ELSE COALESCE(h."document_no", '') END AS "doc_no",
       CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN d."vendor_id"
         WHEN d."document_type" = ANY(${[...TRANSFER_SOURCED_TYPES]}::text[]) THEN NULL::uuid
         WHEN d."document_type" = ANY(${[...ADJUSTMENT_SOURCED_TYPES]}::text[]) THEN NULL::uuid
+        WHEN d."document_type" = ANY(${[...MERGE_SPLIT_SOURCED_TYPES]}::text[]) THEN NULL::uuid
         ELSE h."party_id" END AS "account_id",
       CASE WHEN d."document_type" = ANY(${[...STOCK_SOURCED_TYPES]}::text[]) THEN COALESCE(d."vendor_name", '')
         WHEN d."document_type" = ANY(${[...TRANSFER_SOURCED_TYPES]}::text[]) THEN
@@ -163,11 +166,13 @@ export function entriesSql(cardFilter: Prisma.Sql, pattern: string | null): Pris
               JOIN "inventory"."stock" n ON n."id" = p."stock_uuid" JOIN "inventory"."stock" src ON src."id" = n."transferred_from_uuid"
               WHERE p."card_key" = d."card_key" AND p."document_type" = d."document_type" AND p."document_id" = d."document_id" AND (p."pcs" <> 0 OR p."weight" <> 0)), '') END
         WHEN d."document_type" = ANY(${[...ADJUSTMENT_SOURCED_TYPES]}::text[]) THEN COALESCE(a."location", '')
+        WHEN d."document_type" = ANY(${[...MERGE_SPLIT_SOURCED_TYPES]}::text[]) THEN ''
         ELSE COALESCE(h."party_name", '') END AS "account_name"
     FROM doc d
     LEFT JOIN "inventory"."stock_hold_document" h ON h."document_type" = d."document_type" AND h."document_id" = d."document_id"
     LEFT JOIN "inventory"."stock_transfer" t ON d."document_type" = ANY(${[...TRANSFER_SOURCED_TYPES]}::text[]) AND t."id" = d."document_id"
     LEFT JOIN "inventory"."stock_adjustment" a ON d."document_type" = ANY(${[...ADJUSTMENT_SOURCED_TYPES]}::text[]) AND a."id" = d."document_id"
+    LEFT JOIN "inventory"."merge_split" ms ON d."document_type" = ANY(${[...MERGE_SPLIT_SOURCED_TYPES]}::text[]) AND ms."id" = d."document_id"
   )`;
 }
 

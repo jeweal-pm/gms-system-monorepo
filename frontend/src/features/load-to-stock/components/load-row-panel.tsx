@@ -161,13 +161,15 @@ export function LoadRowPanel({ row, index, total, values, options, currency, rea
 }
 
 /** M-12 / L-02: ≤ 5 photos, upload one at a time (JPEG/PNG ≤ 5 MB), remove keeps the file (ADR-0030). */
-export function RowPhotos({ photoIds, readOnly, onChange, upload = uploadLoadPhoto, hideTitle }: {
+export function RowPhotos({ photoIds, readOnly, onChange, upload = uploadLoadPhoto, hideTitle, photoUrl = loadPhotoUrl }: {
   photoIds: readonly string[];
   readOnly: boolean;
   /** The row panel shows the count in its section title instead. */
   hideTitle?: boolean;
   onChange: (photoIds: string[]) => void;
   upload?: (file: File) => Promise<string>;
+  /** Photo read link (merge-split reuses these tiles with its own photo route). */
+  photoUrl?: (id: string) => string;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -201,7 +203,7 @@ export function RowPhotos({ photoIds, readOnly, onChange, upload = uploadLoadPho
         {photoIds.map((id, position) => (
           <div key={id} className="relative size-20 overflow-hidden rounded-lg border border-[#E3E6EA] bg-[#F9F9F9]">
             {/* eslint-disable-next-line @next/next/no-img-element -- same-origin protected photo route, resized at upload */}
-            <img src={loadPhotoUrl(id)} alt={`Photo ${position + 1}`} className="size-full object-cover" />
+            <img src={photoUrl(id)} alt={`Photo ${position + 1}`} className="size-full object-cover" />
             {!readOnly && (
               <button type="button" aria-label={`Remove photo ${position + 1}`} onClick={() => onChange(photoIds.filter((photo) => photo !== id))} className="absolute top-1 right-1 rounded-full bg-white/90 p-0.5 text-[#1C252E] shadow">
                 <X className="size-3" />
@@ -218,14 +220,14 @@ export function RowPhotos({ photoIds, readOnly, onChange, upload = uploadLoadPho
 }
 
 /** L-02 photo box beside the Load table: the selected row's first photo, count and note. */
-export function LoadPhotoBox({ row, index }: { row: LoadRowValues | null; index: number | null }) {
+export function LoadPhotoBox({ row, index, photoUrl = loadPhotoUrl }: { row: Pick<LoadRowValues, "photoIds" | "itemNote"> | null; index: number | null; photoUrl?: (id: string) => string }) {
   const first = row?.photoIds[0];
   return (
     <div className="hidden w-[200px] shrink-0 rounded-xl border border-[#E3E6EA] p-2 lg:block">
       <div className="flex aspect-square items-center justify-center overflow-hidden rounded-lg bg-[#F9F9F9] text-center text-xs text-[#6B7480]">
         {first ? (
           // eslint-disable-next-line @next/next/no-img-element -- same-origin protected photo route
-          <img src={loadPhotoUrl(first)} alt={`Row ${(index ?? 0) + 1} photo`} className="size-full object-cover" />
+          <img src={photoUrl(first)} alt={`Row ${(index ?? 0) + 1} photo`} className="size-full object-cover" />
         ) : (
           <span>{row ? `Row ${(index ?? 0) + 1} · no photos` : `Add up to ${PHOTO_MAX} photos`}</span>
         )}

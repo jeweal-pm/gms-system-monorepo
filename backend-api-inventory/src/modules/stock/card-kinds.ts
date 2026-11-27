@@ -27,6 +27,13 @@ export const CARD_KINDS: Readonly<Record<string, CardKind>> = {
   TRANSFER_IN_REVERSAL: { documentType: "stock-transfer-location", effect: "MOVEMENT" },
   ADJUST: { documentType: "stock-adjustment", effect: "MOVEMENT" },
   ADJUST_REVERSAL: { documentType: "stock-adjustment", effect: "MOVEMENT" },
+  // Merge/Split (merge-split ADR D9/D10, SA-MS-09/10): OUT on each source card, IN on each new (result) stock's card.
+  SPLIT_OUT: { documentType: "merge-split", effect: "MOVEMENT" },
+  SPLIT_IN: { documentType: "merge-split", effect: "MOVEMENT" },
+  SPLIT_REVERSAL: { documentType: "merge-split", effect: "MOVEMENT" },
+  MERGE_OUT: { documentType: "merge-split", effect: "MOVEMENT" },
+  MERGE_IN: { documentType: "merge-split", effect: "MOVEMENT" },
+  MERGE_REVERSAL: { documentType: "merge-split", effect: "MOVEMENT" },
   HOLD_RESERVE: { documentType: "reserve", effect: "NOT_A_MOVEMENT" },
   RELEASE_RESERVE: { documentType: "reserve", effect: "NOT_A_MOVEMENT" },
 };
@@ -37,9 +44,10 @@ export type DocumentTypeInfo = {
   stockIdVisible: boolean;
   /**
    * Where date, number and account come from: the stock row (Load to Stock), `stock_hold_document` (master documents, Sale),
-   * `stock_transfer` (ADR-0060 D5: Account = "→ <to location>" on OUT, "← <from location>" on IN) or `stock_adjustment` (ADR-0059).
+   * `stock_transfer` (ADR-0060 D5: Account = "→ <to location>" on OUT, "← <from location>" on IN), `stock_adjustment` (ADR-0059) or
+   * `merge_split` (merge-split SA-MS-10: doc date / number, account '').
    */
-  source: "STOCK" | "HOLD" | "TRANSFER" | "ADJUSTMENT";
+  source: "STOCK" | "HOLD" | "TRANSFER" | "ADJUSTMENT" | "MERGE_SPLIT";
 };
 
 export const DOCUMENT_TYPES: Readonly<Record<string, DocumentTypeInfo>> = {
@@ -54,6 +62,7 @@ export const DOCUMENT_TYPES: Readonly<Record<string, DocumentTypeInfo>> = {
   purchase: { label: "Purchase", stockIdVisible: false, source: "HOLD" },
   "memo-return": { label: "Memo Return", stockIdVisible: false, source: "HOLD" },
   "stock-transfer-location": { label: "Stock Transfer Location", stockIdVisible: true, source: "TRANSFER" },
+  "merge-split": { label: "Merge/Split", stockIdVisible: true, source: "MERGE_SPLIT" },
 };
 
 /** Ledger kinds that are card movements (the fixed array passed to SQL as a parameter, never user text). */
@@ -61,6 +70,7 @@ export const MOVEMENT_KINDS: readonly string[] = Object.entries(CARD_KINDS).filt
 export const HIDDEN_STOCK_ID_TYPES: readonly string[] = Object.entries(DOCUMENT_TYPES).filter(([, info]) => !info.stockIdVisible).map(([name]) => name).sort();
 export const STOCK_SOURCED_TYPES: readonly string[] = Object.entries(DOCUMENT_TYPES).filter(([, info]) => info.source === "STOCK").map(([name]) => name).sort();
 export const TRANSFER_SOURCED_TYPES: readonly string[] = Object.entries(DOCUMENT_TYPES).filter(([, info]) => info.source === "TRANSFER").map(([name]) => name).sort();
+export const MERGE_SPLIT_SOURCED_TYPES: readonly string[] = Object.entries(DOCUMENT_TYPES).filter(([, info]) => info.source === "MERGE_SPLIT").map(([name]) => name).sort();
 export const ADJUSTMENT_SOURCED_TYPES: readonly string[] = Object.entries(DOCUMENT_TYPES).filter(([, info]) => info.source === "ADJUSTMENT").map(([name]) => name).sort();
 
 export function documentTypeLabel(documentType: string): string {

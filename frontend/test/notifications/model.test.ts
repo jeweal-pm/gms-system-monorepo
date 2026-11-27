@@ -54,7 +54,7 @@ describe("notification view model", () => {
     expect(listHref({ documentType: "reserve", type: "approval.pending" })).toBe("/approve/reserve");
     expect(listHref({ documentType: "purchase", type: "document.approved" })).toBe("/purchase-order/purchase");
     expect(documentHref({ documentType: "unknown", documentId: "x" })).toBeNull();
-    expect(listHref({ documentType: "merge-split", type: "approval.pending" })).toBeNull();
+    expect(listHref({ documentType: "merge-split", type: "approval.pending" })).toBe("/approve/merge-split");
     // FE-LS-015: Load to Stock has its page and Approve menu now.
     expect(listHref({ documentType: "load-to-stock", type: "approval.pending" })).toBe("/approve/load-to-stock");
     expect(documentHref({ documentType: "load-to-stock", documentId: "l1" })).toBe("/inventory/load-to-stock/l1");

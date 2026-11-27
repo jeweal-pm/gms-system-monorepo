@@ -54,12 +54,12 @@ const domainError = (domainCode: string, details?: Record<string, number>) =>
   TRPCClientError.from({ error: { message: domainCode, code: -32000, data: { code: "CONFLICT", httpStatus: 409, domainCode, details } } } as never);
 
 describe("UT-AS-01 rows", () => {
-  it("13 rows in sidebar order; only Merge/Split is not available (Load to Stock, Sale, Transfer Location and Stock Adjustment have pages)", () => {
+  it("13 rows in sidebar order; every row has a page now (FE-MS-007 added Merge/Split)", () => {
     expect(SETUP_ROWS.map((entry) => entry.label)).toEqual([
       "Quotation", "Reserve", "Memo Receive", "Memo Return", "Memo Out", "Memo Out Return",
       "Purchase Order (PO)", "Purchase", "Load to Stock", "Merge/Split Stock", "Transfer Location", "Sale", "Stock Adjustment",
     ]);
-    expect(SETUP_ROWS.filter(isNotAvailable).map((entry) => entry.slug)).toEqual(["merge-split"]);
+    expect(SETUP_ROWS.filter(isNotAvailable).map((entry) => entry.slug)).toEqual([]);
   });
 
   it("FE-AS-008: each row reads its server item by the setting key; unavailable or loading rows are locked", () => {
@@ -69,7 +69,8 @@ describe("UT-AS-01 rows", () => {
     // A page that exists is still locked while the server reports the type unavailable.
     expect(rowLocked(menu("transfer-location"), settingOf(items, "stock-transfer-location"))).toBe("not-available");
     expect(rowLocked(menu("transfer-location"), settingItem("stock-transfer-location"))).toBeNull();
-    expect(rowLocked(menu("merge-split"), settingItem("merge-split"))).toBe("not-available");
+    expect(rowLocked(menu("merge-split"), settingItem("merge-split"))).toBeNull();
+    expect(rowLocked(menu("merge-split"), settingItem("merge-split", { available: false }))).toBe("not-available");
     expect(rowLocked(menu("quotation"), settingOf(items, "quotation"))).toBe("not-available");
     expect(rowLocked(menu("purchase"), undefined)).toBe("loading");
   });

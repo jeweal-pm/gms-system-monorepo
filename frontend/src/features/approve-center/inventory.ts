@@ -2,6 +2,8 @@ import { loadToStockApi, type LoadOut } from "@/features/load-to-stock/api";
 import { saleApi, type SaleOut } from "@/features/sale/api";
 import { stockTransferApi, type TransferOut } from "@/features/stock-transfer-location/api";
 import { stockAdjustmentApi, type AdjustmentOut } from "@/features/stock-adjustment/api";
+import { mergeSplitApi } from "@/features/merge-split/api";
+import type { MsOut } from "@/features/merge-split/types";
 import type { InventoryPendingItem } from "@/features/inventory/approval";
 import type { PendingApprovalItem } from "./model";
 import type { PreviewDetail } from "./preview";
@@ -113,6 +115,52 @@ export function stockAdjustmentDocumentClient(calls: StockAdjustmentCalls = stoc
   const withVersion = async (id: string, expectedVersion: number) => (expectedVersion > 0 ? expectedVersion : (await calls.get(id)).version);
   return {
     get: { query: async ({ id }: { id: string }) => stockAdjustmentPreview(await calls.get(id)) },
+    approve: { mutate: async ({ id, expectedVersion }: { id: string; expectedVersion: number }) => calls.approve(id, await withVersion(id, expectedVersion)) },
+    reject: { mutate: async ({ id, expectedVersion, reason }: { id: string; expectedVersion: number; reason: string }) => calls.reject(id, await withVersion(id, expectedVersion), reason) },
+    requestRevision: { mutate: async ({ id, expectedVersion, note }: { id: string; expectedVersion: number; note: string }) => calls.requestRevision(id, await withVersion(id, expectedVersion), note) },
+  };
+}
+
+/**
+ * merge-split FE-MS-007 (ADR-0060): `MsOut` → the preview modal's fields. One line per new stock (result), value = its
+ * company-currency cost; the location column is the result location.
+ */
+export function mergeSplitPreview(detail: MsOut): PreviewDetail {
+  const results = [...detail.results].sort((a, b) => a.position - b.position);
+  return {
+    id: detail.id,
+    docNo: detail.docNo ?? "—",
+    status: detail.status,
+    version: detail.version,
+    docDate: detail.docDate,
+    currency: "",
+    exchangeRate: null,
+    documentNote: detail.note,
+    location: [...new Set(results.map((row) => row.location).filter(Boolean))].join(", "),
+    lines: results.map((row) => ({
+      stoneCode: row.attrs.stoneCode,
+      stockId: row.stockId,
+      stone: row.attrs.stone,
+      shape: row.attrs.shape,
+      size: row.attrs.size,
+      pcs: row.pcs,
+      weightCt: row.weightCt,
+      amount: row.costAmountBase,
+      location: row.location,
+    })),
+    totals: { grandTotal: detail.totals.result.costBase },
+    deletedAt: null,
+    revisionCount: detail.approval.revisionCount,
+  };
+}
+
+type MergeSplitCalls = Pick<typeof mergeSplitApi, "get" | "approve" | "reject" | "requestRevision">;
+
+/** The Approve menu's per-document client for Merge/Split (backend-api-inventory, same surface as master's). */
+export function mergeSplitDocumentClient(calls: MergeSplitCalls = mergeSplitApi) {
+  const withVersion = async (id: string, expectedVersion: number) => (expectedVersion > 0 ? expectedVersion : (await calls.get(id)).version);
+  return {
+    get: { query: async ({ id }: { id: string }) => mergeSplitPreview(await calls.get(id)) },
     approve: { mutate: async ({ id, expectedVersion }: { id: string; expectedVersion: number }) => calls.approve(id, await withVersion(id, expectedVersion)) },
     reject: { mutate: async ({ id, expectedVersion, reason }: { id: string; expectedVersion: number; reason: string }) => calls.reject(id, await withVersion(id, expectedVersion), reason) },
     requestRevision: { mutate: async ({ id, expectedVersion, note }: { id: string; expectedVersion: number; note: string }) => calls.requestRevision(id, await withVersion(id, expectedVersion), note) },

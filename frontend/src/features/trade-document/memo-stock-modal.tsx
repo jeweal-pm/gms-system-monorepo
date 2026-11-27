@@ -11,6 +11,8 @@ import { stockRef, stockRefLabel, type StockRefSource } from "./stock-ref";
 import { transferLoadError, useTransferStock } from "@/features/stock-transfer-location/api";
 import type { StockLot as TransferStockLot } from "@/features/stock-transfer-location/types";
 import { useStockLots, type StockLot as AdjustmentStockLot } from "@/features/stock-adjustment/api";
+import { OwnStockPicker } from "@/features/merge-split/components/own-stock-picker";
+import type { OwnStockRow } from "@/features/merge-split/types";
 import {
   PickerChip,
   PickerDialog,
@@ -114,6 +116,19 @@ type MemoStockModalProps = {
       fromStock?: undefined;
       onConfirm: (items: AdjustmentStockLot[]) => void;
     }
+  | {
+      /**
+       * merge-split P-01 (FE-MS-003, ADR-0060): our own stock only, one row per Stock ID with its available on hand
+       * (`GET /merge-split/stock`); `pickedIds` are the stock UUIDs on the document, sent as `exclude`.
+       */
+      source: "merge-split";
+      locations: readonly string[];
+      excludeDocId?: string;
+      currency: string;
+      vendorId?: undefined;
+      fromStock?: undefined;
+      onConfirm: (items: OwnStockRow[]) => void;
+    }
 );
 
 /** The picker key of a transfer lot (its `lotKey`, else its stock UUID). */
@@ -159,10 +174,14 @@ const NO_EXCLUDE: readonly string[] = [];
 
 export function MemoStockModal(props: MemoStockModalProps) {
   if ("source" in props && props.source === "stock-adjustment") return <StockAdjustmentStockPicker props={props} />;
+  if ("source" in props && props.source === "merge-split") {
+    const { title, emptyText, pickedIds, locations, excludeDocId, currency, onCancel, onConfirm } = props;
+    return <OwnStockPicker title={title} emptyText={emptyText} pickedIds={pickedIds} locations={locations} excludeDocId={excludeDocId} currency={currency} onCancel={onCancel} onConfirm={onConfirm} />;
+  }
   return <MemoStockContent props={props as ExistingMemoStockModalProps} />;
 }
 
-type ExistingMemoStockModalProps = Exclude<MemoStockModalProps, { source: "stock-adjustment" }>;
+type ExistingMemoStockModalProps = Exclude<MemoStockModalProps, { source: "stock-adjustment" } | { source: "merge-split" }>;
 
 function MemoStockContent({ props }: { props: ExistingMemoStockModalProps }) {
   const { title, vendorId, currency, showPrice, emptyText, pickedIds, onCancel } = props;

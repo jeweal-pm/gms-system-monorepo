@@ -22,7 +22,7 @@ export function invalidateForNotification(queryClient: QueryClient, hint: Notifi
   const menu = hint ? approveMenuFor(hint.documentType) : undefined;
   const proc = menu && menu.availability !== "not-available" ? menu.proc : undefined;
   // FE-LS-015: an inventory document (Load to Stock) refreshes every inventory read; its approval also changes the PUs.
-  if (proc === "loadToStock" || proc === "sale" || proc === "stockAdjustment") {
+  if (proc === "loadToStock" || proc === "sale" || proc === "stockAdjustment" || proc === "mergeSplit") {
     return Promise.all([
       queryClient.invalidateQueries({ queryKey: INVENTORY_QUERY_KEY }),
       // sale FE-SL-009: an approved sale moves Reserve lines and Memo Stock instead of the PUs.

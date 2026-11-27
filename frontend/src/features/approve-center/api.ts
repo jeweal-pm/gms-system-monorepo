@@ -18,7 +18,7 @@ import { masterTrpc } from "@/lib/master-trpc";
 import { retryTransient } from "@/lib/trpc-error";
 import { APPROVE_MENUS, type ApprovalProc, type ApproveMenu, type AvailableMenu } from "./menus";
 import type { PreviewDetail } from "./preview";
-import { loadToStockDocumentClient, saleDocumentClient, stockAdjustmentDocumentClient, stockTransferDocumentClient, toPendingItem } from "./inventory";
+import { loadToStockDocumentClient, mergeSplitDocumentClient, saleDocumentClient, stockAdjustmentDocumentClient, stockTransferDocumentClient, toPendingItem } from "./inventory";
 import { approvalTotal, pendingInput, summaryCount, visibleMenus, type ApprovalSummary, type CountState, type Mine, type PendingInput, type ReviewAction, type SortState } from "./model";
 
 /**
@@ -58,6 +58,8 @@ export function documentClients(client: MasterClient): Record<ApprovalProc, Docu
     stockTransferLocation: stockTransferDocumentClient(),
     // Stock Adjustment FE-SAJ-007: served by backend-api-inventory.
     stockAdjustment: stockAdjustmentDocumentClient(),
+    // merge-split FE-MS-007: served by backend-api-inventory.
+    mergeSplit: mergeSplitDocumentClient(),
   };
 }
 
@@ -158,7 +160,7 @@ export function invalidateAfterReview(queryClient: QueryClient, proc: ApprovalPr
   if (proc === "sale") return Promise.all([INVENTORY_QUERY_KEY, [["memoStock"]], [["reserve"]]].map((queryKey) => queryClient.invalidateQueries({ queryKey })));
   // stock-transfer-location FE-STL-005: an approved transfer moves stock (Stock Card / Stock Value live under the inventory key).
   if (proc === "stockTransferLocation") return queryClient.invalidateQueries({ queryKey: INVENTORY_QUERY_KEY });
-  if (proc === "stockAdjustment") return queryClient.invalidateQueries({ queryKey: INVENTORY_QUERY_KEY });
+  if (proc === "stockAdjustment" || proc === "mergeSplit") return queryClient.invalidateQueries({ queryKey: INVENTORY_QUERY_KEY });
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: [["approval"]] }),
     queryClient.invalidateQueries({ queryKey: [[proc]] }),
@@ -199,6 +201,7 @@ export function detailQueryKey(proc: ApprovalProc, id: string) {
   if (proc === "sale") return [...INVENTORY_QUERY_KEY, "sale", "preview", id] as const;
   if (proc === "stockTransferLocation") return [...INVENTORY_QUERY_KEY, "stock-transfer-location", "preview", id] as const;
   if (proc === "stockAdjustment") return [...INVENTORY_QUERY_KEY, "stock-adjustment", "detail", id] as const;
+  if (proc === "mergeSplit") return [...INVENTORY_QUERY_KEY, "merge-split", "preview", id] as const;
   return [[proc, "get"], { input: { id }, type: "query" }] as const;
 }
 

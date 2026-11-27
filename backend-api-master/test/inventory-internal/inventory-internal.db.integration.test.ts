@@ -267,8 +267,10 @@ describe.runIf(canRun)("IT-LS master internal API on PostgreSQL", () => {
     expect(((await search({})).body.items as { lot: string }[]).map((item) => item.lot)).not.toContain("PICK-3");
     const editing = await search({ excludeAllocationOf: load });
     expect(editing.body.items).toEqual(expect.arrayContaining([expect.objectContaining({ lot: "PICK-3", remainingPcs: 1, remainingWeightCt: "5.000" })]));
+    // Owner 2026-11-27: the Account list shows every active vendor, also one with no loadable Purchase line.
+    const noLines = await vendorFixture("LS IT Vendor Without Lines");
     const vendorsPage = await call("GET", "/vendors/loadable?q=LS%20IT%20Vendor&limit=50");
-    expect((vendorsPage.body.items as { id: string }[]).map((item) => item.id)).toEqual(expect.arrayContaining([vendorB.id]));
+    expect((vendorsPage.body.items as { id: string }[]).map((item) => item.id)).toEqual(expect.arrayContaining([vendorB.id, noLines.id]));
     expect((await call("POST", "/purchase-lines/loadable/search", { limit: 51 })).status).toBe(400);
     expect(draft.status).toBe("DRAFT");
   });
